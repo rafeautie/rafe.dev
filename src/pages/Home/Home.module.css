@@ -1,0 +1,20 @@
+.container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.container h1 {
+  margin: 0;
+  font-size: 110px;
+}
+
+.center {
+  position: fixed;
+  width: 0;
+  height: 0;
+  top: 50%;
+  left: 50%;
+}
