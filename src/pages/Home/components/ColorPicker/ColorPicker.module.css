@@ -1,0 +1,14 @@
+.container {
+  position: fixed;
+  top: 25px;
+  right: 25px;
+  width: 50px;
+  height: 50px;
+  border-radius: 90px;
+}
+
+.colorPicker {
+  position: relative;
+  top: calc(100% + 14px);
+  transform: translateX(calc(-100% + 43px));
+}
