@@ -9,8 +9,8 @@ const Mouse = ({ color, x, y }: Props) => (
     className={styles.mouse}
     style={{
       background: color,
-      top: y,
-      left: x,
+      top: y - 10,
+      left: x - 10,
     }}
   />
 );
