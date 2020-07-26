@@ -1,9 +1,4 @@
-import React, {
-  useEffect,
-  useState,
-  useCallback,
-  useRef,
-} from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 
 import styles from './Home.module.css';
 import ColorPicker from './components/ColorPicker';
@@ -17,6 +12,10 @@ import isMe from '../../utils/isMe';
 const Home = () => {
   const [color, setColor] = useColorState();
   const [mice, setMice] = useState<Array<MouseType>>([]);
+  const [myMouse, setMyMouse] = useState<Pick<MouseType, 'x' | 'y'>>({
+    x: -100,
+    y: -100,
+  });
 
   useEffect(() => {
     provider.awareness.setLocalStateField('color', color.hex);
@@ -52,10 +51,12 @@ const Home = () => {
   }, []);
 
   const onMouseMove = useCallback((e) => {
-    provider.awareness.setLocalStateField('mouse', {
+    const pos = {
       x: e.pageX,
       y: e.pageY,
-    });
+    };
+    provider.awareness.setLocalStateField('mouse', pos);
+    setMyMouse(pos);
   }, []);
 
   return (
@@ -65,6 +66,7 @@ const Home = () => {
         color={color}
         onChange={(newColor) => setColor(newColor)}
       />
+      <RemoteMouse {...myMouse} color={color.hex} clientID={0} />
       {mice.map((mouse) =>
         isMe(mouse.clientID) ? null : (
           <RemoteMouse {...mouse} key={mouse.clientID} />
