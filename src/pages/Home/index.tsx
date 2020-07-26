@@ -5,7 +5,7 @@ import ColorPicker from './components/ColorPicker';
 import { useColorState } from './state/atoms';
 import { MouseType } from './interfaces';
 import RemoteMouse from './components/RemoteMouse';
-import calculateMouse from '../../utils/calculateMouse';
+import {calculateRelativeMouse} from '../../utils/mouse';
 import { provider } from '../../utils/yjs';
 import isMe from '../../utils/isMe';
 
@@ -31,7 +31,7 @@ const Home = () => {
         newMice.push({
           clientID,
           color: state.color,
-          ...calculateMouse(state.mouse, state.window),
+          ...calculateRelativeMouse(state.mouse, state.window),
         });
       });
 

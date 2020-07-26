@@ -8,7 +8,7 @@ interface Window {
   height: number;
 }
 
-const calculateMouse = (
+export const calculateRelativeMouse = (
   mouse: Mouse,
   remoteWindow: Window,
 ): Mouse => {
@@ -25,5 +25,3 @@ const calculateMouse = (
     y: mouse.y + ydiff,
   };
 };
-
-export default calculateMouse;
