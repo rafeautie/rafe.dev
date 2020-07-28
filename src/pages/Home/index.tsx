@@ -5,7 +5,7 @@ import ColorPicker from './components/ColorPicker';
 import { useColorState } from './state/atoms';
 import { MouseType } from './interfaces';
 import RemoteMouse from './components/RemoteMouse';
-import {calculateRelativeMouse} from '../../utils/mouse';
+import { calculateRelativeMouse } from '../../utils/mouse';
 import { provider } from '../../utils/yjs';
 import isMe from '../../utils/isMe';
 
