@@ -1,0 +1,43 @@
+.background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(0deg, #c44141, #485ccc);
+  background-size: 400% 400%;
+  
+  -webkit-animation: AnimationName 5s ease infinite;
+  -moz-animation: AnimationName 5s ease infinite;
+  -o-animation: AnimationName 5s ease infinite;
+  animation: AnimationName 5s ease infinite;
+  
+  transition: 3s opacity cubic-bezier(0.075, 0.82, 0.165, 1);
+  opacity: 1;
+  z-index: -1;
+}
+
+.off {
+  opacity: 0;
+}
+
+@-webkit-keyframes AnimationName {
+  0%{background-position:50% 0%}
+  50%{background-position:51% 100%}
+  100%{background-position:50% 0%}
+}
+@-moz-keyframes AnimationName {
+  0%{background-position:50% 0%}
+  50%{background-position:51% 100%}
+  100%{background-position:50% 0%}
+}
+@-o-keyframes AnimationName {
+  0%{background-position:50% 0%}
+  50%{background-position:51% 100%}
+  100%{background-position:50% 0%}
+}
+@keyframes AnimationName {
+  0%{background-position:50% 0%}
+  50%{background-position:51% 100%}
+  100%{background-position:50% 0%}
+}

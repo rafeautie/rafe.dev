@@ -1,21 +1,18 @@
+import './styles/App.module.css';
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import {
-  BrowserRouter as Router,
-  Switch,
-  Route,
-} from 'react-router-dom';
+import { Switch, Route } from 'react-router-dom';
 
 import Home from './pages/Home';
+import Background from './components/Background';
 
 function App() {
   return (
     <RecoilRoot>
-      <Router>
-        <Switch>
-          <Route path="/" component={Home} />
-        </Switch>
-      </Router>
+      <Switch>
+        <Route exact path="/" component={Home} />
+      </Switch>
+      <Background />
     </RecoilRoot>
   );
 }
