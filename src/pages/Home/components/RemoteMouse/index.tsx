@@ -2,9 +2,7 @@ import React from 'react';
 import styles from './Mouse.module.css';
 import { MouseType } from '../../interfaces';
 
-interface Props extends MouseType {}
-
-const Mouse = ({ color, x, y }: Props) => (
+const Mouse = ({ color, x = 0, y = 0 }: MouseType) => (
   <div
     className={styles.mouse}
     style={{
