@@ -1,4 +1,3 @@
-// import { ydoc } from './yjs';
 import * as Y from 'yjs';
 
 const isMe = (ydoc: Y.Doc | undefined, clientID: number) => {

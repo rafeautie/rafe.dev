@@ -12,3 +12,7 @@ ReactDOM.render(
   </React.StrictMode>,
   getRootElement(),
 );
+
+if (import.meta.hot) {
+  import.meta.hot.accept();
+}
