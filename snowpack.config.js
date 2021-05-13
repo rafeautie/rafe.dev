@@ -7,7 +7,6 @@ module.exports = {
   plugins: [ 
   '@snowpack/plugin-react-refresh', 
   '@snowpack/plugin-dotenv', 
-  // '@snowpack/plugin-webpack', 
   '@snowpack/plugin-typescript', // TS support
   ],
   /* for local SPA fallback routing support, more below */
