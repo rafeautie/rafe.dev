@@ -1,9 +1,4 @@
-.background {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
+.backgroundGradient {
   background: linear-gradient(0deg, #c44141, #485ccc);
   background-size: 400% 400%;
   
@@ -15,10 +10,6 @@
   transition: 3s opacity cubic-bezier(0.075, 0.82, 0.165, 1);
   opacity: 1;
   z-index: -1;
-}
-
-.off {
-  opacity: 0;
 }
 
 @-webkit-keyframes AnimationName {

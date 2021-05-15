@@ -4,4 +4,10 @@
   height: 20px;
   border-radius: 90px;
   pointer-events: none;
+  opacity: 1;
+  transition: opacity .1s;
+}
+
+.mouseHidden {
+  opacity: 0;
 }

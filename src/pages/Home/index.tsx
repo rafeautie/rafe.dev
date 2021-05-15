@@ -1,103 +1,51 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { useHistory } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import styles from './Home.module.css';
 import ColorPicker from './components/ColorPicker';
-import { useColorState } from './state/atoms';
-import { MouseType } from './interfaces';
-import RemoteMouse from './components/RemoteMouse';
-import { calculateRelativeMouse } from '../../utils/mouse';
-import { getProvider, ProviderType } from '../../utils/yjs';
-import isMe from '../../utils/isMe';
+import backgroundStyles from '../../styles/Background.module.css';
+import RemoteMouseManager from '../../utils/RemoteMouse/RemoteMouseManager';
+import RemoteMice from './components/Mice';
+import useActions from '../../utils/useActions';
+import { HomeActions } from './state/HomeActions';
+import { Params } from './typings';
 
-const Home = () => {
-  const history = useHistory();
-  const [{ provider, ydoc }, setProvider] = useState<ProviderType>(
-    {},
-  );
+const Landing = () => {
+  const BoundHomeActions = useActions(HomeActions, []);
   const [swatchActive, setSwatchActive] = useState(false);
-  const [color, setColor] = useColorState();
-  const [mice, setMice] = useState<Array<MouseType>>([]);
-  const [myMouse, setMyMouse] = useState<Pick<MouseType, 'x' | 'y'>>({
-    x: -100,
-    y: -100,
-  });
+  const { room } = useParams<Params>();
 
   useEffect(() => {
-    provider?.awareness.setLocalStateField('color', color.hex);
-  }, [color, provider]);
-
-  useEffect(() => {
-    if (!provider) {
-      setProvider(getProvider());
-    }
-
-    provider?.awareness?.on('change', () => {
-      const newMice: Array<MouseType> = [];
-
-      provider?.awareness.getStates().forEach((state, clientID) => {
-        newMice.push({
-          clientID,
-          color: state.color,
-          ...calculateRelativeMouse(state.mouse, state.window),
-        });
-      });
-
-      setMice(newMice);
+    return RemoteMouseManager.connect({
+      room,
+      listeners: {
+        onAdd: (id, mouse) => BoundHomeActions.createMouse({ id, mouse }),
+        onUpdate: (id, mouse) => BoundHomeActions.updateMouse({ id, mouse }),
+        onRemove: (id) => BoundHomeActions.deleteMouse({ id }),
+      },
     });
-
-    const setWindowLocalState = () => {
-      provider?.awareness.setLocalStateField('window', {
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
-    };
-
-    window.onresize = setWindowLocalState;
-
-    setWindowLocalState();
-
-    return () => {
-      provider?.destroy();
-      ydoc?.destroy();
-    };
-  }, [provider]);
-
-  const onMouseMove = useCallback(
-    (e) => {
-      const pos = {
-        x: e.pageX,
-        y: e.pageY,
-      };
-      provider?.awareness.setLocalStateField('mouse', pos);
-      setMyMouse(pos);
-    },
-    [provider],
-  );
+  }, [BoundHomeActions]);
 
   const mouseStyle = !swatchActive ? styles.disableMouse : '';
 
   return (
     <div
-      className={`${styles.container} ${mouseStyle}`}
-      onMouseMove={onMouseMove}
+      className={`${styles.container} ${mouseStyle} ${backgroundStyles.backgroundGradient}`}
     >
       <h1>rafe.dev</h1>
       <ColorPicker
-        color={color}
         active={swatchActive}
         onClick={() => setSwatchActive(!swatchActive)}
-        onChange={(newColor) => setColor(newColor)}
+        onChange={(newColor) => {
+          BoundHomeActions.updateMouse({
+            id: 0,
+            mouse: { color: newColor.hex },
+          });
+          RemoteMouseManager.setRemoteMouseColor(newColor.hex);
+        }}
       />
-      {!swatchActive && (
-        <RemoteMouse {...myMouse} color={color.hex} clientID={0} />
-      )}
-      {mice.map((mouse) =>
-        isMe(ydoc, mouse.clientID) ? null : (
-          <RemoteMouse {...mouse} key={mouse.clientID} />
-        ),
-      )}
+      <RemoteMice hideSelf={swatchActive} />
     </div>
   );
 };
 
-export default Home;
+export default Landing;

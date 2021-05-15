@@ -15,39 +15,5 @@
   margin: 0;
   font-size: 110px;
   color: white;
-}
-
-.center {
-  position: fixed;
-  width: 0;
-  height: 0;
-  top: 50%;
-  left: 50%;
-}
-
-.buttonContainer {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  padding: 20px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.button {
-  outline: none;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: white;
-  font-size: 25px;
-  font-weight: 400;
-  padding: 10px 15px;
-  transition: .2s background;
-}
-
-.button:hover {
-  background: rgba(255, 255, 255, 0.125);
+  user-select: none;
 }
