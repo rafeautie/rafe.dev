@@ -1,17 +1,9 @@
-interface Mouse {
-  x: number;
-  y: number;
-}
+import { MouseType, WindowType } from '../pages/Home/typings';
 
-interface Window {
-  width: number;
-  height: number;
-}
-
-export const calculateRelativeMouse = (
-  mouse: Mouse,
-  remoteWindow: Window,
-): Mouse => {
+const useRelativeMouse = (
+  mouse: MouseType,
+  remoteWindow: WindowType,
+): MouseType => {
   if (!remoteWindow || !mouse) return mouse;
 
   const { width: rwidth, height: rheight } = remoteWindow;
@@ -25,3 +17,5 @@ export const calculateRelativeMouse = (
     y: mouse.y + ydiff,
   };
 };
+
+export default useRelativeMouse;
