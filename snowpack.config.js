@@ -5,9 +5,10 @@ module.exports = {
    src: {url: '/dist'},
   },
   plugins: [ 
-  '@snowpack/plugin-react-refresh', 
-  '@snowpack/plugin-dotenv', 
-  '@snowpack/plugin-typescript', // TS support
+    '@snowpack/plugin-react-refresh', 
+    '@snowpack/plugin-dotenv', 
+    '@snowpack/plugin-typescript', // TS support
+    '@snowpack/plugin-webpack',
   ],
   /* for local SPA fallback routing support, more below */
   routes: [
@@ -16,9 +17,5 @@ module.exports = {
   devOptions: {
     port: 3000,
   },
-  /* optional, if you want to use alias when importing */
-  alias: {
-    "@app": "./src/",
-  }
 };
   
