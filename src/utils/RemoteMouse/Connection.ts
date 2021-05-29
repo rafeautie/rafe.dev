@@ -24,9 +24,7 @@ class Connection {
   }
 
   private static getRoomName(room: string = '') {
-    return `rafe.dev-${
-      import.meta.env.SNOWPACK_PUBLIC_HOME_WEBRTC_ROOM
-    }${room}`;
+    return `rafe.dev-${process.env.WEBRTC_ROOM}${room}`;
   }
 
   public disconnect() {
