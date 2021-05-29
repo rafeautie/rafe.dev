@@ -16,7 +16,7 @@
   },
   "scripts": {
     "start": "webpack serve --progress",
-    "build": "webpack --config webpack.config.js",
+    "build": "webpack --config webpack.config.js --mode=production",
     "lint": "eslint ./src/**/*",
     "lint-and-check": "tsc --noEmit && yarn lint"
   },
