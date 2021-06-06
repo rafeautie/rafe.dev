@@ -1,3 +1,3 @@
 personal site
 
-for fun
+for fun & experimentation
