@@ -1,8 +1,7 @@
 import React from 'react';
 import { GithubPicker, ColorChangeHandler } from 'react-color';
-import { useSelector } from 'react-redux';
-import { ApplicationState } from '../../../../redux/store';
-import { selectLocalMouse } from '../../state/HomeSelectors';
+import { useRecoilValue } from 'recoil';
+import selectedColorState from '../../../../state/selectedColor';
 import styles from './ColorPicker.module.css';
 import Colors from './Colors';
 
@@ -13,22 +12,20 @@ interface Props {
 }
 
 const ColorPicker = ({ onChange, onClick, active }: Props) => {
-  const localMouseColor =
-    useSelector((state: ApplicationState) => selectLocalMouse(state)?.color) ??
-    '#fff';
+  const selectedColor = useRecoilValue(selectedColorState);
 
   return (
     <div
       onClick={() => onClick()}
       className={styles.container}
-      style={{ background: localMouseColor }}
+      style={{ background: selectedColor }}
     >
       {active && (
         <GithubPicker
           colors={Colors}
           className={styles.colorPicker}
           triangle="top-right"
-          color={localMouseColor}
+          color={selectedColor}
           onChange={onChange}
         />
       )}

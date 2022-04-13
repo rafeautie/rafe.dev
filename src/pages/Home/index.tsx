@@ -1,29 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { useSetRecoilState } from 'recoil';
 import styles from './Home.module.css';
 import ColorPicker from './components/ColorPicker';
 import backgroundStyles from '../../styles/Background.module.css';
 import RemoteMouseManager from '../../utils/RemoteMouse/RemoteMouseManager';
 import RemoteMice from './components/Mice';
-import useActions from '../../utils/useActions';
-import { HomeActions } from './state/HomeActions';
-import { Params } from './typings';
+import selectedColorState from '../../state/selectedColor';
 
 const Landing = () => {
-  const BoundHomeActions = useActions(HomeActions, []);
   const [swatchActive, setSwatchActive] = useState(false);
-  const { room } = useParams<Params>();
-
-  useEffect(() => {
-    return RemoteMouseManager.connect({
-      room,
-      listeners: {
-        onAdd: (id, mouse) => BoundHomeActions.createMouse({ id, mouse }),
-        onUpdate: (id, mouse) => BoundHomeActions.updateMouse({ id, mouse }),
-        onRemove: (id) => BoundHomeActions.deleteMouse({ id }),
-      },
-    });
-  }, [BoundHomeActions]);
+  const setSelectedColor = useSetRecoilState(selectedColorState);
 
   const mouseStyle = !swatchActive ? styles.disableMouse : '';
 
@@ -32,18 +19,26 @@ const Landing = () => {
       className={`${styles.container} ${mouseStyle} ${backgroundStyles.backgroundGradient}`}
     >
       <h1>rafe.dev</h1>
+      <div className={styles.canvasContainer}>
+        <Canvas
+          frameloop="demand"
+          camera={{ position: [0, 0, 5] }}
+          onMouseMove={({ nativeEvent: { x, y } }) => {
+            RemoteMouseManager.handleMouseMovement(x, y);
+          }}
+        >
+          <ambientLight />
+          <RemoteMice />
+        </Canvas>
+      </div>
       <ColorPicker
         active={swatchActive}
         onClick={() => setSwatchActive(!swatchActive)}
         onChange={(newColor) => {
-          BoundHomeActions.updateMouse({
-            id: 0,
-            mouse: { color: newColor.hex },
-          });
+          setSelectedColor(newColor.hex);
           RemoteMouseManager.setRemoteMouseColor(newColor.hex);
         }}
       />
-      <RemoteMice hideSelf={swatchActive} />
     </div>
   );
 };

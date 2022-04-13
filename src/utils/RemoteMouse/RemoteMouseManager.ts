@@ -44,7 +44,7 @@ class RemoteMouseManager {
   }
 
   public isLocalMouse(id: number) {
-    // Return true if no connect to hide all mice until connection established.
+    // Return true if no connection to hide all mice until connection established.
     return !this.connection || id === this.connection?.doc.clientID;
   }
 
@@ -150,6 +150,24 @@ class RemoteMouseManager {
       cleanupWindowResizeListener();
       this.connection?.disconnect();
     };
+  }
+
+  public handleMouseMovement(x: number, y: number): void {
+    this.validateSetup();
+    const mousePosition = { x, y };
+
+    this.listeners?.onUpdate(0, { mouse: mousePosition });
+    this.connection?.provider.awareness.setLocalStateField(
+      'mouse',
+      mousePosition,
+    );
+  }
+
+  get mice() {
+    return (this.connection?.provider.awareness.states as unknown) as Map<
+      number,
+      RemoteMouseState
+    >;
   }
 }
 
