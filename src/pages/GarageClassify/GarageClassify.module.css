@@ -1,0 +1,23 @@
+.container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.container h1 {
+  margin: 0;
+  font-size: 50px;
+  color: white;
+  user-select: none;
+}
+
+.prettyButton {
+  width: 100%;
+  height: 125px;
+  color: white;
+  background: rgb(44, 44, 44);
+  border: 0;
+}
