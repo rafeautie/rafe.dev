@@ -12,6 +12,7 @@ build
 dist
 dist-ssr
 *.local
+.vercel
 
 # Editor directories and files
 .vscode/*
@@ -23,3 +24,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+.vercel

@@ -1,12 +1,13 @@
+import IRacingLapsGraph from '@/components/motorsport/i-racing-laps-graph';
 import { H3, P } from '@/components/ui/typography';
 import { useYearsSince } from '@/hooks/use-years-since';
 import { createLazyFileRoute } from '@tanstack/react-router';
 
 export const Route = createLazyFileRoute('/motorsport')({
-  component: Work,
+  component: Motorsport,
 });
 
-function Work() {
+function Motorsport() {
   const yearsSimRacing = useYearsSince('14-08-2023');
   return (
     <div className="mt-4 p-2">
@@ -29,7 +30,7 @@ function Work() {
         it has been {yearsSimRacing} {yearsSimRacing > 1 ? 'years' : 'year'} and
         i have yet to look back.
       </P>
-      {/* <H3 className="mt-16">iracing stats + career</H3> */}
+      <IRacingLapsGraph />
     </div>
   );
 }
