@@ -19,7 +19,7 @@ const Layout = ({ children }: Props) => {
       <SidebarProvider defaultOpen={cookies[SIDEBAR_COOKIE_NAME]}>
         <AppSidebar />
         <main className="w-full">
-          <div className="flex items-center justify-between sticky top-0 p-3 backdrop-blur-xl">
+          <div className="flex items-center justify-between sticky top-0 p-3 bg-gradient-to-b from-background">
             <SidebarTrigger />
             <DarkModeToggle />
           </div>
