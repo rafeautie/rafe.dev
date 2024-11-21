@@ -151,7 +151,7 @@ const IRacingCarsGraph = () => {
                               } as React.CSSProperties
                             }
                           />
-                          <div className="flex flex-1 justify-between leading-none gap-x-2items-center">
+                          <div className="flex flex-1 justify-between leading-none gap-x-2 items-center">
                             <div className="grid gap-1.5">
                               <span className="text-muted-foreground">
                                 {chartItem.label}
