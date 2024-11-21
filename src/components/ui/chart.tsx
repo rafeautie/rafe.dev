@@ -353,6 +353,36 @@ function getPayloadConfigFromPayload(
     : config[key as keyof typeof config];
 }
 
+const ScalingText = ({
+  x,
+  y,
+  width,
+  height,
+  className,
+  children,
+}: {
+  x?: number | string;
+  y?: number | string;
+  width?: number | string;
+  height?: number | string;
+  className?: string;
+  children: string;
+}) => {
+  return (
+    <RechartsPrimitive.Text
+      className={className}
+      x={Number(x) + 10}
+      y={Number(y) + Number(height) / 2}
+      width={Number(width) - 18}
+      fill="#fff"
+      textAnchor="start"
+      verticalAnchor="middle"
+      maxLines={1}
+    >
+      {children}
+    </RechartsPrimitive.Text>
+  );
+};
 export {
   ChartContainer,
   ChartTooltip,
@@ -360,4 +390,5 @@ export {
   ChartLegend,
   ChartLegendContent,
   ChartStyle,
+  ScalingText,
 };

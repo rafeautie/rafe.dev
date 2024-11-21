@@ -1,4 +1,12 @@
+import IRacingCarsGraph from '@/components/motorsport/i-racing-cars-graph';
 import IRacingLapsGraph from '@/components/motorsport/i-racing-laps-graph';
+import IRacingTracksGraph from '@/components/motorsport/i-racing-tracks-graph';
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { H3, P } from '@/components/ui/typography';
 import { useYearsSince } from '@/hooks/use-years-since';
 import { createLazyFileRoute } from '@tanstack/react-router';
@@ -30,7 +38,17 @@ function Motorsport() {
         it has been {yearsSimRacing} {yearsSimRacing > 1 ? 'years' : 'year'} and
         i have yet to look back.
       </P>
-      <IRacingLapsGraph />
+      <Card className="mt-10 mb-5">
+        <CardHeader>
+          <CardTitle>iRacing Stats</CardTitle>
+          <CardDescription>Updated Hourly</CardDescription>
+        </CardHeader>
+      </Card>
+      <div className="flex flex-col xl:flex-row w-full gap-5 ">
+        <IRacingTracksGraph />
+        <IRacingCarsGraph />
+        <IRacingLapsGraph />
+      </div>
     </div>
   );
 }

@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import {
   ChartContainer,
   ChartLegend,
@@ -16,39 +15,32 @@ import {
   CardTitle,
 } from '../ui/card';
 import { Bar, BarChart, CartesianGrid, XAxis } from 'recharts';
-import { DrivingStatItem, StatsResponse } from 'shared/types';
 import { DateTime } from 'luxon';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { dateTimeFrom } from '@/lib/motorsport';
-import { doRequest } from '@/lib/network';
 import { Skeleton } from '../ui/skeleton';
+import { useIRacingStats } from '@/hooks/use-iracing-stats';
 
-// import { mockData } from './mockData';
-
-type AggregateStats = Pick<
-  DrivingStatItem,
-  'lapsDriven' | 'cleanLapsDriven' | 'day'
->;
+type AggregateStats = {
+  cleanLapsDriven: number;
+  invalidLapsDriven: number;
+};
 
 type DateFilterModes = 'all-time' | 'last-3-months' | 'last-week';
 
 const chartConfig = {
-  lapsDriven: {
-    label: 'Invalid Laps Driven',
-    color: 'hsl(var(--chart-3))',
-  },
   cleanLapsDriven: {
     label: 'Clean Laps Driven',
     color: 'hsl(var(--chart-1))',
   },
+  invalidLapsDriven: {
+    label: 'Invalid Laps Driven',
+    color: 'hsl(var(--chart-3))',
+  },
 } satisfies ChartConfig;
 
 const IRacingLapsGraph = () => {
-  const { data, isLoading } = useQuery({
-    queryKey: ['iracing-stats'],
-    queryFn: () => doRequest<StatsResponse>('/api/stats'),
-    // queryFn: () => mockData as StatsResponse,
-  });
+  const { data, isLoading } = useIRacingStats();
 
   const [dateFilterMode, setDateFilterMode] =
     useState<DateFilterModes>('last-3-months');
@@ -66,30 +58,30 @@ const IRacingLapsGraph = () => {
 
   const chartData = useMemo(() => {
     const drivingStats = data?.drivingStatistics ?? [];
+    const dataByDay: Record<string, AggregateStats> = {};
 
-    const aggregateDataByDay = drivingStats.reduce<
-      Record<string, AggregateStats>
-    >((acc, item) => {
-      const current = acc[item.day];
-      const currentCleanLaps = item?.cleanLapsDriven ?? 0;
-      const currentLaps = item?.lapsDriven ?? 0;
-      const cleanLapsDriven =
-        (current?.cleanLapsDriven ?? 0) + currentCleanLaps;
-      const invalidLapsDriven =
-        (current?.lapsDriven ?? 0) + (currentLaps - currentCleanLaps);
+    drivingStats.forEach((item) => {
+      if (!dataByDay[item.day]) {
+        dataByDay[item.day] = {
+          cleanLapsDriven: 0,
+          invalidLapsDriven: 0,
+        };
+      }
 
-      acc[item.day] = {
-        day: item.day,
-        lapsDriven: invalidLapsDriven,
-        cleanLapsDriven: cleanLapsDriven,
-      };
+      dataByDay[item.day].cleanLapsDriven += item?.cleanLapsDriven ?? 0;
+      dataByDay[item.day].invalidLapsDriven -=
+        item.lapsDriven - item.cleanLapsDriven;
+    });
 
-      return acc;
-    }, {});
-
-    let processedData = Object.values(aggregateDataByDay).sort(
-      (a, b) => dateTimeFrom(a.day).toMillis() - dateTimeFrom(b.day).toMillis()
-    );
+    let processedData = Object.entries(dataByDay)
+      .map(([day, dayStats]) => ({
+        day,
+        ...dayStats,
+      }))
+      .sort(
+        (a, b) =>
+          dateTimeFrom(a.day).toMillis() - dateTimeFrom(b.day).toMillis()
+      );
 
     if (minDate != null) {
       processedData = processedData.filter(
@@ -117,11 +109,11 @@ const IRacingLapsGraph = () => {
   );
 
   return (
-    <Card className="animate-in duration-1000 fade-out-75 mt-10">
+    <Card className="flex-1">
       <CardHeader>
         <div className="flex flex-col md:flex-row justify-between gap-x-5 gap-y-4">
           <div className="flex flex-col gap-1">
-            <CardTitle>iRacing Laps</CardTitle>
+            <CardTitle>Lap Performance</CardTitle>
             <Skeleton loading={isLoading}>
               <CardDescription>
                 {startDate} - {endDate}
@@ -142,8 +134,8 @@ const IRacingLapsGraph = () => {
       </CardHeader>
       <CardContent>
         <Skeleton loading={isLoading}>
-          <ChartContainer config={chartConfig} className="w-full max-h-96">
-            <BarChart accessibilityLayer data={chartData}>
+          <ChartContainer config={chartConfig}>
+            <BarChart accessibilityLayer data={chartData} stackOffset="sign">
               <CartesianGrid vertical={false} />
               <XAxis
                 dataKey="day"
@@ -167,34 +159,51 @@ const IRacingLapsGraph = () => {
                         year: 'numeric',
                       })
                     }
+                    formatter={(value, name) => {
+                      const chartItem =
+                        chartConfig[name as keyof typeof chartConfig];
+                      return (
+                        <>
+                          <div
+                            className="shrink-0 rounded-[2px] border-[--color-border] bg-[--color-bg] h-2.5 w-2.5"
+                            style={
+                              {
+                                '--color-bg': chartItem.color,
+                                '--color-border': chartItem.color,
+                              } as React.CSSProperties
+                            }
+                          />
+                          <div className="flex flex-1 justify-between leading-none gap-x-2 items-center">
+                            <span className="text-muted-foreground">
+                              {chartItem.label}
+                            </span>
+                            <span className="font-mono font-medium tabular-nums text-foreground">
+                              {Math.abs(value as number)}
+                            </span>
+                          </div>
+                        </>
+                      );
+                    }}
                   />
                 }
               />
               <ChartLegend content={<ChartLegendContent />} />
-              <Bar
-                dataKey="lapsDriven"
-                stackId="a"
-                fill={chartConfig.lapsDriven.color}
-                radius={[0, 0, 8, 8]}
-              />
               <Bar
                 dataKey="cleanLapsDriven"
                 stackId="a"
                 fill={chartConfig.cleanLapsDriven.color}
                 radius={[8, 8, 0, 0]}
               />
+              <Bar
+                dataKey="invalidLapsDriven"
+                stackId="a"
+                fill={chartConfig.invalidLapsDriven.color}
+                radius={[8, 8, 0, 0]}
+              />
             </BarChart>
           </ChartContainer>
         </Skeleton>
       </CardContent>
-      {/* <CardFooter className="flex-col items-start gap-2 text-sm">
-        <div className="flex gap-2 font-medium leading-none">
-          Trending up by 5.2% this month <TrendingUp className="h-4 w-4" />
-        </div>
-        <div className="leading-none text-muted-foreground">
-          Showing total visitors for the last 6 months
-        </div>
-      </CardFooter> */}
     </Card>
   );
 };
