@@ -18,12 +18,12 @@ const Layout = ({ children }: Props) => {
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <SidebarProvider defaultOpen={cookies[SIDEBAR_COOKIE_NAME]}>
         <AppSidebar />
-        <main className="p-3 w-full">
-          <div className="flex items-center justify-between">
+        <main className="w-full">
+          <div className="flex items-center justify-between sticky top-0 p-3 backdrop-blur-xl">
             <SidebarTrigger />
             <DarkModeToggle />
           </div>
-          {children}
+          <div className="p-3 pt-3">{children}</div>
         </main>
       </SidebarProvider>
     </ThemeProvider>
