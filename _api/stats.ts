@@ -4,7 +4,7 @@ import { doRequest } from './_utils/garage61';
 export const edge = true;
 
 export const headers = {
-  'Cache-Control': 'public, s-maxage=1',
+  'Cache-Control': 'public, s-maxage=30',
   'CDN-Cache-Control': 'public, s-maxage=3600',
 };
 
