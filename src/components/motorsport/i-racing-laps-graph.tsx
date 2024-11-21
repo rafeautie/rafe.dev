@@ -17,7 +17,7 @@ import {
 import { Bar, BarChart, CartesianGrid, XAxis } from 'recharts';
 import { DateTime } from 'luxon';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
-import { dateTimeFrom } from '@/lib/motorsport';
+import { dateTimeFrom } from '@/lib/time';
 import { Skeleton } from '../ui/skeleton';
 import { useIRacingStats } from '@/hooks/use-iracing-stats';
 

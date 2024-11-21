@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { H3, P } from '@/components/ui/typography';
-import { useYearsSince } from '@/hooks/use-years-since';
+import { getYearsSince } from '@/lib/time';
 import { createLazyFileRoute } from '@tanstack/react-router';
 
 export const Route = createLazyFileRoute('/motorsport')({
@@ -16,7 +16,7 @@ export const Route = createLazyFileRoute('/motorsport')({
 });
 
 function Motorsport() {
-  const yearsSimRacing = useYearsSince('14-08-2023');
+  const yearsSimRacing = getYearsSince('14-08-2023');
   return (
     <div className="mt-4 p-2">
       <H3>my interest in motorsports</H3>

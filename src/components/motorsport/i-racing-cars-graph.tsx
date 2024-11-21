@@ -18,7 +18,7 @@ import { Skeleton } from '../ui/skeleton';
 import { useIRacingStats } from '@/hooks/use-iracing-stats';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { CarItem } from 'shared/types';
-import { secondsToHours } from '@/lib/motorsport';
+import { secondsToHours } from '@/lib/time';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 type AggregateCarDataItem = {
