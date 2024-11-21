@@ -35,8 +35,7 @@ function Motorsport() {
         pedals and a 15nm direct drive wheel.
       </P>
       <P>
-        it has been {yearsSimRacing} {yearsSimRacing > 1 ? 'years' : 'year'} and
-        i have yet to look back.
+        it has been {yearsSimRacing} {yearsSimRacing > 1 ? 'years' : 'year'}
       </P>
       <Card className="mt-10 mb-5">
         <CardHeader>
