@@ -27,8 +27,8 @@ function Motorsport() {
       </P>
       <P>
         i got home and immediately bought a 5nm direct drive wheel that i could
-        clamp to my desk and signed up for a free iRacing subscription. from
-        then i spent many late nights and early mornings honing my craft.
+        clamp to my desk and signed up for a free iRacing subscription. i
+        practice all the time (see lap performance stats).
       </P>
       <P>
         i have since upgraded to an aluminum extrusion rig with heusinkveld
