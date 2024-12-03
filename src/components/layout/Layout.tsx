@@ -31,7 +31,7 @@ const Layout = ({ children }: Props) => {
             <SidebarTrigger />
             <DarkModeToggle />
           </div>
-          <div className="p-3 pt-0">{children}</div>
+          <div className="p-3">{children}</div>
         </main>
       </SidebarProvider>
     </ThemeProvider>

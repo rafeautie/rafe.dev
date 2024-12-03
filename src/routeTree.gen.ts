@@ -17,7 +17,7 @@ import { Route as rootRoute } from './routes/__root'
 // Create Virtual Routes
 
 const WorkLazyImport = createFileRoute('/work')()
-const MotorsportLazyImport = createFileRoute('/motorsport')()
+const IracingLazyImport = createFileRoute('/iracing')()
 const IndexLazyImport = createFileRoute('/')()
 
 // Create/Update Routes
@@ -28,11 +28,11 @@ const WorkLazyRoute = WorkLazyImport.update({
   getParentRoute: () => rootRoute,
 } as any).lazy(() => import('./routes/work.lazy').then((d) => d.Route))
 
-const MotorsportLazyRoute = MotorsportLazyImport.update({
-  id: '/motorsport',
-  path: '/motorsport',
+const IracingLazyRoute = IracingLazyImport.update({
+  id: '/iracing',
+  path: '/iracing',
   getParentRoute: () => rootRoute,
-} as any).lazy(() => import('./routes/motorsport.lazy').then((d) => d.Route))
+} as any).lazy(() => import('./routes/iracing.lazy').then((d) => d.Route))
 
 const IndexLazyRoute = IndexLazyImport.update({
   id: '/',
@@ -51,11 +51,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexLazyImport
       parentRoute: typeof rootRoute
     }
-    '/motorsport': {
-      id: '/motorsport'
-      path: '/motorsport'
-      fullPath: '/motorsport'
-      preLoaderRoute: typeof MotorsportLazyImport
+    '/iracing': {
+      id: '/iracing'
+      path: '/iracing'
+      fullPath: '/iracing'
+      preLoaderRoute: typeof IracingLazyImport
       parentRoute: typeof rootRoute
     }
     '/work': {
@@ -72,41 +72,41 @@ declare module '@tanstack/react-router' {
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexLazyRoute
-  '/motorsport': typeof MotorsportLazyRoute
+  '/iracing': typeof IracingLazyRoute
   '/work': typeof WorkLazyRoute
 }
 
 export interface FileRoutesByTo {
   '/': typeof IndexLazyRoute
-  '/motorsport': typeof MotorsportLazyRoute
+  '/iracing': typeof IracingLazyRoute
   '/work': typeof WorkLazyRoute
 }
 
 export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexLazyRoute
-  '/motorsport': typeof MotorsportLazyRoute
+  '/iracing': typeof IracingLazyRoute
   '/work': typeof WorkLazyRoute
 }
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/motorsport' | '/work'
+  fullPaths: '/' | '/iracing' | '/work'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/motorsport' | '/work'
-  id: '__root__' | '/' | '/motorsport' | '/work'
+  to: '/' | '/iracing' | '/work'
+  id: '__root__' | '/' | '/iracing' | '/work'
   fileRoutesById: FileRoutesById
 }
 
 export interface RootRouteChildren {
   IndexLazyRoute: typeof IndexLazyRoute
-  MotorsportLazyRoute: typeof MotorsportLazyRoute
+  IracingLazyRoute: typeof IracingLazyRoute
   WorkLazyRoute: typeof WorkLazyRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexLazyRoute: IndexLazyRoute,
-  MotorsportLazyRoute: MotorsportLazyRoute,
+  IracingLazyRoute: IracingLazyRoute,
   WorkLazyRoute: WorkLazyRoute,
 }
 
@@ -121,15 +121,15 @@ export const routeTree = rootRoute
       "filePath": "__root.tsx",
       "children": [
         "/",
-        "/motorsport",
+        "/iracing",
         "/work"
       ]
     },
     "/": {
       "filePath": "index.lazy.tsx"
     },
-    "/motorsport": {
-      "filePath": "motorsport.lazy.tsx"
+    "/iracing": {
+      "filePath": "iracing.lazy.tsx"
     },
     "/work": {
       "filePath": "work.lazy.tsx"

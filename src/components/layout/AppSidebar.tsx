@@ -33,8 +33,8 @@ const items: NavigationItem[] = [
     icon: Code,
   },
   {
-    title: 'Motorsport',
-    url: '/motorsport',
+    title: 'iRacing',
+    url: '/iracing',
     icon: CarFront,
   },
 ];
