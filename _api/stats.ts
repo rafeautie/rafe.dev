@@ -1,5 +1,5 @@
 import { Cars, CarsAndTracksByID, DrivingStats, Tracks } from '../shared/types';
-import { doRequest } from './_utils/garage61';
+import { doRequest } from './_utils/_garage61';
 
 export const edge = true;
 
@@ -8,7 +8,24 @@ export const headers = {
   'CDN-Cache-Control': 'public, s-maxage=3600',
 };
 
-export const GET = async (_request: Request) => {
+export const GET = async () => {
+  const { drivingStatistics, carsDriven, tracksDriven } = await getController();
+
+  return new Response(
+    JSON.stringify({
+      drivingStatistics,
+      carsDriven,
+      tracksDriven,
+    }),
+    {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+};
+
+export const getController = async () => {
   const [stats, cars, tracks] = await Promise.all([
     doRequest<DrivingStats>({ endpoint: 'me/statistics' }),
     doRequest<Cars>({ endpoint: 'cars' }),
@@ -33,18 +50,11 @@ export const GET = async (_request: Request) => {
     tracks.items
   );
 
-  return new Response(
-    JSON.stringify({
-      drivingStatistics: stats.drivingStatistics,
-      carsDriven,
-      tracksDriven,
-    }),
-    {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    }
-  );
+  return {
+    drivingStatistics: stats.drivingStatistics,
+    carsDriven,
+    tracksDriven,
+  };
 };
 
 /**

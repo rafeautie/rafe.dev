@@ -7,10 +7,11 @@
     "node": "20.18.0"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently \"vite\" \"npm run api\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "api": "node --import tsx _api/_localServer.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",
@@ -24,6 +25,7 @@
     "@tanstack/react-router": "^1.82.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
+    "express": "^4.21.2",
     "lodash": "^4.17.21",
     "lucide-react": "^0.460.0",
     "luxon": "^3.5.0",
@@ -41,6 +43,8 @@
     "@eslint/js": "^9.13.0",
     "@tanstack/router-devtools": "^1.82.0",
     "@tanstack/router-plugin": "^1.81.9",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
     "@types/lodash": "^4.17.13",
     "@types/luxon": "^3.4.2",
     "@types/node": "^22.9.0",
@@ -48,8 +52,11 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
     "eslint": "^9.13.0",
-    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.14",
     "globals": "^15.11.0",
