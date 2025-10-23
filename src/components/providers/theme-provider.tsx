@@ -1,93 +1,33 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-} from 'react'
+import { useRouter } from '@tanstack/react-router'
+import { createContext, use, useMemo } from 'react'
+import type { PropsWithChildren } from 'react'
+import type { T as Theme } from '@/lib/theme'
+import { setThemeServerFn } from '@/lib/theme'
 
-type Theme = 'dark' | 'light' | 'system'
+type ThemeContextVal = { theme: Theme; setTheme: (val: Theme) => void }
+type Props = PropsWithChildren<{ theme: Theme }>
 
-type ThemeProviderProps = {
-  children: React.ReactNode
-  defaultTheme?: Theme
-  storageKey?: string
-}
+const ThemeContext = createContext<ThemeContextVal | null>(null)
 
-type ThemeProviderState = {
-  theme: Theme
-  setTheme: (theme: Theme) => void
-}
+export function ThemeProvider({ children, theme }: Props) {
+  const router = useRouter()
 
-const initialState: ThemeProviderState = {
-  theme: 'system',
-  setTheme: () => null,
-}
-
-const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
-
-export function ThemeProvider({
-  children,
-  defaultTheme = 'system',
-  storageKey = 'vite-ui-theme',
-  ...props
-}: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof window === 'undefined') {
-      return defaultTheme
-    }
-
-    const storedTheme = window.localStorage.getItem(storageKey) as Theme | null
-
-    return storedTheme ?? defaultTheme
-  })
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    const root = window.document.documentElement
-
-    root.classList.remove('light', 'dark')
-
-    if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
-        .matches
-        ? 'dark'
-        : 'light'
-
-      root.classList.add(systemTheme)
-      return
-    }
-
-    root.classList.add(theme)
-  }, [theme])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    window.localStorage.setItem(storageKey, theme)
-  }, [storageKey, theme])
-
-  const setTheme = useCallback((nextTheme: Theme) => {
-    setThemeState(nextTheme)
-  }, [])
-
-  const value = {
-    theme,
-    setTheme,
-  }
-
-  return (
-    <ThemeProviderContext.Provider {...props} value={value}>
-      {children}
-    </ThemeProviderContext.Provider>
+  const contextValue = useMemo(
+    () => ({
+      theme,
+      setTheme: async (value: Theme) => {
+        await setThemeServerFn({ data: value })
+        await router.invalidate()
+      },
+    }),
+    [theme],
   )
+
+  return <ThemeContext value={contextValue}>{children}</ThemeContext>
 }
 
-export const useTheme = () => {
-  return useContext(ThemeProviderContext)
+export function useTheme() {
+  const val = use(ThemeContext)
+  if (!val) throw new Error('useTheme called outside of ThemeProvider!')
+  return val
 }

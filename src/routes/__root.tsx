@@ -14,6 +14,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { ThemeProvider } from '@/components/providers/theme-provider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import AppSidebar from '@/components/app-sidebar'
+import { getThemeServerFn } from '@/lib/theme'
 
 interface MyRouterContext {
   queryClient: QueryClient
@@ -44,18 +45,19 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       },
     ],
   }),
-
+  loader: () => getThemeServerFn(),
   shellComponent: RootDocument,
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const theme = Route.useLoaderData()
   return (
-    <html lang="en">
+    <html lang="en" className={theme}>
       <head>
         <HeadContent />
       </head>
       <body>
-        <ThemeProvider defaultTheme="dark" storageKey="ui-theme">
+        <ThemeProvider theme={theme}>
           <SidebarProvider>
             <AppSidebar />
             <SidebarInset>{children}</SidebarInset>

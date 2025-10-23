@@ -8,7 +8,7 @@ interface InsetHeaderProps {
 
 const InsetHeader = ({ containerRef, title }: InsetHeaderProps) => {
   return (
-    <div className="grid grid-cols-[1fr_auto_1fr] items-center p-3">
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center p-3 backdrop-blur-sm sticky top-0 z-50 rounded-t-lg">
       <div className="justify-self-start">
         <SidebarTrigger />
       </div>

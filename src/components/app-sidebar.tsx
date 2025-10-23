@@ -1,4 +1,4 @@
-import { Calendar, Home, Inbox, Search, Settings } from 'lucide-react'
+import { CircleGaugeIcon, HomeIcon, MailIcon } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
@@ -14,28 +14,18 @@ import {
 const items = [
   {
     title: 'Home',
-    url: '#',
-    icon: Home,
+    url: '/',
+    icon: HomeIcon,
   },
   {
-    title: 'Inbox',
-    url: '#',
-    icon: Inbox,
+    title: 'Contact',
+    url: '#contact',
+    icon: MailIcon,
   },
   {
-    title: 'Calendar',
-    url: '#',
-    icon: Calendar,
-  },
-  {
-    title: 'Search',
-    url: '#',
-    icon: Search,
-  },
-  {
-    title: 'Settings',
-    url: '#',
-    icon: Settings,
+    title: 'iRacing Stats',
+    url: '/iracing',
+    icon: CircleGaugeIcon,
   },
 ]
 
