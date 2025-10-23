@@ -11,6 +11,7 @@ import InsetHeader from '@/components/inset-header'
 
 import TextRotate from '@/components/fancy/text/text-rotate'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import ContactForm from '@/components/contact-form'
 
 export const Route = createFileRoute('/')({
   component: App,
@@ -119,6 +120,7 @@ function App() {
               development partner, let’s talk about your next project.
             </p>
           </div>
+          <ContactForm />
         </div>
       </div>
     </div>
