@@ -100,7 +100,7 @@ const ContactForm = () => {
             />
             <Button type="submit" disabled={isPending}>
               {isPending ? <Spinner /> : null}
-              Submit
+              Send
             </Button>
           </form>
         </Form>

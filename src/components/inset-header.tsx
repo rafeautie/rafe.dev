@@ -13,7 +13,7 @@ const InsetHeader = ({ containerRef, title }: InsetHeaderProps) => {
         <SidebarTrigger />
       </div>
       <VariableFontCursorProximity
-        className="text-2xl md:text-3xl justify-self-center text-center"
+        className="text-2xl md:text-3xl justify-self-center text-center font-[100]"
         fromFontVariationSettings="'wght' 100, 'slnt' 0"
         toFontVariationSettings="'wght' 900, 'slnt' -10"
         falloff="exponential"

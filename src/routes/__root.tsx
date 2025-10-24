@@ -17,6 +17,7 @@ import AppSidebar from '@/components/app-sidebar'
 import { getThemeServerFn } from '@/lib/theme'
 import { Toaster } from '@/components/ui/sonner'
 import { getSidebarStateServerFn } from '@/lib/sidebar'
+import { cn } from '@/lib/utils'
 
 interface MyRouterContext {
   queryClient: QueryClient
@@ -63,7 +64,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 function RootDocument({ children }: { children: React.ReactNode }) {
   const { theme, sidebarState } = Route.useLoaderData()
   return (
-    <html lang="en" className={theme}>
+    <html lang="en" className={cn(theme, 'overflow-hidden')}>
       <head>
         <HeadContent />
         <link

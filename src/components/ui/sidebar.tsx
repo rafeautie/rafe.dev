@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Slot } from '@radix-ui/react-slot'
 import { cva } from 'class-variance-authority'
 import { PanelLeftIcon } from 'lucide-react'
+import { useLocation } from '@tanstack/react-router'
 import type { VariantProps } from 'class-variance-authority'
 
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -302,10 +303,32 @@ function SidebarRail({ className, ...props }: React.ComponentProps<'button'>) {
 }
 
 function SidebarInset({ className, ...props }: React.ComponentProps<'main'>) {
+  const mainRef = React.useRef<HTMLDivElement>(null)
+  const location = useLocation()
+
+  React.useEffect(() => {
+    if (!mainRef.current) {
+      return
+    }
+
+    switch (location.hash) {
+      case '':
+        mainRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+        break
+      case 'contact':
+        mainRef.current.scrollTo({ top: 1000, behavior: 'smooth' })
+        break
+      default:
+    }
+  }, [location.hash])
+
   return (
     <main
+      ref={mainRef}
       data-slot="sidebar-inset"
       className={cn(
+        'scroll-smooth',
+        'max-h-lvh md:max-h-[calc(100vh-16px)] [&::-webkit-scrollbar]:w-0 overflow-y-auto',
         'bg-background relative flex w-full flex-1 flex-col',
         'md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2',
         className,

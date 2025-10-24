@@ -48,7 +48,7 @@ function App() {
   const containerRef = useRef<HTMLDivElement>(null)
 
   return (
-    <div ref={containerRef}>
+    <div className="" ref={containerRef}>
       <InsetHeader containerRef={containerRef} title="rafe.dev" />
       <div className="flex justify-center items-center">
         <div
@@ -57,7 +57,7 @@ function App() {
         >
           <div className="flex flex-col justify-between items-center gap-8 text-center">
             <LayoutGroup>
-              <motion.p
+              <motion.span
                 className="flex whitespace-pre text-lg md:text-2xl"
                 layout
               >
@@ -80,7 +80,7 @@ function App() {
                   transition={{ type: 'spring', damping: 30, stiffness: 400 }}
                   rotationInterval={3000}
                 />
-              </motion.p>
+              </motion.span>
             </LayoutGroup>
             <p className="text-accent-foreground font-extralight">
               I partner with small to medium sized businesses to design, build,
