@@ -1,5 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useRef } from 'react'
+import { createFileRoute, useLocation } from '@tanstack/react-router'
+import { useEffect, useRef } from 'react'
 import { LayoutGroup, motion } from 'motion/react'
 import {
   BookOpenTextIcon,
@@ -46,9 +46,22 @@ const ServicesConfig = [
 
 function App() {
   const containerRef = useRef<HTMLDivElement>(null)
+  const location = useLocation()
+
+  useEffect(() => {
+    switch (location.hash) {
+      case '':
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        break
+      case 'contact':
+        window.scrollTo({ top: 100_000, behavior: 'smooth' })
+        break
+      default:
+    }
+  }, [location.hash])
 
   return (
-    <div className="" ref={containerRef}>
+    <div ref={containerRef}>
       <InsetHeader containerRef={containerRef} title="rafe.dev" />
       <div className="flex justify-center items-center">
         <div

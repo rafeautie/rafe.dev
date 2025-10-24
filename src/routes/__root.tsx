@@ -63,8 +63,9 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   const { theme, sidebarState } = Route.useLoaderData()
+
   return (
-    <html lang="en" className={cn(theme, 'overflow-hidden')}>
+    <html lang="en" className={cn(theme)}>
       <head>
         <HeadContent />
         <link

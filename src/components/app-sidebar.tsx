@@ -31,7 +31,7 @@ const items = [
 
 const AppSidebar = () => {
   return (
-    <Sidebar collapsible="icon" variant="inset">
+    <Sidebar collapsible="offcanvas" variant="inset">
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
