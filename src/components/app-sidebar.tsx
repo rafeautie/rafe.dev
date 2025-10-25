@@ -1,4 +1,4 @@
-import { HomeIcon, MailIcon } from 'lucide-react'
+import { HomeIcon, MailIcon, VectorSquareIcon } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
@@ -23,8 +23,13 @@ const items = [
   //   icon: CircleGaugeIcon,
   // },
   {
+    title: 'Livery',
+    url: '/livery',
+    icon: VectorSquareIcon,
+  },
+  {
     title: 'Contact',
-    url: '#contact',
+    url: '/#contact',
     icon: MailIcon,
   },
 ]
