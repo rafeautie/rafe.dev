@@ -6,7 +6,7 @@ import {
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 
-import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
+import { ReactQueryDevtoolsPanel } from '@tanstack/react-query-devtools'
 
 import appCss from '../styles.css?url'
 
@@ -18,6 +18,7 @@ import { getThemeServerFn } from '@/lib/theme'
 import { Toaster } from '@/components/ui/sonner'
 import { getSidebarStateServerFn } from '@/lib/sidebar'
 import { cn } from '@/lib/utils'
+import TanstackStoreDevtoolPanel from '@/devtools/store-devtools/store-devtool-panel'
 
 interface MyRouterContext {
   queryClient: QueryClient
@@ -84,20 +85,25 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           </SidebarProvider>
         </ThemeProvider>
 
-        {import.meta.env.DEV && (
-          <TanStackDevtools
-            config={{
-              position: 'bottom-right',
-            }}
-            plugins={[
-              {
-                name: 'Tanstack Router',
-                render: <TanStackRouterDevtoolsPanel />,
-              },
-              TanStackQueryDevtools,
-            ]}
-          />
-        )}
+        <TanStackDevtools
+          config={{
+            position: 'bottom-left',
+          }}
+          plugins={[
+            {
+              name: 'Tanstack Router',
+              render: <TanStackRouterDevtoolsPanel />,
+            },
+            {
+              name: 'Tanstack Query',
+              render: <ReactQueryDevtoolsPanel />,
+            },
+            {
+              name: 'Tanstack Store',
+              render: <TanstackStoreDevtoolPanel />,
+            },
+          ]}
+        />
 
         <Scripts />
       </body>

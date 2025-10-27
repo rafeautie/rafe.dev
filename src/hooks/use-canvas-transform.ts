@@ -7,6 +7,7 @@ import {
   MIN_SCALE,
   PANNING_ENABLED,
   SCALE_BY,
+  STAGE_REF,
   ZOOM_ENABLED,
 } from '../constants/canvas'
 import type Konva from 'konva'
@@ -20,7 +21,6 @@ export type CanvasTransform = {
 }
 
 export type UseCanvasTransformArgs = {
-  stageRef: React.RefObject<Konva.Stage | null>
   width: number
   height: number
   minScale?: number
@@ -44,7 +44,6 @@ const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max)
 
 export const useCanvasTransform = ({
-  stageRef,
   width,
   height,
   minScale = MIN_SCALE,
@@ -68,7 +67,7 @@ export const useCanvasTransform = ({
   const lastCommitRef = useRef<number>(0)
 
   const commit = useCallback(() => {
-    const stage = stageRef.current
+    const stage = STAGE_REF.current
     const { scale, position } = storeRef.current.transform
 
     if (stage) {
@@ -78,7 +77,7 @@ export const useCanvasTransform = ({
     }
 
     storeRef.current.listeners.forEach((listener) => listener())
-  }, [stageRef])
+  }, [])
 
   const scheduleCommit = useCallback(() => {
     if (rafRef.current !== null) {
@@ -135,13 +134,14 @@ export const useCanvasTransform = ({
 
   const applyZoom = useCallback(
     (event: Konva.KonvaEventObject<WheelEvent>) => {
+      const stage = STAGE_REF.current
+
       if (!enableZoom) {
         return
       }
 
       event.evt.preventDefault()
 
-      const stage = stageRef.current
       if (!stage) {
         return
       }
@@ -177,7 +177,7 @@ export const useCanvasTransform = ({
         }
       })
     },
-    [enableZoom, maxScale, minScale, scaleBy, setTransform, stageRef],
+    [enableZoom, maxScale, minScale, scaleBy, setTransform],
   )
 
   const updatePan = useCallback(
@@ -209,20 +209,11 @@ export const useCanvasTransform = ({
 
   const handlePointerDown = useCallback(
     (event: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
-      if (!enablePan) {
+      const stage = STAGE_REF.current
+
+      if (!enablePan || !stage || event.target !== stage) {
         return
       }
-
-      const stage = stageRef.current
-      if (!stage) {
-        return
-      }
-
-      if (event.target !== stage) {
-        return
-      }
-
-      event.evt.preventDefault()
 
       const pointer = stage.getPointerPosition()
       if (!pointer) {
@@ -234,11 +225,13 @@ export const useCanvasTransform = ({
         lastPointer: pointer,
       }
     },
-    [enablePan, stageRef],
+    [enablePan],
   )
 
   const handlePointerMove = useCallback(
     (event: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
+      const stage = STAGE_REF.current
+
       if (!enablePan) {
         return
       }
@@ -249,7 +242,6 @@ export const useCanvasTransform = ({
 
       event.evt.preventDefault()
 
-      const stage = stageRef.current
       if (!stage) {
         return
       }
@@ -261,7 +253,7 @@ export const useCanvasTransform = ({
 
       updatePan(pointer)
     },
-    [enablePan, stageRef, updatePan],
+    [enablePan, updatePan],
   )
 
   const resetPanState = useCallback(() => {
@@ -280,6 +272,7 @@ export const useCanvasTransform = ({
       if (panStateRef.current.isDragging) {
         event.evt.preventDefault()
       }
+
       resetPanState()
     },
     [enablePan, resetPanState],

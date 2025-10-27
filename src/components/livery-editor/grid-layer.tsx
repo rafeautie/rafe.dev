@@ -1,36 +1,21 @@
-import { memo, useEffect, useRef } from 'react'
+import { memo } from 'react'
 import { Layer, Shape } from 'react-konva'
-import type Konva from 'konva'
-
 import type { GridDot } from '../../hooks/use-grid-dots'
+import { GRID_COLOR, GRID_DOT_RADIUS, GRID_REF } from '@/constants/canvas'
 
 export type GridLayerProps = {
   dots: Array<GridDot>
-  color: string
-  radius: number
 }
 
-const GridLayerComponent = ({ dots, color, radius }: GridLayerProps) => {
-  const shapeRef = useRef<Konva.Shape | null>(null)
-
-  useEffect(() => {
-    const layer = shapeRef.current?.getLayer()
-    layer?.batchDraw()
-  }, [color, dots, radius])
-
+const GridLayerComponent = ({ dots }: GridLayerProps) => {
   return (
-    <Layer
-      listening={false}
-      hitGraphEnabled={false}
-      shadowForStrokeEnabled={false}
-    >
+    <Layer listening={false} shadowForStrokeEnabled={false} ref={GRID_REF}>
       <Shape
-        ref={shapeRef}
         listening={false}
         perfectDrawEnabled={false}
         shadowForStrokeEnabled={false}
         hitStrokeWidth={0}
-        fill={color}
+        fill={GRID_COLOR}
         sceneFunc={(ctx, shape) => {
           if (dots.length === 0) {
             return
@@ -39,8 +24,8 @@ const GridLayerComponent = ({ dots, color, radius }: GridLayerProps) => {
           ctx.beginPath()
 
           for (const dot of dots) {
-            ctx.moveTo(dot.x + radius, dot.y)
-            ctx.arc(dot.x, dot.y, radius, 0, Math.PI * 2)
+            ctx.moveTo(dot.x + GRID_DOT_RADIUS, dot.y)
+            ctx.arc(dot.x, dot.y, GRID_DOT_RADIUS, 0, Math.PI * 2)
           }
 
           ctx.fillStrokeShape(shape)

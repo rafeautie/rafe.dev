@@ -1,23 +1,22 @@
-import { useRef } from 'react'
-import { Layer, Rect, Stage } from 'react-konva'
+import { Stage } from 'react-konva'
 import { useMeasure } from 'react-use'
 
 import {
-  GRID_COLOR,
-  GRID_DOT_RADIUS,
   GRID_SPACING,
   MAX_SCALE,
   MIN_SCALE,
   SCALE_BY,
+  STAGE_REF,
 } from '../../constants/canvas'
 import { useCanvasTransform } from '../../hooks/use-canvas-transform'
 import { useGridDots } from '../../hooks/use-grid-dots'
 import { GridLayer } from './grid-layer'
-import type Konva from 'konva'
+import ShapeControls from './shape-controls'
+import ShapeLayer from './shape-layer'
+import { EditorContextMenu } from './context-menu'
 
 const EditorCanvas = () => {
   const [ref, { width, height }] = useMeasure<HTMLDivElement>()
-  const stageRef = useRef<Konva.Stage | null>(null)
 
   const {
     transform,
@@ -27,7 +26,6 @@ const EditorCanvas = () => {
     handlePointerUp,
     handlePointerLeave,
   } = useCanvasTransform({
-    stageRef,
     width: width || 0,
     height: height || 0,
     minScale: MIN_SCALE,
@@ -45,23 +43,26 @@ const EditorCanvas = () => {
   return (
     <div
       ref={ref}
-      className="absolute top-0 left-0 right-0 bottom-0 h-[calc(100vh-16px)] w-full rounded-lg overflow-hidden bg-neutral-900 border-4"
+      className="absolute top-0 left-0 right-0 bottom-0 h-[calc(100vh-16px)] w-full rounded-lg overflow-hidden bg-neutral-900 border-2 border-blue-500"
     >
-      <Stage
-        ref={stageRef}
-        width={width || 0}
-        height={height || 0}
-        onWheel={handleWheel}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerLeave}
-      >
-        <GridLayer dots={dots} color={GRID_COLOR} radius={GRID_DOT_RADIUS} />
-        <Layer>
-          <Rect x={20} y={60} width={65} height={65} fill="red" draggable />
-        </Layer>
-      </Stage>
+      <EditorContextMenu>
+        <Stage
+          ref={STAGE_REF}
+          width={width || 0}
+          height={height || 0}
+          onWheel={handleWheel}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={handlePointerLeave}
+        >
+          <GridLayer dots={dots} />
+          <ShapeLayer />
+        </Stage>
+        <div className="absolute top-[80px] left-0 right-0 flex justify-center pointer-events-none">
+          <ShapeControls />
+        </div>
+      </EditorContextMenu>
     </div>
   )
 }
