@@ -14,4 +14,3 @@ export const ZOOM_ENABLED = true
 export const DRAG_DEBOUNCE_MS = 8
 export const TRANSFORMER_REF = createRef<Konva.Transformer>()
 export const STAGE_REF = createRef<Konva.Stage>()
-export const GRID_REF = createRef<Konva.Layer>()

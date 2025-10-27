@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { Layer, Shape } from 'react-konva'
 import type { GridDot } from '../../hooks/use-grid-dots'
-import { GRID_COLOR, GRID_DOT_RADIUS, GRID_REF } from '@/constants/canvas'
+import { GRID_COLOR, GRID_DOT_RADIUS } from '@/constants/canvas'
 
 export type GridLayerProps = {
   dots: Array<GridDot>
@@ -9,7 +9,7 @@ export type GridLayerProps = {
 
 const GridLayerComponent = ({ dots }: GridLayerProps) => {
   return (
-    <Layer listening={false} shadowForStrokeEnabled={false} ref={GRID_REF}>
+    <Layer listening={false} shadowForStrokeEnabled={false}>
       <Shape
         listening={false}
         perfectDrawEnabled={false}

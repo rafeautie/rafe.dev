@@ -3,7 +3,13 @@ import { useCallback, useEffect } from 'react'
 import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import type { SupportedShapes } from '@/state/livery-editor-store'
-import { updateShape, useLiveryEditorStore } from '@/state/livery-editor-store'
+import {
+  clearSelectedShapes,
+  deselectShape,
+  selectShape,
+  updateShape,
+  useLiveryEditorStore,
+} from '@/state/livery-editor-store'
 import { STAGE_REF, TRANSFORMER_REF } from '@/constants/canvas'
 
 const ShapeLayer = () => {
@@ -20,6 +26,12 @@ const ShapeLayer = () => {
         return
       }
 
+      if (e.target === stage) {
+        transformer.nodes([])
+        clearSelectedShapes()
+        return
+      }
+
       const metaPressed = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey
       const isSelected = transformer.nodes().indexOf(e.target) >= 0
 
@@ -27,6 +39,7 @@ const ShapeLayer = () => {
         // if no key pressed and the node is not selected
         // select just one
         transformer.nodes([e.target])
+        selectShape(e.target.attrs.id)
       } else if (metaPressed && isSelected) {
         // if we pressed keys and node was selected
         // we need to remove it from selection:
@@ -34,10 +47,12 @@ const ShapeLayer = () => {
         // remove node from array
         nodes.splice(nodes.indexOf(e.target), 1)
         transformer.nodes(nodes)
+        deselectShape(e.target.attrs.id)
       } else if (metaPressed && !isSelected) {
         // add the node into selection
         const nodes = transformer.nodes().concat([e.target])
         transformer.nodes(nodes)
+        selectShape(e.target.attrs.id)
       }
     }
 

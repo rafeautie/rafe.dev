@@ -14,10 +14,12 @@ export type SupportedShapes = { id?: string } & (
 
 export interface LiveryEditorState {
   shapes: Array<SupportedShapes>
+  selectedShapeIds: Array<string>
 }
 
 export const liveryEditorStore = new Store<LiveryEditorState>({
   shapes: [],
+  selectedShapeIds: [],
 })
 
 DevtoolsStoreEventClient.emit('register-store', {
@@ -78,10 +80,30 @@ export const updateShape = (id: string, shapeUpdates: SupportedShapes) => {
 }
 
 export const deleteSelectedShapes = () => {
-  const nodes = TRANSFORMER_REF.current?.getNodes()
-  const idsToDelete = nodes?.map((n) => n.attrs.id)
   updateStoreWithMutative((draft) => {
-    draft.shapes = draft.shapes.filter((s) => !idsToDelete?.includes(s.id))
+    draft.shapes = draft.shapes.filter(
+      (s) => !draft.selectedShapeIds.includes(s.id!),
+    )
   })
   TRANSFORMER_REF.current?.setNodes([])
+}
+
+export const selectShape = (id: string) => {
+  updateStoreWithMutative((draft) => {
+    if (!draft.selectedShapeIds.includes(id)) {
+      draft.selectedShapeIds.push(id)
+    }
+  })
+}
+
+export const deselectShape = (id: string) => {
+  updateStoreWithMutative((draft) => {
+    draft.selectedShapeIds = draft.selectedShapeIds.filter((sid) => sid !== id)
+  })
+}
+
+export const clearSelectedShapes = () => {
+  updateStoreWithMutative((draft) => {
+    draft.selectedShapeIds = []
+  })
 }
