@@ -1,6 +1,7 @@
 import { Stage } from 'react-konva'
 import { useMeasure } from 'react-use'
 
+import { useCallback } from 'react'
 import {
   GRID_SPACING,
   MAX_SCALE,
@@ -15,6 +16,11 @@ import ShapeControls from './shape-controls'
 import ShapeLayer from './shape-layer'
 import { EditorContextMenu } from './context-menu'
 import { ShapePropertiesPanel } from './shape-properties-panel'
+import type { KonvaEventObject, Node, NodeConfig } from 'konva/lib/Node'
+import {
+  selectShape,
+  setContextMenuPosition,
+} from '@/state/livery-editor-store'
 
 const EditorCanvas = () => {
   const [ref, { width, height }] = useMeasure<HTMLDivElement>()
@@ -41,6 +47,23 @@ const EditorCanvas = () => {
     spacing: GRID_SPACING,
   })
 
+  const onContextMenu = useCallback(
+    (event: KonvaEventObject<PointerEvent, Node<NodeConfig>>) => {
+      const shape = event.target.id()
+      const pointerPosition = STAGE_REF.current?.getRelativePointerPosition()
+
+      if (shape) {
+        selectShape(shape)
+      }
+
+      setContextMenuPosition({
+        x: pointerPosition?.x ?? 0,
+        y: pointerPosition?.y ?? 0,
+      })
+    },
+    [],
+  )
+
   return (
     <div
       ref={ref}
@@ -56,6 +79,7 @@ const EditorCanvas = () => {
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerLeave}
+          onContextMenu={onContextMenu}
         >
           <GridLayer dots={dots} />
           <ShapeLayer />

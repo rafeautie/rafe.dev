@@ -1,10 +1,10 @@
+import { StageMenu } from './stage-menu'
+import { ShapeMenu } from './shape-menu'
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuItem,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { deleteSelectedShapes } from '@/state/livery-editor-store'
 
 interface Props {
   children: React.ReactNode
@@ -15,9 +15,8 @@ export const EditorContextMenu = ({ children }: Props) => {
     <ContextMenu>
       <ContextMenuTrigger>{children}</ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem variant="destructive" onClick={deleteSelectedShapes}>
-          Delete
-        </ContextMenuItem>
+        <StageMenu />
+        <ShapeMenu />
       </ContextMenuContent>
     </ContextMenu>
   )

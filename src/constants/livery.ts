@@ -1,4 +1,6 @@
 import { createRef } from 'react'
+import { CircleIcon, SlashIcon, SquareIcon } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type Konva from 'konva'
 import type { LiveryShapeAttributes } from '@/types/livery'
 
@@ -15,6 +17,16 @@ export const ZOOM_ENABLED = true
 export const DRAG_DEBOUNCE_MS = 8
 export const TRANSFORMER_REF = createRef<Konva.Transformer>()
 export const STAGE_REF = createRef<Konva.Stage>()
+
+export const SUPPORTED_SHAPES: Array<{
+  type: 'Rect' | 'Circle' | 'Line'
+  label: string
+  icon: LucideIcon
+}> = [
+  { type: 'Rect', label: 'Rectangle', icon: SquareIcon },
+  { type: 'Circle', label: 'Circle', icon: CircleIcon },
+  { type: 'Line', label: 'Line', icon: SlashIcon },
+] as const
 
 export const SHAPE_ATTRIBUTE_CONFIG: {
   Base: LiveryShapeAttributes<Konva.Shape>

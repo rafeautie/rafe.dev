@@ -1,32 +1,20 @@
-import { CircleIcon, SlashIcon, SquareIcon } from 'lucide-react'
 import { ButtonGroup } from '../ui/button-group'
 import { Button } from '../ui/button'
 import { addShape } from '@/state/livery-editor-store'
+import { SUPPORTED_SHAPES } from '@/constants/livery'
 
 const ShapeControls = () => {
   return (
     <ButtonGroup className="pointer-events-auto self-end">
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={() => addShape({ type: 'Rect' })}
-      >
-        <SquareIcon />
-      </Button>
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={() => addShape({ type: 'Circle' })}
-      >
-        <CircleIcon />
-      </Button>
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={() => addShape({ type: 'Line' })}
-      >
-        <SlashIcon />
-      </Button>
+      {SUPPORTED_SHAPES.map(({ type, icon: Icon }) => (
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => addShape({ type })}
+        >
+          <Icon />
+        </Button>
+      ))}
     </ButtonGroup>
   )
 }

@@ -17,11 +17,13 @@ export type SupportedShapes = { id?: string } & (
 export interface LiveryEditorState {
   shapes: Array<SupportedShapes>
   selectedShapeIds: Array<string>
+  contextMenuPosition: { x: number; y: number } | null
 }
 
 export const liveryEditorStore = new Store<LiveryEditorState>({
   shapes: [],
   selectedShapeIds: [],
+  contextMenuPosition: null,
 })
 
 DevtoolsStoreEventClient.emit('register-store', {
@@ -50,8 +52,8 @@ const updateStoreWithMutative = (
 export const addShape = (shape: SupportedShapes) => {
   updateStoreWithMutative((draft) => {
     draft.shapes.push({
-      ...shape,
       ...getDefaultAttributesForShape(shape.type),
+      ...shape,
       draggable: true,
       id: crypto.randomUUID(),
     })
@@ -104,6 +106,14 @@ export const deselectShape = (id: string) => {
 export const clearSelectedShapes = () => {
   updateStoreWithMutative((draft) => {
     draft.selectedShapeIds = []
+  })
+}
+
+export const setContextMenuPosition = (
+  position: LiveryEditorState['contextMenuPosition'],
+) => {
+  updateStoreWithMutative((draft) => {
+    draft.contextMenuPosition = position
   })
 }
 
