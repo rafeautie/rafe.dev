@@ -5,25 +5,25 @@ import { addShape } from '@/state/livery-editor-store'
 
 const ShapeControls = () => {
   return (
-    <ButtonGroup className="pointer-events-auto">
+    <ButtonGroup className="pointer-events-auto self-end">
       <Button
         variant="outline"
         size="icon"
-        onClick={() => addShape({ type: 'rect' })}
+        onClick={() => addShape({ type: 'Rect' })}
       >
         <SquareIcon />
       </Button>
       <Button
         variant="outline"
         size="icon"
-        onClick={() => addShape({ type: 'circle' })}
+        onClick={() => addShape({ type: 'Circle' })}
       >
         <CircleIcon />
       </Button>
       <Button
         variant="outline"
         size="icon"
-        onClick={() => addShape({ type: 'line' })}
+        onClick={() => addShape({ type: 'Line' })}
       >
         <SlashIcon />
       </Button>

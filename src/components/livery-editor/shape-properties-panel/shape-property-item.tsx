@@ -1,0 +1,44 @@
+import { Label } from 'react-konva'
+import React from 'react'
+import { ConnectedColorPickerTrigger } from './connected-color-picker'
+import { ConnectedInput } from './connected-input'
+import { ConnectedSelect } from './connected-select'
+import { ConnectedCheckbox } from './connected-checkbox'
+import { ConnectedNumberList } from './connected-number-list'
+import { ConnectedPointList } from './connected-point-list'
+import type { SupportedShapes } from '@/state/livery-editor-store'
+import type { LiveryShapeAttributeItem } from '@/types/livery'
+import { camelToTitle } from '@/lib/utils'
+
+export type ShapeAttributeProps<T> = LiveryShapeAttributeItem<T> & {
+  shapeId: string
+  propKey: LiveryShapeAttributeItem<T>['key']
+}
+
+const ShapePropertyComponentMap: Record<
+  ShapeAttributeProps<any>['type'],
+  React.ComponentType<any>
+> = {
+  color: ConnectedColorPickerTrigger,
+  select: ConnectedSelect,
+  string: ConnectedInput,
+  number: ConnectedInput,
+  numberList: ConnectedNumberList,
+  pointList: ConnectedPointList,
+  boolean: ConnectedCheckbox,
+}
+
+export function ShapePropertyItem<T = SupportedShapes>(
+  props: ShapeAttributeProps<T>,
+) {
+  const Component = ShapePropertyComponentMap[props.type]
+
+  return (
+    <div className="flex justify-between items-center gap-4 overflow-x-visible">
+      <Label className="text-xs text-muted-foreground" htmlFor={props.propKey}>
+        {camelToTitle(props.propKey)}
+      </Label>
+      <Component {...props} />
+    </div>
+  )
+}

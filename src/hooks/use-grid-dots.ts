@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react'
 
-import { GRID_BUFFER_MULTIPLIER, GRID_SPACING } from '../constants/canvas'
+import { GRID_BUFFER_MULTIPLIER, GRID_SPACING } from '../constants/livery'
 import type { CanvasTransform } from './use-canvas-transform'
 
 export type GridDot = {

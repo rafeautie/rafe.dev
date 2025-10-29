@@ -9,7 +9,7 @@ import {
   SCALE_BY,
   STAGE_REF,
   ZOOM_ENABLED,
-} from '../constants/canvas'
+} from '../constants/livery'
 import type Konva from 'konva'
 
 export type CanvasTransform = {

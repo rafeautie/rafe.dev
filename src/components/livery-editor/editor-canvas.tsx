@@ -7,13 +7,14 @@ import {
   MIN_SCALE,
   SCALE_BY,
   STAGE_REF,
-} from '../../constants/canvas'
+} from '../../constants/livery'
 import { useCanvasTransform } from '../../hooks/use-canvas-transform'
 import { useGridDots } from '../../hooks/use-grid-dots'
 import { GridLayer } from './grid-layer'
 import ShapeControls from './shape-controls'
 import ShapeLayer from './shape-layer'
 import { EditorContextMenu } from './context-menu'
+import { ShapePropertiesPanel } from './shape-properties-panel'
 
 const EditorCanvas = () => {
   const [ref, { width, height }] = useMeasure<HTMLDivElement>()
@@ -59,8 +60,10 @@ const EditorCanvas = () => {
           <GridLayer dots={dots} />
           <ShapeLayer />
         </Stage>
-        <div className="absolute top-[80px] left-0 right-0 flex justify-center pointer-events-none">
+        <div className="grid grid-cols-[1fr_1fr_1fr] justify-items-center h-full absolute top-0 left-0 right-0 pointer-events-none py-5 px-5">
+          <div />
           <ShapeControls />
+          <ShapePropertiesPanel />
         </div>
       </EditorContextMenu>
     </div>

@@ -1,16 +1,15 @@
-import { Circle, Layer, Line, Rect, Transformer } from 'react-konva'
-import { useCallback, useEffect } from 'react'
+import { Layer, Transformer } from 'react-konva'
+import { useEffect } from 'react'
+import Shape from './shape'
 import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
-import type { SupportedShapes } from '@/state/livery-editor-store'
 import {
   clearSelectedShapes,
   deselectShape,
   selectShape,
-  updateShape,
   useLiveryEditorStore,
 } from '@/state/livery-editor-store'
-import { STAGE_REF, TRANSFORMER_REF } from '@/constants/canvas'
+import { STAGE_REF, TRANSFORMER_REF } from '@/constants/livery'
 
 const ShapeLayer = () => {
   const shapes = useLiveryEditorStore((state) => state.shapes)
@@ -39,6 +38,7 @@ const ShapeLayer = () => {
         // if no key pressed and the node is not selected
         // select just one
         transformer.nodes([e.target])
+        clearSelectedShapes()
         selectShape(e.target.attrs.id)
       } else if (metaPressed && isSelected) {
         // if we pressed keys and node was selected
@@ -78,54 +78,6 @@ const ShapeLayer = () => {
       />
     </Layer>
   )
-}
-
-const Shape = ({ type, ...attributes }: SupportedShapes) => {
-  const handleTransformEnd = useCallback(
-    (e: KonvaEventObject<Event>) => {
-      if (!attributes.id) {
-        console.warn('Shape id is not defined')
-        return
-      }
-
-      updateShape(attributes.id, e.currentTarget.attrs)
-    },
-    [attributes.id],
-  )
-
-  switch (type) {
-    case 'rect':
-      return (
-        <Rect
-          key={attributes.id}
-          {...attributes}
-          onTransformEnd={handleTransformEnd}
-          onDragEnd={handleTransformEnd}
-        />
-      )
-    case 'circle':
-      return (
-        <Circle
-          key={attributes.id}
-          {...attributes}
-          onTransformEnd={handleTransformEnd}
-          onDragEnd={handleTransformEnd}
-        />
-      )
-    case 'line':
-      return (
-        <Line
-          key={attributes.id}
-          {...attributes}
-          onTransformEnd={handleTransformEnd}
-          onDragEnd={handleTransformEnd}
-        />
-      )
-    default:
-      return null
-  }
-
-  return
 }
 
 export default ShapeLayer

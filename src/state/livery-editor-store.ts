@@ -2,14 +2,16 @@ import { useStore } from '@tanstack/react-store'
 import { Store } from '@tanstack/store'
 import { create } from 'mutative'
 import type Konva from 'konva'
+import type { PublicKeyOf } from '@/types/livery'
 import { DevtoolsStoreEventClient } from '@/devtools/store-devtools/store-event-client'
 import { getCallerName } from '@/lib/utils'
-import { TRANSFORMER_REF } from '@/constants/canvas'
+import { TRANSFORMER_REF } from '@/constants/livery'
+import { getDefaultAttributesForShape } from '@/lib/livery'
 
 export type SupportedShapes = { id?: string } & (
-  | (Konva.RectConfig & { type: 'rect' })
-  | (Konva.CircleConfig & { type: 'circle' })
-  | (Konva.LineConfig & { type: 'line' })
+  | (Konva.RectConfig & { type: 'Rect' })
+  | (Konva.CircleConfig & { type: 'Circle' })
+  | (Konva.LineConfig & { type: 'Line' })
 )
 
 export interface LiveryEditorState {
@@ -49,21 +51,17 @@ export const addShape = (shape: SupportedShapes) => {
   updateStoreWithMutative((draft) => {
     draft.shapes.push({
       ...shape,
-      width: shape.width ?? 100,
-      height: shape.height ?? 100,
-      points: shape.points ?? [0, 0, 100, 100, 150, 150],
-      fill: shape.fill ?? 'red',
-      stroke: shape.stroke ?? 'red',
-      radius: shape.radius ?? 50,
-      x: shape.x ?? 100,
-      y: shape.y ?? 100,
+      ...getDefaultAttributesForShape(shape.type),
       draggable: true,
       id: crypto.randomUUID(),
     })
   })
 }
 
-export const updateShape = (id: string, shapeUpdates: SupportedShapes) => {
+export const updateShape = (
+  id: string,
+  shapeUpdates: Partial<SupportedShapes>,
+) => {
   updateStoreWithMutative((draft) => {
     const shapeToUpdateIndex = draft.shapes.findIndex((s) => s.id === id)
 
@@ -84,6 +82,7 @@ export const deleteSelectedShapes = () => {
     draft.shapes = draft.shapes.filter(
       (s) => !draft.selectedShapeIds.includes(s.id!),
     )
+    draft.selectedShapeIds = []
   })
   TRANSFORMER_REF.current?.setNodes([])
 }
@@ -106,4 +105,21 @@ export const clearSelectedShapes = () => {
   updateStoreWithMutative((draft) => {
     draft.selectedShapeIds = []
   })
+}
+
+/**
+ * Selectors
+ */
+
+export const getShapeById = (state: LiveryEditorState, id: string) => {
+  return state.shapes.find((s) => s.id === id)
+}
+
+export const getShapeProperty = <T extends PublicKeyOf<SupportedShapes>>(
+  state: LiveryEditorState,
+  shapeId: string,
+  propKey: T,
+): SupportedShapes[T] | undefined => {
+  const shape = getShapeById(state, shapeId)
+  return shape ? (shape[propKey] as T) : undefined
 }
