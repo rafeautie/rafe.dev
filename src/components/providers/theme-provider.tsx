@@ -20,7 +20,7 @@ export function ThemeProvider({ children, theme }: Props) {
         await router.invalidate()
       },
     }),
-    [theme],
+    [router, theme],
   )
 
   return <ThemeContext value={contextValue}>{children}</ThemeContext>

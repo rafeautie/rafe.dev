@@ -4,7 +4,6 @@ import * as React from 'react'
 import { Slot } from '@radix-ui/react-slot'
 import { cva } from 'class-variance-authority'
 import { PanelLeftIcon } from 'lucide-react'
-import { useLocation } from '@tanstack/react-router'
 import type { VariantProps } from 'class-variance-authority'
 
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -83,12 +82,14 @@ function SidebarProvider({
       _setOpen(openState)
       setSidebarStateServerFn({ data: String(openState) as 'true' | 'false' })
     },
-    [setOpenProp, open],
+    [open],
   )
 
   // Helper to toggle the sidebar.
   const toggleSidebar = React.useCallback(() => {
-    return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open)
+    return isMobile
+      ? setOpenMobile((prevOpen) => !prevOpen)
+      : setOpen((prevOpen) => !prevOpen)
   }, [isMobile, setOpen, setOpenMobile])
 
   // Adds a keyboard shortcut to toggle the sidebar.
@@ -606,6 +607,7 @@ function SidebarMenuSkeleton({
 }) {
   // Random width between 50 to 90%.
   const width = React.useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity
     return `${Math.floor(Math.random() * 40) + 50}%`
   }, [])
 

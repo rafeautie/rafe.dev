@@ -1,4 +1,3 @@
-import { use } from 'react'
 import {
   ContextMenuItem,
   ContextMenuSub,
@@ -18,6 +17,7 @@ export const StageMenu = () => {
       <ContextMenuSubContent>
         {SUPPORTED_SHAPES.map(({ type, label, icon: Icon }) => (
           <ContextMenuItem
+            key={type + label}
             onClick={() => addShape({ type, ...contextMenuPosition })}
           >
             <Icon />

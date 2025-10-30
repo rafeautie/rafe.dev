@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/immutability */
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 
 import {

@@ -1,5 +1,5 @@
 import Color from 'color'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '../../popover'
 import { Button } from '../../button'
 import {
@@ -26,6 +26,7 @@ const ColorPickerTrigger = ({
 }: ColorPickerTriggerProps) => {
   const [triggerColor, setTriggerColor] = useState<string | null>(null)
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleColorChange = useCallback(
     throttle((color: ColorLike) => {
       console.log('Color changed to:', color)
@@ -39,14 +40,14 @@ const ColorPickerTrigger = ({
 
   const isDark = useMemo(
     () => Color(triggerColor ?? value).isDark(),
-    [triggerColor ?? value],
+    [triggerColor, value],
   )
 
   useEffect(() => {
     if (triggerColor == null && value != null) {
       setTriggerColor(value)
     }
-  }, [value])
+  }, [triggerColor, value])
 
   return (
     <Popover>

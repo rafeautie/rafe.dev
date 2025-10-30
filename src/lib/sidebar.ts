@@ -7,9 +7,9 @@ export type T = z.infer<typeof postThemeValidator>
 const storageKey = 'sidebar_state'
 
 export const getSidebarStateServerFn = createServerFn().handler(
-  async () => getCookie(storageKey) === 'true',
+  () => getCookie(storageKey) === 'true',
 )
 
 export const setSidebarStateServerFn = createServerFn({ method: 'POST' })
   .inputValidator(postThemeValidator)
-  .handler(async ({ data }) => setCookie(storageKey, data))
+  .handler(({ data }) => setCookie(storageKey, data))

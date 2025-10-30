@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/refs */
 import { useMemo, useRef } from 'react'
 
 import { GRID_BUFFER_MULTIPLIER, GRID_SPACING } from '../constants/livery'

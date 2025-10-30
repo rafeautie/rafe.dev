@@ -78,7 +78,7 @@ const TanstackStoreDevtoolPanel = () => {
       cleanupRegisterStore()
       cleanupStateChange()
     }
-  }, [])
+  }, [selectedStore])
 
   const selectedStoreValue = selectedStore != null ? state[selectedStore] : null
   const selectedHistoryItemValue =
