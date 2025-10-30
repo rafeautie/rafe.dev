@@ -27,8 +27,6 @@ import {
 } from '@/components/ui/tooltip'
 import { setSidebarStateServerFn } from '@/lib/sidebar'
 
-const SIDEBAR_COOKIE_NAME = 'sidebar_state'
-const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = '16rem'
 const SIDEBAR_WIDTH_MOBILE = '18rem'
 const SIDEBAR_WIDTH_ICON = '2.5rem'
@@ -265,7 +263,6 @@ function SidebarTrigger({
       data-slot="sidebar-trigger"
       variant="ghost"
       size="default"
-      className={cn('size-8', className)}
       onClick={(event) => {
         onClick?.(event)
         toggleSidebar()

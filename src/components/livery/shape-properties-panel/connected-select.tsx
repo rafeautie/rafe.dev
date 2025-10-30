@@ -12,7 +12,7 @@ import {
   getShapeProperty,
   updateShape,
   useLiveryEditorStore,
-} from '@/state/livery-editor-store'
+} from '@/state/livery-store'
 
 export function ConnectedSelect<T>({
   shapeId,

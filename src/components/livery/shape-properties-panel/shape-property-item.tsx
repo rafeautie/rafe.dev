@@ -1,13 +1,12 @@
 import { Label } from 'react-konva'
-import React from 'react'
 import { ConnectedColorPickerTrigger } from './connected-color-picker'
 import { ConnectedInput } from './connected-input'
 import { ConnectedSelect } from './connected-select'
 import { ConnectedCheckbox } from './connected-checkbox'
 import { ConnectedNumberList } from './connected-number-list'
 import { ConnectedPointList } from './connected-point-list'
-import type { SupportedShapes } from '@/state/livery-editor-store'
-import type { LiveryShapeAttributeItem } from '@/types/livery'
+import type React from 'react'
+import type { LiveryShapeAttributeItem, SupportedShapes } from '@/types/livery'
 import { camelToTitle } from '@/lib/utils'
 
 export type ShapeAttributeProps<T> = LiveryShapeAttributeItem<T> & {
@@ -34,11 +33,11 @@ export function ShapePropertyItem<T = SupportedShapes>(
   const Component = ShapePropertyComponentMap[props.type]
 
   return (
-    <div className="flex justify-between items-center gap-4 overflow-x-visible">
+    <div className="flex justify-between items-center gap-4 py-1">
       <Label className="text-xs text-muted-foreground" htmlFor={props.propKey}>
         {camelToTitle(props.propKey)}
       </Label>
-      <Component {...props} />
+      <Component {...props} key={props.shapeId + props.propKey} />
     </div>
   )
 }

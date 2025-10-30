@@ -2,13 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { ChevronDownIcon } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card'
-import { ScrollArea } from '../../ui/scroll-area'
 import { ShapePropertyItem } from './shape-property-item'
-import { useLiveryEditorStore } from '@/state/livery-editor-store'
+import { useLiveryEditorStore } from '@/state/livery-store'
 import { SHAPE_ATTRIBUTE_CONFIG, TRANSFORMER_REF } from '@/constants/livery'
 import { cn, uniqWith } from '@/lib/utils'
-
-const HEIGHT = 384 // tw: h-96
 
 export const ShapePropertiesPanel = () => {
   const [visible, setVisible] = useState(false)
@@ -40,9 +37,9 @@ export const ShapePropertiesPanel = () => {
 
   const onVisibleTriggerClick = useCallback(() => {
     if (selectedShapeIds.length === 1) {
-      setVisible(!visible)
+      setVisible((prevVisible) => !prevVisible)
     }
-  }, [selectedShapeIds.length, visible])
+  }, [selectedShapeIds.length])
 
   useEffect(() => {
     setVisible(selectedShapeIds.length === 1)
@@ -51,49 +48,60 @@ export const ShapePropertiesPanel = () => {
   return (
     <Card
       variant="translucent"
-      className="self-end justify-self-end pointer-events-auto overflow-hidden"
+      className={cn(
+        'pointer-events-auto overflow-hidden w-96 min-h-[106px] max-h-[calc(var(--canvas-area-height-with-padding))]',
+      )}
+      onContextMenu={(e) => {
+        e.preventDefault()
+      }}
     >
-      <CardHeader
-        onClick={onVisibleTriggerClick}
-        className={cn('cursor-pointer')}
-      >
+      <CardHeader className="cursor-pointer" onClick={onVisibleTriggerClick}>
         <div className="flex items-center justify-between">
-          <CardTitle className="flex justify-between">Properties</CardTitle>
+          <CardTitle>Properties</CardTitle>
           <motion.div
-            layout
-            initial={{ rotate: 0 }}
-            animate={{ rotate: visible ? 0 : 90 }}
             transition={{ duration: 0.3 }}
+            initial={{
+              rotate: visible ? 0 : 90,
+              opacity: selectedShapeIds.length === 1 ? 1 : 0.5,
+            }}
+            animate={{
+              rotate: visible ? 0 : 90,
+              opacity: selectedShapeIds.length === 1 ? 1 : 0.5,
+            }}
           >
             <ChevronDownIcon />
           </motion.div>
         </div>
       </CardHeader>
-      <CardContent className="px-2 overflow-x-visible">
+      <CardContent className="pl-6 pr-3 overflow-y-scroll">
         <motion.div
-          transition={{ duration: 0.3 }}
-          initial={{ height: visible ? HEIGHT : 0 }}
-          animate={{
-            height: visible ? HEIGHT : 0,
+          className={cn('flex flex-col gap-2', {
+            'pointer-events-none': !visible,
+          })}
+          transition={{
+            duration: 0.3,
+          }}
+          initial={{
             opacity: visible ? 1 : 0,
+            height: visible ? 'auto' : 0,
+          }}
+          animate={{
+            opacity: visible ? 1 : 0,
+            height: visible ? 'auto' : 0,
           }}
         >
-          <ScrollArea className="h-96">
-            <div className="space-y-5 px-4 py-1">
-              {shapeAttributes.map((attr) => (
-                <ShapePropertyItem
-                  {...attr}
-                  propKey={attr.key}
-                  shapeId={selectedShapeIds[0]}
-                  key={attr.key}
-                />
-              ))}
-            </div>
-          </ScrollArea>
+          {shapeAttributes.map((attr) => (
+            <ShapePropertyItem
+              {...attr}
+              propKey={attr.key}
+              shapeId={selectedShapeIds[0]}
+              key={attr.key}
+            />
+          ))}
         </motion.div>
         <motion.div
           transition={{ duration: 0.2 }}
-          className="px-4 text-sm text-muted-foreground"
+          className="absolute bottom-6 text-sm text-muted-foreground"
           initial={{
             opacity: !visible ? 1 : 0,
             height: !visible ? 'auto' : 0,

@@ -5,7 +5,7 @@ import {
 import {
   deleteSelectedShapes,
   useLiveryEditorStore,
-} from '@/state/livery-editor-store'
+} from '@/state/livery-store'
 
 export const ShapeMenu = () => {
   const selectedShapeIds = useLiveryEditorStore(

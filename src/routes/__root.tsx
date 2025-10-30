@@ -5,11 +5,8 @@ import {
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-
 import { ReactQueryDevtoolsPanel } from '@tanstack/react-query-devtools'
-
 import appCss from '../styles.css?url'
-
 import type { QueryClient } from '@tanstack/react-query'
 import { ThemeProvider } from '@/components/providers/theme-provider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
@@ -80,7 +77,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             <AppSidebar />
             <SidebarInset>
               {children}
-              <Toaster />
+              <Toaster position="bottom-right" />
             </SidebarInset>
           </SidebarProvider>
         </ThemeProvider>

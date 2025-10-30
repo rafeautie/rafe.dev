@@ -1,11 +1,13 @@
+import { Layers2Icon } from 'lucide-react'
 import {
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
 } from '@/components/ui/context-menu'
 import { SUPPORTED_SHAPES } from '@/constants/livery'
-import { addShape, useLiveryEditorStore } from '@/state/livery-editor-store'
+import { addLayer, addShape, useLiveryEditorStore } from '@/state/livery-store'
 
 export const StageMenu = () => {
   const contextMenuPosition = useLiveryEditorStore(
@@ -24,6 +26,11 @@ export const StageMenu = () => {
             {label}
           </ContextMenuItem>
         ))}
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={addLayer}>
+          <Layers2Icon />
+          Layer
+        </ContextMenuItem>
       </ContextMenuSubContent>
     </ContextMenuSub>
   )

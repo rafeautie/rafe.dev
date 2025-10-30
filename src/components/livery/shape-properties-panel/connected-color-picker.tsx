@@ -5,7 +5,7 @@ import {
   getShapeProperty,
   liveryEditorStore,
   updateShape,
-} from '@/state/livery-editor-store'
+} from '@/state/livery-store'
 
 export function ConnectedColorPickerTrigger<T>({
   shapeId,

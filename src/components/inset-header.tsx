@@ -1,22 +1,37 @@
 import VariableFontCursorProximity from './fancy/text/variable-font-cursor-proximity'
 import { SidebarTrigger } from './ui/sidebar'
+import { cn } from '@/lib/utils'
 
 interface InsetHeaderProps {
   containerRef: React.RefObject<HTMLDivElement | null>
   title: string
+  side?: 'left' | 'center' | 'right'
 }
 
-const InsetHeader = ({ containerRef, title }: InsetHeaderProps) => {
+const InsetHeader = ({
+  containerRef,
+  title,
+  side = 'center',
+}: InsetHeaderProps) => {
   return (
     <div
-      className="grid grid-cols-[1fr_auto_1fr] items-center p-3 relative top-0 z-50 md:rounded-t-lg h-[60px]"
+      className={cn(
+        'items-start p-5 relative top-0 z-50 md:rounded-t-lg h-(--inset-header-height)',
+        {
+          'grid grid-cols-[1fr_auto_1fr]': side === 'center',
+          'flex gap-1': side !== 'center',
+          'justify-between': side === 'right',
+        },
+      )}
       draggable={false}
     >
-      <div className="justify-self-start">
+      <div>
         <SidebarTrigger />
       </div>
       <VariableFontCursorProximity
-        className="text-2xl md:text-3xl justify-self-center text-center font-[100] select-none"
+        className={cn(
+          'text-2xl md:text-4xl justify-self-center text-center font-[100] select-none',
+        )}
         fromFontVariationSettings="'wght' 100, 'slnt' 0"
         toFontVariationSettings="'wght' 900, 'slnt' -10"
         falloff="exponential"
@@ -26,7 +41,7 @@ const InsetHeader = ({ containerRef, title }: InsetHeaderProps) => {
       >
         {title}
       </VariableFontCursorProximity>
-      <div className="justify-self-end"></div>
+      {side !== 'right' && <div className="justify-self-end"></div>}
     </div>
   )
 }

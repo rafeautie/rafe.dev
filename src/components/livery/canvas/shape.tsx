@@ -1,8 +1,11 @@
 import { useCallback } from 'react'
 import { Circle, Line, Rect } from 'react-konva'
-import type { SupportedShapes } from '@/state/livery-editor-store'
 import type { KonvaEventObject } from 'konva/lib/Node'
-import { updateShape } from '@/state/livery-editor-store'
+import {
+  getShapeById,
+  updateShape,
+  useLiveryEditorStore,
+} from '@/state/livery-store'
 
 const ShapeMap = {
   Rect,
@@ -10,25 +13,35 @@ const ShapeMap = {
   Line,
 }
 
-const Shape = ({ type, ...attributes }: SupportedShapes) => {
+interface ShapeProps {
+  shapeId: string
+}
+
+const Shape = ({ shapeId }: ShapeProps) => {
+  const shape = useLiveryEditorStore((state) => getShapeById(state, shapeId))
+
   const onTransformEnd = useCallback(
     (e: KonvaEventObject<Event>) => {
-      if (!attributes.id) {
+      if (!shape?.id) {
         console.warn('Shape id is not defined')
         return
       }
 
-      updateShape(attributes.id, e.currentTarget.attrs)
+      updateShape(shape.id, e.currentTarget.attrs)
     },
-    [attributes.id],
+    [shape],
   )
 
-  const Component = ShapeMap[type]
+  if (!shape) {
+    return null
+  }
+
+  const Component = ShapeMap[shape.type]
 
   return (
     <Component
-      key={attributes.id}
-      {...attributes}
+      key={shape.id}
+      {...shape}
       onTransformEnd={onTransformEnd}
       onDragEnd={onTransformEnd}
     />
