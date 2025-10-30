@@ -352,9 +352,10 @@ const TextRotate = forwardRef<TextRotateRef, TextRotateProps>(
     }, [next, rotationInterval, auto])
 
     // Custom motion component to render the text as a custom HTML tag provided via prop
-    const MotionComponent = useMemo(() => motion.create(as ?? 'p'), [as])
+    const MotionComponent = useMemo(() => motion.create(as), [as])
 
     return (
+      // eslint-disable-next-line react-hooks/static-components
       <MotionComponent
         className={cn('flex flex-wrap whitespace-pre-wrap', mainClassName)}
         transition={transition}

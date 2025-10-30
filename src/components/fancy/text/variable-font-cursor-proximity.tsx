@@ -1,5 +1,6 @@
-import React, { forwardRef, useMemo, useRef } from 'react'
+import { forwardRef, useMemo, useRef } from 'react'
 import { motion, useAnimationFrame } from 'motion/react'
+import type React from 'react'
 import type { ElementType } from 'react'
 
 import { cn } from '@/lib/utils'
