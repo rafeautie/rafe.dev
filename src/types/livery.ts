@@ -1,3 +1,4 @@
+import type { LucideIcon } from 'lucide-react'
 import type Konva from 'konva'
 import type { GetSet } from 'konva/lib/types'
 
@@ -60,3 +61,10 @@ export type Layer = {
   shapeIds: Array<string>
   collapsed: boolean
 } & Konva.LayerConfig
+
+export type Command = {
+  name: string
+  icon: LucideIcon
+  description: string
+  execute: (...args: Array<any>) => void
+}

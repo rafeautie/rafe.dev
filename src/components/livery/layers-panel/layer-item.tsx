@@ -23,6 +23,7 @@ import {
   clearSelectedLayer,
   deleteLayer,
   getLayerById,
+  getShapeIds,
   selectLayer,
   updateLayer,
   useLiveryEditorStore,
@@ -43,6 +44,7 @@ export const LayerItem = ({
   gripListeners,
 }: LayerItemProps) => {
   const layer = useLiveryEditorStore((state) => getLayerById(state, layerId))
+  const shapeIds = useLiveryEditorStore((state) => getShapeIds(state, layerId))
   const selectedLayer = useLiveryEditorStore((state) => state.selectedLayerId)
 
   const toggleLayerSelection = useCallback<MouseEventHandler>(
@@ -156,7 +158,7 @@ export const LayerItem = ({
             height: layer?.collapsed ? 0 : 'auto',
           }}
         >
-          {layer?.shapeIds.map((shapeId) => (
+          {shapeIds.map((shapeId) => (
             <SortableLayerShapeItem key={shapeId} shapeId={shapeId} />
           ))}
         </motion.div>

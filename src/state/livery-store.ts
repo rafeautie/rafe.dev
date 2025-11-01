@@ -267,7 +267,19 @@ export const getLayerById = (
 }
 
 export const getLayerIds = (state: LiveryEditorState): Array<string> => {
-  return state.layers.map((layer) => layer.id)
+  return state.layers.map((layer) => layer.id).reverse()
+}
+
+export const getShapeIds = (
+  state: LiveryEditorState,
+  layerId: string,
+): Array<string> => {
+  return (
+    state.layers
+      .find(({ id }) => id === layerId)
+      ?.shapeIds.slice(0)
+      .reverse() ?? []
+  )
 }
 
 export const getShapeById = (

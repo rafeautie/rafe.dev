@@ -12,10 +12,7 @@ import {
 import { useCanvasTransform } from '../../../hooks/use-canvas-transform'
 import { useGridDots } from '../../../hooks/use-grid-dots'
 import { GridLayer } from '../grid-layer'
-import ShapeControls from '../shape-controls'
 import { EditorContextMenu } from '../context-menu'
-import { ShapePropertiesPanel } from '../shape-properties-panel'
-import { LayersPanel } from '../layers-panel'
 import { Layers } from './layers'
 import { TransformerLayer } from './transformer-layer'
 import type Konva from 'konva'
@@ -26,7 +23,6 @@ import {
   selectShape,
   setContextMenuPosition,
 } from '@/state/livery-store'
-import { cn } from '@/lib/utils'
 
 export const Canvas = () => {
   const [ref, { width, height }] = useMeasure<HTMLDivElement>()
@@ -110,7 +106,7 @@ export const Canvas = () => {
   return (
     <div
       ref={ref}
-      className="absolute top-0 left-0 right-0 bottom-0 h-(--inset-area-height) w-full rounded-lg bg-neutral-900 border-solid border-[calc(var(--inset-area-border))]  border-blue-500 select-none overflow-hidden"
+      className="absolute top-0 left-0 right-0 bottom-0 h-(--inset-area-height) w-full bg-neutral-900"
     >
       <EditorContextMenu>
         <Stage
@@ -128,17 +124,6 @@ export const Canvas = () => {
           <Layers />
           <TransformerLayer />
         </Stage>
-        <div
-          className={cn(
-            'flex justify-between items-start h-(--canvas-area-height) absolute inset-0 py-5 px-5 pointer-events-none',
-          )}
-        >
-          <ShapeControls />
-          <div className="flex flex-col justify-start gap-5 h-full">
-            <LayersPanel />
-            <ShapePropertiesPanel />
-          </div>
-        </div>
       </EditorContextMenu>
     </div>
   )

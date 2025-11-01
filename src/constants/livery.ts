@@ -1,8 +1,9 @@
 import { createRef } from 'react'
-import { CircleIcon, SlashIcon, SquareIcon } from 'lucide-react'
+import { CircleIcon, Layers2Icon, SlashIcon, SquareIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type Konva from 'konva'
-import type { LiveryShapeAttributes } from '@/types/livery'
+import type { Command, LiveryShapeAttributes } from '@/types/livery'
+import { addLayer, addShape } from '@/state/livery-store'
 
 export const GRID_COLOR = '#404040'
 export const GRID_DOT_RADIUS = 1
@@ -105,3 +106,46 @@ export const SHAPE_ATTRIBUTE_CONFIG: {
     },
   ],
 }
+
+export const STATIC_COMMAND_CONFIG = {
+  shapeCommands: {
+    groupName: 'Shapes',
+    commands: [
+      {
+        icon: SquareIcon,
+        name: 'Add Rectangle',
+        description: 'Insert a rectangle shape into the canvas',
+        execute: () => addShape({ type: 'Rect' }),
+      },
+      {
+        icon: CircleIcon,
+        name: 'Add Circle',
+        description: 'Insert a circle shape into the canvas',
+        execute: () => addShape({ type: 'Circle' }),
+      },
+      {
+        icon: SlashIcon,
+        name: 'Add Line',
+        description: 'Insert a circle shape into the canvas',
+        execute: () => addShape({ type: 'Line' }),
+      },
+    ],
+  },
+  layerCommands: {
+    groupName: 'Layers',
+    commands: [
+      {
+        icon: Layers2Icon,
+        name: 'Add Layer',
+        description: 'Insert a new layer',
+        execute: () => addLayer(),
+      },
+    ],
+  },
+} satisfies Record<
+  string,
+  {
+    groupName: string
+    commands: Array<Command>
+  }
+>
