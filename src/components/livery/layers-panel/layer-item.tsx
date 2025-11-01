@@ -1,13 +1,23 @@
 import {
   ChevronsDownUpIcon,
   ChevronsUpDownIcon,
+  GripHorizontalIcon,
   Trash2Icon,
 } from 'lucide-react'
 import { useCallback } from 'react'
 import { motion } from 'motion/react'
-import { LayerShapeItem } from './layer-shape-item'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
+import { SortableLayerShapeItem } from './layer-shape-item'
 import { VisibilityToggle } from './visibility-toggle'
+import type { DraggableAttributes } from '@dnd-kit/core'
 import type { ChangeEventHandler, MouseEventHandler } from 'react'
+import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities'
 import { cn } from '@/lib/utils'
 import {
   clearSelectedLayer,
@@ -23,9 +33,15 @@ import { Input } from '@/components/ui/input'
 
 interface LayerItemProps {
   layerId: string
+  gripAttributes?: DraggableAttributes
+  gripListeners?: SyntheticListenerMap | undefined
 }
 
-export const LayerItem = ({ layerId }: LayerItemProps) => {
+export const LayerItem = ({
+  layerId,
+  gripAttributes,
+  gripListeners,
+}: LayerItemProps) => {
   const layer = useLiveryEditorStore((state) => getLayerById(state, layerId))
   const selectedLayer = useLiveryEditorStore((state) => state.selectedLayerId)
 
@@ -74,7 +90,7 @@ export const LayerItem = ({ layerId }: LayerItemProps) => {
   return (
     <div
       className={cn(
-        'rounded-md my-1 p-2 inset-shadow-[0_0_20px_rgba(0,0,0,0.3)] bg-neutral-900/35 overflow-hidden shrink-0',
+        'rounded-md p-2 inset-shadow-[0_0_20px_rgba(0,0,0,0.3)] bg-neutral-900/35 overflow-hidden shrink-0',
         {
           'ring-2 ring-blue-500/50': selectedLayer === layerId,
         },
@@ -84,12 +100,22 @@ export const LayerItem = ({ layerId }: LayerItemProps) => {
         className={cn('flex justify-between items-center gap-2')}
         onClick={toggleLayerSelection}
       >
-        <Input
-          doubleClickToFocus
-          className="p-2 dark:bg-transparent h-8 focus-visible:ring-0"
-          value={layer?.name}
-          onChange={onLayerNameChange}
-        />
+        <div className="flex items-center">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            {...gripAttributes}
+            {...gripListeners}
+          >
+            <GripHorizontalIcon className="text-neutral-400" />
+          </Button>
+          <Input
+            doubleClickToFocus
+            className="p-2 dark:bg-transparent h-8 focus-visible:ring-0"
+            value={layer?.name}
+            onChange={onLayerNameChange}
+          />
+        </div>
         <ButtonGroup className="pointer-events-auto self-end">
           <Button
             className="dark:hover:bg-red-600/40"
@@ -108,26 +134,62 @@ export const LayerItem = ({ layerId }: LayerItemProps) => {
           </Button>
         </ButtonGroup>
       </div>
-      <motion.div
-        className={cn('flex flex-col', {
-          'pointer-events-none': !layer?.collapsed,
-        })}
-        transition={{
-          duration: 0.2,
-        }}
-        initial={{
-          opacity: layer?.collapsed ? 0 : 1,
-          height: layer?.collapsed ? 0 : 'auto',
-        }}
-        animate={{
-          opacity: layer?.collapsed ? 0 : 1,
-          height: layer?.collapsed ? 0 : 'auto',
-        }}
+
+      <SortableContext
+        id="shapes"
+        items={layer?.shapeIds ?? []}
+        strategy={verticalListSortingStrategy}
       >
-        {layer?.shapeIds.map((shapeId) => (
-          <LayerShapeItem key={shapeId} shapeId={shapeId} />
-        ))}
-      </motion.div>
+        <motion.div
+          className={cn('flex flex-col', {
+            'pointer-events-none': !layer?.collapsed,
+          })}
+          transition={{
+            duration: 0.2,
+          }}
+          initial={{
+            opacity: layer?.collapsed ? 0 : 1,
+            height: layer?.collapsed ? 0 : 'auto',
+          }}
+          animate={{
+            opacity: layer?.collapsed ? 0 : 1,
+            height: layer?.collapsed ? 0 : 'auto',
+          }}
+        >
+          {layer?.shapeIds.map((shapeId) => (
+            <SortableLayerShapeItem key={shapeId} shapeId={shapeId} />
+          ))}
+        </motion.div>
+      </SortableContext>
+    </div>
+  )
+}
+
+export const SortableLayerItem = (props: LayerItemProps) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: props.layerId,
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0 : 1,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} className="my-1">
+      <LayerItem
+        {...props}
+        gripAttributes={attributes}
+        gripListeners={listeners}
+      />
     </div>
   )
 }

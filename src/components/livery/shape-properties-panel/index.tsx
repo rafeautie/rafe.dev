@@ -1,17 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { motion } from 'motion/react'
 import { ChevronDownIcon } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card'
 import { ShapePropertyItem } from './shape-property-item'
-import { useLiveryEditorStore } from '@/state/livery-store'
+import { setIsPanelOpen, useLiveryEditorStore } from '@/state/livery-store'
 import { SHAPE_ATTRIBUTE_CONFIG, TRANSFORMER_REF } from '@/constants/livery'
 import { cn, uniqWith } from '@/lib/utils'
 
 export const ShapePropertiesPanel = () => {
-  const [visible, setVisible] = useState(false)
+  const isOpen = useLiveryEditorStore(
+    (state) => state.panels.shapesPanel.isOpen,
+  )
   const selectedShapeIds = useLiveryEditorStore(
     (state) => state.selectedShapeIds,
   )
+  const hasOneLayer = selectedShapeIds.length === 1
+  const visibility = isOpen && hasOneLayer
 
   const shapeAttributes = useMemo(() => {
     const nodes = TRANSFORMER_REF.current?.getNodes()
@@ -37,13 +41,9 @@ export const ShapePropertiesPanel = () => {
 
   const onVisibleTriggerClick = useCallback(() => {
     if (selectedShapeIds.length === 1) {
-      setVisible((prevVisible) => !prevVisible)
+      setIsPanelOpen('shapesPanel', !isOpen)
     }
-  }, [selectedShapeIds.length])
-
-  useEffect(() => {
-    setVisible(selectedShapeIds.length === 1)
-  }, [selectedShapeIds])
+  }, [selectedShapeIds.length, isOpen])
 
   return (
     <Card
@@ -61,11 +61,11 @@ export const ShapePropertiesPanel = () => {
           <motion.div
             transition={{ duration: 0.3 }}
             initial={{
-              rotate: visible ? 0 : 90,
+              rotate: visibility ? 0 : 90,
               opacity: selectedShapeIds.length === 1 ? 1 : 0.5,
             }}
             animate={{
-              rotate: visible ? 0 : 90,
+              rotate: visibility ? 0 : 90,
               opacity: selectedShapeIds.length === 1 ? 1 : 0.5,
             }}
           >
@@ -76,18 +76,18 @@ export const ShapePropertiesPanel = () => {
       <CardContent className="pl-6 pr-3 overflow-y-scroll">
         <motion.div
           className={cn('flex flex-col gap-2', {
-            'pointer-events-none': !visible,
+            'pointer-events-none': !visibility,
           })}
           transition={{
             duration: 0.3,
           }}
           initial={{
-            opacity: visible ? 1 : 0,
-            height: visible ? 'auto' : 0,
+            opacity: visibility ? 1 : 0,
+            height: visibility ? 'auto' : 0,
           }}
           animate={{
-            opacity: visible ? 1 : 0,
-            height: visible ? 'auto' : 0,
+            opacity: visibility ? 1 : 0,
+            height: visibility ? 'auto' : 0,
           }}
         >
           {shapeAttributes.map((attr) => (
@@ -103,12 +103,12 @@ export const ShapePropertiesPanel = () => {
           transition={{ duration: 0.2 }}
           className="absolute bottom-6 text-sm text-muted-foreground"
           initial={{
-            opacity: !visible ? 1 : 0,
-            height: !visible ? 'auto' : 0,
+            opacity: !visibility ? 1 : 0,
+            height: !visibility ? 'auto' : 0,
           }}
           animate={{
-            opacity: !visible ? 1 : 0,
-            height: !visible ? 'auto' : 0,
+            opacity: !visibility ? 1 : 0,
+            height: !visibility ? 'auto' : 0,
           }}
         >
           <div>Select a single shape to edit its properties.</div>

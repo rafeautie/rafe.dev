@@ -1,6 +1,11 @@
 import { useCallback } from 'react'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { GripHorizontalIcon } from 'lucide-react'
 import { VisibilityToggle } from './visibility-toggle'
+import type { DraggableAttributes } from '@dnd-kit/core'
 import type { ChangeEventHandler, MouseEventHandler } from 'react'
+import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities'
 import {
   clearSelectedShapes,
   deselectShape,
@@ -13,12 +18,19 @@ import {
 } from '@/state/livery-store'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 interface LayerShapeItemProps {
   shapeId: string
+  gripAttributes?: DraggableAttributes
+  gripListeners?: SyntheticListenerMap | undefined
 }
 
-export const LayerShapeItem = ({ shapeId }: LayerShapeItemProps) => {
+export const LayerShapeItem = ({
+  shapeId,
+  gripAttributes,
+  gripListeners,
+}: LayerShapeItemProps) => {
   const shape = useLiveryEditorStore((state) => getShapeById(state, shapeId))
   const layer = useLiveryEditorStore((state) =>
     getLayerById(state, shape?.layerId ?? ''),
@@ -59,7 +71,7 @@ export const LayerShapeItem = ({ shapeId }: LayerShapeItemProps) => {
   return (
     <div
       className={cn(
-        'rounded-md bg-accent px-3 py-2 flex justify-between items-center pointer-events-auto mt-2',
+        'rounded-md bg-accent pr-3 py-2 flex justify-between items-center pointer-events-auto',
         {
           'ring-2 ring-blue-500': isShapeSelected,
           'pointer-events-none opacity-50': layer?.visible === false,
@@ -67,15 +79,55 @@ export const LayerShapeItem = ({ shapeId }: LayerShapeItemProps) => {
       )}
       onClick={onClick}
     >
-      <Input
-        doubleClickToFocus
-        className="text-xs p-0 dark:bg-transparent h-8 focus-visible:ring-0"
-        value={shape?.name}
-        onChange={onShapeNameChange}
-      />
+      <div className="flex items-center">
+        <Button
+          className="mx-1"
+          size="icon-sm"
+          variant="ghost"
+          {...gripAttributes}
+          {...gripListeners}
+        >
+          <GripHorizontalIcon className="text-neutral-400" />
+        </Button>
+        <Input
+          doubleClickToFocus
+          className="text-xs p-0 dark:bg-transparent h-8 focus-visible:ring-0"
+          value={shape?.name}
+          onChange={onShapeNameChange}
+        />
+      </div>
       <VisibilityToggle
         visible={shape?.visible ?? true}
         onToggle={toggleShapeVisibility}
+      />
+    </div>
+  )
+}
+
+export const SortableLayerShapeItem = (props: LayerShapeItemProps) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: props.shapeId,
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0 : 1,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} className="my-1">
+      <LayerShapeItem
+        {...props}
+        gripAttributes={attributes}
+        gripListeners={listeners}
       />
     </div>
   )

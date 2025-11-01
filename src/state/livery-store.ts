@@ -10,6 +10,10 @@ import { getDefaultAttributesForShape } from '@/lib/livery'
 
 export type ModifierKeys = 'Shift' | 'Control'
 
+export interface PanelState {
+  isOpen: boolean
+}
+
 export interface LiveryEditorState {
   layers: Array<Layer>
   shapesById: Record<string, SupportedShapes>
@@ -17,7 +21,15 @@ export interface LiveryEditorState {
   selectedShapeIds: Array<string>
   contextMenuPosition: { x: number; y: number } | null
   modifierKeys: Array<ModifierKeys>
+  panels: {
+    layersPanel: PanelState
+    shapesPanel: PanelState
+  }
 }
+
+DevtoolsStoreEventClient.emit('register-store', {
+  storeName: 'LiveryEditorStore',
+})
 
 export const liveryEditorStore = new Store<LiveryEditorState>({
   layers: [{ id: 'layer-1', name: 'Layer 1', shapeIds: [], collapsed: false }],
@@ -26,10 +38,10 @@ export const liveryEditorStore = new Store<LiveryEditorState>({
   selectedShapeIds: [],
   contextMenuPosition: null,
   modifierKeys: [],
-})
-
-DevtoolsStoreEventClient.emit('register-store', {
-  storeName: 'LiveryEditorStore',
+  panels: {
+    layersPanel: { isOpen: true },
+    shapesPanel: { isOpen: false },
+  },
 })
 
 export const useLiveryEditorStore = <TData = unknown>(
@@ -99,6 +111,24 @@ export const updateShape = (
   })
 }
 
+export const updateShapeOrder = (oldId: string, newId: string) => {
+  updateStoreWithMutative((draft) => {
+    const layerToUpdate = draft.layers.find((layer) =>
+      layer.shapeIds.includes(oldId),
+    )
+
+    if (!layerToUpdate) {
+      return
+    }
+
+    const oldIndex = layerToUpdate.shapeIds.findIndex((id) => id === oldId)
+    const newIndex = layerToUpdate.shapeIds.findIndex((id) => id === newId)
+
+    const [movedLayer] = layerToUpdate.shapeIds.splice(oldIndex, 1)
+    layerToUpdate.shapeIds.splice(newIndex, 0, movedLayer)
+  })
+}
+
 export const deleteSelectedShapes = () => {
   updateStoreWithMutative((draft) => {
     for (const id of draft.selectedShapeIds) {
@@ -156,12 +186,14 @@ export const setContextMenuPosition = (
 
 export const addLayer = () => {
   updateStoreWithMutative((draft) => {
+    const newId = crypto.randomUUID()
     draft.layers.push({
-      id: crypto.randomUUID(),
+      id: newId,
       name: `Layer ${draft.layers.length + 1}`,
       shapeIds: [],
       collapsed: false,
     })
+    draft.selectedLayerId = newId
   })
 }
 
@@ -175,6 +207,15 @@ export const updateLayer = (
       ...draft.layers[layerIndex],
       ...layerUpdates,
     }
+  })
+}
+
+export const updateLayerOrder = (oldId: string, newId: string) => {
+  updateStoreWithMutative((draft) => {
+    const oldIndex = draft.layers.findIndex(({ id }) => id === oldId)
+    const newIndex = draft.layers.findIndex(({ id }) => id === newId)
+    const [movedLayer] = draft.layers.splice(oldIndex, 1)
+    draft.layers.splice(newIndex, 0, movedLayer)
   })
 }
 
@@ -205,6 +246,15 @@ export const clearSelectedLayer = () => {
   clearSelectedShapes()
 }
 
+export const setIsPanelOpen = (
+  panelKey: keyof LiveryEditorState['panels'],
+  isOpen: boolean,
+) => {
+  updateStoreWithMutative((draft) => {
+    draft.panels[panelKey].isOpen = isOpen
+  })
+}
+
 /**
  * Selectors
  */
@@ -214,6 +264,10 @@ export const getLayerById = (
   id: string,
 ): Layer | undefined => {
   return state.layers.find((layer) => layer.id === id)
+}
+
+export const getLayerIds = (state: LiveryEditorState): Array<string> => {
+  return state.layers.map((layer) => layer.id)
 }
 
 export const getShapeById = (
@@ -237,4 +291,8 @@ export const getShapeProperty = <T extends PublicKeyOf<SupportedShapes>>(
 ): SupportedShapes[T] | undefined => {
   const shape = getShapeById(state, shapeId)
   return shape?.[propKey]
+}
+
+export const getIsBothPanelsOpen = (state: LiveryEditorState): boolean => {
+  return state.panels.layersPanel.isOpen && state.panels.shapesPanel.isOpen
 }

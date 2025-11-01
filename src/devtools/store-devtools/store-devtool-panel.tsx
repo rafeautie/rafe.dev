@@ -49,6 +49,10 @@ const TanstackStoreDevtoolPanel = () => {
       'state-change',
       (e) => {
         setState((prev) => {
+          if (!(e.payload.storeName in prev)) {
+            return prev
+          }
+
           const diffResult = diff(
             prev[e.payload.storeName].state,
             e.payload.state,
