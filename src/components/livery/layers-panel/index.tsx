@@ -1,48 +1,44 @@
 import { ChevronDownIcon } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import {
   DndContext,
   DragOverlay,
-  KeyboardSensor,
   PointerSensor,
   closestCenter,
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
+  restrictToParentElement,
+  restrictToVerticalAxis,
+} from '@dnd-kit/modifiers'
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card'
 import { LayerItem, SortableLayerItem } from './layer-item'
 import { LayerShapeItem } from './layer-shape-item'
-import type {
-  DragEndEvent,
-  DragStartEvent,
-  UniqueIdentifier,
-} from '@dnd-kit/core'
+import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import {
+  getActiveDragLayerId,
+  getActiveDragLayerShapeId,
   getLayerIds,
+  setActiveDragLayerId,
+  setActiveDragLayerShapeId,
   setIsPanelOpen,
   updateLayerOrder,
   updateShapeOrder,
   useLiveryEditorStore,
 } from '@/state/livery-store'
 import { cn } from '@/lib/utils'
+import { verticalSortableListCollisionDetection } from '@/lib/drag-and-drop'
 
 export const LayersPanel = () => {
   const isOpen = useLiveryEditorStore(
     (state) => state.panels.layersPanel.isOpen,
   )
-  const layerIds = useLiveryEditorStore((state) => getLayerIds(state))
-
-  const [activeDragLayerId, setActiveDragLayerId] =
-    useState<UniqueIdentifier | null>(null)
-  const [activeDragLayerShapeId, setActiveDragLayerShapeId] =
-    useState<UniqueIdentifier | null>(null)
+  const layerIds = useLiveryEditorStore(getLayerIds)
+  const activeDragLayerId = useLiveryEditorStore(getActiveDragLayerId)
+  const activeDragLayerShapeId = useLiveryEditorStore(getActiveDragLayerShapeId)
 
   const hasLayers = layerIds.length > 0
   const visibility = isOpen && hasLayers
@@ -53,22 +49,17 @@ export const LayersPanel = () => {
     }
   }, [hasLayers, isOpen])
 
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  )
+  const sensors = useSensors(useSensor(PointerSensor))
 
   const onDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event
 
     switch (active.data.current?.sortable.containerId) {
       case 'layers':
-        setActiveDragLayerId(active.id)
+        setActiveDragLayerId(active.id as string)
         break
       case 'shapes':
-        setActiveDragLayerShapeId(active.id)
+        setActiveDragLayerShapeId(active.id as string)
         break
     }
   }, [])
@@ -94,10 +85,14 @@ export const LayersPanel = () => {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={
+        activeDragLayerShapeId
+          ? closestCenter
+          : verticalSortableListCollisionDetection
+      }
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      modifiers={[restrictToVerticalAxis]}
+      modifiers={[restrictToVerticalAxis, restrictToParentElement]}
     >
       <Card
         variant="translucent"
@@ -171,12 +166,10 @@ export const LayersPanel = () => {
         </CardContent>
       </Card>
       <DragOverlay>
-        {activeDragLayerId ? (
-          <LayerItem layerId={activeDragLayerId as string} />
-        ) : null}
-        {activeDragLayerShapeId ? (
-          <LayerShapeItem shapeId={activeDragLayerShapeId as string} />
-        ) : null}
+        {activeDragLayerId && <LayerItem layerId={activeDragLayerId} />}
+        {activeDragLayerShapeId && (
+          <LayerShapeItem shapeId={activeDragLayerShapeId} />
+        )}
       </DragOverlay>
     </DndContext>
   )

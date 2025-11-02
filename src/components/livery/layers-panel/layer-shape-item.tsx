@@ -24,12 +24,14 @@ interface LayerShapeItemProps {
   shapeId: string
   gripAttributes?: DraggableAttributes
   gripListeners?: SyntheticListenerMap | undefined
+  setActivatorNodeRef?: (element: HTMLElement | null) => void
 }
 
 export const LayerShapeItem = ({
   shapeId,
   gripAttributes,
   gripListeners,
+  setActivatorNodeRef,
 }: LayerShapeItemProps) => {
   const shape = useLiveryEditorStore((state) => getShapeById(state, shapeId))
   const layer = useLiveryEditorStore((state) =>
@@ -84,6 +86,7 @@ export const LayerShapeItem = ({
           className="mx-1"
           size="icon-sm"
           variant="ghost"
+          ref={setActivatorNodeRef}
           {...gripAttributes}
           {...gripListeners}
         >
@@ -109,6 +112,7 @@ export const SortableLayerShapeItem = (props: LayerShapeItemProps) => {
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -123,9 +127,16 @@ export const SortableLayerShapeItem = (props: LayerShapeItemProps) => {
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="my-1">
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={style}
+      className="mb-2"
+    >
       <LayerShapeItem
         {...props}
+        setActivatorNodeRef={setActivatorNodeRef}
         gripAttributes={attributes}
         gripListeners={listeners}
       />

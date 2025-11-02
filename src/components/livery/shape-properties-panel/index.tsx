@@ -1,11 +1,12 @@
 import { useCallback, useMemo } from 'react'
 import { motion } from 'motion/react'
 import { ChevronDownIcon } from 'lucide-react'
+import { uniqWith } from 'lodash'
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card'
 import { ShapePropertyItem } from './shape-property-item'
 import { setIsPanelOpen, useLiveryEditorStore } from '@/state/livery-store'
 import { SHAPE_ATTRIBUTE_CONFIG, TRANSFORMER_REF } from '@/constants/livery'
-import { cn, uniqWith } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 export const ShapePropertiesPanel = () => {
   const isOpen = useLiveryEditorStore(

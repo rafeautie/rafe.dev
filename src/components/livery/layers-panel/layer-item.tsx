@@ -12,7 +12,6 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-
 import { SortableLayerShapeItem } from './layer-shape-item'
 import { VisibilityToggle } from './visibility-toggle'
 import type { DraggableAttributes } from '@dnd-kit/core'
@@ -36,16 +35,20 @@ interface LayerItemProps {
   layerId: string
   gripAttributes?: DraggableAttributes
   gripListeners?: SyntheticListenerMap | undefined
+  setActivatorNodeRef?: (element: HTMLElement | null) => void
 }
 
 export const LayerItem = ({
   layerId,
   gripAttributes,
   gripListeners,
+  setActivatorNodeRef,
 }: LayerItemProps) => {
   const layer = useLiveryEditorStore((state) => getLayerById(state, layerId))
   const shapeIds = useLiveryEditorStore((state) => getShapeIds(state, layerId))
   const selectedLayer = useLiveryEditorStore((state) => state.selectedLayerId)
+
+  const visibility = !layer?.collapsed
 
   const toggleLayerSelection = useCallback<MouseEventHandler>(
     (e) => {
@@ -62,7 +65,7 @@ export const LayerItem = ({
   const toggleLayerVisibility = useCallback<MouseEventHandler>(
     (e) => {
       updateLayer(layerId, {
-        visible: !(layer?.visible ?? true),
+        visible: !(layer?.visible ?? false),
       })
       e.stopPropagation()
     },
@@ -92,20 +95,21 @@ export const LayerItem = ({
   return (
     <div
       className={cn(
-        'rounded-md p-2 inset-shadow-[0_0_20px_rgba(0,0,0,0.3)] bg-neutral-900/35 overflow-hidden shrink-0',
+        'rounded-md px-2 pt-2 inset-shadow-[0_0_20px_rgba(0,0,0,0.3)] bg-neutral-900/35 overflow-hidden shrink-0',
         {
           'ring-2 ring-blue-500/50': selectedLayer === layerId,
         },
       )}
     >
       <div
-        className={cn('flex justify-between items-center gap-2')}
+        className={cn('flex justify-between items-center gap-2 pb-2')}
         onClick={toggleLayerSelection}
       >
         <div className="flex items-center">
           <Button
             size="icon-sm"
             variant="ghost"
+            ref={setActivatorNodeRef}
             {...gripAttributes}
             {...gripListeners}
           >
@@ -132,11 +136,10 @@ export const LayerItem = ({
             visible={layer?.visible ?? true}
           />
           <Button variant="ghost" size="icon-sm" onClick={toggleLayerCollapsed}>
-            {layer?.collapsed ? <ChevronsUpDownIcon /> : <ChevronsDownUpIcon />}
+            {layer?.collapsed ? <ChevronsDownUpIcon /> : <ChevronsUpDownIcon />}
           </Button>
         </ButtonGroup>
       </div>
-
       <SortableContext
         id="shapes"
         items={layer?.shapeIds ?? []}
@@ -144,18 +147,18 @@ export const LayerItem = ({
       >
         <motion.div
           className={cn('flex flex-col', {
-            'pointer-events-none': !layer?.collapsed,
+            'pointer-events-none': !visibility,
           })}
           transition={{
             duration: 0.2,
           }}
           initial={{
-            opacity: layer?.collapsed ? 0 : 1,
-            height: layer?.collapsed ? 0 : 'auto',
+            opacity: visibility ? 1 : 0,
+            height: visibility ? 'auto' : 0,
           }}
           animate={{
-            opacity: layer?.collapsed ? 0 : 1,
-            height: layer?.collapsed ? 0 : 'auto',
+            opacity: visibility ? 1 : 0,
+            height: visibility ? 'auto' : 0,
           }}
         >
           {shapeIds.map((shapeId) => (
@@ -172,6 +175,7 @@ export const SortableLayerItem = (props: LayerItemProps) => {
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -186,9 +190,10 @@ export const SortableLayerItem = (props: LayerItemProps) => {
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="my-1">
+    <div ref={setNodeRef} style={style} className={cn('my-1')}>
       <LayerItem
         {...props}
+        setActivatorNodeRef={setActivatorNodeRef}
         gripAttributes={attributes}
         gripListeners={listeners}
       />

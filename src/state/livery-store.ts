@@ -22,7 +22,10 @@ export interface LiveryEditorState {
   contextMenuPosition: { x: number; y: number } | null
   modifierKeys: Array<ModifierKeys>
   panels: {
-    layersPanel: PanelState
+    layersPanel: {
+      activeDragLayerId: string | null
+      activeDragLayerShapeId: string | null
+    } & PanelState
     shapesPanel: PanelState
   }
 }
@@ -39,7 +42,11 @@ export const liveryEditorStore = new Store<LiveryEditorState>({
   contextMenuPosition: null,
   modifierKeys: [],
   panels: {
-    layersPanel: { isOpen: true },
+    layersPanel: {
+      activeDragLayerId: null,
+      activeDragLayerShapeId: null,
+      isOpen: true,
+    },
     shapesPanel: { isOpen: false },
   },
 })
@@ -152,6 +159,14 @@ export const selectShape = (id: string) => {
     if (!draft.selectedShapeIds.includes(id)) {
       draft.selectedShapeIds.push(id)
     }
+
+    const layerIdToSelect = draft.layers.find(({ shapeIds }) =>
+      shapeIds.includes(id),
+    )?.id
+
+    if (layerIdToSelect != null) {
+      draft.selectedLayerId = layerIdToSelect
+    }
   })
   const shape = STAGE_REF.current?.findOne(`#${id}`)
   if (shape) {
@@ -255,6 +270,18 @@ export const setIsPanelOpen = (
   })
 }
 
+export const setActiveDragLayerId = (layerId: string | null) => {
+  updateStoreWithMutative((draft) => {
+    draft.panels.layersPanel.activeDragLayerId = layerId
+  })
+}
+
+export const setActiveDragLayerShapeId = (shapeId: string | null) => {
+  updateStoreWithMutative((draft) => {
+    draft.panels.layersPanel.activeDragLayerShapeId = shapeId
+  })
+}
+
 /**
  * Selectors
  */
@@ -307,4 +334,16 @@ export const getShapeProperty = <T extends PublicKeyOf<SupportedShapes>>(
 
 export const getIsBothPanelsOpen = (state: LiveryEditorState): boolean => {
   return state.panels.layersPanel.isOpen && state.panels.shapesPanel.isOpen
+}
+
+export const getActiveDragLayerId = (
+  state: LiveryEditorState,
+): string | null => {
+  return state.panels.layersPanel.activeDragLayerId
+}
+
+export const getActiveDragLayerShapeId = (
+  state: LiveryEditorState,
+): string | null => {
+  return state.panels.layersPanel.activeDragLayerShapeId
 }

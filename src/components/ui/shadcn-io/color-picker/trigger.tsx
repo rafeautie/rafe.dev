@@ -1,5 +1,6 @@
 import Color from 'color'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { throttle } from 'lodash'
 import { Popover, PopoverContent, PopoverTrigger } from '../../popover'
 import { Button } from '../../button'
 import {
@@ -11,7 +12,7 @@ import {
   ColorPickerSelection,
 } from '.'
 import type { ColorLike } from 'color'
-import { cn, throttle } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 interface ColorPickerTriggerProps {
   value: string | undefined

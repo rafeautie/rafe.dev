@@ -23,31 +23,6 @@ export function camelToTitle(input: string): string {
   return words.map((word) => word[0].toUpperCase() + word.slice(1)).join(' ')
 }
 
-export function throttle<TFunc extends (...args: Array<any>) => void>(
-  func: TFunc,
-  timeFrame: number,
-) {
-  let lastTime = 0
-  return function (...args: Parameters<TFunc>) {
-    const now = Date.now()
-    if (now - lastTime >= timeFrame) {
-      func(...args)
-      lastTime = now
-    }
-  }
-}
-
-export const uniqWith = <
-  TArr extends Array<any>,
-  TFunc extends (...args: Array<any>) => any,
->(
-  arr: TArr,
-  fn: TFunc,
-) =>
-  arr.filter(
-    (element, index) => arr.findIndex((step) => fn(element, step)) === index,
-  )
-
 export const capitalize = (str: string): string => {
   if (!str) return ''
   return str[0].toUpperCase() + str.slice(1)
