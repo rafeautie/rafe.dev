@@ -1,37 +1,24 @@
-import { Layers2Icon } from 'lucide-react'
 import {
   ContextMenuItem,
-  ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
 } from '@/components/ui/context-menu'
-import { SUPPORTED_SHAPES } from '@/constants/livery'
-import { addLayer, addShape, useLiveryEditorStore } from '@/state/livery-store'
+import { COMMAND_CONFIG } from '@/constants/livery'
 
 export const StageMenu = () => {
-  const contextMenuPosition = useLiveryEditorStore(
-    (state) => state.contextMenuPosition,
-  )
-  return (
-    <ContextMenuSub>
-      <ContextMenuSubTrigger>New</ContextMenuSubTrigger>
-      <ContextMenuSubContent>
-        {SUPPORTED_SHAPES.map(({ type, label, icon: Icon }) => (
-          <ContextMenuItem
-            key={type + label}
-            onClick={() => addShape({ type, ...contextMenuPosition })}
-          >
-            <Icon />
-            {label}
-          </ContextMenuItem>
-        ))}
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={addLayer}>
-          <Layers2Icon />
-          Layer
-        </ContextMenuItem>
-      </ContextMenuSubContent>
-    </ContextMenuSub>
-  )
+  return COMMAND_CONFIG.default.commandGroups
+    .filter(({ mode }) => mode !== 'palette-only')
+    .map(({ groupName, commands }) => (
+      <ContextMenuSub key={groupName}>
+        <ContextMenuSubTrigger>{groupName}</ContextMenuSubTrigger>
+        <ContextMenuSubContent>
+          {commands.map(({ name, execute }) => (
+            <ContextMenuItem key={groupName + name} onClick={execute}>
+              {name}
+            </ContextMenuItem>
+          ))}
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+    ))
 }

@@ -2,7 +2,12 @@ import { useStore } from '@tanstack/react-store'
 import { Store } from '@tanstack/store'
 import { create } from 'mutative'
 import { toast } from 'sonner'
-import type { Layer, PublicKeyOf, SupportedShapes } from '@/types/livery'
+import type {
+  CommandConfig,
+  Layer,
+  PublicKeyOf,
+  SupportedShapesConfig,
+} from '@/types/livery'
 import { DevtoolsStoreEventClient } from '@/devtools/store-devtools/store-event-client'
 import { getCallerName } from '@/lib/utils'
 import { STAGE_REF, TRANSFORMER_REF } from '@/constants/livery'
@@ -14,9 +19,18 @@ export interface PanelState {
   isOpen: boolean
 }
 
+export interface CommandPaletteState {
+  searchTerm: string
+  isOpen: boolean
+  pages: Array<{
+    key: keyof CommandConfig
+    forceCloseOnEscape?: boolean
+  }>
+}
+
 export interface LiveryEditorState {
   layers: Array<Layer>
-  shapesById: Record<string, SupportedShapes>
+  shapesById: Record<string, SupportedShapesConfig>
   selectedLayerId: string | null
   selectedShapeIds: Array<string>
   contextMenuPosition: { x: number; y: number } | null
@@ -26,8 +40,10 @@ export interface LiveryEditorState {
       activeDragLayerId: string | null
       activeDragLayerShapeId: string | null
     } & PanelState
-    shapesPanel: PanelState
+    shapePanel: PanelState
+    templatePanel: PanelState
   }
+  commandPalette: CommandPaletteState
 }
 
 DevtoolsStoreEventClient.emit('register-store', {
@@ -35,7 +51,7 @@ DevtoolsStoreEventClient.emit('register-store', {
 })
 
 export const liveryEditorStore = new Store<LiveryEditorState>({
-  layers: [{ id: 'layer-1', name: 'Layer 1', shapeIds: [], collapsed: false }],
+  layers: [],
   shapesById: {},
   selectedLayerId: 'layer-1',
   selectedShapeIds: [],
@@ -47,7 +63,17 @@ export const liveryEditorStore = new Store<LiveryEditorState>({
       activeDragLayerShapeId: null,
       isOpen: true,
     },
-    shapesPanel: { isOpen: false },
+    shapePanel: { isOpen: false },
+    templatePanel: { isOpen: false },
+  },
+  commandPalette: {
+    searchTerm: '',
+    isOpen: false,
+    pages: [
+      {
+        key: 'default',
+      },
+    ],
   },
 })
 
@@ -70,7 +96,7 @@ const updateStoreWithMutative = (
   })
 }
 
-export const addShape = (shape: SupportedShapes) => {
+export const addShape = (shape: SupportedShapesConfig) => {
   updateStoreWithMutative((draft) => {
     if (draft.layers.length === 0) {
       draft.layers.push({
@@ -78,8 +104,12 @@ export const addShape = (shape: SupportedShapes) => {
         name: `Layer ${draft.layers.length + 1}`,
         shapeIds: [],
         collapsed: false,
+        layerType: 'paintable',
       })
-      draft.selectedLayerId = draft.layers[0].id
+      draft.selectedLayerId =
+        draft.layers.find(
+          (layer) => layer.layerType !== 'non-editable-template-layers',
+        )?.id ?? draft.layers[0].id
     }
 
     const layerToAddShapeTo = draft.layers.find(
@@ -94,12 +124,13 @@ export const addShape = (shape: SupportedShapes) => {
     const id = crypto.randomUUID()
 
     draft.shapesById[id] = {
-      ...getDefaultAttributesForShape(shape.type),
-      ...shape,
       name: shape.type,
       layerId: layerToAddShapeTo.id,
       draggable: true,
       id,
+      ...getDefaultAttributesForShape(shape.type),
+      ...shape,
+      ...(draft.contextMenuPosition ?? {}),
     }
 
     layerToAddShapeTo.shapeIds.push(id)
@@ -108,7 +139,7 @@ export const addShape = (shape: SupportedShapes) => {
 
 export const updateShape = (
   id: string,
-  shapeUpdates: Partial<SupportedShapes>,
+  shapeUpdates: Partial<Omit<SupportedShapesConfig, 'image'>>,
 ) => {
   updateStoreWithMutative((draft) => {
     draft.shapesById[id] = {
@@ -199,22 +230,24 @@ export const setContextMenuPosition = (
   })
 }
 
-export const addLayer = () => {
+export const addLayer = (layer: Partial<Layer> = {}) => {
+  const newId = crypto.randomUUID()
   updateStoreWithMutative((draft) => {
-    const newId = crypto.randomUUID()
     draft.layers.push({
       id: newId,
       name: `Layer ${draft.layers.length + 1}`,
       shapeIds: [],
       collapsed: false,
+      layerType: 'paintable',
+      ...layer,
     })
-    draft.selectedLayerId = newId
   })
+  return newId
 }
 
 export const updateLayer = (
   id: string,
-  layerUpdates: Partial<SupportedShapes>,
+  layerUpdates: Partial<SupportedShapesConfig>,
 ) => {
   updateStoreWithMutative((draft) => {
     const layerIndex = draft.layers.findIndex((layer) => layer.id === id)
@@ -282,6 +315,46 @@ export const setActiveDragLayerShapeId = (shapeId: string | null) => {
   })
 }
 
+export const setCommandPaletteSearchTerm = (
+  searchTerm: CommandPaletteState['searchTerm'],
+) => {
+  updateStoreWithMutative((draft) => {
+    draft.commandPalette.searchTerm = searchTerm
+  })
+}
+
+export const setIsCommandPaletteOpen = (isOpen: boolean) => {
+  updateStoreWithMutative((draft) => {
+    draft.commandPalette.isOpen = isOpen
+    if (isOpen === true) {
+      draft.commandPalette.pages = [
+        {
+          key: 'default',
+        },
+      ]
+    }
+  })
+}
+
+export const setCommandPalettePage = (
+  page: CommandPaletteState['pages'][number],
+) => {
+  updateStoreWithMutative((draft) => {
+    draft.commandPalette.pages.push(page)
+    draft.commandPalette.searchTerm = ''
+  })
+}
+
+export const goBackCommandPalettePage = () => {
+  updateStoreWithMutative((draft) => {
+    if (draft.commandPalette.pages.length > 1) {
+      draft.commandPalette.pages.pop()
+    } else {
+      draft.commandPalette.isOpen = false
+    }
+  })
+}
+
 /**
  * Selectors
  */
@@ -312,7 +385,7 @@ export const getShapeIds = (
 export const getShapeById = (
   state: LiveryEditorState,
   id: string,
-): SupportedShapes | undefined => {
+): SupportedShapesConfig | undefined => {
   return state.shapesById[id]
 }
 
@@ -323,17 +396,17 @@ export const getIsShapeSelectedById = (
   return state.selectedShapeIds.includes(id)
 }
 
-export const getShapeProperty = <T extends PublicKeyOf<SupportedShapes>>(
+export const getShapeProperty = <T extends PublicKeyOf<SupportedShapesConfig>>(
   state: LiveryEditorState,
   shapeId: string,
   propKey: T,
-): SupportedShapes[T] | undefined => {
+): SupportedShapesConfig[T] | undefined => {
   const shape = getShapeById(state, shapeId)
   return shape?.[propKey]
 }
 
 export const getIsBothPanelsOpen = (state: LiveryEditorState): boolean => {
-  return state.panels.layersPanel.isOpen && state.panels.shapesPanel.isOpen
+  return state.panels.layersPanel.isOpen && state.panels.shapePanel.isOpen
 }
 
 export const getActiveDragLayerId = (
@@ -346,4 +419,28 @@ export const getActiveDragLayerShapeId = (
   state: LiveryEditorState,
 ): string | null => {
   return state.panels.layersPanel.activeDragLayerShapeId
+}
+
+export const getIsCommandPaletteOpen = (state: LiveryEditorState): boolean => {
+  return state.commandPalette.isOpen
+}
+
+export const getCommandPaletteSearchTerm = (
+  state: LiveryEditorState,
+): string => {
+  return state.commandPalette.searchTerm
+}
+
+export const getCommandPalettePage = (
+  state: LiveryEditorState,
+): CommandPaletteState['pages'][number] => {
+  return state.commandPalette.pages.at(-1)!
+}
+
+export const getNonPaintableShapes = (
+  state: LiveryEditorState,
+): Array<string> => {
+  return state.layers
+    .filter((layer) => layer.layerType === 'non-editable-template-layers')
+    .flatMap((layer) => layer.shapeIds)
 }

@@ -1,6 +1,6 @@
 import { Stage } from 'react-konva'
 import { useMeasure } from 'react-use'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import {
   GRID_SPACING,
   MAX_SCALE,
@@ -11,8 +11,8 @@ import {
 } from '../../../constants/livery'
 import { useCanvasTransform } from '../../../hooks/use-canvas-transform'
 import { useGridDots } from '../../../hooks/use-grid-dots'
-import { GridLayer } from '../grid-layer'
 import { EditorContextMenu } from '../context-menu'
+import { GridLayer } from './grid-layer'
 import { Layers } from './layers'
 import { TransformerLayer } from './transformer-layer'
 import type Konva from 'konva'
@@ -41,6 +41,10 @@ export const Canvas = () => {
       if (e.target === stage) {
         transformer.nodes([])
         clearSelectedShapes()
+        return
+      }
+
+      if (!e.target.draggable()) {
         return
       }
 
@@ -113,6 +117,10 @@ export const Canvas = () => {
           ref={STAGE_REF}
           width={width || 0}
           height={height || 0}
+          offsetX={-width}
+          offsetY={-height}
+          x={width / 2}
+          y={height / 2}
           onWheel={handleWheel}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -120,7 +128,7 @@ export const Canvas = () => {
           onPointerLeave={handlePointerLeave}
           onContextMenu={onContextMenu}
         >
-          <GridLayer dots={dots} />
+          <GridLayer dots={dots} offsetX={-width} offsetY={-height} />
           <Layers />
           <TransformerLayer />
         </Stage>

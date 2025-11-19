@@ -6,7 +6,10 @@ import { ConnectedCheckbox } from './connected-checkbox'
 import { ConnectedNumberList } from './connected-number-list'
 import { ConnectedPointList } from './connected-point-list'
 import type React from 'react'
-import type { LiveryShapeAttributeItem, SupportedShapes } from '@/types/livery'
+import type {
+  LiveryShapeAttributeItem,
+  SupportedShapesConfig,
+} from '@/types/livery'
 import { camelToTitle } from '@/lib/utils'
 
 export type ShapeAttributeProps<T> = LiveryShapeAttributeItem<T> & {
@@ -27,7 +30,7 @@ const ShapePropertyComponentMap: Record<
   boolean: ConnectedCheckbox,
 }
 
-export function ShapePropertyItem<T = SupportedShapes>(
+export function ShapePropertyItem<T = SupportedShapesConfig>(
   props: ShapeAttributeProps<T>,
 ) {
   const Component = ShapePropertyComponentMap[props.type]

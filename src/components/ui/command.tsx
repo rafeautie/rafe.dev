@@ -3,6 +3,8 @@
 import { Command as CommandPrimitive } from 'cmdk'
 import { SearchIcon } from 'lucide-react'
 import { cva } from 'class-variance-authority'
+import { Spinner } from './spinner'
+import type { DialogContentProps } from '@radix-ui/react-dialog'
 import type { VariantProps } from 'class-variance-authority'
 import type * as React from 'react'
 
@@ -62,12 +64,14 @@ function CommandDialog({
   children,
   className,
   showCloseButton = true,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string
   description?: string
   className?: string
   showCloseButton?: boolean
+  onInteractOutside?: DialogContentProps['onInteractOutside']
 }) {
   return (
     <Dialog {...props}>
@@ -78,6 +82,7 @@ function CommandDialog({
       <DialogContent
         className={cn('overflow-hidden p-0', className)}
         showCloseButton={showCloseButton}
+        onInteractOutside={onInteractOutside}
       >
         <Command className="[&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
           {children}
@@ -117,7 +122,7 @@ function CommandList({
     <CommandPrimitive.List
       data-slot="command-list"
       className={cn(
-        'max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto',
+        'max-h-[300px] scroll-py-1 mb-1 overflow-x-hidden overflow-y-auto focus:outline-none',
         className,
       )}
       {...props}
@@ -139,8 +144,12 @@ function CommandEmpty({
 
 function CommandGroup({
   className,
+  loading,
+  heading,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.Group>) {
+}: React.ComponentProps<typeof CommandPrimitive.Group> & {
+  loading?: boolean
+}) {
   return (
     <CommandPrimitive.Group
       data-slot="command-group"
@@ -148,6 +157,12 @@ function CommandGroup({
         'text-foreground [&_[cmdk-group-heading]]:text-muted-foreground overflow-hidden p-1 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium',
         className,
       )}
+      heading={
+        <div className="flex gap-2 items-center">
+          {heading}
+          {loading && <Spinner />}
+        </div>
+      }
       {...props}
     />
   )

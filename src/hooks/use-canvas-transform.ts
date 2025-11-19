@@ -147,10 +147,6 @@ export const useCanvasTransform = ({
         return
       }
 
-      if (event.target !== stage) {
-        return
-      }
-
       const pointer = stage.getPointerPosition()
       if (!pointer) {
         return

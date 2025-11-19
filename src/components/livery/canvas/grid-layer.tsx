@@ -1,13 +1,15 @@
 import { memo } from 'react'
 import { Layer, Shape } from 'react-konva'
-import type { GridDot } from '../../hooks/use-grid-dots'
+import type { GridDot } from '../../../hooks/use-grid-dots'
 import { GRID_COLOR, GRID_DOT_RADIUS } from '@/constants/livery'
 
 export type GridLayerProps = {
   dots: Array<GridDot>
+  offsetX?: number
+  offsetY?: number
 }
 
-const GridLayerComponent = ({ dots }: GridLayerProps) => {
+const GridLayerComponent = ({ dots, offsetX, offsetY }: GridLayerProps) => {
   return (
     <Layer listening={false} shadowForStrokeEnabled={false}>
       <Shape
@@ -24,8 +26,10 @@ const GridLayerComponent = ({ dots }: GridLayerProps) => {
           ctx.beginPath()
 
           for (const dot of dots) {
-            ctx.moveTo(dot.x + GRID_DOT_RADIUS, dot.y)
-            ctx.arc(dot.x, dot.y, GRID_DOT_RADIUS, 0, Math.PI * 2)
+            const x = dot.x + (offsetX || 0)
+            const y = dot.y + (offsetY || 0)
+            ctx.moveTo(x + GRID_DOT_RADIUS, y)
+            ctx.arc(x, y, GRID_DOT_RADIUS, 0, Math.PI * 2)
           }
 
           ctx.fillStrokeShape(shape)

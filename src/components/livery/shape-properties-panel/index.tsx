@@ -9,14 +9,12 @@ import { SHAPE_ATTRIBUTE_CONFIG, TRANSFORMER_REF } from '@/constants/livery'
 import { cn } from '@/lib/utils'
 
 export const ShapePropertiesPanel = () => {
-  const isOpen = useLiveryEditorStore(
-    (state) => state.panels.shapesPanel.isOpen,
-  )
+  const isOpen = useLiveryEditorStore((state) => state.panels.shapePanel.isOpen)
   const selectedShapeIds = useLiveryEditorStore(
     (state) => state.selectedShapeIds,
   )
-  const hasOneLayer = selectedShapeIds.length === 1
-  const visibility = isOpen && hasOneLayer
+  const hasOneShape = selectedShapeIds.length === 1
+  const visibility = isOpen && hasOneShape
 
   const shapeAttributes = useMemo(() => {
     const nodes = TRANSFORMER_REF.current?.getNodes()
@@ -42,7 +40,7 @@ export const ShapePropertiesPanel = () => {
 
   const onVisibleTriggerClick = useCallback(() => {
     if (selectedShapeIds.length === 1) {
-      setIsPanelOpen('shapesPanel', !isOpen)
+      setIsPanelOpen('shapePanel', !isOpen)
     }
   }, [selectedShapeIds.length, isOpen])
 

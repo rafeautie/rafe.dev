@@ -77,7 +77,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             <AppSidebar />
             <SidebarInset>
               {children}
-              <Toaster position="bottom-right" />
+              <Toaster richColors position="bottom-right" />
             </SidebarInset>
           </SidebarProvider>
         </ThemeProvider>

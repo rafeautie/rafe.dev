@@ -1,57 +1,76 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect } from 'react'
+import { useIsFetching } from '@tanstack/react-query'
+import { CommandPalettePage } from './command-palette-page'
 import {
   CommandDialog,
   CommandEmpty,
-  CommandGroup,
   CommandInput,
-  CommandItem,
   CommandList,
 } from '@/components/ui/command'
-import { STATIC_COMMAND_CONFIG } from '@/constants/livery'
+import {
+  getCommandPaletteSearchTerm,
+  getIsCommandPaletteOpen,
+  goBackCommandPalettePage,
+  liveryEditorStore,
+  setCommandPaletteSearchTerm,
+  setIsCommandPaletteOpen,
+  useLiveryEditorStore,
+} from '@/state/livery-store'
 
 export const CommandPalette = () => {
-  const [open, setOpen] = useState(false)
+  const isOpen = useLiveryEditorStore(getIsCommandPaletteOpen)
+  const searchTerm = useLiveryEditorStore(getCommandPaletteSearchTerm)
+  const isAnyQueryFetching = useIsFetching({ queryKey: ['command-palette'] })
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.key === ' ' && e.ctrlKey) {
-        e.preventDefault()
-        setOpen((prevOpen) => !prevOpen)
+      const { pages, isOpen: _isOpen } = liveryEditorStore.state.commandPalette
+
+      switch (e.key) {
+        case 'Escape':
+          e.preventDefault()
+
+          if (pages.at(-1)?.forceCloseOnEscape === true) {
+            setIsCommandPaletteOpen(false)
+            return
+          }
+
+          if (_isOpen) {
+            goBackCommandPalettePage()
+          }
+          break
+        case ' ':
+          e.preventDefault()
+
+          if (e.ctrlKey) {
+            setIsCommandPaletteOpen(!_isOpen)
+          }
+
+          break
       }
     }
     document.addEventListener('keydown', down)
     return () => document.removeEventListener('keydown', down)
   }, [])
 
+  const onInteractOutside = useCallback(() => {
+    setIsCommandPaletteOpen(false)
+  }, [])
+
   return (
     <CommandDialog
-      open={open}
-      onOpenChange={setOpen}
+      open={isOpen}
+      onInteractOutside={onInteractOutside}
       className="-translate-y-0 top-[40%]"
     >
-      <CommandInput placeholder="Type a command or search..." />
+      <CommandInput
+        value={searchTerm}
+        onValueChange={setCommandPaletteSearchTerm}
+        placeholder="Type a command or search..."
+      />
       <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
-        {[
-          STATIC_COMMAND_CONFIG.shapeCommands,
-          STATIC_COMMAND_CONFIG.layerCommands,
-        ].map((commandGroup, index) => (
-          <CommandGroup key={index} heading={commandGroup.groupName}>
-            {commandGroup.commands.map(({ icon: Icon, name, execute }) => (
-              <CommandItem
-                key={name}
-                variant="transparent"
-                onSelect={() => {
-                  execute()
-                  setOpen(false)
-                }}
-              >
-                <Icon />
-                {name}
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        ))}
+        {!isAnyQueryFetching && <CommandEmpty>No results found.</CommandEmpty>}
+        <CommandPalettePage />
       </CommandList>
     </CommandDialog>
   )

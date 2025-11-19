@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { Circle, Line, Rect } from 'react-konva'
+import { Circle, Image, Line, Rect } from 'react-konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import {
   getShapeById,
@@ -11,6 +11,7 @@ const ShapeMap = {
   Rect,
   Circle,
   Line,
+  Image,
 }
 
 interface ShapeProps {
@@ -42,6 +43,7 @@ const Shape = ({ shapeId }: ShapeProps) => {
     <Component
       key={shape.id}
       {...shape}
+      image={shape.image}
       onTransformEnd={onTransformEnd}
       onDragEnd={onTransformEnd}
     />

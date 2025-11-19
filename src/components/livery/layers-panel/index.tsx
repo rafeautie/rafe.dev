@@ -17,6 +17,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card'
 import { LayerItem, SortableLayerItem } from './layer-item'
 import { LayerShapeItem } from './layer-shape-item'
+import { TemplateOptions } from './template-options'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import {
   getActiveDragLayerId,
@@ -128,7 +129,7 @@ export const LayersPanel = () => {
             strategy={verticalListSortingStrategy}
           >
             <motion.div
-              className={cn('flex flex-col', {
+              className={cn('flex flex-col gap-y-2', {
                 'pointer-events-none': !visibility,
               })}
               transition={{
@@ -143,9 +144,12 @@ export const LayersPanel = () => {
                 height: visibility ? 'auto' : 0,
               }}
             >
-              {layerIds.map((layerId) => (
-                <SortableLayerItem layerId={layerId} key={layerId} />
-              ))}
+              <TemplateOptions />
+              <div className=" flex flex-col gap-y-2 py-1">
+                {layerIds.map((layerId) => (
+                  <SortableLayerItem layerId={layerId} key={layerId} />
+                ))}
+              </div>
             </motion.div>
           </SortableContext>
 

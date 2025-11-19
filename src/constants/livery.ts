@@ -1,17 +1,34 @@
 import { createRef } from 'react'
-import { CircleIcon, Layers2Icon, SlashIcon, SquareIcon } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  CarIcon,
+  CircleIcon,
+  Layers2Icon,
+  SlashIcon,
+  SquareIcon,
+} from 'lucide-react'
 import type Konva from 'konva'
-import type { Command, LiveryShapeAttributes } from '@/types/livery'
-import { addLayer, addShape } from '@/state/livery-store'
+import type { CommandConfig, LiveryShapeAttributes } from '@/types/livery'
+import { SupportedShape } from '@/types/livery'
+import {
+  addLayer,
+  addShape,
+  setCommandPalettePage,
+  setIsCommandPaletteOpen,
+} from '@/state/livery-store'
+import { fetchFormattedCarTemplateList } from '@/functions/livery/getCarTemplateList'
+
+export const CAR_TEMPLATE_URL =
+  'https://ir-core-sites.iracing.com/members/member_images/misctemplates/all_iracing_templates.zip'
 
 export const GRID_COLOR = '#404040'
-export const GRID_DOT_RADIUS = 1
-export const GRID_SPACING = 40
+export const GRID_DOT_RADIUS = 2
+export const GRID_SPACING = 80
 export const GRID_BUFFER_MULTIPLIER = 1.5
 export const SCALE_BY = 1.1
-export const GRID_BASE_SCALE = 1
-export const MIN_SCALE = 0.4
+export const GRID_BASE_SCALE = 0.5
+export const MIN_SCALE = 0.2
 export const MAX_SCALE = 4
 export const PANNING_ENABLED = true
 export const ZOOM_ENABLED = true
@@ -19,22 +36,7 @@ export const DRAG_DEBOUNCE_MS = 8
 export const TRANSFORMER_REF = createRef<Konva.Transformer>()
 export const STAGE_REF = createRef<Konva.Stage>()
 
-export const SUPPORTED_SHAPES: Array<{
-  type: 'Rect' | 'Circle' | 'Line'
-  label: string
-  icon: LucideIcon
-}> = [
-  { type: 'Rect', label: 'Rectangle', icon: SquareIcon },
-  { type: 'Circle', label: 'Circle', icon: CircleIcon },
-  { type: 'Line', label: 'Line', icon: SlashIcon },
-] as const
-
-export const SHAPE_ATTRIBUTE_CONFIG: {
-  Base: LiveryShapeAttributes<Konva.Shape>
-  Rect: LiveryShapeAttributes<Konva.Rect>
-  Circle: LiveryShapeAttributes<Konva.Circle>
-  Line: LiveryShapeAttributes<Konva.Line>
-} = {
+export const SHAPE_ATTRIBUTE_CONFIG = {
   Base: [
     { key: 'x', type: 'number', step: 1, default: 100 },
     { key: 'y', type: 'number', step: 1, default: 100 },
@@ -105,47 +107,101 @@ export const SHAPE_ATTRIBUTE_CONFIG: {
       max: 1,
     },
   ],
+  Image: [
+    { key: 'width', type: 'number', step: 1, default: 100 },
+    { key: 'height', type: 'number', step: 1, default: 100 },
+  ],
+} satisfies {
+  Base: LiveryShapeAttributes<Konva.Shape>
+  Rect: LiveryShapeAttributes<Konva.Rect>
+  Circle: LiveryShapeAttributes<Konva.Circle>
+  Line: LiveryShapeAttributes<Konva.Line>
+  Image: LiveryShapeAttributes<Konva.Image>
 }
 
-export const STATIC_COMMAND_CONFIG = {
-  shapeCommands: {
-    groupName: 'Shapes',
-    commands: [
+export const COMMAND_CONFIG = {
+  default: {
+    commandGroups: [
       {
-        icon: SquareIcon,
-        name: 'Add Rectangle',
-        description: 'Insert a rectangle shape into the canvas',
-        execute: () => addShape({ type: 'Rect' }),
+        groupName: 'Templates',
+        mode: 'control-only',
+        commands: [
+          {
+            leftIcon: CarIcon,
+            rightIcon: ArrowRightIcon,
+            name: 'Load Car Template',
+            description: 'Load a car template to use as a base for your livery',
+            execute: () => {
+              setIsCommandPaletteOpen(true)
+              setCommandPalettePage({
+                key: 'templates',
+                forceCloseOnEscape: true,
+              })
+            },
+            closeOnExecute: false,
+          },
+        ],
       },
       {
-        icon: CircleIcon,
-        name: 'Add Circle',
-        description: 'Insert a circle shape into the canvas',
-        execute: () => addShape({ type: 'Circle' }),
+        groupName: 'Shapes',
+        mode: 'both',
+        commands: [
+          {
+            leftIcon: SquareIcon,
+            name: 'Add Rectangle',
+            description: 'Insert a rectangle shape into the canvas',
+            execute: () => addShape({ type: SupportedShape.Rect }),
+          },
+          {
+            leftIcon: CircleIcon,
+            name: 'Add Circle',
+            description: 'Insert a circle shape into the canvas',
+            execute: () => addShape({ type: SupportedShape.Circle }),
+          },
+          {
+            leftIcon: SlashIcon,
+            name: 'Add Line',
+            description: 'Insert a circle shape into the canvas',
+            execute: () => addShape({ type: SupportedShape.Line }),
+          },
+        ],
       },
       {
-        icon: SlashIcon,
-        name: 'Add Line',
-        description: 'Insert a circle shape into the canvas',
-        execute: () => addShape({ type: 'Line' }),
+        groupName: 'Layers',
+        mode: 'both',
+        commands: [
+          {
+            leftIcon: Layers2Icon,
+            name: 'Add Layer',
+            description: 'Insert a new layer',
+            execute: addLayer,
+          },
+        ],
+      },
+      {
+        groupName: 'Templates',
+        mode: 'palette-only',
+        commands: [
+          {
+            leftIcon: CarIcon,
+            rightIcon: ArrowRightIcon,
+            name: 'Load Car Template',
+            description: 'Load a car template to use as a base for your livery',
+            execute: () => setCommandPalettePage({ key: 'templates' }),
+            closeOnExecute: false,
+          },
+        ],
       },
     ],
   },
-  layerCommands: {
-    groupName: 'Layers',
-    commands: [
+  templates: {
+    commandGroups: [
       {
-        icon: Layers2Icon,
-        name: 'Add Layer',
-        description: 'Insert a new layer',
-        execute: () => addLayer(),
+        groupName: 'Templates',
+        mode: 'palette-only',
+        query: fetchFormattedCarTemplateList,
+        commands: [],
       },
     ],
   },
-} satisfies Record<
-  string,
-  {
-    groupName: string
-    commands: Array<Command>
-  }
->
+} as const satisfies CommandConfig

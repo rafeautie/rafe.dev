@@ -11,7 +11,7 @@ const cardVariants = cva(
       variant: {
         default: 'bg-card/40 backdrop-blur-md',
         translucent:
-          'border bg-background backdrop-blur-xl shadow-xs dark:bg-input/30 dark:border-input',
+          'border bg-background backdrop-blur-3xl shadow-xs dark:bg-input/30 dark:border-input',
       },
     },
     defaultVariants: {

@@ -73,7 +73,7 @@ export const LayerShapeItem = ({
   return (
     <div
       className={cn(
-        'rounded-md bg-accent pr-3 py-2 flex justify-between items-center pointer-events-auto',
+        'rounded-md bg-accent pr-3 py-2 flex justify-between items-center',
         {
           'ring-2 ring-blue-500': isShapeSelected,
           'pointer-events-none opacity-50': layer?.visible === false,
@@ -127,13 +127,7 @@ export const SortableLayerShapeItem = (props: LayerShapeItemProps) => {
   }
 
   return (
-    <div
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      style={style}
-      className="mb-2"
-    >
+    <div ref={setNodeRef} style={style} className="mb-2 pointer-events-auto">
       <LayerShapeItem
         {...props}
         setActivatorNodeRef={setActivatorNodeRef}

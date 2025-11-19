@@ -171,6 +171,10 @@ export const LayerItem = ({
 }
 
 export const SortableLayerItem = (props: LayerItemProps) => {
+  const layer = useLiveryEditorStore((state) =>
+    getLayerById(state, props.layerId),
+  )
+
   const {
     attributes,
     listeners,
@@ -189,8 +193,12 @@ export const SortableLayerItem = (props: LayerItemProps) => {
     opacity: isDragging ? 0 : 1,
   }
 
+  if (layer?.layerType === 'non-editable-template-layers') {
+    return null
+  }
+
   return (
-    <div ref={setNodeRef} style={style} className={cn('my-1')}>
+    <div ref={setNodeRef} style={style}>
       <LayerItem
         {...props}
         setActivatorNodeRef={setActivatorNodeRef}
