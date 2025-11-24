@@ -71,7 +71,7 @@ function App() {
           <div className="flex flex-col justify-between items-center gap-8 text-center">
             <LayoutGroup>
               <motion.span
-                className="flex whitespace-pre text-lg md:text-2xl"
+                className="flex whitespace-pre text-lg md:text-3xl"
                 layout
               >
                 <motion.span
@@ -95,7 +95,7 @@ function App() {
                 />
               </motion.span>
             </LayoutGroup>
-            <p className="text-accent-foreground font-extralight">
+            <p className="text-accent-foreground font-extralight text-lg max-w-xl">
               I partner with small to medium sized businesses to design, build,
               and refine software that performs — on time and to spec.
             </p>
@@ -105,15 +105,13 @@ function App() {
             {ServicesConfig.map((service) => (
               <Card key={service.title}>
                 <CardHeader>
-                  <div className="flex items-center gap-5">
+                  <div className="text-lg flex items-center gap-4">
                     <service.icon />
                     {service.title}
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm font-extralight">
-                    {service.description}
-                  </p>
+                  <p className="font-extralight">{service.description}</p>
                 </CardContent>
               </Card>
             ))}
