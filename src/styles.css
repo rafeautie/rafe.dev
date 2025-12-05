@@ -146,3 +146,18 @@ code {
     @apply bg-background text-foreground;
   }
 }
+
+.card-back-pattern {
+  --s: 18px; /* control the size*/
+  --c1: #000000;
+  --c2: #292929;
+  
+  --l1:#0000  48%,var(--c1) 0 52%,#0000 0;
+  --l2:#0000 1.3%,var(--c2) 0 32%,#0000 0;
+  background:
+    linear-gradient(-45deg,var(--l2)),
+    linear-gradient( 45deg,var(--l1)),
+    linear-gradient( 45deg,var(--l2)) calc(var(--s)/2) calc(var(--s)/2),
+    linear-gradient(-45deg,var(--l1)) var(--c2);
+  background-size: calc(2*var(--s)) var(--s),var(--s) var(--s);
+}

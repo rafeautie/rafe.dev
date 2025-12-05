@@ -5,6 +5,7 @@ import viteTsConfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from '@tailwindcss/vite'
 import { cloudflare } from '@cloudflare/vite-plugin'
 import { devtools } from '@tanstack/devtools-vite'
+import svgr from 'vite-plugin-svgr'
 
 const config = defineConfig({
   plugins: [
@@ -17,6 +18,7 @@ const config = defineConfig({
     tailwindcss(),
     tanstackStart(),
     viteReact(),
+    svgr(),
   ],
 })
 

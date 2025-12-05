@@ -10,33 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as RaceIndexRouteImport } from './routes/race/index'
+import { Route as RaceRoomIdRouteImport } from './routes/race/$roomId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RaceIndexRoute = RaceIndexRouteImport.update({
+  id: '/race/',
+  path: '/race/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RaceRoomIdRoute = RaceRoomIdRouteImport.update({
+  id: '/race/$roomId',
+  path: '/race/$roomId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/race/$roomId': typeof RaceRoomIdRoute
+  '/race': typeof RaceIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/race/$roomId': typeof RaceRoomIdRoute
+  '/race': typeof RaceIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/race/$roomId': typeof RaceRoomIdRoute
+  '/race/': typeof RaceIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/race/$roomId' | '/race'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/race/$roomId' | '/race'
+  id: '__root__' | '/' | '/race/$roomId' | '/race/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  RaceRoomIdRoute: typeof RaceRoomIdRoute
+  RaceIndexRoute: typeof RaceIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +68,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/race/': {
+      id: '/race/'
+      path: '/race'
+      fullPath: '/race'
+      preLoaderRoute: typeof RaceIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/race/$roomId': {
+      id: '/race/$roomId'
+      path: '/race/$roomId'
+      fullPath: '/race/$roomId'
+      preLoaderRoute: typeof RaceRoomIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  RaceRoomIdRoute: RaceRoomIdRoute,
+  RaceIndexRoute: RaceIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
