@@ -77,7 +77,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <ThemeProvider theme={theme}>
           <SidebarProvider defaultOpen={sidebarState}>
             <AppSidebar />
-            <SidebarInset>
+            <SidebarInset className="overflow-hidden">
               {children}
               <Toaster />
             </SidebarInset>

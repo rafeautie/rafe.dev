@@ -1,4 +1,4 @@
-import { HomeIcon, MailIcon } from 'lucide-react'
+import { CarIcon, HomeIcon, MailIcon } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
@@ -17,14 +17,14 @@ const items = [
     url: '/#',
     icon: HomeIcon,
   },
-  // {
-  //   title: 'iRacing Stats',
-  //   url: '/iracing',
-  //   icon: CircleGaugeIcon,
-  // },
+  {
+    title: 'Race',
+    url: '/race',
+    icon: CarIcon,
+  },
   {
     title: 'Contact',
-    url: '#contact',
+    url: '/#contact',
     icon: MailIcon,
   },
 ]
