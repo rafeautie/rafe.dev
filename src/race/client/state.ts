@@ -1,6 +1,7 @@
 import { Store, useStore } from '@tanstack/react-store'
 import { findLast, size } from 'lodash'
 import clsx from 'clsx'
+import { REDLINE_CARD } from '../constants'
 import {
   getCarsInTrackOrder,
   getMostRecentChallengeResolution,
@@ -80,21 +81,37 @@ export const connectToRoom = (roomId: string = '') => {
 }
 
 export const toggleCardSelection = (card: DeckCard) => {
-  const isSelected = raceStore.state.selectedCards.some(
-    ({ id }) => id === card.id,
-  )
+  const { selectedCards } = raceStore.state
+  const isSelected = selectedCards.some(({ id }) => id === card.id)
 
-  if (raceStore.state.selectedCards.length >= 2 && !isSelected) {
+  if (isSelected) {
+    raceStore.setState((s) => ({
+      ...s,
+      previousSelectedCards: [],
+      selectedCards: s.selectedCards.filter(({ id }) => id !== card.id),
+    }))
     return
   }
 
-  raceStore.setState((s) => ({
-    ...s,
-    previousSelectedCards: [],
-    selectedCards: isSelected
-      ? s.selectedCards.filter(({ id }) => id !== card.id)
-      : [...s.selectedCards, card],
-  }))
+  const hasRedlineSelected = selectedCards.some((c) => c.rank === REDLINE_CARD)
+  const isRedlineSelection = card.rank === REDLINE_CARD
+
+  if (hasRedlineSelected || isRedlineSelection) {
+    if (selectedCards.length >= 2) {
+      return
+    }
+    raceStore.setState((s) => ({
+      ...s,
+      previousSelectedCards: [],
+      selectedCards: [...s.selectedCards, card],
+    }))
+  } else {
+    raceStore.setState((s) => ({
+      ...s,
+      previousSelectedCards: [],
+      selectedCards: [card],
+    }))
+  }
 }
 
 export const clearCardSelection = () => {
