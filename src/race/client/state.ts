@@ -26,7 +26,7 @@ interface RaceStoreState {
   connect: boolean
   selectedCards: Deck
   revealState: RevealState
-  handledCardPlayEventIds: Array<string>
+  handledGameFeedEventIds: Array<string>
   animationInProgressStatus: Record<string, boolean>
 }
 
@@ -36,7 +36,7 @@ export const raceStore = new Store<RaceStoreState>({
   connect: false,
   selectedCards: [],
   revealState: 'idle',
-  handledCardPlayEventIds: [],
+  handledGameFeedEventIds: [],
   animationInProgressStatus: {},
 })
 
@@ -111,10 +111,10 @@ export const setRevealState = (revealState: RevealState) => {
   }))
 }
 
-export const markCardPlayEventAsHandled = (eventId: string) => {
+export const markGameFeedEventAsHandled = (eventId: string) => {
   raceStore.setState((s) => ({
     ...s,
-    handledCardPlayEventIds: [...s.handledCardPlayEventIds, eventId],
+    handledGameFeedEventIds: [...s.handledGameFeedEventIds, eventId],
   }))
 }
 
@@ -375,38 +375,18 @@ export const getShouldRevealChallengeResolutionFromMessageHistory = (
   )
 }
 
-export const getDidRaceEnd = (
-  messageHistory: RaceStoreState['messageHistory'],
-) => {
-  const latestGameState = getLatestMessageFromHistory(messageHistory)?.state
-  const previousGameState = getLatestMessageFromHistory(
-    messageHistory,
-    messageHistory.length - 2,
-  )?.state
-
-  if (!latestGameState || !previousGameState) {
-    return false
-  }
-
-  return (
-    latestGameState.statePath === GameStateValue.QualifyingSelection &&
-    previousGameState.statePath !== GameStateValue.QualifyingSelection &&
-    latestGameState.context.completedRaces > 0
-  )
-}
-
-export const getLatestCardPlayEvent = (state: (typeof raceStore)['state']) => {
+export const getLatestGameFeedEvent = (state: (typeof raceStore)['state']) => {
   const gameState = getLatestGameState(state)
   if (!gameState) {
     return null
   }
 
-  return gameState.context.cardPlayEvents.at(-1)
+  return gameState.context.gameFeed.at(-1)
 }
 
-export const getLatestCardPlayEventByCarId =
+export const getLatestGameFeedEventByCarId =
   (carId: string) => (state: (typeof raceStore)['state']) => {
-    const latestPlayedCardEvent = getLatestCardPlayEvent(state)
+    const latestPlayedCardEvent = getLatestGameFeedEvent(state)
     switch (latestPlayedCardEvent?.type) {
       case 'extendPlay':
       case 'discardPlay':
@@ -435,7 +415,7 @@ export const getLatestCardPlayEventByCarId =
 export const getLatestPlayedCardsByCarId =
   (carId: string) => (state: (typeof raceStore)['state']) => {
     const latestCardPlayEventByCarId =
-      getLatestCardPlayEventByCarId(carId)(state)
+      getLatestGameFeedEventByCarId(carId)(state)
 
     switch (latestCardPlayEventByCarId?.type) {
       case 'extendPlay':
@@ -459,7 +439,7 @@ export const getLatestPlayedCardsByCarId =
 export const getLatestPlayedTotalByCarId =
   (carId: string) => (state: (typeof raceStore)['state']) => {
     const latestCardPlayEventByCarId =
-      getLatestCardPlayEventByCarId(carId)(state)
+      getLatestGameFeedEventByCarId(carId)(state)
 
     switch (latestCardPlayEventByCarId?.type) {
       case 'extendPlay':
@@ -480,9 +460,9 @@ export const getLatestPlayedTotalByCarId =
     }
   }
 
-export const getIsCardPlayEventHandled =
+export const getIsGameFeedEventHandled =
   (eventId: string) => (state: (typeof raceStore)['state']) => {
-    return state.handledCardPlayEventIds.includes(eventId)
+    return state.handledGameFeedEventIds.includes(eventId)
   }
 
 export const getAnyAnimationInProgress = (

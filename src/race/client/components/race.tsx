@@ -28,6 +28,7 @@ export const Race = () => {
     case GameStateValue.QualifyingSelection:
     case GameStateValue.RacingChallengeSelection:
     case GameStateValue.RacingAwaitingAction:
+    case GameStateValue.PostRace:
       return <Game />
   }
 }

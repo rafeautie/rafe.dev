@@ -75,7 +75,7 @@ export interface Scoreboard {
 
 export type GridPosition = Record<string, number>
 
-type CardPlayEventMetadata = {
+type GameFeedEventMetadata = {
   id: string
   sequence: number
   createdAt: string
@@ -90,12 +90,12 @@ export type QualifyingResult = {
   total: number
 }
 
-export type QualifyingResolutionEvent = CardPlayEventMetadata & {
+export type QualifyingResolutionEvent = GameFeedEventMetadata & {
   type: 'qualifyingResolution'
   results: Array<QualifyingResult>
 }
 
-export type ChallengeResolutionEvent = CardPlayEventMetadata & {
+export type ChallengeResolutionEvent = GameFeedEventMetadata & {
   type: 'challengeResolution'
   challengeId: string
   attackerId: string
@@ -108,7 +108,7 @@ export type ChallengeResolutionEvent = CardPlayEventMetadata & {
   defenderTotal: number
 }
 
-export type ExtendPlayEvent = CardPlayEventMetadata & {
+export type ExtendPlayEvent = GameFeedEventMetadata & {
   type: 'extendPlay'
   carId: string
   cards: Deck
@@ -117,18 +117,25 @@ export type ExtendPlayEvent = CardPlayEventMetadata & {
   total: number
 }
 
-export type DiscardPlayEvent = CardPlayEventMetadata & {
+export type DiscardPlayEvent = GameFeedEventMetadata & {
   type: 'discardPlay'
   carId: string
   cards: Deck
   total: number
 }
 
-export type CardPlayEvent =
+export type RaceEndEvent = GameFeedEventMetadata & {
+  type: 'raceEnd'
+  finishingOrder: Array<string>
+  scoreboard: Scoreboard
+}
+
+export type GameFeedEvent =
   | QualifyingResolutionEvent
   | ChallengeResolutionEvent
   | ExtendPlayEvent
   | DiscardPlayEvent
+  | RaceEndEvent
 
 export type CardUsageResult = {
   cars: Record<string, CarState>
@@ -141,12 +148,12 @@ type WithoutEventMetadata<T> = T extends unknown
   ? Omit<T, 'id' | 'sequence' | 'createdAt' | 'raceNumber'>
   : never
 
-export type CardPlayEventStateSlice = Pick<
+export type GameFeedEventStateSlice = Pick<
   GameContext,
-  'cardPlayEvents' | 'completedRaces' | 'totalRaces'
+  'gameFeed' | 'completedRaces' | 'totalRaces'
 >
 
-export type CardPlayEventInput = WithoutEventMetadata<CardPlayEvent>
+export type GameFeedEventInput = WithoutEventMetadata<GameFeedEvent>
 
 export interface GameContext {
   players: Array<Player>
@@ -163,7 +170,7 @@ export interface GameContext {
   completedRaces: number
   finalLapTriggered: boolean
   log: Array<string>
-  cardPlayEvents: Array<CardPlayEvent>
+  gameFeed: Array<GameFeedEvent>
 }
 
 export type GameEvent =

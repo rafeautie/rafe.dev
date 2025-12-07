@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { and, assign, createActor, createMachine } from 'xstate'
 import { getCarsInTrackOrder, getMostRecentChallengeResolution } from '../utils'
 import {
-  appendCardPlayEvent,
+  appendGameFeedEvent,
   appendLog,
   appendWithLog,
   applyCardUsage,
@@ -170,7 +170,12 @@ export const gameStateMachine = createMachine(
         },
       },
       scoring: {
-        entry: ['recordFinishingOrder', 'applyPoints', 'incrementRaceCounter'],
+        entry: [
+          'recordFinishingOrder',
+          'applyPoints',
+          'incrementRaceCounter',
+          'recordRaceEndEvent',
+        ],
         always: 'postRace',
       },
       postRace: {
@@ -179,11 +184,13 @@ export const gameStateMachine = createMachine(
             guard: 'championshipComplete',
             target: 'championshipComplete',
           },
-          {
+        ],
+        after: {
+          5000: {
             actions: 'prepareNextRace',
             target: 'setup.dealCards',
           },
-        ],
+        },
       },
       championshipComplete: {
         type: 'final',
@@ -304,14 +311,14 @@ export const gameStateMachine = createMachine(
             total,
           }
         })
-        const appended = appendCardPlayEvent(context, {
+        const appended = appendGameFeedEvent(context, {
           type: 'qualifyingResolution',
           results,
         })
         return {
           gridPosition: buildGridPosition(resolution.order),
           pendingQualifyingSelections: {},
-          cardPlayEvents: appended.cardPlayEvents,
+          gameFeed: appended.gameFeed,
           log: appendLog(
             context,
             `Qualifying resolved. Leader: ${resolution.order[0] ?? 'n/a'}.`,
@@ -425,7 +432,7 @@ export const gameStateMachine = createMachine(
           ? moveCarForwardOne(context.gridPosition, result.attackerId)
           : context.gridPosition
 
-        const appended = appendCardPlayEvent(context, {
+        const appended = appendGameFeedEvent(context, {
           type: 'challengeResolution',
           challengeId: pending.id,
           attackerId: result.attackerId,
@@ -446,7 +453,7 @@ export const gameStateMachine = createMachine(
             activeCarId: result.attackerId,
             passes,
           },
-          cardPlayEvents: appended.cardPlayEvents,
+          gameFeed: appended.gameFeed,
           log: appendLog(
             context,
             `Challenge resolved. Winner ${result.winnerId} over ${result.loserId}.`,
@@ -460,7 +467,7 @@ export const gameStateMachine = createMachine(
           ? appendLog(context, usage.eliminationMessage)
           : context.log
         const total = scoreCardSet(event.cards)
-        const appended = appendCardPlayEvent(context, {
+        const appended = appendGameFeedEvent(context, {
           type: 'discardPlay',
           carId: event.carId,
           cards: event.cards,
@@ -470,7 +477,7 @@ export const gameStateMachine = createMachine(
           cars: usage.cars,
           finalLapTriggered: usage.finalLapTriggered,
           finishingOrder: usage.finishingOrder,
-          cardPlayEvents: appended.cardPlayEvents,
+          gameFeed: appended.gameFeed,
           log: appendWithLog(
             context,
             logBase,
@@ -490,7 +497,7 @@ export const gameStateMachine = createMachine(
           event.carId,
         )
         const total = scoreCardSet(event.cards)
-        const appended = appendCardPlayEvent(context, {
+        const appended = appendGameFeedEvent(context, {
           type: 'extendPlay',
           carId: event.carId,
           cards: event.cards,
@@ -503,7 +510,7 @@ export const gameStateMachine = createMachine(
           cars: usage.cars,
           finalLapTriggered: usage.finalLapTriggered,
           finishingOrder: usage.finishingOrder,
-          cardPlayEvents: appended.cardPlayEvents,
+          gameFeed: appended.gameFeed,
           log: appendWithLog(
             context,
             logBase,
@@ -567,6 +574,17 @@ export const gameStateMachine = createMachine(
       incrementRaceCounter: assign(({ context }) => ({
         completedRaces: context.completedRaces + 1,
       })),
+      recordRaceEndEvent: assign(({ context }) => {
+        const appended = appendGameFeedEvent(context, {
+          type: 'raceEnd',
+          finishingOrder: context.finishingOrder,
+          scoreboard: context.scoreboard,
+        })
+        return {
+          gameFeed: appended.gameFeed,
+          log: appendLog(context, 'Race end event recorded.'),
+        }
+      }),
       prepareNextRace: assign(({ context }) => ({
         gridPosition: {},
         pendingQualifyingSelections: {},
@@ -576,7 +594,7 @@ export const gameStateMachine = createMachine(
         finishingOrder: [],
         turnNumber: 0,
         finalLapTriggered: false,
-        cardPlayEvents: [],
+        gameFeed: [],
         log: appendLog(context, 'Preparing next race.'),
       })),
       resetContext: assign(() => createInitialContext(TOTAL_RACES)),

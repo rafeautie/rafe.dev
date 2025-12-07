@@ -13,7 +13,7 @@ import {
   RACE_TRANSITION,
   RACE_TRANSITION_DURATION,
 } from '@/race/constants'
-import { useCardPlayEventHandler } from '@/race/client/hooks/useCardPlayEvent'
+import { useGameEventHandler } from '@/race/client/hooks/useGameEvent'
 
 export const AnimatedCar = ({
   carId,
@@ -83,7 +83,7 @@ export const AnimatedCar = ({
     })
   }
 
-  useCardPlayEventHandler({
+  useGameEventHandler({
     qualifyingResolution: moveCarToStartingGridPosition,
     challengeResolution: moveCarToPosition,
     extendPlay: moveCarToPosition,

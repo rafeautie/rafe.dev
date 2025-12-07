@@ -24,7 +24,7 @@ import {
   RACE_TRANSITION,
   RACE_TRANSITION_DURATION,
 } from '@/race/constants'
-import { useCardPlayEventHandler } from '@/race/client/hooks/useCardPlayEvent'
+import { useGameEventHandler } from '@/race/client/hooks/useGameEvent'
 import { soundEffects } from '@/race/client/sound'
 import { waitWhileVisible } from '@/race/client/utils'
 import NumberTicker from '@/components/fancy/text/basic-number-ticker'
@@ -134,7 +134,7 @@ export const AnimatedCardReveal = ({
     setAnimationInProgress(`cardReveal-${carId}`, false)
   }
 
-  useCardPlayEventHandler({
+  useGameEventHandler({
     qualifyingResolution: () =>
       entranceAnimation({
         startDelay: CAR_QUALIFYING_ANIMATION_DURATION * grid.length,
@@ -243,7 +243,7 @@ const AnimatedCard = ({
     setAnimationInProgress(`cardReveal-${card.id}`, false)
   }
 
-  useCardPlayEventHandler({
+  useGameEventHandler({
     qualifyingResolution: () =>
       animation({
         startDelay: CAR_QUALIFYING_ANIMATION_DURATION * grid.length,

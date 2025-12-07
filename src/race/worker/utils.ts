@@ -17,12 +17,12 @@ import type {
   CarBlueprint,
   CarColor,
   CarState,
-  CardPlayEvent,
-  CardPlayEventInput,
-  CardPlayEventStateSlice,
   CardUsageResult,
   Deck,
   GameContext,
+  GameFeedEvent,
+  GameFeedEventInput,
+  GameFeedEventStateSlice,
   GameSnapshot,
   GameStateValue,
   GridPosition,
@@ -31,7 +31,7 @@ import type {
   TurnState,
 } from '../types'
 
-const getCurrentRaceNumber = (state: CardPlayEventStateSlice): number => {
+const getCurrentRaceNumber = (state: GameFeedEventStateSlice): number => {
   const tentative = state.completedRaces + 1
   if (tentative > state.totalRaces) {
     return state.totalRaces
@@ -39,36 +39,36 @@ const getCurrentRaceNumber = (state: CardPlayEventStateSlice): number => {
   return tentative
 }
 
-export const appendCardPlayEvent = (
-  state: CardPlayEventStateSlice,
-  payload: CardPlayEventInput,
-): { cardPlayEvents: Array<CardPlayEvent>; created: CardPlayEvent } => {
-  const sequence = state.cardPlayEvents.length
+export const appendGameFeedEvent = (
+  state: GameFeedEventStateSlice,
+  payload: GameFeedEventInput,
+): { gameFeed: Array<GameFeedEvent>; created: GameFeedEvent } => {
+  const sequence = state.gameFeed.length
   const created = {
     id: randomUUID(),
     sequence,
     createdAt: new Date().toISOString(),
     raceNumber: getCurrentRaceNumber(state),
     ...payload,
-  } as CardPlayEvent
+  } as GameFeedEvent
   return {
-    cardPlayEvents: [...state.cardPlayEvents, created],
+    gameFeed: [...state.gameFeed, created],
     created,
   }
 }
 
-export const appendCardPlayEvents = (
-  state: CardPlayEventStateSlice,
-  payloads: Array<CardPlayEventInput>,
-): { cardPlayEvents: Array<CardPlayEvent>; created: Array<CardPlayEvent> } => {
-  let cardPlayEvents = state.cardPlayEvents
-  const created: Array<CardPlayEvent> = []
+export const appendGameFeedEvents = (
+  state: GameFeedEventStateSlice,
+  payloads: Array<GameFeedEventInput>,
+): { gameFeed: Array<GameFeedEvent>; created: Array<GameFeedEvent> } => {
+  let gameFeed = state.gameFeed
+  const created: Array<GameFeedEvent> = []
   payloads.forEach((payload) => {
-    const result = appendCardPlayEvent({ ...state, cardPlayEvents }, payload)
-    cardPlayEvents = result.cardPlayEvents
+    const result = appendGameFeedEvent({ ...state, gameFeed }, payload)
+    gameFeed = result.gameFeed
     created.push(result.created)
   })
-  return { cardPlayEvents, created }
+  return { gameFeed, created }
 }
 
 /** Provides a blank turn descriptor for the current lap cycle. */
@@ -93,7 +93,7 @@ export const createInitialContext = (totalRaces: number): GameContext => ({
   completedRaces: 0,
   finalLapTriggered: false,
   log: [],
-  cardPlayEvents: [],
+  gameFeed: [],
 })
 
 /** Ensures scoreboard tables have entries for a driver's individual and team totals. */
