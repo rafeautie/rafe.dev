@@ -25,11 +25,12 @@
 
 <div class="flex flex-col items-center justify-center w-full">
     <div 
-        class="flex flex-col items-center justify-center w-full h-dvh text-xl md:text-3xl text-white font-semibold" 
+        class="flex flex-col items-center justify-center w-full h-dvh text-xl md:text-3xl text-white font-semibold p-10 md:p-20" 
         style:background-image={`url('https://cdn.rafe.dev/${data.image.key}')`}
         style:background-size="contain"
         style:background-position="center"
         style:background-repeat="no-repeat"
+        style:background-origin="content-box"
     >
         <p><a href="/about">rafe</a> / <a href="/photography">photography</a> / <a href="/development">development</a></p>
     </div>

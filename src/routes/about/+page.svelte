@@ -17,15 +17,22 @@
     <meta property="twitter:image" content="https://cdn.rafe.dev/DSCF0740.JPEG" />
 </svelte:head>
 
-<div class="flex flex-col gap-10 p-10 text-xl text-black">
-    <p class="text-4xl font-semibold"><a href="/">rafe / about</a></p>
-    <p>Based in California, I am a developer specializing in mobile interfaces and front-end architecture. I believe the best digital experiences feel as intentional as a well-composed photograph.</p>
-    <p>When I’m not behind a screen, I’m usually lost in a National Park with a camera in my hand, chasing light and documenting the rugged beauty of the West.</p>
-    <img src="https://cdn.rafe.dev/DSCF0740.JPEG" alt="Yosemite Valley" class="pt-8" />
-    <div class="grid grid-cols-3">
-        <img src="https://cdn.rafe.dev/DSCF0770.JPEG" alt="Yosemite Lodge" />
-        <img src="https://cdn.rafe.dev/DSCF0784.JPEG" alt="Yosemite Abandoned Gas Station" />
-        <img src="https://cdn.rafe.dev/DSCF0754.JPEG" alt="Half Dome and a Plane" />
+<div class="flex flex-col gap-8 p-8 text-xl text-black">
+    <div>
+        <p class="text-4xl font-semibold"><a href="/">rafe / about</a></p>
+        <a href="mailto:rafe@rafe.dev">rafe@rafe.dev</a>
+    </div>
+    <div class="flex flex-col gap-8 max-w-4xl">
+        <p>Based in California, I am a developer specializing in mobile interfaces and front-end architecture. I believe the best digital experiences feel as intentional as a well-composed photograph.</p>
+        <p>When I’m not behind a screen, I’m usually lost in a National Park with a camera in my hand, chasing light and documenting the rugged beauty of the West.</p>
+    </div>
+    <div class="flex flex-col gap-6">
+        <img src="https://cdn.rafe.dev/DSCF0740.JPEG" alt="Yosemite Valley" />
+        <div class="grid grid-cols-3 gap-6">
+            <img src="https://cdn.rafe.dev/DSCF0770.JPEG" alt="Yosemite Lodge" />
+            <img src="https://cdn.rafe.dev/DSCF0784.JPEG" alt="Yosemite Abandoned Gas Station" />
+            <img src="https://cdn.rafe.dev/DSCF0754.JPEG" alt="Half Dome and a Plane" />
+        </div>
     </div>
 </div>
 
