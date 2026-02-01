@@ -1,3 +1,22 @@
+<svelte:head>
+	<title>About | Rafe Autie</title>
+    <meta name="description" content="Learn more about Rafe Autie, a developer based in California specializing in mobile interfaces and front-end architecture, with a passion for photography." />
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="profile" />
+    <meta property="og:url" content="https://rafe.dev/about" />
+    <meta property="og:title" content="About | Rafe Autie" />
+    <meta property="og:description" content="Based in California, I am a developer specializing in mobile interfaces and front-end architecture." />
+    <meta property="og:image" content="https://cdn.rafe.dev/DSCF0740.JPEG" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://rafe.dev/about" />
+    <meta property="twitter:title" content="About | Rafe Autie" />
+    <meta property="twitter:description" content="Based in California, I am a developer specializing in mobile interfaces and front-end architecture." />
+    <meta property="twitter:image" content="https://cdn.rafe.dev/DSCF0740.JPEG" />
+</svelte:head>
+
 <div class="flex flex-col gap-10 p-10 text-xl text-black">
     <p class="text-4xl font-semibold"><a href="/">rafe / about</a></p>
     <p>Based in California, I am a developer specializing in mobile interfaces and front-end architecture. I believe the best digital experiences feel as intentional as a well-composed photograph.</p>
