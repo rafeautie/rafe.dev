@@ -10,4 +10,7 @@
 	<title>Rafe Autie</title>
 	<meta property="og:site_name" content="Rafe Autie" />
 </svelte:head>
-{@render children()}
+
+<main>
+	{@render children()}
+</main>
