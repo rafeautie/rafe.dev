@@ -24,5 +24,11 @@
 			"persist": true,
 			"head_sampling_rate": 1
 		}
-	}
+	},
+	"r2_buckets": [
+		{
+			"binding": "PHOTOS",
+			"bucket_name": "photos"
+		}
+	]
 }

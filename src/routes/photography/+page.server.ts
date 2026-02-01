@@ -1,13 +1,15 @@
-import { s3Client } from '$lib/s3';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async () => {
-	const objects = await s3Client.listObjects({ Bucket: 'photos' });
-	const formattedObjects = objects.Contents?.map(obj => ({
-		Key: obj.Key
-	}));
+export const load: PageServerLoad = async ({platform}) => {
+	const objectData = await platform?.env.PHOTOS.list()
+
+	if(!objectData) {
+		return {
+			images: []
+		}
+	}
 
 	return {
-		images: formattedObjects
+		images: objectData.objects.map(({ key }) => ({ key }))
 	};
 };

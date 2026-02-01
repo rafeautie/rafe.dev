@@ -1,14 +1,22 @@
-import { s3Client } from '$lib/s3';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async () => {
-	const objects = await s3Client.listObjects({ Bucket: 'photos' });
-	const randomIndex = Math.floor(Math.random() * (objects.Contents?.length || 1));
-	const object = objects.Contents?.[randomIndex ?? 0]
+export const load: PageServerLoad = async ({platform}) => {
+	const objectData = await platform?.env.PHOTOS.list()
+
+	if(!objectData) {
+		return {
+			image: {
+				key: ''
+			}
+		}
+	}
+
+	const randomIndex = Math.floor(Math.random() * (objectData.objects?.length || 1));
+	const object = objectData.objects?.[randomIndex ?? 0]
 
 	return {
 		image: {
-			key: object?.Key,
+			key: object?.key,
 		}
 	};
 };
