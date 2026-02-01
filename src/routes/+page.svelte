@@ -6,7 +6,7 @@
 
 <div class="flex flex-col items-center justify-center w-full">
     <div 
-        class="flex flex-col items-center justify-center w-full h-screen text-xl md:text-3xl text-white font-semibold" 
+        class="flex flex-col items-center justify-center w-full h-dvh text-xl md:text-3xl text-white font-semibold" 
         style:background-image={`url('https://cdn.rafe.dev/${data.image.key}')`}
         style:background-size="contain"
         style:background-position="center"
