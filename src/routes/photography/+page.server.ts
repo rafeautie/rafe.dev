@@ -1,9 +1,9 @@
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({platform}) => {
+export const load: PageServerLoad = async ({ platform }) => {
 	const objectData = await platform?.env.PHOTOS.list()
 
-	if(!objectData) {
+	if (!objectData) {
 		return {
 			images: []
 		}
