@@ -16,7 +16,9 @@
 	);
 </script>
 
-<path class="path-line" d={path} {stroke}></path>
+<svg>
+	<path class="path-line" d={path} {stroke}></path>
+</svg>
 
 <style>
 	.path-line {

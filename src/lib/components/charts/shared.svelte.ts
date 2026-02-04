@@ -1,7 +1,7 @@
 import type { Readable } from 'svelte/store';
 
 export interface DataItem {
-    timestamp: number;
+    clock: number;
     value: number;
 }
 

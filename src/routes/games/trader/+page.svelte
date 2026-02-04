@@ -1,101 +1,128 @@
 <script lang="ts">
-	import { LayerCake, Svg } from 'layercake';
 	import { onMount } from 'svelte';
-	import Line from '$lib/components/charts/line.svelte';
-	import AxisX from '$lib/components/charts/axisX.svelte';
-	import AxisY from '$lib/components/charts/axisY.svelte';
+	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Slider } from '$lib/components/ui/slider';
 	import * as Card from '$lib/components/ui/card';
-
 	import { traderState } from './shared.svelte';
-	import { roundTo } from '$lib/utils';
-	import { STOCK_PRESETS, Stock, type OrderSide } from './stock';
-	import * as ToggleGroup from '$lib/components/ui/toggle-group';
+	import { cn, roundTo } from '$lib/utils';
+	import {
+		MARKET_PRESETS,
+		MarketCoordinator,
+		type OrderSide,
+		type PlayerState,
+		type PortfolioItem
+	} from './market';
+	import { Spinner } from '$lib/components/ui/spinner';
+	import * as Tabs from '$lib/components/ui/tabs';
+	import { formatUSD } from '$lib/format';
+	import StockChart from './stock-chart.svelte';
 
-	const stock = new Stock(STOCK_PRESETS.PENNY_STOCK);
-	let clock = $state(0);
-	let visibleYRange = $derived(
-		traderState.data.reduce(
-			(prev, item) => ({
-				max: Math.max(prev.max, item.value),
-				min: Math.min(prev.min, item.value)
-			}),
-			{
-				min: Infinity,
-				max: -Infinity
-			}
-		)
-	);
-	let currentValue = $derived(roundTo(traderState.data.at(-1)?.value ?? 0, 2));
-	let previousValue = $derived(roundTo(traderState.data.at(-2)?.value ?? 0, 2));
-	let maxValue = $state(0);
+	const market = new MarketCoordinator({
+		stocks: [MARKET_PRESETS.BLUE, MARKET_PRESETS.CPTO, MARKET_PRESETS.MEME]
+	});
+	market.addPlayer({ id: 'Player', cash: 1000 });
+
+	let currentMarketState = $derived(traderState.data.at(-1));
+	let previousMarketState = $derived(traderState.data.at(-2));
+	let currentPlayerState = $derived<PlayerState>({
+		id: '',
+		cash: 0,
+		portfolio: [],
+		...currentMarketState?.playerStates.find((p) => p.id === 'Player')
+	});
+	let selectedStockData = $derived<PortfolioItem>({
+		symbol: '',
+		shares: 0,
+		averageBuyPrice: 0,
+		...currentPlayerState.portfolio.find((p) => p.symbol === traderState.selectedStock)
+	});
+
+	let allSymbols = $derived(Object.keys(currentMarketState?.prices ?? {}));
+	let currentStockItem = $derived({
+		clock: currentMarketState?.clock,
+		price: roundTo(currentMarketState?.prices[traderState.selectedStock] ?? 0, 2),
+		volume: currentMarketState?.volumes[traderState.selectedStock] ?? 0,
+		downwardTrend:
+			(previousMarketState?.prices[traderState.selectedStock] ?? 0) >
+			(currentMarketState?.prices[traderState.selectedStock] ?? 0)
+	});
+
 	let maxBuyableShares = $derived(
-		currentValue > 0 ? Math.floor(traderState.player.cash / currentValue) : 0
+		currentStockItem.price > 0 ? Math.floor(currentPlayerState?.cash / currentStockItem.price) : 0
 	);
-	let netWorth = $derived(
-		roundTo(traderState.player.cash + traderState.player.shares * currentValue, 2)
-	);
+	let netWorth = $derived.by(() => {
+		return (
+			currentPlayerState.cash +
+			currentPlayerState.portfolio.reduce((total, item) => {
+				const stockPrice = currentMarketState?.prices[item.symbol] ?? 0;
+				return total + item.shares * stockPrice;
+			}, 0)
+		);
+	});
 	let mode = $state<OrderSide>('BUY');
 	let selectedShares = $state(0);
+	let pendingOrdersCount = $state(0);
 
 	const placeOrder = () => {
-		if (mode === 'BUY') {
-			stock.placeOrder('BUY', selectedShares);
-			traderState.player.shares += selectedShares;
-			traderState.player.cash -= selectedShares * currentValue;
-		} else {
-			stock.placeOrder('SELL', selectedShares);
-			traderState.player.shares -= selectedShares;
-			traderState.player.cash += selectedShares * currentValue;
-		}
+		market.placeOrder({
+			playerId: 'Player',
+			symbol: traderState.selectedStock,
+			side: mode,
+			quantity: selectedShares
+		});
+
+		pendingOrdersCount += 1;
+	};
+
+	const selectSymbol = (symbol: string) => {
+		traderState.selectedStock = symbol;
 		selectedShares = 0;
 	};
 
 	onMount(() => {
 		const timer = setInterval(() => {
-			clock += 1;
-			stock.processTick();
-			traderState.data.push({
-				timestamp: clock,
-				value: stock.getPrice()
+			const marketState = market.tick();
+			traderState.data.push(marketState);
+			const resolvedOrders = marketState.reports.filter((report) => report.playerId === 'Player');
+
+			resolvedOrders.forEach((report) => {
+				if (report.status === 'FILLED') {
+					toast.success(
+						`Order ${report.side} ${report.quantity} shares at $${report.price} filled.`
+					);
+				} else {
+					toast.error(
+						`Order ${report.side} ${report.quantity} shares at $${report.price} failed.`,
+						{ description: report.reason }
+					);
+				}
 			});
-			maxValue = Math.max(maxValue, currentValue);
-			if (traderState.data.length > 50) {
-				traderState.data.shift();
-			}
+
+			pendingOrdersCount = Math.max(0, pendingOrdersCount - resolvedOrders.length);
 		}, 1000);
+
 		return () => clearInterval(timer);
 	});
 </script>
 
 <div class="flex h-dvh flex-col gap-3 p-3">
-	<Card.Root class="min-h-80 grow">
-		<Card.Content class="grow">
-			<div>
-				<p class="text-3xl font-bold text-primary">Live Price</p>
-				<p
-					class="text-xl font-semibold tracking-wide text-green-500"
-					class:text-red-500={currentValue < previousValue}
-				>
-					${currentValue}
-				</p>
-			</div>
-			<LayerCake
-				padding={{ top: 30, right: 25, bottom: 95, left: 40 }}
-				x="timestamp"
-				y="value"
-				yDomain={[visibleYRange.min, visibleYRange.max]}
-				data={traderState.data}
-			>
-				<Svg>
-					<AxisX ticks={5} tickGutter={5} />
-					<AxisY ticks={10} tickGutter={7} format={(d) => `$${d}`} />
-					<Line stroke="#3b82f6" />
-				</Svg>
-			</LayerCake>
-		</Card.Content>
-	</Card.Root>
+	<div class="grid grid-cols-2 gap-3 md:grid-cols-3">
+		{#each allSymbols as symbol (symbol)}
+			<StockChart
+				{symbol}
+				axis={false}
+				size="sm"
+				class={cn({
+					'brightness-150': traderState.selectedStock === symbol,
+					'hover:bg-card/80': traderState.selectedStock !== symbol
+				})}
+				onclick={() => selectSymbol(symbol)}
+			/>
+		{/each}
+	</div>
+
+	<StockChart symbol={traderState.selectedStock} />
 
 	<div class="flex h-78 flex-col gap-3 md:flex-row">
 		<div class="flex flex-1 flex-col gap-3">
@@ -114,23 +141,25 @@
 								</p>
 							{/if}
 						</div>
-						<ToggleGroup.Root size="lg" type="single" bind:value={mode}>
-							<ToggleGroup.Item value="BUY">Buy</ToggleGroup.Item>
-							<ToggleGroup.Item value="SELL">Sell</ToggleGroup.Item>
-						</ToggleGroup.Root>
+						<Tabs.Root bind:value={mode}>
+							<Tabs.List>
+								<Tabs.Trigger value="BUY">Buy</Tabs.Trigger>
+								<Tabs.Trigger value="SELL">Sell</Tabs.Trigger>
+							</Tabs.List>
+						</Tabs.Root>
 					</div>
 					<div class="flex items-center justify-center">
 						{#if mode === 'BUY'}
 							<p class="text-xl font-semibold text-nowrap">
-								Buy {selectedShares} shares for ${(selectedShares * currentValue).toFixed(2)}
+								Buy {selectedShares} shares for {formatUSD(selectedShares * currentStockItem.price)}
 							</p>
-						{:else if traderState.player.shares === 0}
+						{:else if selectedStockData.shares === 0}
 							<p class="text-xl font-semibold text-nowrap">No shares to sell</p>
 						{:else}
 							<p class="text-xl font-semibold text-nowrap">
-								Sell {selectedShares}/{traderState.player.shares} shares for ${(
-									selectedShares * currentValue
-								).toFixed(2)}
+								Sell {selectedShares}/{selectedStockData.shares} shares for {formatUSD(
+									selectedShares * currentStockItem.price
+								)}
 							</p>
 						{/if}
 					</div>
@@ -141,7 +170,7 @@
 								bind:value={selectedShares}
 								min={0}
 								max={maxBuyableShares}
-								disabled={traderState.player.cash === 0}
+								disabled={currentPlayerState.cash === 0}
 								step={[
 									1,
 									selectedShares,
@@ -154,18 +183,22 @@
 								type="single"
 								bind:value={selectedShares}
 								min={0}
-								max={traderState.player.shares}
-								disabled={traderState.player.shares === 0}
-								step={Math.floor(traderState.player.shares / 100) || 1}
+								max={selectedStockData.shares}
+								disabled={selectedStockData.shares === 0}
+								step={Math.floor(selectedStockData.shares / 100) || 1}
 							/>
 						{/if}
 						<Button
 							size="lg"
 							class="self-stretch"
 							onclick={placeOrder}
-							disabled={selectedShares === 0}
+							disabled={selectedShares === 0 || pendingOrdersCount > 0}
 						>
-							Place Order
+							{#if pendingOrdersCount > 0}
+								<Spinner />
+							{:else}
+								Place Order
+							{/if}
 						</Button>
 					</div>
 				</Card.Content>
@@ -177,15 +210,15 @@
 				<p class="text-xl font-semibold">Player</p>
 				<div class="flex justify-between">
 					<p class="font-semibold">Net Worth</p>
-					<p class="font-semibold">${netWorth.toFixed(2)}</p>
+					<p class="font-semibold">{formatUSD(netWorth)}</p>
 				</div>
 				<div class="flex justify-between">
 					<p class="font-semibold">Cash</p>
-					<p class="font-semibold">${traderState.player.cash.toFixed(2)}</p>
+					<p class="font-semibold">{formatUSD(currentPlayerState.cash)}</p>
 				</div>
 				<div class="flex justify-between">
 					<p class="font-semibold">Shares</p>
-					<p class="font-semibold">{traderState.player.shares}</p>
+					<p class="font-semibold">{selectedStockData.shares}</p>
 				</div>
 			</Card.Content>
 		</Card.Root>
