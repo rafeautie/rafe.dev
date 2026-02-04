@@ -1,3 +1,4 @@
+import type { LayerCake } from 'layercake';
 import type { Readable } from 'svelte/store';
 
 export interface DataItem {
@@ -15,4 +16,5 @@ export interface LayerCakeContext {
     yRange: Readable<[number, number]>;
     width: Readable<number>;
     height: Readable<number>;
+    config: Readable<{}>;
 }

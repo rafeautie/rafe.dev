@@ -46,7 +46,11 @@
 		"wrangler": "^4.60.0"
 	},
 	"dependencies": {
+		"@types/d3-format": "^3.0.4",
+		"@types/d3-quadtree": "^3.0.6",
 		"clsx": "^2.1.1",
+		"d3-format": "^3.1.2",
+		"d3-quadtree": "^3.0.1",
 		"d3-shape": "^3.2.0",
 		"layercake": "^10.0.2",
 		"tailwind-merge": "^3.4.0"

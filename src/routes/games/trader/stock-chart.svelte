@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { LayerCake, Svg } from 'layercake';
+	import { Html, LayerCake, Svg } from 'layercake';
 	import Line from '$lib/components/charts/line.svelte';
 	import AxisX from '$lib/components/charts/axisX.svelte';
 	import AxisY from '$lib/components/charts/axisY.svelte';
+	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Card from '$lib/components/ui/card';
 	import { traderState } from './shared.svelte';
 	import { cn, roundTo } from '$lib/utils';
 	import { formatUSD } from '$lib/format';
+	import Tooltip from '$lib/components/charts/tooltip.svelte';
 
 	let {
 		symbol,
@@ -40,10 +42,20 @@
 			(previousMarketState?.prices[symbol] ?? 0) > (currentMarketState?.prices[symbol] ?? 0)
 	});
 
-	let xDomain = $derived([
-		Math.max((currentStockItem.clock ?? 0) - 30, 0),
-		currentStockItem.clock ?? 1
-	]);
+	let xDomain = $derived.by(() => {
+		switch (traderState.filterMode) {
+			case 'month':
+				return [Math.max((currentStockItem.clock ?? 0) - 30, 0), currentStockItem.clock ?? 1];
+			case 'month3':
+				return [Math.max((currentStockItem.clock ?? 0) - 90, 0), currentStockItem.clock ?? 1];
+			case 'month6':
+				return [Math.max((currentStockItem.clock ?? 0) - 180, 0), currentStockItem.clock ?? 1];
+			case 'year':
+				return [Math.max((currentStockItem.clock ?? 0) - 365, 0), currentStockItem.clock ?? 1];
+			default:
+				return [0, currentStockItem.clock ?? 1];
+		}
+	});
 
 	let priceList = $derived.by(() => {
 		return priceData
@@ -61,25 +73,38 @@
 	{onclick}
 >
 	<Card.Content class={cn('grow', { 'p-3': size === 'sm' })}>
-		<div>
-			<p
-				class={cn('font-bold text-primary', {
-					'text-md': size === 'sm',
-					'text-3xl': size === 'default'
-				})}
-			>
-				{symbol}
-			</p>
-			<p
-				class={cn('font-semibold tracking-wide', {
-					'text-sm': size === 'sm',
-					'text-xl': size === 'default'
-				})}
-				class:text-green-500={!currentStockItem.downwardTrend}
-				class:text-red-500={currentStockItem.downwardTrend}
-			>
-				{formatUSD(currentStockItem.price)}
-			</p>
+		<div class="flex justify-between">
+			<div>
+				<p
+					class={cn('font-bold text-primary', {
+						'text-md': size === 'sm',
+						'text-3xl': size === 'default'
+					})}
+				>
+					{symbol}
+				</p>
+				<p
+					class={cn('font-semibold tracking-wide', {
+						'text-sm': size === 'sm',
+						'text-xl': size === 'default'
+					})}
+					class:text-green-500={!currentStockItem.downwardTrend}
+					class:text-red-500={currentStockItem.downwardTrend}
+				>
+					{formatUSD(currentStockItem.price)}
+				</p>
+			</div>
+			{#if size !== 'sm'}
+				<Tabs.Root bind:value={traderState.filterMode}>
+					<Tabs.List>
+						<Tabs.Trigger value="month">1M</Tabs.Trigger>
+						<Tabs.Trigger value="month3">3M</Tabs.Trigger>
+						<Tabs.Trigger value="month6">6M</Tabs.Trigger>
+						<Tabs.Trigger value="year">1Y</Tabs.Trigger>
+						<Tabs.Trigger value="all">All</Tabs.Trigger>
+					</Tabs.List>
+				</Tabs.Root>
+			{/if}
 		</div>
 		<LayerCake
 			padding={axis
@@ -93,11 +118,17 @@
 		>
 			<Svg>
 				{#if axis}
-					<AxisX ticks={10} tickGutter={7} />
-					<AxisY ticks={10} tickGutter={7} format={(d) => `$${d}`} />
+					<AxisX ticks={7} tickGutter={7} format={(d) => `D${d}`} />
+					<AxisY ticks={10} tickGutter={7} format={formatUSD} />
 				{/if}
 				<Line stroke="#3b82f6" />
 			</Svg>
+
+			<Html>
+				{#if size !== 'sm'}
+					<Tooltip seriesData={{ Price: priceData }} format={formatUSD} />
+				{/if}
+			</Html>
 		</LayerCake>
 	</Card.Content>
 </Card.Root>

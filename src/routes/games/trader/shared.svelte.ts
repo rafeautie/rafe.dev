@@ -6,9 +6,17 @@ interface LeaderboardItem {
     netWorth: number;
 }
 
-export const traderState = $state({
-    selectedStock: 'MEME' as string,
-    data: [] as MarketState[],
-    leaderboard: [] as LeaderboardItem[],
+interface TraderState {
+    filterMode: 'month' | 'month3' | 'month6' | 'year' | 'all';
+    selectedStock: string;
+    data: MarketState[];
+    leaderboard: LeaderboardItem[];
+}
+
+export const traderState = $state<TraderState>({
+    filterMode: 'month',
+    selectedStock: 'MEME',
+    data: [],
+    leaderboard: [],
 })
 
