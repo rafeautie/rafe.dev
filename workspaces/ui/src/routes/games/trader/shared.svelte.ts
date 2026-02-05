@@ -1,4 +1,4 @@
-import { MARKET_PRESETS, MarketCoordinator, type MarketState } from "../../../../../trader-server/src/market";
+import type { MarketStateMessage } from "shared";
 
 interface TraderState {
     playerId: string;
@@ -6,7 +6,7 @@ interface TraderState {
     selectedStock: string;
     selectedShares: number;
     pendingOrdersCount: number;
-    data: MarketState[];
+    data: MarketStateMessage[];
 }
 
 export const traderState = $state<TraderState>({
@@ -17,13 +17,3 @@ export const traderState = $state<TraderState>({
     pendingOrdersCount: 0,
     data: [],
 })
-
-export const market = new MarketCoordinator({
-    stocks: [MARKET_PRESETS.BLUE, MARKET_PRESETS.CPTO, MARKET_PRESETS.MEME]
-});
-
-market.addPlayer({
-    id: 'player-1',
-    username: 'Player 1',
-    cash: 1000
-});

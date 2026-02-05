@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { MARKET_PRESETS, MarketCoordinator } from './market';
-import { MarketState } from 'shared';
+import { MarketStateMessage } from 'shared';
 
 // Worker
 export default {
@@ -121,10 +121,11 @@ export class TraderGameServer extends DurableObject {
 
 		this.sessions.forEach((attachment, connectedWs) => {
 			connectedWs.send(JSON.stringify({
+				type: 'market_update',
 				...marketState,
 				playerState: this.market.getPlayerState(attachment.id),
 				reports: marketState.reports[attachment.id] || [],
-			} satisfies MarketState));
+			} satisfies MarketStateMessage));
 		});
 
 		this.ctx.storage.setAlarm(Date.now() + 1000);

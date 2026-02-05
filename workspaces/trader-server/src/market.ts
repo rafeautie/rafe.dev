@@ -1,7 +1,7 @@
 /** * --- TYPES & INTERFACES --- 
  */
 
-import { AddPlayerConfig, formatUSD, groupBy, MarketState, OrderRequest, OrderResult, PortfolioItem, roundTo, StockConfig } from "shared";
+import { AddPlayerConfig, formatUSD, groupBy, MarketStateMessage, OrderRequest, OrderResult, PortfolioItem, roundTo, StockConfig } from "shared";
 
 export type OrderSide = 'BUY' | 'SELL';
 
@@ -149,9 +149,9 @@ export class MarketCoordinator {
     this.clock += 1;
 
     // PHASE 1: Discovery (Price moves based on batch volume)
-    const oldPrices: MarketState['prices'] = {};
-    const prices: MarketState['prices'] = {};
-    const volumes: MarketState['volumes'] = {};
+    const oldPrices: MarketStateMessage['prices'] = {};
+    const prices: MarketStateMessage['prices'] = {};
+    const volumes: MarketStateMessage['volumes'] = {};
 
     for (const symbol in this.engines) {
       oldPrices[symbol] = this.engines[symbol].getPrice();

@@ -46,7 +46,20 @@ export interface LeaderboardEntry {
     netWorth: number;
 }
 
-export interface MarketState {
+export interface PlaceOrderMessage {
+    type: 'place_order';
+    symbol: string;
+    side: OrderSide;
+    quantity: number;
+}
+export interface OrderPlacedMessage {
+    type: 'order_placed';
+    success: boolean;
+    reason?: string;
+}
+
+export interface MarketStateMessage {
+    type: 'market_update',
     clock: number,
     prices: Record<string, number>,
     volumes: Record<string, Record<OrderSide, number>>,

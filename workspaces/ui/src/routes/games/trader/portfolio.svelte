@@ -1,29 +1,22 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { traderState } from './shared.svelte';
-	import { formatUSD, type PlayerState, type PortfolioItem } from 'shared';
+	import { formatUSD, type PortfolioItem } from 'shared';
 
 	let currentMarketState = $derived(traderState.data.at(-1));
-	let currentPlayerState = $derived<PlayerState>({
-		id: '',
-		cash: 0,
-		portfolio: [],
-		...currentMarketState?.playerStates.find((p) => p.id === 'player-1')
-	});
 	let selectedStockData = $derived<PortfolioItem>({
 		symbol: '',
 		shares: 0,
 		averageBuyPrice: 0,
-		...currentPlayerState.portfolio.find((p) => p.symbol === traderState.selectedStock)
+		...currentMarketState?.playerState.portfolio.find((p) => p.symbol === traderState.selectedStock)
 	});
+
 	let netWorth = $derived.by(() => {
-		return (
-			currentPlayerState.cash +
-			currentPlayerState.portfolio.reduce((total, item) => {
-				const stockPrice = currentMarketState?.prices[item.symbol] ?? 0;
-				return total + item.shares * stockPrice;
-			}, 0)
-		);
+		const portfolioValue =
+			currentMarketState?.playerState.portfolio.reduce((total, item) => {
+				return total + item.shares * (currentMarketState?.prices[item.symbol] ?? 0);
+			}, 0) ?? 0;
+		return (currentMarketState?.playerState.cash ?? 0) + portfolioValue;
 	});
 </script>
 
@@ -36,7 +29,7 @@
 		</div>
 		<div class="flex justify-between gap-6">
 			<p class="font-semibold">Cash</p>
-			<p class="font-semibold">{formatUSD(currentPlayerState.cash)}</p>
+			<p class="font-semibold">{formatUSD(currentMarketState?.playerState.cash ?? 0)}</p>
 		</div>
 		<div class="flex justify-between gap-6">
 			<p class="font-semibold">Shares</p>

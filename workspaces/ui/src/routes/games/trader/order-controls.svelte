@@ -2,25 +2,19 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Slider } from '$lib/components/ui/slider';
 	import * as Card from '$lib/components/ui/card';
-	import { market, traderState } from './shared.svelte';
-	import { roundTo } from 'shared';
+	import { traderState } from './shared.svelte';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { formatUSD, type OrderSide, type PlayerState, type PortfolioItem } from 'shared';
+	import { formatUSD, roundTo, type OrderSide, type PortfolioItem } from 'shared';
+	import { websocketManager } from './websocket.svelte';
 
 	let currentMarketState = $derived(traderState.data.at(-1));
 	let previousMarketState = $derived(traderState.data.at(-2));
-	let currentPlayerState = $derived<PlayerState>({
-		id: '',
-		cash: 0,
-		portfolio: [],
-		...currentMarketState?.playerStates.find((p) => p.id === 'player-1')
-	});
 	let selectedStockData = $derived<PortfolioItem>({
 		symbol: '',
 		shares: 0,
 		averageBuyPrice: 0,
-		...currentPlayerState.portfolio.find((p) => p.symbol === traderState.selectedStock)
+		...currentMarketState?.playerState.portfolio.find((p) => p.symbol === traderState.selectedStock)
 	});
 
 	let currentStockItem = $derived({
@@ -33,15 +27,17 @@
 	});
 
 	let maxBuyableShares = $derived(
-		currentStockItem.price > 0 ? Math.floor(currentPlayerState?.cash / currentStockItem.price) : 0
+		currentStockItem.price > 0
+			? Math.floor((currentMarketState?.playerState.cash ?? 0) / currentStockItem.price)
+			: 0
 	);
 
 	let mode = $state<OrderSide>('BUY');
 	let selectedShares = $state(0);
 
 	const placeOrder = () => {
-		market.placeOrder({
-			playerId: 'player-1',
+		websocketManager.send({
+			type: 'place_order',
 			symbol: traderState.selectedStock,
 			side: mode,
 			quantity: selectedShares
@@ -101,7 +97,7 @@
 					bind:value={selectedShares}
 					min={0}
 					max={maxBuyableShares}
-					disabled={currentPlayerState.cash === 0}
+					disabled={currentMarketState?.playerState.cash === 0}
 					step={[
 						1,
 						selectedShares,

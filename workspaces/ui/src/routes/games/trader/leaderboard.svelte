@@ -15,7 +15,7 @@
 	<Card.Content class="flex flex-col gap-1 p-0">
 		<p class="px-6 text-xl font-semibold">Leaderboard</p>
 		<ScrollArea class="max-h-58">
-			{#each [...latestLeaderboard, { playerId: '2', username: 'bigsby', netWorth: 1000 }, { playerId: '3', username: 'me', netWorth: 400 }] as leaderboardItem, index (leaderboardItem.playerId)}
+			{#each latestLeaderboard as leaderboardItem, index (leaderboardItem.playerId)}
 				<div
 					class={cn('m-3 mx-3 flex justify-between gap-3 rounded-md px-3 py-1', {
 						'bg-amber-400/50': index === 0,
