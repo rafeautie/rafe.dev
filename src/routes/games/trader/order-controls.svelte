@@ -39,7 +39,6 @@
 
 	let mode = $state<OrderSide>('BUY');
 	let selectedShares = $state(0);
-	let pendingOrdersCount = $state(0);
 
 	const placeOrder = () => {
 		market.placeOrder({
@@ -49,7 +48,7 @@
 			quantity: selectedShares
 		});
 
-		pendingOrdersCount += 1;
+		traderState.pendingOrdersCount += 1;
 	};
 </script>
 
@@ -123,9 +122,9 @@
 				size="lg"
 				class="self-stretch"
 				onclick={placeOrder}
-				disabled={selectedShares === 0 || pendingOrdersCount > 0}
+				disabled={selectedShares === 0 || traderState.pendingOrdersCount > 0}
 			>
-				{#if pendingOrdersCount > 0}
+				{#if traderState.pendingOrdersCount > 0}
 					<Spinner />
 				{:else}
 					Place Order

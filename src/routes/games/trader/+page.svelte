@@ -13,8 +13,6 @@
 
 	let allSymbols = $derived(Object.keys(currentMarketState?.prices ?? {}));
 
-	let pendingOrdersCount = $state(0);
-
 	const selectSymbol = (symbol: string) => {
 		traderState.selectedStock = symbol;
 		traderState.selectedShares = 0;
@@ -40,33 +38,15 @@
 				}
 			});
 
-			pendingOrdersCount = Math.max(0, pendingOrdersCount - resolvedOrders.length);
+			traderState.pendingOrdersCount = Math.max(
+				0,
+				traderState.pendingOrdersCount - resolvedOrders.length
+			);
 		};
 
 		[...Array(2_000).keys()].forEach(() => handleTick());
 
-		const timer = setInterval(() => {
-			const marketState = market.tick();
-			traderState.data.push(marketState);
-			const resolvedOrders = marketState.reports.filter((report) => report.playerId === 'Player');
-
-			resolvedOrders.forEach((report) => {
-				if (report.status === 'FILLED') {
-					toast.success(
-						`${report.side} ${report.quantity} shares at ${formatUSD(report.price)} filled.`,
-						{ description: formatUSD(report.quantity * report.price) }
-					);
-				} else {
-					toast.error(
-						`Order ${report.side} ${report.quantity} shares at ${formatUSD(report.price)} failed.`,
-						{ description: report.reason }
-					);
-				}
-			});
-
-			pendingOrdersCount = Math.max(0, pendingOrdersCount - resolvedOrders.length);
-		}, 1000);
-
+		const timer = setInterval(handleTick, 1000);
 		return () => clearInterval(timer);
 	});
 </script>

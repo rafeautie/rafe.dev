@@ -255,7 +255,7 @@ export const MARKET_PRESETS = {
   // Very stable, massive liquidity, slow steady growth.
   "BLUE": {
     symbol: "BLUE",
-    initialPrice: 500.00,
+    initialPrice: 300.00,
     volatility: 0.0004, // Almost imperceptible jitter
     liquidity: 250000,  // Requires huge volume to shift
     drift: 0.00002      // Reliable upward bias
