@@ -4,11 +4,12 @@
 	import type { DataItem, LayerCakeContext } from './shared.svelte';
 
 	interface Props {
-		format?: (value: number) => string;
+		formatSeries?: Record<string, (value: number) => string>;
 		seriesData: Record<string, DataItem[]>;
+		excludeDots?: string[];
 	}
 
-	const { seriesData, format }: Props = $props();
+	const { seriesData, formatSeries, excludeDots = [] }: Props = $props();
 	const { width, height, xScale, yScale } = getContext<LayerCakeContext>('LayerCake');
 
 	let containerX = $state<number | null>(null);
@@ -107,7 +108,7 @@
 			/>
 			{#if activeIndex !== null}
 				{#each seriesNames as name (name)}
-					{#if tooltipSpring.current.ys[name] !== undefined}
+					{#if tooltipSpring.current.ys[name] !== undefined && !excludeDots.includes(name)}
 						<circle
 							cx={tooltipSpring.current.x}
 							cy={tooltipSpring.current.ys[name]}
@@ -136,8 +137,8 @@
 					<div class="flex justify-between gap-3">
 						<span>{name}</span>
 						<span
-							>{format
-								? format(seriesData[name][activeIndex].value)
+							>{formatSeries && formatSeries[name]
+								? formatSeries[name](seriesData[name][activeIndex].value)
 								: seriesData[name][activeIndex].value.toFixed(2)}</span
 						>
 					</div>

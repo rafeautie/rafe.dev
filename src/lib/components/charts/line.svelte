@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import type { LayerCakeContext } from './shared.svelte';
+	import { cn } from '$lib/utils';
 
 	const { data, xGet, yGet } = getContext<LayerCakeContext>('LayerCake');
-
-	let { stroke = 'red' } = $props();
 
 	let path = $derived(
 		'M' +
@@ -17,14 +16,10 @@
 </script>
 
 <svg>
-	<path class="path-line" d={path} {stroke}></path>
+	<path
+		class={cn('fill-none stroke-blue-500 stroke-2')}
+		style:stroke-linejoin="round"
+		style:stroke-linecap="round"
+		d={path}
+	></path>
 </svg>
-
-<style>
-	.path-line {
-		fill: none;
-		stroke-linejoin: round;
-		stroke-linecap: round;
-		stroke-width: 2;
-	}
-</style>

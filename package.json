@@ -53,6 +53,7 @@
 		"d3-quadtree": "^3.0.1",
 		"d3-shape": "^3.2.0",
 		"layercake": "^10.0.2",
+		"mode-watcher": "^1.1.0",
 		"tailwind-merge": "^3.4.0"
 	}
 }

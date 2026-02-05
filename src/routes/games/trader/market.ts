@@ -1,6 +1,9 @@
 /** * --- TYPES & INTERFACES --- 
  */
 
+import { formatUSD } from "$lib/format";
+import { roundTo } from "$lib/utils";
+
 export type OrderSide = 'BUY' | 'SELL';
 
 export interface MarketCoordinatorConfig {
@@ -48,7 +51,7 @@ export interface PlayerState {
 export interface MarketState {
   clock: number,
   prices: Record<string, number>,
-  volumes: Record<string, number>,
+  volumes: Record<string, Record<OrderSide, number>>,
   reports: OrderResult[],
   playerStates: Array<PlayerState>
 }
@@ -71,12 +74,16 @@ class StockEngine {
   }
 
   public processTick() {
-    // Random Walk
     const randomMove = this.config.drift + (this.config.volatility * this.randomNormal());
-    // Market Impact
-    const marketImpact = this.volumeBatch / this.config.liquidity;
-
-    this.price = Math.max(0.01, this.price * (1 + randomMove + marketImpact));
+    // 1. Get the direction (1 for Buy, -1 for Sell)
+    const direction = Math.sign(this.volumeBatch);
+    // 2. Calculate Square Root Impact
+    // We divide volume by liquidity and THEN sqrt to keep the scale manageable
+    const marketImpact = direction * Math.sqrt(Math.abs(this.volumeBatch) / this.config.liquidity);
+    // 3. Apply a "Damping Factor" (e.g., 0.1) so the moves aren't too violent
+    const damping = 0.1;
+    const finalMultiplier = 1 + randomMove + (marketImpact * damping);
+    this.price = Math.max(0.01, this.price * finalMultiplier);
     this.volumeBatch = 0; // Reset for next batch
     return this.price;
   }
@@ -163,35 +170,39 @@ export class MarketCoordinator {
     this.clock += 1;
 
     // PHASE 1: Discovery (Price moves based on batch volume)
-    const prices: Record<string, number> = {};
-    const volumes: Record<string, number> = {};
+    const oldPrices: MarketState['prices'] = {};
+    const prices: MarketState['prices'] = {};
+    const volumes: MarketState['volumes'] = {};
 
     for (const symbol in this.engines) {
+      oldPrices[symbol] = this.engines[symbol].getPrice();
       prices[symbol] = this.engines[symbol].processTick();
-      volumes[symbol] = 0;
+      volumes[symbol] = { BUY: 0, SELL: 0 };
     }
 
     // PHASE 2: Settlement (Players trade at the new price)
     const reports: OrderResult[] = [];
     for (const order of this.queue) {
       const player = this.players[order.playerId];
-      const price = prices[order.symbol];
-
+      const oldPrice = oldPrices[order.symbol];
+      const newPrice = prices[order.symbol];
+      const executionPrice = (oldPrice + newPrice) / 2;
       const success = (order.side === 'BUY')
-        ? player.buy(order.symbol, order.quantity, price)
-        : player.sell(order.symbol, order.quantity, price);
+        ? player.buy(order.symbol, order.quantity, executionPrice)
+        : player.sell(order.symbol, order.quantity, executionPrice);
 
       if (success) {
-        volumes[order.symbol] += order.quantity;
+        volumes[order.symbol][order.side] += order.quantity;
       }
 
+      const total = order.quantity * executionPrice;
       const reason = order.side === 'BUY'
-        ? (player.cash < order.quantity * price ? 'Insufficient funds.' : undefined)
+        ? (player.cash < total ? `Insufficient funds for order of ${formatUSD(total)}` : undefined)
         : (player.portfolio[order.symbol]?.shares < order.quantity ? 'Insufficient shares.' : undefined);
 
       reports.push({
         ...order,
-        price: parseFloat(price.toFixed(2)),
+        price: roundTo(executionPrice, 2),
         status: success ? 'FILLED' : 'FAILED',
         reason: success ? undefined : reason
       });
@@ -244,7 +255,7 @@ export const MARKET_PRESETS = {
     symbol: "MEME",
     initialPrice: 4.20,
     volatility: 0.035,  // Extreme randomness; "jumpy" UI
-    liquidity: 800,     // Very easy to "pump" or "dump"
+    liquidity: 2000,     // Very easy to "pump" or "dump"
     drift: -0.0004      // Naturally loses value if ignored
   }
 } satisfies Record<string, StockConfig>;
