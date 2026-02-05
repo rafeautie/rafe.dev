@@ -51,6 +51,6 @@ export interface MarketState {
     prices: Record<string, number>,
     volumes: Record<string, Record<OrderSide, number>>,
     reports: OrderResult[],
-    playerStates: Array<PlayerState>,
+    playerState: PlayerState,
     leaderboard: Array<LeaderboardEntry>
 }

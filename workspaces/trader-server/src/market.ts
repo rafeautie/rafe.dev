@@ -1,7 +1,7 @@
 /** * --- TYPES & INTERFACES --- 
  */
 
-import { AddPlayerConfig, formatUSD, MarketState, OrderRequest, OrderResult, PortfolioItem, roundTo, StockConfig } from "shared";
+import { AddPlayerConfig, formatUSD, groupBy, MarketState, OrderRequest, OrderResult, PortfolioItem, roundTo, StockConfig } from "shared";
 
 export type OrderSide = 'BUY' | 'SELL';
 
@@ -106,14 +106,40 @@ export class MarketCoordinator {
     this.players[config.id] = new PlayerProfile(config.id, config.username, config.cash);
   }
 
-  public placeOrder(request: OrderRequest) {
+  public removePlayer(playerId: string) {
+    delete this.players[playerId];
+  }
+
+  public placeOrder(request: OrderRequest): { valid: boolean; reason?: string } {
     const engine = this.engines[request.symbol];
-    if (!engine || !this.players[request.playerId]) return;
+
+    if (!this.players[request.playerId]) {
+      return {
+        valid: false, reason: 'Invalid player.'
+      };
+    }
+
+    if (!engine) {
+      return {
+        valid: false, reason: 'Invalid stock symbol.'
+      };
+    }
+
+    if (typeof request.quantity !== 'number' || request.quantity <= 0) {
+      return {
+        valid: false,
+        reason: 'Quantity must be a positive number.'
+      };
+    }
 
     // 1. Inform engine of volume for price impact
     engine.addVolume(request.side, request.quantity);
     // 2. Queue for settlement
     this.queue.push(request);
+
+    return {
+      valid: true
+    }
   }
 
   /**
@@ -180,13 +206,17 @@ export class MarketCoordinator {
       clock: this.clock,
       prices,
       volumes,
-      reports: reports,
-      playerStates: Object.values(this.players).map(p => ({
-        id: p.id,
-        cash: parseFloat(p.cash.toFixed(2)),
-        portfolio: Object.values(p.portfolio)
-      })),
+      reports: groupBy(reports, r => r.playerId),
       leaderboard
+    };
+  }
+
+  getPlayerState(playerId: string) {
+    const player = this.players[playerId];
+
+    return {
+      ...player,
+      portfolio: Object.values(player.portfolio)
     };
   }
 }
