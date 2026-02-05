@@ -12,6 +12,7 @@ export interface MarketCoordinatorConfig {
 
 export interface AddPlayerConfig {
   id: string;
+  username: string;
   cash: number;
 }
 
@@ -48,12 +49,19 @@ export interface PlayerState {
   portfolio: PortfolioItem[]
 }
 
+export interface LeaderboardEntry {
+  playerId: string;
+  username: string;
+  netWorth: number;
+}
+
 export interface MarketState {
   clock: number,
   prices: Record<string, number>,
   volumes: Record<string, Record<OrderSide, number>>,
   reports: OrderResult[],
-  playerStates: Array<PlayerState>
+  playerStates: Array<PlayerState>,
+  leaderboard: Array<LeaderboardEntry>
 }
 
 /** * --- CORE ENGINE: CALCULATES PRICE --- 
@@ -105,7 +113,7 @@ class PlayerProfile {
   public cash: number;
   public portfolio: Record<string, PortfolioItem> = {};
 
-  constructor(public id: string, startingCash: number) {
+  constructor(public id: string, public username: string, startingCash: number) {
     this.cash = startingCash;
   }
 
@@ -150,7 +158,7 @@ export class MarketCoordinator {
   }
 
   public addPlayer(config: AddPlayerConfig) {
-    this.players[config.id] = new PlayerProfile(config.id, config.cash);
+    this.players[config.id] = new PlayerProfile(config.id, config.username, config.cash);
   }
 
   public placeOrder(request: OrderRequest) {
@@ -210,6 +218,19 @@ export class MarketCoordinator {
 
     this.queue = []; // Clear batch
 
+    // Calculate Leaderboard
+    const leaderboard = Object.values(this.players).map(p => {
+      const portfolioValue = Object.values(p.portfolio).reduce((sum, item) => {
+        return sum + (item.shares * (prices[item.symbol] || 0));
+      }, 0);
+
+      return {
+        playerId: p.id,
+        username: p.username,
+        netWorth: p.cash + portfolioValue
+      };
+    }).sort((a, b) => b.netWorth - a.netWorth);
+
     return {
       clock: this.clock,
       prices,
@@ -219,7 +240,8 @@ export class MarketCoordinator {
         id: p.id,
         cash: parseFloat(p.cash.toFixed(2)),
         portfolio: Object.values(p.portfolio)
-      }))
+      })),
+      leaderboard
     };
   }
 }

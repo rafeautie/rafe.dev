@@ -1,22 +1,27 @@
-import type { DataItem } from "$lib/components/charts/shared.svelte";
-import type { MarketState } from "./market";
-
-interface LeaderboardItem {
-    name: string;
-    netWorth: number;
-}
+import { MARKET_PRESETS, MarketCoordinator, type MarketState } from "./market";
 
 interface TraderState {
+    playerId: string;
     filterMode: 'month' | 'month3' | 'month6' | 'year' | 'all';
     selectedStock: string;
+    selectedShares: number;
     data: MarketState[];
-    leaderboard: LeaderboardItem[];
 }
 
 export const traderState = $state<TraderState>({
+    playerId: 'player-1',
     filterMode: 'month',
     selectedStock: 'MEME',
+    selectedShares: 0,
     data: [],
-    leaderboard: [],
 })
 
+export const market = new MarketCoordinator({
+    stocks: [MARKET_PRESETS.BLUE, MARKET_PRESETS.CPTO, MARKET_PRESETS.MEME]
+});
+
+market.addPlayer({
+    id: 'player-1',
+    username: 'Player 1',
+    cash: 10000
+});
