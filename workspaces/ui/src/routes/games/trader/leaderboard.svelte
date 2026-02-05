@@ -1,7 +1,7 @@
-<script>
+<script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
-	import { formatUSD } from '$lib/format';
+	import { formatUSD } from 'shared';
 	import { cn } from '$lib/utils';
 	import { traderState } from './shared.svelte';
 	import { Medal } from '@lucide/svelte';

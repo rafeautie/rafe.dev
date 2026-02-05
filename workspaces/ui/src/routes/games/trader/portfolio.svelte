@@ -1,8 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { traderState } from './shared.svelte';
-	import { type PlayerState, type PortfolioItem } from './market';
-	import { formatUSD } from '$lib/format';
+	import { formatUSD, type PlayerState, type PortfolioItem } from 'shared';
 
 	let currentMarketState = $derived(traderState.data.at(-1));
 	let currentPlayerState = $derived<PlayerState>({

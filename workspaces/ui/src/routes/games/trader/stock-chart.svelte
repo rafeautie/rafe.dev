@@ -7,8 +7,9 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Card from '$lib/components/ui/card';
 	import { traderState } from './shared.svelte';
-	import { cn, roundTo, binMarketData } from '$lib/utils';
-	import { formatUSD } from '$lib/format';
+	import { cn, binMarketData } from '$lib/utils';
+	import { roundTo } from 'shared';
+	import { formatUSD } from 'shared';
 	import Tooltip from '$lib/components/charts/tooltip.svelte';
 
 	let {

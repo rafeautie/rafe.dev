@@ -3,11 +3,10 @@
 	import { Slider } from '$lib/components/ui/slider';
 	import * as Card from '$lib/components/ui/card';
 	import { market, traderState } from './shared.svelte';
-	import { roundTo } from '$lib/utils';
-	import { type OrderSide, type PlayerState, type PortfolioItem } from './market';
+	import { roundTo } from 'shared';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { formatUSD } from '$lib/format';
+	import { formatUSD, type OrderSide, type PlayerState, type PortfolioItem } from 'shared';
 
 	let currentMarketState = $derived(traderState.data.at(-1));
 	let previousMarketState = $derived(traderState.data.at(-2));

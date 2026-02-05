@@ -3,11 +3,11 @@
 	import { toast } from 'svelte-sonner';
 	import { market, traderState } from './shared.svelte';
 	import { cn } from '$lib/utils';
-	import { formatUSD } from '$lib/format';
 	import StockChart from './stock-chart.svelte';
 	import Leaderboard from './leaderboard.svelte';
 	import OrderControls from './order-controls.svelte';
 	import Portfolio from './portfolio.svelte';
+	import { formatUSD } from 'shared';
 
 	let currentMarketState = $derived(traderState.data.at(-1));
 

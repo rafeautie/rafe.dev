@@ -7,9 +7,6 @@ const config = {
         experimental: {
             remoteFunctions: true,
         },
-        alias: {
-            "@/*": "./path/to/lib/*",
-        },
     },
     compilerOptions: {
         experimental: {

@@ -1,4 +1,4 @@
-import { MARKET_PRESETS, MarketCoordinator, type MarketState } from "./market";
+import { MARKET_PRESETS, MarketCoordinator, type MarketState } from "../../../../../trader-server/src/market";
 
 interface TraderState {
     playerId: string;
