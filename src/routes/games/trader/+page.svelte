@@ -17,6 +17,7 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { formatUSD } from '$lib/format';
 	import StockChart from './stock-chart.svelte';
+	import { ScrollArea } from '$lib/components/ui/scroll-area';
 
 	const market = new MarketCoordinator({
 		stocks: [MARKET_PRESETS.BLUE, MARKET_PRESETS.CPTO, MARKET_PRESETS.MEME]
@@ -131,135 +132,147 @@
 	});
 </script>
 
+<svelte:head>
+	<title>Trader</title>
+</svelte:head>
+
 <div class="flex h-dvh flex-col gap-3 p-3">
-	<div class="grid grid-cols-2 gap-3 md:grid-cols-3">
+	<div class="flex gap-3">
+		<div class="flex-1"></div>
 		{#each allSymbols as symbol (symbol)}
 			<StockChart
 				{symbol}
 				axis={false}
 				size="sm"
 				class={cn({
-					'brightness-150': traderState.selectedStock === symbol,
+					'bg-card/30': traderState.selectedStock === symbol,
 					'hover:bg-card/80': traderState.selectedStock !== symbol
 				})}
 				onclick={() => selectSymbol(symbol)}
 			/>
 		{/each}
+		<div class="flex-1"></div>
 	</div>
 
-	<StockChart symbol={traderState.selectedStock} />
+	<StockChart class="grow" symbol={traderState.selectedStock} />
 
-	<div class="flex h-78 flex-col gap-3 md:flex-row">
-		<div class="flex flex-1 flex-col gap-3">
-			<Card.Root class="flex-1">
-				<Card.Content class="flex flex-1 flex-col justify-between gap-6">
-					<div class="flex items-start justify-between">
-						<div class="flex flex-col justify-between">
-							<p class="text-xl font-semibold text-nowrap">Place Order</p>
-							{#if mode === 'BUY'}
-								<p class="line-clamp-2 text-sm text-ellipsis opacity-65">
-									Select the number of shares to buy. This will cause demand and the price to rise.
-								</p>
-							{:else}
-								<p class="line-clamp-2 text-sm text-ellipsis opacity-65">
-									Select the number of shares to sell. This will cause demand and the price to drop.
-								</p>
-							{/if}
-						</div>
-						<Tabs.Root bind:value={mode}>
-							<Tabs.List>
-								<Tabs.Trigger value="BUY">Buy</Tabs.Trigger>
-								<Tabs.Trigger value="SELL">Sell</Tabs.Trigger>
-							</Tabs.List>
-						</Tabs.Root>
+	<div class="flex flex-col gap-3 md:h-78 md:flex-row">
+		<div class="flex flex-1 justify-end">
+			<Card.Root class="h-full w-full md:w-auto">
+				<Card.Content class="flex min-w-80 flex-col gap-3">
+					<p class="text-xl font-semibold">Player</p>
+					<div class="flex justify-between gap-6">
+						<p class="font-semibold">Net Worth</p>
+						<p class="font-semibold">{formatUSD(netWorth)}</p>
 					</div>
-					<div class="flex items-center justify-center">
-						{#if mode === 'BUY'}
-							<p class="text-xl font-semibold text-nowrap">
-								Buy {selectedShares} shares for {formatUSD(selectedShares * currentStockItem.price)}
-							</p>
-						{:else if selectedStockData.shares === 0}
-							<p class="text-xl font-semibold text-nowrap">No shares to sell</p>
-						{:else}
-							<p class="text-xl font-semibold text-nowrap">
-								Sell {selectedShares}/{selectedStockData.shares} shares for {formatUSD(
-									selectedShares * currentStockItem.price
-								)}
-							</p>
-						{/if}
+					<div class="flex justify-between gap-6">
+						<p class="font-semibold">Cash</p>
+						<p class="font-semibold">{formatUSD(currentPlayerState.cash)}</p>
 					</div>
-					<div class="flex w-full flex-col gap-5">
-						{#if mode === 'BUY'}
-							<Slider
-								type="single"
-								bind:value={selectedShares}
-								min={0}
-								max={maxBuyableShares}
-								disabled={currentPlayerState.cash === 0}
-								step={[
-									1,
-									selectedShares,
-									...[...Array(100).keys()].map((i) => Math.floor((maxBuyableShares * i) / 100)),
-									maxBuyableShares
-								]}
-							/>
-						{:else}
-							<Slider
-								type="single"
-								bind:value={selectedShares}
-								min={0}
-								max={selectedStockData.shares}
-								disabled={selectedStockData.shares === 0}
-								step={Math.floor(selectedStockData.shares / 100) || 1}
-							/>
-						{/if}
-						<Button
-							size="lg"
-							class="self-stretch"
-							onclick={placeOrder}
-							disabled={selectedShares === 0 || pendingOrdersCount > 0}
-						>
-							{#if pendingOrdersCount > 0}
-								<Spinner />
-							{:else}
-								Place Order
-							{/if}
-						</Button>
+					<div class="flex justify-between gap-6">
+						<p class="font-semibold">Shares</p>
+						<p class="font-semibold">{selectedStockData.shares}</p>
 					</div>
 				</Card.Content>
 			</Card.Root>
 		</div>
 
-		<Card.Root class="flex-1">
-			<Card.Content class="flex flex-col gap-3">
-				<p class="text-xl font-semibold">Player</p>
-				<div class="flex justify-between">
-					<p class="font-semibold">Net Worth</p>
-					<p class="font-semibold">{formatUSD(netWorth)}</p>
+		<Card.Root class="w-full md:w-150">
+			<Card.Content class="flex flex-1 flex-col justify-between gap-6">
+				<div class="flex items-start justify-between gap-12">
+					<div class="flex flex-col justify-between">
+						<p class="text-xl font-semibold text-nowrap">Place Order</p>
+						{#if mode === 'BUY'}
+							<p class="line-clamp-2 text-sm text-ellipsis opacity-65">
+								Select the number of shares to buy. This will cause demand and the price to rise.
+							</p>
+						{:else}
+							<p class="line-clamp-2 text-sm text-ellipsis opacity-65">
+								Select the number of shares to sell. This will cause demand and the price to drop.
+							</p>
+						{/if}
+					</div>
+					<Tabs.Root bind:value={mode}>
+						<Tabs.List>
+							<Tabs.Trigger value="BUY" class="dark:data-[state=active]:bg-green-400/40">
+								Buy
+							</Tabs.Trigger>
+							<Tabs.Trigger value="SELL" class="dark:data-[state=active]:bg-red-400/50">
+								Sell
+							</Tabs.Trigger>
+						</Tabs.List>
+					</Tabs.Root>
 				</div>
-				<div class="flex justify-between">
-					<p class="font-semibold">Cash</p>
-					<p class="font-semibold">{formatUSD(currentPlayerState.cash)}</p>
+				<div class="flex items-center justify-center">
+					{#if mode === 'BUY'}
+						<p class="text-xl font-semibold text-nowrap">
+							Buy {selectedShares} shares for {formatUSD(selectedShares * currentStockItem.price)}
+						</p>
+					{:else if selectedStockData.shares === 0}
+						<p class="text-xl font-semibold text-nowrap">No shares to sell</p>
+					{:else}
+						<p class="text-xl font-semibold text-nowrap">
+							Sell {selectedShares}/{selectedStockData.shares} shares for {formatUSD(
+								selectedShares * currentStockItem.price
+							)}
+						</p>
+					{/if}
 				</div>
-				<div class="flex justify-between">
-					<p class="font-semibold">Shares</p>
-					<p class="font-semibold">{selectedStockData.shares}</p>
+				<div class="flex w-full flex-col gap-5">
+					{#if mode === 'BUY'}
+						<Slider
+							type="single"
+							bind:value={selectedShares}
+							min={0}
+							max={maxBuyableShares}
+							disabled={currentPlayerState.cash === 0}
+							step={[
+								1,
+								selectedShares,
+								...[...Array(100).keys()].map((i) => Math.floor((maxBuyableShares * i) / 100)),
+								maxBuyableShares
+							]}
+						/>
+					{:else}
+						<Slider
+							type="single"
+							bind:value={selectedShares}
+							min={0}
+							max={selectedStockData.shares}
+							disabled={selectedStockData.shares === 0}
+							step={Math.floor(selectedStockData.shares / 100) || 1}
+						/>
+					{/if}
+					<Button
+						size="lg"
+						class="self-stretch"
+						onclick={placeOrder}
+						disabled={selectedShares === 0 || pendingOrdersCount > 0}
+					>
+						{#if pendingOrdersCount > 0}
+							<Spinner />
+						{:else}
+							Place Order
+						{/if}
+					</Button>
 				</div>
 			</Card.Content>
 		</Card.Root>
 
-		<!-- <Card.Root class="flex-1">
-			<Card.Content class="flex flex-col gap-1 p-0">
-				<p class="px-6 text-xl font-semibold">Leaderboard</p>
-				<ScrollArea class="max-h-58">
-					{#each traderState.leaderboard as leaderboardItem (leaderboardItem)}
-						<div class="flex justify-between px-6 py-2 pb-2">
-							<p>{leaderboardItem.name}</p>
-							<p class="font-semibold">${leaderboardItem.netWorth.toFixed(2)}</p>
-						</div>
-					{/each}
-				</ScrollArea>
-			</Card.Content>
-		</Card.Root> -->
+		<div class="flex flex-1">
+			<Card.Root class="h-full w-full md:w-auto">
+				<Card.Content class="flex flex-col gap-1 p-0">
+					<p class="px-6 text-xl font-semibold">Leaderboard</p>
+					<ScrollArea class="max-h-58">
+						{#each traderState.leaderboard as leaderboardItem (leaderboardItem)}
+							<div class="flex justify-between px-6 py-2 pb-2">
+								<p>{leaderboardItem.name}</p>
+								<p class="font-semibold">${leaderboardItem.netWorth.toFixed(2)}</p>
+							</div>
+						{/each}
+					</ScrollArea>
+				</Card.Content>
+			</Card.Root>
+		</div>
 	</div>
 </div>

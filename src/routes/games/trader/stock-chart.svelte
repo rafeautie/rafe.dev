@@ -99,13 +99,13 @@
 </script>
 
 <Card.Root
-	class={cn('grow overflow-hidden', className, {
-		'h-30 pt-0': size === 'sm',
+	class={cn('overflow-hidden', className, {
+		'h-30 w-54 pt-0': size === 'sm',
 		'min-h-80': size === 'default'
 	})}
 	{onclick}
 >
-	<Card.Content class={cn('grow', { 'p-3': size === 'sm' })}>
+	<Card.Content class={cn(className, { 'p-3': size === 'sm' })}>
 		<div class="flex justify-between">
 			<div>
 				<p
@@ -141,8 +141,17 @@
 		</div>
 		<LayerCake
 			padding={axis
-				? { top: 30, right: 25, bottom: 95, left: 40 }
-				: { left: -23, right: -23, bottom: 20 }}
+				? {
+						top: 30,
+						right: 5,
+						bottom: 95,
+						left: 50
+					}
+				: {
+						left: -23,
+						right: -23,
+						bottom: 20
+					}}
 			x="clock"
 			y="value"
 			{yDomain}

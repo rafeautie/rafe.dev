@@ -13,6 +13,6 @@
 </svelte:head>
 
 <main>
-	<Toaster position="bottom-right" richColors />
+	<Toaster position="top-right" richColors />
 	{@render children()}
 </main>
