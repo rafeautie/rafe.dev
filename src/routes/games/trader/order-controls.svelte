@@ -54,7 +54,7 @@
 
 <Card.Root class="w-full lg:w-150">
 	<Card.Content class="flex flex-1 flex-col justify-between gap-6">
-		<div class="flex items-start justify-between gap-12">
+		<div class="flex items-start justify-between gap-10 sm:gap-30 md:gap-10">
 			<div class="flex flex-col justify-between">
 				<p class="text-xl font-semibold text-nowrap">Place Order</p>
 				{#if mode === 'BUY'}
@@ -79,7 +79,9 @@
 			</Tabs.Root>
 		</div>
 		<div class="flex items-center justify-center">
-			{#if mode === 'BUY'}
+			{#if mode === 'BUY' && maxBuyableShares === 0}
+				<p class="text-xl font-semibold text-nowrap">Not enough cash to buy shares</p>
+			{:else if mode === 'BUY'}
 				<p class="text-xl font-semibold text-nowrap">
 					Buy {selectedShares} shares for {formatUSD(selectedShares * currentStockItem.price)}
 				</p>
@@ -115,7 +117,12 @@
 					min={0}
 					max={selectedStockData.shares}
 					disabled={selectedStockData.shares === 0}
-					step={Math.floor(selectedStockData.shares / 100) || 1}
+					step={[
+						1,
+						selectedShares,
+						...[...Array(100).keys()].map((i) => Math.floor((selectedStockData.shares * i) / 100)),
+						selectedStockData.shares
+					]}
 				/>
 			{/if}
 			<Button

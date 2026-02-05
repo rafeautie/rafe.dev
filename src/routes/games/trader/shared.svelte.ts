@@ -25,5 +25,5 @@ export const market = new MarketCoordinator({
 market.addPlayer({
     id: 'player-1',
     username: 'Player 1',
-    cash: 10000
+    cash: 1000
 });
