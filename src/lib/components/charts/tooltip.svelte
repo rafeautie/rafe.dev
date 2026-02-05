@@ -13,6 +13,7 @@
 	const { width, height, xScale, yScale } = getContext<LayerCakeContext>('LayerCake');
 
 	let containerX = $state<number | null>(null);
+	let containerY = $state<number | null>(null);
 	let seriesNames = $derived(Object.keys(seriesData));
 	let firstSeries = $derived(seriesData[seriesNames[0]] || []);
 
@@ -50,27 +51,29 @@
 	let activeIndex = $derived(result.activeIndex);
 	let targetMouseX = $derived(result.targetMouseX);
 
-	let tooltipSpring = new Spring(
-		{ x: 0, ys: {} as Record<string, number> },
-		{ stiffness: 0.5, damping: 0.8 }
-	);
-	let wasVisible = false;
-
-	$effect(() => {
-		if (targetMouseX !== null && activeIndex !== null) {
-			const ys: Record<string, number> = {};
+	let targetYs = $derived.by(() => {
+		const ys: Record<string, number> = {};
+		if (activeIndex !== null) {
 			for (const name of seriesNames) {
 				const val = seriesData[name]?.[activeIndex]?.value;
 				if (typeof val === 'number') {
 					ys[name] = $yScale(val);
 				}
 			}
+		}
+		return ys;
+	});
 
+	let tooltipPos = new Spring({ x: 0, y: 0 }, { stiffness: 0.5, damping: 0.8 });
+	let wasVisible = false;
+
+	$effect(() => {
+		if (containerX !== null && containerY !== null) {
 			if (!wasVisible) {
-				tooltipSpring.set({ x: targetMouseX, ys }, { instant: true });
+				tooltipPos.set({ x: containerX, y: containerY }, { instant: true });
 				wasVisible = true;
 			} else {
-				tooltipSpring.target = { x: targetMouseX, ys };
+				tooltipPos.target = { x: containerX, y: containerY };
 			}
 		} else {
 			wasVisible = false;
@@ -81,10 +84,12 @@
 		if (!$xScale) return;
 		const rect = e.currentTarget.getBoundingClientRect();
 		containerX = e.clientX - rect.left;
+		containerY = e.clientY - rect.top;
 	}
 
 	function handleMouseLeave() {
 		containerX = null;
+		containerY = null;
 	}
 </script>
 
@@ -101,20 +106,15 @@
 			<line
 				class="stroke-border stroke-1"
 				style:stroke-dasharray="10 10"
-				x1={tooltipSpring.current.x}
+				x1={targetMouseX}
 				y1={0}
-				x2={tooltipSpring.current.x}
+				x2={targetMouseX}
 				y2={$height}
 			/>
 			{#if activeIndex !== null}
 				{#each seriesNames as name (name)}
-					{#if tooltipSpring.current.ys[name] !== undefined && !excludeDots.includes(name)}
-						<circle
-							cx={tooltipSpring.current.x}
-							cy={tooltipSpring.current.ys[name]}
-							r="4"
-							class="fill-orange-400"
-						/>
+					{#if targetYs[name] !== undefined && !excludeDots.includes(name)}
+						<circle cx={targetMouseX} cy={targetYs[name]} r="4" class="fill-orange-400" />
 					{/if}
 				{/each}
 			{/if}
@@ -124,10 +124,12 @@
 	{#if activeIndex !== null && targetMouseX !== null}
 		<div
 			class="pointer-events-none absolute z-50 flex min-w-30 flex-col gap-2 rounded-lg bg-background p-3 text-sm font-semibold"
-			style:left="{tooltipSpring.current.x > $width * 0.75
-				? tooltipSpring.current.x - 170
-				: tooltipSpring.current.x + 15}px"
-			style:top="10px"
+			style:left="{tooltipPos.current.x > $width * 0.75
+				? tooltipPos.current.x - 150
+				: tooltipPos.current.x + 30}px"
+			style:top="{tooltipPos.current.y > $height * 0.85
+				? tooltipPos.current.y - 80
+				: tooltipPos.current.y - 10}px"
 		>
 			<div class="tooltip-header text-sm font-semibold">
 				Day {firstSeries[activeIndex].clock}
