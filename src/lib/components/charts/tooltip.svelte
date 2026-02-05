@@ -132,7 +132,11 @@
 				: tooltipPos.current.y - 10}px"
 		>
 			<div class="tooltip-header text-sm font-semibold">
-				Day {firstSeries[activeIndex].clock}
+				{#if firstSeries[activeIndex].startClock !== undefined && firstSeries[activeIndex].startClock !== firstSeries[activeIndex].clock}
+					Day {firstSeries[activeIndex].startClock} - {firstSeries[activeIndex].clock}
+				{:else}
+					Day {firstSeries[activeIndex].clock}
+				{/if}
 			</div>
 			<div>
 				{#each seriesNames as name (name)}

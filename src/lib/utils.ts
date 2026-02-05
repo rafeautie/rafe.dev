@@ -55,6 +55,7 @@ export function binMarketData(
 		if (chunk.length === 0) break;
 
 		const lastItem = chunk[chunk.length - 1];
+		const firstItem = chunk[0];
 
 		const price = lastItem.prices[symbol];
 		const buyVolume = chunk.reduce((acc, curr) => acc + curr.volumes[symbol].BUY, 0);
@@ -62,6 +63,7 @@ export function binMarketData(
 
 		result.push({
 			clock: lastItem.clock,
+			startClock: firstItem.clock,
 			price,
 			buyVolume,
 			sellVolume
@@ -72,6 +74,7 @@ export function binMarketData(
 
 export interface BinnedMarketData {
 	clock: number;
+	startClock?: number;
 	price: number;
 	buyVolume: number;
 	sellVolume: number;

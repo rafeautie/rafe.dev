@@ -3,6 +3,7 @@ import type { Readable } from 'svelte/store';
 
 export interface DataItem {
     clock: number;
+    startClock?: number;
     value: number;
 }
 

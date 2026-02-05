@@ -48,6 +48,7 @@
 	let priceData = $derived.by(() => {
 		return binnedData.map((d, index) => ({
 			clock: d.clock,
+			startClock: d.startClock,
 			value: d.price,
 			bullish: index === 0 ? true : d.price >= binnedData[index - 1].price
 		}));
@@ -56,6 +57,7 @@
 	let volumeData = $derived.by(() => {
 		return binnedData.map((d) => ({
 			clock: d.clock,
+			startClock: d.startClock,
 			value: d.buyVolume + d.sellVolume,
 			bullish: d.buyVolume >= d.sellVolume
 		}));
@@ -63,7 +65,10 @@
 
 	let currentStockItem = $derived({
 		clock: currentMarketState?.clock,
-		price: roundTo(currentMarketState?.prices[symbol] ?? 0, 2),
+		price: roundTo(
+			currentMarketState?.prices[symbol] ?? 0,
+			(currentMarketState?.prices[symbol] ?? 0) < 1 ? 3 : 2
+		),
 		volume:
 			(currentMarketState?.volumes[symbol].BUY ?? 0) +
 			(currentMarketState?.volumes[symbol].SELL ?? 0),
