@@ -1,128 +1,15 @@
 /** * --- TYPES & INTERFACES --- 
  */
 
-import { AddPlayerConfig, formatUSD, groupBy, MarketStateMessage, MarketHistoryEntry, OrderRequest, OrderResult, PortfolioItem, roundTo, StockConfig } from "shared";
+import { AddPlayerConfig, formatUSD, groupBy, MarketStateMessage, MarketHistoryEntry, OrderRequest, OrderResult, PortfolioItem, roundTo, StockConfig, OrderSide } from "shared";
+import { StockEngine } from "./stock-engine";
+import { PlayerProfile } from "./player-profile";
 
-export type OrderSide = 'BUY' | 'SELL';
 
 export interface MarketCoordinatorConfig {
   stocks: StockConfig[];
 }
 
-/** * --- CORE ENGINE: CALCULATES PRICE --- 
- */
-
-class StockEngine {
-  private price: number;
-  private volumeBatch: number = 0;
-  private readonly config: StockConfig;
-
-  constructor(config: StockConfig) {
-    this.config = config;
-    this.price = config.initialPrice;
-  }
-
-  public addVolume(side: OrderSide, quantity: number) {
-    this.volumeBatch += (side === 'BUY' ? quantity : -quantity);
-  }
-
-  public processTick() {
-    const randomMove = this.config.drift + (this.config.volatility * this.randomNormal());
-    // 1. Get the direction (1 for Buy, -1 for Sell)
-    const direction = Math.sign(this.volumeBatch);
-    // 2. Calculate Square Root Impact
-    // We divide volume by liquidity and THEN sqrt to keep the scale manageable
-    const marketImpact = direction * Math.sqrt(Math.abs(this.volumeBatch) / this.config.liquidity);
-    // 3. Apply a "Damping Factor" (e.g., 0.1) so the moves aren't too violent
-    const damping = 0.1;
-    const finalMultiplier = 1 + randomMove + (marketImpact * damping);
-    this.price = Math.max(0.01, this.price * finalMultiplier);
-    this.volumeBatch = 0; // Reset for next batch
-    return this.price;
-  }
-
-  private randomNormal(): number {
-    let u = 0, v = 0;
-    while (u === 0) u = Math.random();
-    while (v === 0) v = Math.random();
-    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
-  }
-
-  public getPrice() { return this.price; }
-
-  public serialize() {
-    return {
-      price: this.price,
-      volumeBatch: this.volumeBatch
-    };
-  }
-
-  public hydrate(data: { price: number, volumeBatch: number }) {
-    this.price = data.price;
-    this.volumeBatch = data.volumeBatch;
-  }
-}
-
-/** * --- PLAYER PROFILE: HANDLES LEDGER --- 
- */
-
-class PlayerProfile {
-  public cash: number;
-  public portfolio: Record<string, PortfolioItem> = {};
-
-  constructor(public id: string, public username: string, startingCash: number) {
-    this.cash = startingCash;
-  }
-
-  public buy(symbol: string, quantity: number, price: number): boolean {
-    const cost = quantity * price;
-    if (this.cash < cost) return false;
-
-    this.cash -= cost;
-    const current = this.portfolio[symbol] || { symbol, shares: 0, averageBuyPrice: 0 };
-
-    // Update Average Cost Basis
-    const newShares = current.shares + quantity;
-    current.averageBuyPrice = ((current.shares * current.averageBuyPrice) + cost) / newShares;
-    current.shares = newShares;
-
-    this.portfolio[symbol] = current;
-    return true;
-  }
-
-  public sell(symbol: string, quantity: number, price: number): boolean {
-    const current = this.portfolio[symbol];
-    if (!current || current.shares < quantity) return false;
-
-    this.cash += (quantity * price);
-    current.shares -= quantity;
-
-    if (current.shares === 0) {
-      delete this.portfolio[symbol];
-    }
-
-    return true;
-  }
-
-  public serialize() {
-    return {
-      id: this.id,
-      username: this.username,
-      cash: this.cash,
-      portfolio: this.portfolio
-    };
-  }
-
-  public hydrate(data: { id: string, username: string, cash: number, portfolio: Record<string, PortfolioItem> }) {
-    this.id = data.id;
-    this.username = data.username;
-    this.cash = data.cash;
-    this.portfolio = data.portfolio;
-  }
-}
-
-/** * --- COORDINATOR: INTEGRATES ENGINES & PLAYERS --- 
- */
 
 export class MarketCoordinator {
   private engines: Record<string, StockEngine> = {};
@@ -361,39 +248,3 @@ export class MarketCoordinator {
     }
   }
 }
-
-/**
- * Market Presets: Low, Medium, and High Volatility
- * Calibrated for 0.5s ticks.
- */
-export const MARKET_PRESETS = {
-  // LOW VOLATILITY: The "Safety" stock.
-  // Very stable, massive liquidity, slow steady growth.
-  "BLUE": {
-    symbol: "BLUE",
-    initialPrice: 300.00,
-    volatility: 0.0004, // Almost imperceptible jitter
-    liquidity: 250000,  // Requires huge volume to shift
-    drift: 0.00002      // Reliable upward bias
-  },
-
-  // MEDIUM VOLATILITY: The "Day Trader" stock.
-  // Active price movement, responsive to player trades.
-  "CPTO": {
-    symbol: "CPTO",
-    initialPrice: 45.50,
-    volatility: 0.006,  // Frequent, visible price changes
-    liquidity: 15000,   // Medium impact; a few players can move the needle
-    drift: 0.0001       // Growth potential with risk
-  },
-
-  // HIGH VOLATILITY: The "Chaos" stock.
-  // Wild swings, low liquidity, rapid natural decay.
-  "MEME": {
-    symbol: "MEME",
-    initialPrice: 4.20,
-    volatility: 0.035,  // Extreme randomness; "jumpy" UI
-    liquidity: 2000,     // Very easy to "pump" or "dump"
-    drift: -0.0004      // Naturally loses value if ignored
-  }
-} satisfies Record<string, StockConfig>;

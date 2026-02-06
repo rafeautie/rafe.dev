@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
-import { MARKET_PRESETS, MarketCoordinator } from './market';
+import { MarketCoordinator } from './market-coordinator';
 import { MarketStateMessage, MarketInitMessage, PlaceOrderMessage, UpdateUsernameMessage } from 'shared';
+import { MARKET_PRESETS } from './presets';
 
 // Worker
 export default {
@@ -68,10 +69,7 @@ export class TraderGameServer extends DurableObject {
 			const stored = await this.ctx.storage.get('market_state');
 			if (stored) {
 				this.market.hydrate(stored);
-
-				const activeIds = new Set<string>();
-				this.sessions.forEach((s) => activeIds.add(s.id));
-				this.market.prunePlayers(activeIds);
+				this.pruneMarket()
 			}
 		});
 
@@ -102,9 +100,6 @@ export class TraderGameServer extends DurableObject {
 
 		if ((currentAlarm ?? 0) <= Date.now()) {
 			console.log("Alarm Set")
-			const activeIds = new Set<string>();
-			this.sessions.forEach((s) => activeIds.add(s.id));
-			this.market.prunePlayers(activeIds);
 			this.ctx.storage.setAlarm(Date.now() + 1000);
 		}
 
@@ -167,5 +162,11 @@ export class TraderGameServer extends DurableObject {
 		});
 
 		this.ctx.storage.setAlarm(Date.now() + 1000);
+	}
+
+	private pruneMarket() {
+		const activeIds = new Set<string>();
+		this.sessions.forEach((s) => activeIds.add(s.id));
+		this.market.prunePlayers(activeIds);
 	}
 }
