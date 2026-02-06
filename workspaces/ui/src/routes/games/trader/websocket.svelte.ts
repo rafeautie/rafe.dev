@@ -1,4 +1,4 @@
-import { PUBLIC_TRADER_GAME_WEBSOCKET_URL } from '$env/static/public';
+import { TRADER_GAME_WEBSOCKET_URL } from '$env/static/private';
 import { formatUSD, type MarketInitMessage, type MarketStateMessage, type OrderPlacedMessage, type PlaceOrderMessage, type UpdateUsernameMessage } from 'shared';
 import { traderState } from './shared.svelte';
 import { toast } from 'svelte-sonner';
@@ -11,7 +11,7 @@ export class WebSocketManager {
     connect() {
         if (this.#socket) return;
 
-        this.#socket = new WebSocket(PUBLIC_TRADER_GAME_WEBSOCKET_URL);
+        this.#socket = new WebSocket(TRADER_GAME_WEBSOCKET_URL);
 
         this.#socket.onopen = () => {
             this.status = 'connected';
