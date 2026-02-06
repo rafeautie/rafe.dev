@@ -94,7 +94,7 @@
 			case 'year':
 				return [Math.max((currentStockItem.clock ?? 0) - 365, 0), currentStockItem.clock ?? 1];
 			default:
-				return [0, currentStockItem.clock ?? 1];
+				return [binnedData.at(0)?.clock ?? 0, currentStockItem.clock ?? 1];
 		}
 	});
 </script>

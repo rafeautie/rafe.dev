@@ -6,7 +6,7 @@ interface TraderState {
     selectedStock: string;
     selectedShares: number;
     pendingOrdersCount: number;
-    data: MarketStateMessage[];
+    data: (MarketStateMessage)[];
 }
 
 export const traderState = $state<TraderState>({

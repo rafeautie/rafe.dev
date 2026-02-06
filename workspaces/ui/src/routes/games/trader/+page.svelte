@@ -6,7 +6,6 @@
 	import Leaderboard from './leaderboard.svelte';
 	import OrderControls from './order-controls.svelte';
 	import Portfolio from './portfolio.svelte';
-	import { formatUSD } from 'shared';
 	import { websocketManager } from './websocket.svelte';
 
 	let currentMarketState = $derived(traderState.data.at(-1));
@@ -18,40 +17,12 @@
 		traderState.selectedShares = 0;
 	};
 
-	// onMount(() => {
-	// 	const handleTick = () => {
-	// 		const marketState = market.tick();
-	// 		traderState.data.push(marketState);
-	// 		const resolvedOrders = marketState.reports.filter((report) => report.playerId === 'player-1');
-
-	// 		resolvedOrders.forEach((report) => {
-	// 			if (report.status === 'FILLED') {
-	// 				toast.success(
-	// 					`${report.side} ${report.quantity} shares at ${formatUSD(report.price)} filled.`,
-	// 					{ description: formatUSD(report.quantity * report.price) }
-	// 				);
-	// 			} else {
-	// 				toast.error(
-	// 					`Order ${report.side} ${report.quantity} shares at ${formatUSD(report.price)} failed.`,
-	// 					{ description: report.reason }
-	// 				);
-	// 			}
-	// 		});
-
-	// 		traderState.pendingOrdersCount = Math.max(
-	// 			0,
-	// 			traderState.pendingOrdersCount - resolvedOrders.length
-	// 		);
-	// 	};
-
-	// 	[...Array(2_000).keys()].forEach(() => handleTick());
-
-	// 	const timer = setInterval(handleTick, 1000);
-	// 	return () => clearInterval(timer);
-	// });
-
 	onMount(() => {
 		websocketManager.connect();
+
+		return () => {
+			websocketManager.disconnect();
+		};
 	});
 </script>
 

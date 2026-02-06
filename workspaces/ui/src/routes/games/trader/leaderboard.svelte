@@ -17,11 +17,14 @@
 		<ScrollArea class="max-h-58">
 			{#each latestLeaderboard as leaderboardItem, index (leaderboardItem.playerId)}
 				<div
-					class={cn('m-3 mx-3 flex justify-between gap-3 rounded-md px-3 py-1', {
-						'bg-amber-400/50': index === 0,
-						'bg-neutral-300/40': index === 1,
-						'bg-orange-800/30': index === 2
-					})}
+					class={cn(
+						'm-3 mx-3 flex items-center justify-between gap-3 rounded-md px-3 py-1 text-sm',
+						{
+							'bg-amber-400/50': index === 0,
+							'bg-neutral-300/40': index === 1,
+							'bg-orange-800/30': index === 2
+						}
+					)}
 				>
 					<div class="flex items-center gap-3">
 						{#if index === 0}

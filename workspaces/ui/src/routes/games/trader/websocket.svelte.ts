@@ -1,5 +1,5 @@
 import { PUBLIC_TRADER_GAME_WEBSOCKET_URL } from '$env/static/public';
-import { formatUSD, type MarketStateMessage, type OrderPlacedMessage, type PlaceOrderMessage } from 'shared';
+import { formatUSD, type MarketInitMessage, type MarketStateMessage, type OrderPlacedMessage, type PlaceOrderMessage, type UpdateUsernameMessage } from 'shared';
 import { traderState } from './shared.svelte';
 import { toast } from 'svelte-sonner';
 
@@ -27,20 +27,44 @@ export class WebSocketManager {
         };
     }
 
-    send(data: PlaceOrderMessage) {
+    disconnect() {
+        if (this.#socket) {
+            this.#socket.close();
+            this.#socket = null;
+        }
+    }
+
+    send(data: PlaceOrderMessage | UpdateUsernameMessage) {
         if (this.#socket?.readyState === WebSocket.OPEN) {
             this.#socket.send(JSON.stringify(data));
         }
     }
 
-    private processMessage(message: MarketStateMessage | OrderPlacedMessage) {
+    private processMessage(message: MarketStateMessage | OrderPlacedMessage | MarketInitMessage) {
         switch (message.type) {
             case 'market_update':
                 this.processMarketUpdate(message);
                 break;
+            case 'market_init':
+                this.processMarketInit(message);
+                break;
             case 'order_placed':
                 break;
         }
+    }
+
+    private processMarketInit(message: MarketInitMessage) {
+        traderState.data = message.history.map((historyItem) => ({
+            ...message.marketState,
+            ...historyItem,
+        }))
+
+        const lastHistory = traderState.data.at(-1);
+        if (lastHistory && lastHistory.clock === message.marketState.clock) {
+            traderState.data.pop();
+        }
+
+        this.processMarketUpdate(message.marketState);
     }
 
     private processMarketUpdate(message: MarketStateMessage) {

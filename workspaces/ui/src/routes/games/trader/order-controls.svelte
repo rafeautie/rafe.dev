@@ -5,7 +5,7 @@
 	import { traderState } from './shared.svelte';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { formatUSD, roundTo, type OrderSide, type PortfolioItem } from 'shared';
+	import { formatUSD, type OrderSide, type PortfolioItem } from 'shared';
 	import { websocketManager } from './websocket.svelte';
 
 	let currentMarketState = $derived(traderState.data.at(-1));
@@ -19,7 +19,7 @@
 
 	let currentStockItem = $derived({
 		clock: currentMarketState?.clock,
-		price: roundTo(currentMarketState?.prices[traderState.selectedStock] ?? 0, 2),
+		price: currentMarketState?.prices[traderState.selectedStock] ?? 0,
 		volume: currentMarketState?.volumes[traderState.selectedStock] ?? 0,
 		downwardTrend:
 			(previousMarketState?.prices[traderState.selectedStock] ?? 0) >

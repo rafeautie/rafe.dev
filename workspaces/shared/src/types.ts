@@ -36,6 +36,7 @@ export interface OrderResult extends OrderRequest {
 
 export interface PlayerState {
     id: string,
+    username: string,
     cash: number,
     portfolio: PortfolioItem[]
 }
@@ -46,12 +47,18 @@ export interface LeaderboardEntry {
     netWorth: number;
 }
 
+export interface UpdateUsernameMessage {
+    type: 'update_username';
+    username: string;
+}
+
 export interface PlaceOrderMessage {
     type: 'place_order';
     symbol: string;
     side: OrderSide;
     quantity: number;
 }
+
 export interface OrderPlacedMessage {
     type: 'order_placed';
     success: boolean;
@@ -66,4 +73,16 @@ export interface MarketStateMessage {
     reports: OrderResult[],
     playerState: PlayerState,
     leaderboard: Array<LeaderboardEntry>
+}
+
+export interface MarketHistoryEntry {
+    clock: number;
+    prices: Record<string, number>;
+    volumes: Record<string, Record<OrderSide, number>>;
+}
+
+export interface MarketInitMessage {
+    type: 'market_init';
+    history: MarketHistoryEntry[];
+    marketState: MarketStateMessage;
 }

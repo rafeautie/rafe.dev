@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { MARKET_PRESETS, MarketCoordinator } from './market';
-import { MarketStateMessage } from 'shared';
+import { MarketStateMessage, MarketInitMessage, PlaceOrderMessage, UpdateUsernameMessage } from 'shared';
 
 // Worker
 export default {
@@ -64,8 +64,18 @@ export class TraderGameServer extends DurableObject {
 			}
 		});
 
+		this.ctx.blockConcurrencyWhile(async () => {
+			const stored = await this.ctx.storage.get('market_state');
+			if (stored) {
+				this.market.hydrate(stored);
+
+				const activeIds = new Set<string>();
+				this.sessions.forEach((s) => activeIds.add(s.id));
+				this.market.prunePlayers(activeIds);
+			}
+		});
+
 		this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
-		this.ctx.storage.setAlarm(Date.now() + 1000)
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -82,6 +92,22 @@ export class TraderGameServer extends DurableObject {
 			cash: 1000,
 		});
 
+		server.send(JSON.stringify({
+			type: 'market_init',
+			history: this.market.getHistory(),
+			marketState: this.market.getCurrentState(id),
+		} satisfies MarketInitMessage));
+
+		const currentAlarm = await this.ctx.storage.getAlarm();
+
+		if ((currentAlarm ?? 0) <= Date.now()) {
+			console.log("Alarm Set")
+			const activeIds = new Set<string>();
+			this.sessions.forEach((s) => activeIds.add(s.id));
+			this.market.prunePlayers(activeIds);
+			this.ctx.storage.setAlarm(Date.now() + 1000);
+		}
+
 		return new Response(null, {
 			status: 101,
 			webSocket: client,
@@ -90,7 +116,7 @@ export class TraderGameServer extends DurableObject {
 
 	async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
 		const session = this.sessions.get(ws)!;
-		const parsedMessage = JSON.parse(message.toString());
+		const parsedMessage: PlaceOrderMessage | UpdateUsernameMessage = JSON.parse(message.toString());
 
 		switch (parsedMessage.type) {
 			case 'place_order': {
@@ -106,6 +132,11 @@ export class TraderGameServer extends DurableObject {
 				}));
 				break;
 			}
+			case 'update_username': {
+				const { username } = parsedMessage;
+				this.market.updateUsername(session.id, username);
+				break;
+			}
 		}
 	}
 
@@ -114,10 +145,17 @@ export class TraderGameServer extends DurableObject {
 		this.market.removePlayer(id);
 		ws.close(code, reason);
 		this.sessions.delete(ws);
+
+		if (this.sessions.size === 0) {
+			console.log("Alarm Deleted")
+			this.ctx.storage.deleteAlarm()
+		}
 	}
 
 	async alarm() {
+		console.log("Tick at", Date.now())
 		const marketState = this.market.tick();
+		this.ctx.storage.put('market_state', this.market.serialize());
 
 		this.sessions.forEach((attachment, connectedWs) => {
 			connectedWs.send(JSON.stringify({
