@@ -2,7 +2,9 @@
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "rafe-dev",
 	"compatibility_date": "2026-01-31",
-	"compatibility_flags": ["nodejs_als"],
+	"compatibility_flags": [
+		"nodejs_als"
+	],
 	"main": ".svelte-kit/cloudflare/_worker.js",
 	"assets": {
 		"binding": "ASSETS",
@@ -12,8 +14,8 @@
 	"preview_urls": true,
 	"observability": {
 		"enabled": false,
-			"head_sampling_rate": 1,
-			"logs": {
+		"head_sampling_rate": 1,
+		"logs": {
 			"enabled": true,
 			"head_sampling_rate": 1,
 			"persist": true,
