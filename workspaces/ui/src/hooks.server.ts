@@ -1,4 +1,4 @@
-const darkPages = ['/games/trader'];
+const darkPages: string[] = [];
 
 export const handle = async ({ event, resolve }) => {
     let theme = 'light';
