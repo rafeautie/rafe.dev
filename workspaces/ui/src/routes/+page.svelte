@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { getImageUrl } from '$lib/utils';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -20,7 +21,7 @@
 		property="og:description"
 		content="Digital home of Rafe Autie, a developer specializing in mobile interfaces and front-end architecture."
 	/>
-	<meta property="og:image" content={`https://cdn.rafe.dev/${data.image.key}`} />
+	<meta property="og:image" content={getImageUrl(data.image.key)} />
 
 	<!-- Twitter -->
 	<meta property="twitter:card" content="summary_large_image" />
@@ -30,13 +31,13 @@
 		property="twitter:description"
 		content="Digital home of Rafe Autie, a developer specializing in mobile interfaces and front-end architecture."
 	/>
-	<meta property="twitter:image" content={`https://cdn.rafe.dev/${data.image.key}`} />
+	<meta property="twitter:image" content={getImageUrl(data.image.key)} />
 </svelte:head>
 
 <div class="flex w-full flex-col items-center justify-center">
 	<div
 		class="flex h-dvh w-full flex-col items-center justify-center p-10 text-xl font-semibold text-white md:p-20 md:text-3xl"
-		style:background-image={`url('https://cdn.rafe.dev/${data.image.key}')`}
+		style:background-image={`url('${getImageUrl(data.image.key)}')`}
 		style:background-size="contain"
 		style:background-position="center"
 		style:background-repeat="no-repeat"

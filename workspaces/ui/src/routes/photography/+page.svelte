@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getImageUrl } from '$lib/utils';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -20,8 +21,8 @@
 		content="A curated selection of photographs by Rafe Autie, showcasing moments captured through the lens."
 	/>
 	{#if data.images.length > 0}
-		<meta property="og:image" content={`https://cdn.rafe.dev/${data.images[0].key}`} />
-		<meta property="twitter:image" content={`https://cdn.rafe.dev/${data.images[0].key}`} />
+		<meta property="og:image" content={getImageUrl(data.images[0].key)} />
+		<meta property="twitter:image" content={getImageUrl(data.images[0].key)} />
 	{/if}
 
 	<!-- Twitter -->
@@ -36,10 +37,6 @@
 
 <div class="grid grid-cols-2">
 	{#each data.images as image (image.key)}
-		<img
-			src={`https://cdn.rafe.dev/${image.key}`}
-			alt="Photograph"
-			class="self-center object-contain"
-		/>
+		<img src={getImageUrl(image.key)} alt="Photograph" class="self-center object-contain" />
 	{/each}
 </div>

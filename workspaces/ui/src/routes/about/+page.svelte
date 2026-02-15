@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { getImageUrl } from '$lib/utils';
 </script>
 
 <svelte:head>
@@ -17,7 +18,7 @@
 		property="og:description"
 		content="Based in California, I am a developer specializing in mobile interfaces and front-end architecture."
 	/>
-	<meta property="og:image" content="https://cdn.rafe.dev/DSCF0740.JPEG" />
+	<meta property="og:image" content={getImageUrl('DSCF0740.JPEG')} />
 
 	<!-- Twitter -->
 	<meta property="twitter:card" content="summary_large_image" />
@@ -27,7 +28,7 @@
 		property="twitter:description"
 		content="Based in California, I am a developer specializing in mobile interfaces and front-end architecture."
 	/>
-	<meta property="twitter:image" content="https://cdn.rafe.dev/DSCF0740.JPEG" />
+	<meta property="twitter:image" content={getImageUrl('DSCF0740.JPEG')} />
 </svelte:head>
 
 <div class="flex flex-col gap-8 p-8 text-xl text-black">
@@ -47,11 +48,11 @@
 		</p>
 	</div>
 	<div class="flex flex-col gap-6">
-		<img src="https://cdn.rafe.dev/DSCF0740.JPEG" alt="Yosemite Valley" />
+		<img src={getImageUrl('DSCF0740.JPEG')} alt="Yosemite Valley" />
 		<div class="grid grid-cols-3 gap-6">
-			<img src="https://cdn.rafe.dev/DSCF0770.JPEG" alt="Yosemite Lodge" />
-			<img src="https://cdn.rafe.dev/DSCF0784.JPEG" alt="Yosemite Abandoned Gas Station" />
-			<img src="https://cdn.rafe.dev/DSCF0754.JPEG" alt="Half Dome and a Plane" />
+			<img src={getImageUrl('DSCF0770.JPEG')} alt="Yosemite Lodge" />
+			<img src={getImageUrl('DSCF0784.JPEG')} alt="Yosemite Abandoned Gas Station" />
+			<img src={getImageUrl('DSCF0754.JPEG')} alt="Half Dome and a Plane" />
 		</div>
 	</div>
 </div>
