@@ -33,5 +33,12 @@
 			"bucket_name": "photos",
 			"remote": true,
 		}
+	],
+	"d1_databases": [
+		{
+			"binding": "AUTH_DB",
+			"database_name": "auth",
+			"database_id": "ddb23e67-4be8-4c55-9f21-fc71f9b469d4"
+		}
 	]
 }

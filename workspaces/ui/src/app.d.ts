@@ -5,6 +5,7 @@ declare global {
 		interface Platform {
 			env: Env & {
 				PHOTOS: R2Bucket;
+				DB: D1Database;
 			};
 			ctx: ExecutionContext;
 			caches: CacheStorage;
