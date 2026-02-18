@@ -37,6 +37,11 @@
 
 <div class="grid grid-cols-1 sm:grid-cols-2">
 	{#each data.images as image (image.key)}
-		<img src={getImageUrl(image.key)} alt="Photograph" class="self-center object-contain" />
+		<img
+			src={getImageUrl(image.key)}
+			alt="Photograph"
+			class="self-center object-contain"
+			loading="lazy"
+		/>
 	{/each}
 </div>
