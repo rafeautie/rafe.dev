@@ -32,8 +32,8 @@
 </svelte:head>
 
 <div class="flex flex-col gap-8 p-8 text-xl text-black">
-	<div>
-		<p class="text-4xl font-semibold"><a href={resolve('/')}>rafe / about</a></p>
+	<div class="space-y-2">
+		<p class="text-4xl font-semibold tracking-wide"><a href={resolve('/')}>rafe / about</a></p>
 		<a href="mailto:rafe@rafe.dev">rafe@rafe.dev</a>
 	</div>
 	<div class="flex max-w-4xl flex-col gap-8">

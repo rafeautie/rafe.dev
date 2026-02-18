@@ -3,6 +3,8 @@
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
 
+/* Define your custom height-based variant */
+@custom-variant smh (@media (max-height: 600px));
 @custom-variant dark (&:is(.dark *));
  
 :root {
