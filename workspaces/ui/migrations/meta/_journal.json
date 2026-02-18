@@ -8,6 +8,13 @@
       "when": 1771240043710,
       "tag": "0000_peaceful_tiger_shark",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1771296665824,
+      "tag": "0001_magical_meteorite",
+      "breakpoints": true
     }
   ]
 }

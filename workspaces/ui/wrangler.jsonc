@@ -36,9 +36,9 @@
 	],
 	"d1_databases": [
 		{
-			"binding": "AUTH_DB",
-			"database_name": "auth",
-			"database_id": "ddb23e67-4be8-4c55-9f21-fc71f9b469d4"
+			"binding": "DB",
+			"database_name": "main",
+			"database_id": "3acaa8e9-23a0-47a6-8131-51e49ac3a968"
 		}
 	]
 }

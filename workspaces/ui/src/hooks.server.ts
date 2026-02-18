@@ -5,8 +5,8 @@ import { sequence } from "@sveltejs/kit/hooks";
 import type { Handle } from "@sveltejs/kit";
 
 const darkPages: string[] = [
-    "/login",
-    "/signup",
+    // "/login",
+    // "/signup",
 ];
 
 export const themeHandle: Handle = async ({ event, resolve }) => {
@@ -27,6 +27,13 @@ export const authHandle: Handle = async ({ event, resolve }) => {
     }
 
     const auth = getAuth(event.platform.env);
+    const session = await auth.api.getSession({
+        headers: event.request.headers,
+    });
+
+    event.locals.session = session?.session ?? null;
+    event.locals.user = session?.user ?? null;
+
     return svelteKitHandler({
         event,
         resolve,

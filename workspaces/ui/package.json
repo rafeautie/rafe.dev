@@ -14,7 +14,8 @@
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"gen": "wrangler types",
-		"setup:auth": "npx drizzle-kit generate && npx drizzle-kit migrate"
+		"setup:db:dev": "npx drizzle-kit generate && wrangler d1 migrations apply main --local",
+		"setup:db:prod": "npx drizzle-kit generate && npx drizzle-kit migrate"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^2.0.1",

@@ -8,7 +8,8 @@
 </script>
 
 <script lang="ts">
-	import { resolve } from '$app/paths';
+	/* eslint-disable svelte/no-navigation-without-resolve */
+	import { page } from '$app/state';
 	import { defaults, superForm } from 'sveltekit-superforms';
 	import { zod4 } from 'sveltekit-superforms/adapters';
 	import { toast } from 'svelte-sonner';
@@ -16,6 +17,19 @@
 	import * as Form from '$lib/components/ui/form/index';
 	import { Input } from '$lib/components/ui/input/index';
 	import { authClient } from '$lib/auth-client';
+	import { resolve } from '$app/paths';
+
+	const returnTo = page.url.searchParams.get('returnTo');
+
+	let signUpUrl = $derived.by(() => {
+		const url = new URL(resolve('/signup'), page.url);
+
+		if (returnTo) {
+			url.searchParams.set('returnTo', returnTo);
+		}
+
+		return url.toString();
+	});
 
 	const form = superForm(defaults(zod4(formSchema)), {
 		validators: zod4(formSchema),
@@ -25,7 +39,7 @@
 				email: formData.get('email')?.toString() ?? '',
 				password: formData.get('password')?.toString() ?? '',
 				rememberMe: true,
-				callbackURL: '/'
+				callbackURL: returnTo ?? '/'
 			});
 
 			if (error) {
@@ -72,7 +86,7 @@
 			<div class="space-y-2">
 				<Form.Button class="w-full">Login</Form.Button>
 				<p class="text-center text-sm text-muted-foreground">
-					Don't have an account? <a class="underline" href={resolve('/signup')}>Sign up</a>
+					Don't have an account? <a class="underline" href={signUpUrl}>Sign up</a>
 				</p>
 			</div>
 		</form>
