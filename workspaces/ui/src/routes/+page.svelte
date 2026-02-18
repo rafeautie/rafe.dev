@@ -36,14 +36,14 @@
 
 <div class="flex w-full flex-col items-center justify-center">
 	<div
-		class="tall:bg-red-500 flex h-dvh w-full flex-col items-center justify-center p-15 text-[clamp(1rem,2.5vmin,10rem)] font-semibold tracking-wide text-background transition-colors duration-500 smh:text-background/0"
+		class="tall:bg-red-500 flex h-dvh w-full flex-col items-center justify-center p-10 text-[clamp(1rem,2.5vmin,10rem)] font-semibold tracking-wide text-background transition-colors duration-500 sm:p-15 smh:text-background/0"
 		style:background-image={`url('${getImageUrl(data.image.key)}')`}
 		style:background-size="contain"
 		style:background-position="center"
 		style:background-repeat="no-repeat"
 		style:background-origin="content-box"
 	>
-		<p class="text-shadow-lg/3">
+		<p>
 			<a href={resolve('/about')}>rafe</a> /
 			<a href={resolve('/photography')}>photography</a> /
 			<a href={resolve('/development')}>development</a>

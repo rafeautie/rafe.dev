@@ -35,7 +35,7 @@
 	/>
 </svelte:head>
 
-<div class="grid grid-cols-2">
+<div class="grid grid-cols-1 sm:grid-cols-2">
 	{#each data.images as image (image.key)}
 		<img src={getImageUrl(image.key)} alt="Photograph" class="self-center object-contain" />
 	{/each}
