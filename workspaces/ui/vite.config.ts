@@ -1,14 +1,21 @@
-import tailwindcss from '@tailwindcss/vite';
-import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
-import path from "path";
-
+import { defineConfig } from 'vite'
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import { cloudflare } from '@cloudflare/vite-plugin'
+import viteReact from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import tsConfigPaths from 'vite-tsconfig-paths'
 
 export default defineConfig({
-    plugins: [tailwindcss(), sveltekit()],
-    resolve: {
-        alias: {
-            $lib: path.resolve("./src/lib"),
-        },
-    },
-});
+	plugins: [
+		cloudflare({ viteEnvironment: { name: 'ssr' } }),
+		tailwindcss(),
+		tsConfigPaths(),
+		tanstackStart({
+			srcDirectory: 'app',
+			router: {
+				routesDirectory: 'routes',
+			},
+		}),
+		viteReact(),
+	],
+})

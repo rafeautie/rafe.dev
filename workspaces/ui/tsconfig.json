@@ -1,29 +1,23 @@
 {
-	"extends": "./.svelte-kit/tsconfig.json",
 	"compilerOptions": {
-		"rewriteRelativeImportExtensions": true,
-		"allowJs": true,
-		"checkJs": true,
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
+		"jsxImportSource": "react",
+		"strict": true,
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true,
 		"skipLibCheck": true,
-		"sourceMap": true,
-		"strict": true,
-		"moduleResolution": "bundler",
-		"types": [
-			"./worker-configuration.d.ts"
-		],
+		"baseUrl": ".",
 		"paths": {
-			"$lib": [
-				"./src/lib"
-			],
-			"$lib/*": [
-				"./src/lib/*"
-			],
-			"shared": [
-				"../shared/src/index.ts"
-			]
-		}
-	}
+			"~/*": ["./app/*"],
+			"shared": ["../shared/src/index.ts"]
+		},
+		"types": ["./worker-configuration.d.ts"]
+	},
+	"include": ["app/**/*", "app.config.ts"],
+	"exclude": ["node_modules", ".output", ".vinxi"]
 }

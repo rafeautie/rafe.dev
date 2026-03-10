@@ -3,13 +3,9 @@
 	"name": "rafe-dev",
 	"compatibility_date": "2026-01-31",
 	"compatibility_flags": [
-		"nodejs_als"
+		"nodejs_compat"
 	],
-	"main": ".svelte-kit/cloudflare/_worker.js",
-	"assets": {
-		"binding": "ASSETS",
-		"directory": ".svelte-kit/cloudflare"
-	},
+	"main": "@tanstack/react-start/server-entry",
 	"workers_dev": true,
 	"preview_urls": true,
 	"observability": {

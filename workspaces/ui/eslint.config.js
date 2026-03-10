@@ -1,39 +1,51 @@
-import prettier from 'eslint-config-prettier';
-import path from 'node:path';
-import { includeIgnoreFile } from '@eslint/compat';
 import js from '@eslint/js';
-import svelte from 'eslint-plugin-svelte';
-import { defineConfig } from 'eslint/config';
+import { includeIgnoreFile } from '@eslint/compat';
+import tseslint from 'typescript-eslint';
+import react from 'eslint-plugin-react';
+import reactHooks from 'eslint-plugin-react-hooks';
+import reactRefresh from 'eslint-plugin-react-refresh';
+import prettier from 'eslint-config-prettier';
 import globals from 'globals';
-import ts from 'typescript-eslint';
-import svelteConfig from './svelte.config.js';
+import path from 'node:path';
 
 const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 
-export default defineConfig(
+export default tseslint.config(
 	includeIgnoreFile(gitignorePath),
 	js.configs.recommended,
-	...ts.configs.recommended,
-	...svelte.configs.recommended,
+	...tseslint.configs.recommended,
 	prettier,
-	...svelte.configs.prettier,
 	{
 		languageOptions: { globals: { ...globals.browser, ...globals.node } },
+		settings: { react: { version: 'detect' } },
+		plugins: {
+			react,
+			'react-hooks': reactHooks,
+			'react-refresh': reactRefresh
+		},
 		rules: {
-			// typescript-eslint strongly recommend that you do not use the no-undef lint rule on TypeScript projects.
-			// see: https://typescript-eslint.io/troubleshooting/faqs/eslint/#i-get-errors-from-the-no-undef-rule-about-global-variables-not-being-defined-even-though-there-are-no-typescript-errors
+			// React
+			...reactHooks.configs.recommended.rules,
+			'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+
+			// TypeScript
+			'@typescript-eslint/no-unused-vars': [
+				'error',
+				{ argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
+			],
+			'@typescript-eslint/consistent-type-imports': [
+				'error',
+				{ prefer: 'type-imports', fixStyle: 'inline-type-imports' }
+			],
+			'@typescript-eslint/no-explicit-any': 'warn',
+
+			// Code quality
+			'prefer-const': 'error',
+			'no-var': 'error',
+			eqeqeq: ['error', 'always'],
+			'no-console': ['warn', { allow: ['warn', 'error'] }],
+			'no-multiple-empty-lines': ['error', { max: 1, maxEOF: 0, maxBOF: 0 }],
 			'no-undef': 'off'
-		}
-	},
-	{
-		files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
-		languageOptions: {
-			parserOptions: {
-				projectService: true,
-				extraFileExtensions: ['.svelte'],
-				parser: ts.parser,
-				svelteConfig
-			}
 		}
 	}
 );
