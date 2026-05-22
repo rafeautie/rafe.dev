@@ -68,7 +68,7 @@ function HomePage() {
 			>
 				<p>
 					<a href="/about">rafe</a> / <a href="/photography">photography</a> /{' '}
-					<a href="/development">development</a>
+					<a href="/development">development</a> / <a href="/games">games</a>
 				</p>
 			</div>
 		</div>

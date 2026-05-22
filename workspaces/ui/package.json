@@ -10,7 +10,8 @@
 		"preview": "vite preview",
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
-		"gen": "wrangler types"
+		"gen": "wrangler types",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@tanstack/react-router": "^1.170.7",
@@ -24,6 +25,7 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "^1.37.3",
+		"@cloudflare/vitest-pool-workers": "^0.16.8",
 		"@eslint/compat": "^2.1.0",
 		"@eslint/js": "^10.0.1",
 		"@tailwindcss/forms": "^0.5.11",
@@ -48,6 +50,7 @@
 		"typescript-eslint": "^8.59.4",
 		"vite": "^8.0.14",
 		"vite-tsconfig-paths": "^6.1.1",
+		"vitest": "^4.1.7",
 		"wrangler": "^4.93.1"
 	}
 }

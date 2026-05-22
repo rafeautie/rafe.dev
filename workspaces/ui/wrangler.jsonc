@@ -5,7 +5,7 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
-	"main": "@tanstack/react-start/server-entry",
+	"main": "./src/server.ts",
 	"workers_dev": true,
 	"preview_urls": true,
 	"observability": {
@@ -28,6 +28,20 @@
 			"binding": "PHOTOS",
 			"bucket_name": "photos",
 			"remote": true,
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "THE_RACE_GAME",
+				"class_name": "TheRaceGame"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["TheRaceGame"]
 		}
 	]
 }
