@@ -6,7 +6,10 @@
 	"exports": {
 		".": "./src/index.ts"
 	},
-	"scripts": {},
-	"devDependencies": {},
-	"dependencies": {}
+	"scripts": {
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"vitest": "^4.1.7"
+	}
 }

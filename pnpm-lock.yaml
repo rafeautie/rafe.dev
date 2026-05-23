@@ -8,7 +8,11 @@ importers:
 
   .: {}
 
-  workspaces/shared: {}
+  workspaces/shared:
+    devDependencies:
+      vitest:
+        specifier: ^4.1.7
+        version: 4.1.7(@types/node@25.9.1)(vite@8.0.14(@types/node@25.9.1)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.46.0)(tsx@4.21.0))
 
   workspaces/ui:
     dependencies:
