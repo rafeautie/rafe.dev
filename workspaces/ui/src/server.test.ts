@@ -3,9 +3,10 @@ import { describe, it, expect } from 'vitest';
 
 describe('server routing', () => {
 	it('routes WebSocket upgrades at /ws/games/the-race/:gameId to the DO (returns 101)', async () => {
-		const response = await SELF.fetch('https://rafe.dev/ws/games/the-race/TEST', {
-			headers: { Upgrade: 'websocket', Connection: 'Upgrade' },
-		});
+		const response = await SELF.fetch(
+			'https://rafe.dev/ws/games/the-race/TEST?playerId=p1&playerName=Tester',
+			{ headers: { Upgrade: 'websocket', Connection: 'Upgrade' } },
+		);
 		expect(response.status).toBe(101);
 	});
 
