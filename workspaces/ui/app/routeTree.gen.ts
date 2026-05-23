@@ -10,13 +10,21 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as PhotographyRouteImport } from './routes/photography'
+import { Route as GamesRouteImport } from './routes/games'
 import { Route as DevelopmentRouteImport } from './routes/development'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as GamesTheRaceRouteImport } from './routes/games.the-race'
+import { Route as GamesTheRaceGameIdRouteImport } from './routes/games.the-race.$gameId'
 
 const PhotographyRoute = PhotographyRouteImport.update({
   id: '/photography',
   path: '/photography',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GamesRoute = GamesRouteImport.update({
+  id: '/games',
+  path: '/games',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DevelopmentRoute = DevelopmentRouteImport.update({
@@ -34,38 +42,80 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GamesTheRaceRoute = GamesTheRaceRouteImport.update({
+  id: '/the-race',
+  path: '/the-race',
+  getParentRoute: () => GamesRoute,
+} as any)
+const GamesTheRaceGameIdRoute = GamesTheRaceGameIdRouteImport.update({
+  id: '/$gameId',
+  path: '/$gameId',
+  getParentRoute: () => GamesTheRaceRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/development': typeof DevelopmentRoute
+  '/games': typeof GamesRouteWithChildren
   '/photography': typeof PhotographyRoute
+  '/games/the-race': typeof GamesTheRaceRouteWithChildren
+  '/games/the-race/$gameId': typeof GamesTheRaceGameIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/development': typeof DevelopmentRoute
+  '/games': typeof GamesRouteWithChildren
   '/photography': typeof PhotographyRoute
+  '/games/the-race': typeof GamesTheRaceRouteWithChildren
+  '/games/the-race/$gameId': typeof GamesTheRaceGameIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/development': typeof DevelopmentRoute
+  '/games': typeof GamesRouteWithChildren
   '/photography': typeof PhotographyRoute
+  '/games/the-race': typeof GamesTheRaceRouteWithChildren
+  '/games/the-race/$gameId': typeof GamesTheRaceGameIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/development' | '/photography'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/development'
+    | '/games'
+    | '/photography'
+    | '/games/the-race'
+    | '/games/the-race/$gameId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/development' | '/photography'
-  id: '__root__' | '/' | '/about' | '/development' | '/photography'
+  to:
+    | '/'
+    | '/about'
+    | '/development'
+    | '/games'
+    | '/photography'
+    | '/games/the-race'
+    | '/games/the-race/$gameId'
+  id:
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/development'
+    | '/games'
+    | '/photography'
+    | '/games/the-race'
+    | '/games/the-race/$gameId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   DevelopmentRoute: typeof DevelopmentRoute
+  GamesRoute: typeof GamesRouteWithChildren
   PhotographyRoute: typeof PhotographyRoute
 }
 
@@ -76,6 +126,13 @@ declare module '@tanstack/react-router' {
       path: '/photography'
       fullPath: '/photography'
       preLoaderRoute: typeof PhotographyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/games': {
+      id: '/games'
+      path: '/games'
+      fullPath: '/games'
+      preLoaderRoute: typeof GamesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/development': {
@@ -99,13 +156,50 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/games/the-race': {
+      id: '/games/the-race'
+      path: '/the-race'
+      fullPath: '/games/the-race'
+      preLoaderRoute: typeof GamesTheRaceRouteImport
+      parentRoute: typeof GamesRoute
+    }
+    '/games/the-race/$gameId': {
+      id: '/games/the-race/$gameId'
+      path: '/$gameId'
+      fullPath: '/games/the-race/$gameId'
+      preLoaderRoute: typeof GamesTheRaceGameIdRouteImport
+      parentRoute: typeof GamesTheRaceRoute
+    }
   }
 }
+
+interface GamesTheRaceRouteChildren {
+  GamesTheRaceGameIdRoute: typeof GamesTheRaceGameIdRoute
+}
+
+const GamesTheRaceRouteChildren: GamesTheRaceRouteChildren = {
+  GamesTheRaceGameIdRoute: GamesTheRaceGameIdRoute,
+}
+
+const GamesTheRaceRouteWithChildren = GamesTheRaceRoute._addFileChildren(
+  GamesTheRaceRouteChildren,
+)
+
+interface GamesRouteChildren {
+  GamesTheRaceRoute: typeof GamesTheRaceRouteWithChildren
+}
+
+const GamesRouteChildren: GamesRouteChildren = {
+  GamesTheRaceRoute: GamesTheRaceRouteWithChildren,
+}
+
+const GamesRouteWithChildren = GamesRoute._addFileChildren(GamesRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   DevelopmentRoute: DevelopmentRoute,
+  GamesRoute: GamesRouteWithChildren,
   PhotographyRoute: PhotographyRoute,
 }
 export const routeTree = rootRouteImport

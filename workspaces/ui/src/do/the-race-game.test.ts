@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import type { TheRaceGame } from './the-race-game';
 
 interface DOState {
-	players: Array<{ id: string; name: string; isHost: boolean }>;
+	players: Array<{ id: string; name: string; isHost: boolean; connected: boolean }>;
 	phase: string;
 }
 
@@ -161,5 +161,100 @@ describe('TheRaceGame — START_GAME via webSocketMessage', () => {
 
 		const r3 = await stub.fetch(wsUrl('p3', 'Latecomer'), { headers: wsHeaders() });
 		expect(r3.status).toBe(403);
+	});
+
+	it('transitions phase to race after all cars send QUALIFY', async () => {
+		const id = env.THE_RACE_GAME.newUniqueId();
+		const stub = env.THE_RACE_GAME.get(id);
+
+		await stub.fetch(wsUrl('p1', 'Host'), { headers: wsHeaders() });
+		await stub.fetch(wsUrl('p2', 'Guest'), { headers: wsHeaders() });
+		await sendMessage(stub, 'p1', { type: 'START_GAME' });
+
+		// Get car IDs from state
+		interface ExtendedDOState extends DOState {
+			gameState?: { cars: Array<{ id: number }>; players: Array<{ id: string; carIds: number[] }> };
+		}
+		const qualifyingState = await runInDurableObject(stub, async (_inst: TheRaceGame, s: DurableObjectState) => {
+			return s.storage.get<ExtendedDOState>('state');
+		});
+		const p1Cars = qualifyingState?.gameState?.players.find((p) => p.id === 'p1')?.carIds ?? [];
+		const p2Cars = qualifyingState?.gameState?.players.find((p) => p.id === 'p2')?.carIds ?? [];
+
+		// Each player qualifies their car with card index 0
+		for (const carId of p1Cars) {
+			await sendMessage(stub, 'p1', { type: 'QUALIFY', carId, cardIndices: [0] });
+		}
+		for (const carId of p2Cars) {
+			await sendMessage(stub, 'p2', { type: 'QUALIFY', carId, cardIndices: [0] });
+		}
+
+		const finalState = await getState(stub);
+		expect(finalState.phase).toBe('race');
+	});
+
+	it('rejects QUALIFY for a car that does not belong to the player', async () => {
+		const id = env.THE_RACE_GAME.newUniqueId();
+		const stub = env.THE_RACE_GAME.get(id);
+
+		await stub.fetch(wsUrl('p1', 'Host'), { headers: wsHeaders() });
+		await stub.fetch(wsUrl('p2', 'Guest'), { headers: wsHeaders() });
+		await sendMessage(stub, 'p1', { type: 'START_GAME' });
+
+		// p2 tries to qualify car 0 which belongs to p1 (car IDs are 0=p1, 1=p2 in 2-player+ mode)
+		// In non-2-player mode (3+ players) car 0 is always p1's
+		// We just test that sending wrong carId is an error — phase should remain qualifying
+		await sendMessage(stub, 'p2', { type: 'QUALIFY', carId: 999, cardIndices: [0] });
+
+		const state = await getState(stub);
+		expect(state.phase).toBe('qualifying'); // still qualifying, not crashed
+	});
+});
+
+describe('TheRaceGame — reconnection (issue #14)', () => {
+	it('player connected=true after joining', async () => {
+		const id = env.THE_RACE_GAME.newUniqueId();
+		const stub = env.THE_RACE_GAME.get(id);
+
+		await stub.fetch(wsUrl('p1', 'Alice'), { headers: wsHeaders() });
+
+		const state = await getState(stub);
+		expect(state.players[0]?.connected).toBe(true);
+	});
+
+	it('reconnecting player with same id does not duplicate, stays connected', async () => {
+		const id = env.THE_RACE_GAME.newUniqueId();
+		const stub = env.THE_RACE_GAME.get(id);
+
+		await stub.fetch(wsUrl('p1', 'Alice'), { headers: wsHeaders() });
+		await stub.fetch(wsUrl('p1', 'Alice'), { headers: wsHeaders() }); // reconnect
+
+		const state = await getState(stub);
+		expect(state.players).toHaveLength(1);
+		expect(state.players[0]?.connected).toBe(true);
+	});
+
+	it('existing player can reconnect after game started', async () => {
+		const id = env.THE_RACE_GAME.newUniqueId();
+		const stub = env.THE_RACE_GAME.get(id);
+
+		await stub.fetch(wsUrl('p1', 'Host'), { headers: wsHeaders() });
+		await stub.fetch(wsUrl('p2', 'Guest'), { headers: wsHeaders() });
+
+		// Simulate start game via message
+		await runInDurableObject(stub, async (instance: TheRaceGame, state: DurableObjectState) => {
+			const wsList = state.getWebSockets();
+			for (const ws of wsList) {
+				const att = ws.deserializeAttachment() as { playerId: string } | null;
+				if (att?.playerId === 'p1') {
+					await instance.webSocketMessage(ws, JSON.stringify({ type: 'START_GAME' }));
+					return;
+				}
+			}
+		});
+
+		// p1 reconnects — should get 101
+		const r = await stub.fetch(wsUrl('p1', 'Host'), { headers: wsHeaders() });
+		expect(r.status).toBe(101);
 	});
 });

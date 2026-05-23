@@ -1,5 +1,5 @@
 import { applyAction, createDeck, shuffleDeck } from 'shared';
-import type { ClientMessage, GameState, Phase, PublicGameState } from 'shared';
+import type { ClientMessage, GameState, Phase, PublicGameState, PublicPlayer } from 'shared';
 
 const MAX_PLAYERS = 6;
 const SUITS = ['spades', 'hearts', 'diamonds', 'clubs', 'oranges', 'lemons'] as const;
@@ -8,6 +8,7 @@ interface PlayerEntry {
 	id: string;
 	name: string;
 	isHost: boolean;
+	connected: boolean;
 }
 
 interface WsAttachment {
@@ -27,9 +28,21 @@ function emptyState(): DOState {
 
 function toPublicState(doState: DOState, viewerId?: string): PublicGameState {
 	const gs = doState.gameState;
+
+	const players: PublicPlayer[] = doState.players.map((pe) => {
+		const enginePlayer = gs?.players.find((p) => p.id === pe.id);
+		return {
+			id: pe.id,
+			name: pe.name,
+			isHost: pe.isHost,
+			connected: pe.connected,
+			carIds: enginePlayer?.carIds ?? [],
+		};
+	});
+
 	return {
 		phase: doState.phase,
-		players: doState.players,
+		players,
 		cars: gs
 			? gs.cars.map((c) => ({
 					id: c.id,
@@ -45,6 +58,8 @@ function toPublicState(doState: DOState, viewerId?: string): PublicGameState {
 		pendingChallenge: gs?.pendingChallenge
 			? { challengerCarId: gs.pendingChallenge.challengerCarId, defenderCarId: gs.pendingChallenge.defenderCarId }
 			: undefined,
+		qualifiedCarIds: gs ? Object.keys(gs.qualifyingCards).map(Number) : [],
+		finalScores: undefined,
 	};
 }
 
@@ -52,7 +67,11 @@ export class TheRaceGame implements DurableObject {
 	constructor(
 		private readonly ctx: DurableObjectState,
 		private readonly env: Env,
-	) {}
+	) {
+		this.ctx.blockConcurrencyWhile(async () => {
+			await this.ctx.storage.get<DOState>('state');
+		});
+	}
 
 	private async getState(): Promise<DOState> {
 		return (await this.ctx.storage.get<DOState>('state')) ?? emptyState();
@@ -90,7 +109,6 @@ export class TheRaceGame implements DurableObject {
 		const state = await this.getState();
 
 		if (state.phase !== 'lobby') {
-			// Allow reconnect for existing players
 			const existing = state.players.find((p) => p.id === playerId);
 			if (!existing) {
 				return new Response('Game already started', { status: 403 });
@@ -103,10 +121,11 @@ export class TheRaceGame implements DurableObject {
 		server.serializeAttachment({ playerId, playerName } satisfies WsAttachment);
 		this.ctx.acceptWebSocket(server);
 
-		// Upsert player
 		const existing = state.players.find((p) => p.id === playerId);
 		if (!existing) {
-			state.players.push({ id: playerId, name: playerName, isHost: state.players.length === 0 });
+			state.players.push({ id: playerId, name: playerName, isHost: state.players.length === 0, connected: true });
+		} else {
+			existing.connected = true;
 		}
 		await this.setState(state);
 		this.broadcast(state);
@@ -141,7 +160,6 @@ export class TheRaceGame implements DurableObject {
 					return;
 				}
 
-				// Create cars (1 per player or 2 if exactly 2 players)
 				const twoPlayerMode = state.players.length === 2;
 				const carsPerPlayer = twoPlayerMode ? 2 : 1;
 				const shuffledSuits = [...SUITS].sort(() => Math.random() - 0.5);
@@ -178,6 +196,46 @@ export class TheRaceGame implements DurableObject {
 				break;
 			}
 
+			case 'QUALIFY': {
+				if (!state.gameState || state.phase !== 'qualifying') {
+					this.send(ws, { type: 'ERROR', message: 'Not in qualifying phase' });
+					return;
+				}
+				const enginePlayer = state.gameState.players.find((p) => p.id === att.playerId);
+				if (!enginePlayer?.carIds.includes(parsed.carId)) {
+					this.send(ws, { type: 'ERROR', message: 'Not your car' });
+					return;
+				}
+				try {
+					const next = applyAction(state.gameState, {
+						type: 'QUALIFY',
+						carId: parsed.carId,
+						cardIndices: parsed.cardIndices,
+					});
+					state.gameState = next;
+					state.phase = next.phase;
+					await this.setState(state);
+					this.broadcast(state);
+				} catch (err) {
+					this.send(ws, { type: 'ERROR', message: err instanceof Error ? err.message : 'Unknown error' });
+				}
+				break;
+			}
+
+			case 'PLAY_AGAIN': {
+				if (!player.isHost) {
+					this.send(ws, { type: 'ERROR', message: 'Only the host can start a new game' });
+					return;
+				}
+				if (!state.gameState) return;
+				const next = applyAction(state.gameState, { type: 'PLAY_AGAIN' });
+				state.gameState = next;
+				state.phase = 'lobby';
+				await this.setState(state);
+				this.broadcast(state);
+				break;
+			}
+
 			default: {
 				if (!state.gameState) {
 					this.send(ws, { type: 'ERROR', message: 'Game not started' });
@@ -198,7 +256,15 @@ export class TheRaceGame implements DurableObject {
 	}
 
 	async webSocketClose(_ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): Promise<void> {
-		// Player remains in lobby; they can reconnect
+		const att = _ws.deserializeAttachment() as WsAttachment | null;
+		if (!att) return;
+		const state = await this.getState();
+		const player = state.players.find((p) => p.id === att.playerId);
+		if (player) {
+			player.connected = false;
+			await this.setState(state);
+			this.broadcast(state);
+		}
 	}
 
 	async webSocketError(_ws: WebSocket, _error: unknown): Promise<void> {}
