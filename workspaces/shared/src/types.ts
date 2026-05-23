@@ -52,11 +52,11 @@ export type Action =
 export type ClientMessage =
 	| { type: 'JOIN'; playerId: string }
 	| { type: 'START_GAME' }
-	| { type: 'QUALIFY'; cardIndices: number[] }
-	| { type: 'DISCARD'; cardIndex: number }
-	| { type: 'EXTEND'; cardIndex: number }
-	| { type: 'CHALLENGE'; cardIndices: number[]; defenderCarId: number }
-	| { type: 'DEFEND'; cardIndices: number[] }
+	| { type: 'QUALIFY'; carId: number; cardIndices: number[] }
+	| { type: 'DISCARD'; carId: number; cardIndex: number }
+	| { type: 'EXTEND'; carId: number; cardIndex: number }
+	| { type: 'CHALLENGE'; carId: number; cardIndices: number[]; defenderCarId: number }
+	| { type: 'DEFEND'; carId: number; cardIndices: number[] }
 	| { type: 'PLAY_AGAIN' };
 
 // WebSocket message shapes (server → client)
@@ -72,11 +72,21 @@ export interface PublicCarState {
 	hand?: Card[];
 }
 
+export interface PublicPlayer {
+	id: string;
+	name: string;
+	carIds: number[];
+	isHost: boolean;
+	connected: boolean;
+}
+
 export interface PublicGameState {
 	phase: Phase;
-	players: Player[];
+	players: PublicPlayer[];
 	cars: PublicCarState[];
 	pendingThisRound: number[];
 	endAfterRound: boolean;
 	pendingChallenge?: Omit<PendingChallenge, 'challengerCards'>;
+	qualifiedCarIds: number[];
+	finalScores?: Score[];
 }
