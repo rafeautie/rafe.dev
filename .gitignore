@@ -23,7 +23,4 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Cloudflare Types
-worker-configuration.d.ts
-
 .claude/scheduled_tasks.lock
