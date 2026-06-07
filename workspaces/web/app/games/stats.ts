@@ -3,10 +3,12 @@ import { setResponseHeader } from '@tanstack/react-start/server';
 import { env } from 'cloudflare:workers';
 import { BUCKET_COUNT, BUCKET_MINUTES, BUCKET_MS, SERIES_HOURS } from './stats.constants';
 
-// Per-game stats read back from the Analytics Engine `game_stats` dataset.
-// `games`/`players` are lifetime totals (headline numbers); `series` is the recent
-// activity the /games page graphs — BUCKET_COUNT contiguous 15-minute buckets ending
-// now, zero-filled. Keyed by game id so this generalises to future games.
+// Per-game stats read back from the Analytics Engine `game_stats` dataset, all
+// over the same window: the last SERIES_HOURS hours. `games`/`players` are the
+// "live" headline numbers — the count in the current (most recent) 15-minute
+// bucket; `series` is the per-bucket game count the /games page graphs —
+// BUCKET_COUNT contiguous 15-minute buckets ending now, zero-filled. Keyed by
+// game id so this generalises to future games.
 export interface GameStat {
 	gameId: string;
 	games: number;
@@ -16,49 +18,30 @@ export interface GameStat {
 
 export type GameStats = Record<string, GameStat>;
 
-// SQL aggregates may arrive as strings in JSON, so numeric fields are coerced
-// through Number() when shaped.
-interface BaseRow {
+// One row per game per 15-minute bucket that had games. SQL aggregates may arrive
+// as strings in JSON, so numeric fields are coerced through Number() when shaped.
+// `bucket` is the unix-seconds bucket start, emitted directly by the query.
+interface StatsRow {
 	game: string;
+	bucket: number | string;
 	games: number | string;
-}
-
-// Lifetime totals: one row per game. (90 days is the full AE retention window.)
-interface TotalsRow extends BaseRow {
 	players: number | string;
 }
 
-// Recent activity: one row per game per 15-minute bucket that had games.
-// `bucket` is the unix-seconds bucket start, emitted directly by the query.
-interface SeriesRow extends BaseRow {
-	bucket: number | string;
-}
-
-// 90 days is the full Analytics Engine retention window.
-const TOTALS_WINDOW_DAYS = 90;
 // How long the stats response may be reused before hitting the SQL API again.
-const CACHE_TTL_SECONDS = 5;
+const CACHE_TTL_SECONDS = 15;
 
-// _sample_interval keeps counts correct if CF ever downsamples (it's 1 at this volume).
-const TOTALS_SQL = `
-	SELECT
-		blob1 AS game,
-		SUM(_sample_interval) AS games,
-		SUM(_sample_interval * double1) AS players
-	FROM game_stats
-	WHERE timestamp > NOW() - INTERVAL '${TOTALS_WINDOW_DAYS}' DAY
-	GROUP BY game
-	FORMAT JSON
-`;
-
-// Bucket start is emitted as a unix timestamp (seconds) so it shares one
-// representation with the epoch math below — no datetime-string parsing. The
-// interval is interpolated so BUCKET_MINUTES is the single source of truth.
-const SERIES_SQL = `
+// One query covers both the graph and the totals (summed from the same buckets).
+// _sample_interval keeps counts correct if CF ever downsamples (it's 1 at this
+// volume). The bucket start is emitted as a unix timestamp (seconds) so it shares
+// one representation with the epoch math below — no datetime-string parsing — and
+// the interval is interpolated so BUCKET_MINUTES is the single source of truth.
+const STATS_SQL = `
 	SELECT
 		blob1 AS game,
 		toUnixTimestamp(toStartOfInterval(timestamp, INTERVAL '${BUCKET_MINUTES}' MINUTE)) AS bucket,
-		SUM(_sample_interval) AS games
+		SUM(_sample_interval) AS games,
+		SUM(_sample_interval * double1) AS players
 	FROM game_stats
 	WHERE timestamp > NOW() - INTERVAL '${SERIES_HOURS}' HOUR
 	GROUP BY game, bucket
@@ -81,30 +64,33 @@ function recentBuckets(nowMs: number): number[] {
 	);
 }
 
-function shape(totals: TotalsRow[], series: SeriesRow[]): GameStats {
+function shape(rows: StatsRow[]): GameStats {
 	const buckets = recentBuckets(Date.now());
 	// The x-axis labels are the same for every game; derive them once.
 	const labels = buckets.map(bucketLabel);
 
-	const totalsByGame = new Map(totals.map((row) => [row.game, row]));
-
-	// game -> (bucketStartMs -> games). GROUP BY game, bucket means one row per key.
-	const seriesByGame = new Map<string, Map<number, number>>();
-	for (const row of series) {
-		let perBucket = seriesByGame.get(row.game);
-		if (!perBucket) seriesByGame.set(row.game, (perBucket = new Map()));
-		perBucket.set(Number(row.bucket) * 1000, Number(row.games) || 0);
+	// game -> (bucketStartMs -> {games, players}). GROUP BY game, bucket → one row per key.
+	const byGame = new Map<string, Map<number, { games: number; players: number }>>();
+	for (const row of rows) {
+		let perBucket = byGame.get(row.game);
+		if (!perBucket) byGame.set(row.game, (perBucket = new Map()));
+		perBucket.set(Number(row.bucket) * 1000, {
+			games: Number(row.games) || 0,
+			players: Number(row.players) || 0
+		});
 	}
 
+	// The current (most recent) bucket drives the live headline numbers.
+	const latestMs = buckets[buckets.length - 1];
+
 	const out: GameStats = {};
-	for (const game of new Set([...totalsByGame.keys(), ...seriesByGame.keys()])) {
-		const totalsRow = totalsByGame.get(game);
-		const perBucket = seriesByGame.get(game);
+	for (const [game, perBucket] of byGame) {
+		const latest = perBucket.get(latestMs);
 		out[game] = {
 			gameId: game,
-			games: Number(totalsRow?.games) || 0,
-			players: Number(totalsRow?.players) || 0,
-			series: buckets.map((ms, i) => ({ t: labels[i], games: perBucket?.get(ms) ?? 0 }))
+			games: latest?.games ?? 0,
+			players: latest?.players ?? 0,
+			series: buckets.map((ms, i) => ({ t: labels[i], games: perBucket.get(ms)?.games ?? 0 }))
 		};
 	}
 	return out;
@@ -132,11 +118,7 @@ async function querySql<T>(sql: string): Promise<T[]> {
 }
 
 async function queryAnalytics(): Promise<GameStats> {
-	const [totals, series] = await Promise.all([
-		querySql<TotalsRow>(TOTALS_SQL),
-		querySql<SeriesRow>(SERIES_SQL)
-	]);
-	return shape(totals, series);
+	return shape(await querySql<StatsRow>(STATS_SQL));
 }
 
 // Server function the /games route loader calls once on load. A Cache-Control

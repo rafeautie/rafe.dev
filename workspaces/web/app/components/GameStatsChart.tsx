@@ -21,7 +21,9 @@ export function GameStatsChart({ stat }: GameStatsChartProps) {
 	const games = stat?.games ?? 0;
 	const players = stat?.players ?? 0;
 	const series = (stat?.series ?? []).slice(-MAX_BARS);
-	const hasData = games > 0;
+	// Drawn from the series, not the headline: the current bucket can be 0 while
+	// earlier buckets still have activity worth graphing.
+	const hasData = series.some((d) => d.games > 0);
 
 	const max = Math.max(...series.map((d) => d.games), 1);
 	// Empty charts still span the full MAX_BARS width so the ghost-bar placeholder
@@ -40,7 +42,7 @@ export function GameStatsChart({ stat }: GameStatsChartProps) {
 				role="img"
 				aria-label={
 					hasData
-						? `${games} games and ${players} players total; activity over the last 3 hours`
+						? `${games} games and ${players} players in the current 15 minutes; activity over the last 3 hours`
 						: 'No games played yet'
 				}
 				viewBox={`0 0 ${width} ${CHART_HEIGHT}`}
@@ -58,7 +60,7 @@ export function GameStatsChart({ stat }: GameStatsChartProps) {
 									width={BAR_WIDTH}
 									height={height}
 									rx={1.5}
-									className="text-blue-600"
+									className={d.games > 0 ? 'text-blue-600' : 'text-black/20'}
 									fill="currentColor"
 								>
 									<title>{`${d.t}: ${d.games} game${d.games === 1 ? '' : 's'}`}</title>
