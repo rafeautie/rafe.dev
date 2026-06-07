@@ -25,5 +25,3 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 app.config.timestamp_*.js
 
-# Cloudflare Types
-worker-configuration.d.ts
