@@ -1,4 +1,3 @@
-import { env } from 'cloudflare:workers';
 import { applyAction, createGame, ownsCar } from '../engine/engine';
 import { isComplete } from '../engine/season';
 import { toPublicState } from '../engine/projection';
@@ -12,9 +11,6 @@ import type {
 } from '../engine/types';
 import { assignLiveries, liveryTeams } from '../engine/liveries';
 
-// Stable id for this game in the Analytics Engine dataset. blob1 + index1 both
-// carry it so the /games page can group/filter by game; future games use their own.
-const GAME_ID = 'the-race';
 const MAX_PLAYERS = 6;
 const MAX_NAME_LEN = 20;
 const MAX_LOG = 50;
@@ -78,22 +74,6 @@ export class TheRaceGame implements DurableObject {
 		if (level === 'error') console.error(line);
 		else if (level === 'warn') console.warn(line);
 		else console.log(line);
-	}
-
-	// Record one data point per started game into Analytics Engine. This is the
-	// single "a game was played" signal — written once, from season_started, never
-	// on join/reconnect — so the /games page can count games and sum player counts.
-	// Fire-and-forget and fully isolated: analytics must never break gameplay.
-	private recordGameStarted(playerCount: number): void {
-		try {
-			env.GAME_STATS?.writeDataPoint({
-				indexes: [GAME_ID], // sampling key (exactly one index allowed)
-				blobs: [GAME_ID], // grouping dimension
-				doubles: [playerCount] // players in this game
-			});
-		} catch (err) {
-			this.log('warn', 'analytics_write_failed', { error: String(err) });
-		}
 	}
 
 	private async getState(): Promise<DOState> {
@@ -305,7 +285,6 @@ export class TheRaceGame implements DurableObject {
 				await this.setState(state);
 				this.broadcast(state, events);
 				this.log('info', 'season_started', { players: state.players.length, teamMode });
-				this.recordGameStarted(state.players.length);
 				break;
 			}
 

@@ -2,7 +2,9 @@
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "rafe-dev",
 	"compatibility_date": "2026-01-31",
-	"compatibility_flags": ["nodejs_compat"],
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
 	"main": "./worker/server.ts",
 	"workers_dev": true,
 	"preview_urls": true,
@@ -25,15 +27,7 @@
 		{
 			"binding": "PHOTOS",
 			"bucket_name": "photos",
-			"remote": true
-		}
-	],
-	// One data point is written here whenever a game starts (see the-race-game.ts).
-	// The /games page reads it back through the SQL API in app/games/stats.ts.
-	"analytics_engine_datasets": [
-		{
-			"binding": "GAME_STATS",
-			"dataset": "game_stats"
+			"remote": true,
 		}
 	],
 	"durable_objects": {
