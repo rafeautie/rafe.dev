@@ -4,9 +4,10 @@
 // RaceView component needs to render: the round-level sets, the currently-viewed
 // car's hand/selection, and the enable/disable gating for each action button.
 //
-// Action gating gates on round MEMBERSHIP (the car is in pendingThisRound), not
-// strict turn order — matching the engine, whose DISCARD/EXTEND handlers operate
-// on a car by id without requiring it to be first in the round.
+// Solo-action gating (discard / extend) gates on TURN ORDER: only the car at the
+// front of the round queue may act — matching the engine, whose DISCARD/EXTEND
+// handlers reject a car that is not next to act. Offering the button to a car
+// that is merely in the round would let it fire a move the server then rejects.
 
 import type { Phase, PublicGameState, RaceView, SelectionState } from './types';
 import { carLegalMoves } from './legalMoves';
@@ -80,8 +81,8 @@ export function selectRaceView(
 	// The car(s) on the clock right now — a single car on a solo turn, both
 	// duellists during a challenge. Qualifying is simultaneous, so every car still
 	// to submit is on the clock. This drives the standings highlight and the tab
-	// beam; it is NOT the action-gating predicate (which gates on round membership
-	// below — the engine lets any pending car act, not just the one on the clock).
+	// beam; the solo-action gating below shares the same turn-order rule (only the
+	// car next to act may discard/extend, matching the engine).
 	const activeCarIds = isQualifying ? new Set(state.pendingThisRound) : carsOnClock(state);
 	const activeCar = state.cars.find((c) => activeCarIds.has(c.id));
 
@@ -96,7 +97,6 @@ export function selectRaceView(
 	const selectedCarId = preferredCarId ?? myCarIds[0];
 	const selectedCar = state.cars.find((c) => c.id === selectedCarId) ?? activeCar;
 	const isMine = selectedCarId !== undefined && myCarIds.includes(selectedCarId);
-	const isInRound = selectedCarId !== undefined && state.pendingThisRound.includes(selectedCarId);
 
 	const hand = selectedCar?.hand ?? [];
 	const selection = getSelection(selections, selectedCarId ?? -1);
@@ -110,9 +110,14 @@ export function selectRaceView(
 
 	// Challenge role only applies to the viewer's own car in the pending challenge.
 	const legalMoves = carLegalMoves(state, selectedCarId ?? -1, hand);
+	// A solo turn (discard / extend) belongs only to the car at the front of the
+	// round queue — mirrors the engine's turn-order guard so the UI never offers a
+	// move the server will reject (e.g. a car just promoted to the lead).
+	const isMyTurnToAct = isMine && legalMoves.isMyTurn;
 	const role = isMine ? legalMoves.challengeRole : null;
 	const inChallenge = role !== null;
-	const challengeLabel = role === 'challenger' ? 'Attack' : role === 'defender' ? 'Defend' : 'Challenge';
+	const challengeLabel =
+		role === 'challenger' ? 'Attack' : role === 'defender' ? 'Defend' : 'Challenge';
 
 	// A car may only take a solo turn (discard / extend) when it has a free space
 	// directly ahead. When position+1 is occupied the car must challenge instead.
@@ -121,9 +126,9 @@ export function selectRaceView(
 
 	const canQualify =
 		isQualifying && isMine && !state.qualifiedCarIds?.includes(selectedCarId!) && hasMain;
-	const canDiscard = isInRound && !inChallenge && !hasCarDirectlyAhead && mainCardId !== null;
+	const canDiscard = isMyTurnToAct && !inChallenge && !hasCarDirectlyAhead && mainCardId !== null;
 	const mainIndex = mainCard ? hand.indexOf(mainCard) : -1;
-	const canExtend = isInRound && !inChallenge && (legalMoves.cardCanExtend[mainIndex] ?? false);
+	const canExtend = isMyTurnToAct && !inChallenge && (legalMoves.cardCanExtend[mainIndex] ?? false);
 	const canChallenge = inChallenge && hasMain && !legalMoves.hasCommittedChallenge;
 
 	return {

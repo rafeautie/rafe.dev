@@ -69,6 +69,11 @@ function isInChallenge(state: GameState, carId: number): boolean {
 	return !!pc && (pc.challengerCarId === carId || pc.defenderCarId === carId);
 }
 
+/** True when it is this car's solo turn — i.e. it is at the front of the round queue. */
+function isCarsTurn(state: GameState, carId: number): boolean {
+	return state.pendingThisRound[0] === carId;
+}
+
 /** True when another car sits directly ahead (position + 1), forcing a challenge. */
 function hasCarDirectlyAhead(state: GameState, carId: number): boolean {
 	return occupiedPositions(state).has(carById(state, carId).position + 1);
@@ -240,9 +245,14 @@ export function applyAction(state: GameState, action: Action): ActionResult {
 
 		case 'DISCARD': {
 			const car = carById(state, action.carId);
-			// Discard is a solo-turn action: only legal when the car has a free
-			// space directly ahead. If a car is directly ahead the car must
-			// challenge; if it is mid-challenge it must commit challenge cards.
+			// Discard is a solo-turn action: only the car at the front of the round
+			// queue may act. Without this a car could act out of turn — e.g. a car
+			// just promoted to the lead by a double-overtake discarding during the
+			// next round, which belongs to last place.
+			if (!isCarsTurn(state, action.carId)) throw new Error('Not your turn');
+			// Only legal when the car has a free space directly ahead. If a car is
+			// directly ahead the car must challenge; if it is mid-challenge it must
+			// commit challenge cards.
 			if (isInChallenge(state, action.carId))
 				throw new Error('Cannot discard during a challenge — commit challenge cards instead');
 			if (hasCarDirectlyAhead(state, action.carId))
@@ -270,7 +280,9 @@ export function applyAction(state: GameState, action: Action): ActionResult {
 
 		case 'EXTEND': {
 			const car = carById(state, action.carId);
-			// Extend is a solo-turn action — illegal while locked into a challenge.
+			// Extend is a solo-turn action — only the car at the front of the round
+			// queue may act, and never while locked into a challenge.
+			if (!isCarsTurn(state, action.carId)) throw new Error('Not your turn');
 			if (isInChallenge(state, action.carId))
 				throw new Error('Cannot extend during a challenge — commit challenge cards instead');
 			const card = car.hand.find((c) => c.id === action.cardId);

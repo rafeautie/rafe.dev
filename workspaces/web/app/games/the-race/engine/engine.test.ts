@@ -225,6 +225,19 @@ describe('applyAction DISCARD', () => {
 		expect(next.pendingThisRound).toContain(1);
 	});
 
+	it('rejects discard from a car that is not at the front of the round queue', () => {
+		// car 1 has a free space ahead (gap at pos 3) so its only barrier to
+		// discarding is turn order — it is not next to act (car 0 is).
+		const state = baseState({
+			phase: 'race',
+			cars: [makeCar(0, 0, makeDeck(5)), makeCar(1, 2, makeDeck(6))],
+			pendingThisRound: [0, 1]
+		});
+		expect(() =>
+			applyAction(state, { type: 'DISCARD', carId: 1, cardId: idAt(state, 1, 0) })
+		).toThrow('Not your turn');
+	});
+
 	it('rejects discard when a car is directly ahead (must challenge)', () => {
 		const state = baseState({
 			phase: 'race',
@@ -328,6 +341,19 @@ describe('applyAction EXTEND', () => {
 		});
 		expect(next.pendingThisRound).not.toContain(0);
 		expect(next.pendingThisRound).toContain(1);
+	});
+
+	it('rejects extend from a car that is not at the front of the round queue', () => {
+		// car 1 sits at pos 2 with a gap ahead (car 2 at pos 4) and an extend card,
+		// so only turn order blocks it — car 0 is next to act, not car 1.
+		const state = baseState({
+			phase: 'race',
+			cars: [makeCar(0, 0, makeDeck(5)), makeCar(1, 2, makeDeck(1)), makeCar(2, 4, makeDeck(6))],
+			pendingThisRound: [0, 1, 2]
+		});
+		expect(() =>
+			applyAction(state, { type: 'EXTEND', carId: 1, cardId: idAt(state, 1, 0) })
+		).toThrow('Not your turn');
 	});
 
 	it('prevents the leader from extending with the Drafting card (value 3)', () => {

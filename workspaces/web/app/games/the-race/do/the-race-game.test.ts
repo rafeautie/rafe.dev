@@ -101,6 +101,23 @@ function ownerOf(carId: number, p1Cars: number[], _p2Cars: number[]): string {
 	return p1Cars.includes(carId) ? 'p1' : 'p2';
 }
 
+// Put `carId` on the clock: front of the round queue with no pending challenge.
+// At race start last place acts first and the front car is forced into a
+// challenge, so a solo discard/extend is only reachable once a gap-having car
+// (e.g. the leader) actually comes up — this injects that turn directly so the
+// transport tests can exercise a legal solo move without playing a full round.
+async function forceSoloTurn(stub: DurableObjectStub, carId: number): Promise<void> {
+	await runInDurableObject(stub, async (_i: TheRaceGame, s: DurableObjectState) => {
+		const stored = (await s.storage.get('state')) as {
+			gameState: { pendingThisRound: number[]; pendingChallenge?: unknown };
+		};
+		const rest = stored.gameState.pendingThisRound.filter((id) => id !== carId);
+		stored.gameState.pendingThisRound = [carId, ...rest];
+		stored.gameState.pendingChallenge = undefined;
+		await s.storage.put('state', stored);
+	});
+}
+
 // ─── Basic WS ────────────────────────────────────────────────────────────────
 
 describe('TheRaceGame — basic WS', () => {
@@ -333,6 +350,7 @@ describe('TheRaceGame — race phase', () => {
 		const leader = before.gameState!.cars.reduce((a, b) => (a.position > b.position ? a : b));
 		const handSizeBefore = leader.hand.length;
 
+		await forceSoloTurn(stub, leader.id);
 		await sendMessage(stub, ownerOf(leader.id, p1Cars, p2Cars), {
 			type: 'DISCARD',
 			carId: leader.id,
@@ -366,6 +384,7 @@ describe('TheRaceGame — race phase', () => {
 			await s.storage.put('state', stored);
 		});
 
+		await forceSoloTurn(stub, leader.id);
 		await sendMessage(stub, ownerOf(leader.id, p1Cars, p2Cars), {
 			type: 'EXTEND',
 			carId: leader.id,
@@ -433,6 +452,7 @@ describe('TheRaceGame — race phase', () => {
 		// Discard with the leader, the one car guaranteed a free space ahead (other
 		// cars must challenge the car directly ahead and so cannot discard).
 		const leader = afterResolve.gameState!.cars.reduce((a, b) => (a.position > b.position ? a : b));
+		await forceSoloTurn(stub, leader.id);
 		await sendMessage(stub, ownerOf(leader.id, p1Cars, p2Cars), {
 			type: 'DISCARD',
 			carId: leader.id,

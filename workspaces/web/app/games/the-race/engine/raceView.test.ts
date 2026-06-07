@@ -211,10 +211,10 @@ describe('selectRaceView canQualify', () => {
 	});
 });
 
-// ─── Discard / Extend gating (membership, not turn order) ──────────────────────
+// ─── Discard / Extend gating (turn order) ──────────────────────────────────────
 
 describe('selectRaceView discard/extend', () => {
-	it('canDiscard requires the car to be in the round and a card selected', () => {
+	it('canDiscard requires the car to be next to act and a card selected', () => {
 		// gap ahead of car 0 (car 1 at pos 7) so a discard is a legal solo turn
 		const open = makeState({ cars: [car(0, 2, [reg(1), reg(5)]), car(1, 7, [reg(2)])] });
 		expect(selectRaceView(open, NO_SEL, 'p1', undefined).canDiscard).toBe(false);
@@ -227,11 +227,14 @@ describe('selectRaceView discard/extend', () => {
 		expect(v.canDiscard).toBe(false);
 	});
 
-	it('allows discarding a pending car that is NOT first in the round', () => {
-		// Car 1 is owned by p2 and is second in pendingThisRound — still actionable.
-		const v = selectRaceView(makeState(), { 1: ['gears:2'] }, 'p2', undefined);
+	it('blocks discarding a pending car that is NOT next to act (turn order)', () => {
+		// Car 1 (p2) is second in pendingThisRound, so it is not on the clock — the
+		// engine would reject the move, so the UI must not offer it. Give car 1 a
+		// gap ahead (car 0 behind it) so the only thing blocking discard is turn order.
+		const state = makeState({ cars: [car(0, 2, [reg(1)]), car(1, 5, [reg(2)])] });
+		const v = selectRaceView(state, { 1: ['gears:2'] }, 'p2', undefined);
 		expect(v.selectedCarId).toBe(1);
-		expect(v.canDiscard).toBe(true);
+		expect(v.canDiscard).toBe(false);
 	});
 
 	it('canExtend honours the engine extend predicate for the selected card', () => {
