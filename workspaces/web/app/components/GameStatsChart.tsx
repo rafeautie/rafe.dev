@@ -10,7 +10,7 @@ interface GameStatsChartProps {
 const MAX_BARS = BUCKET_COUNT;
 // SVG geometry. Bars are drawn in a fixed coordinate space and the <svg> scales
 // to its container width; preserveAspectRatio keeps bars crisp and right-aligned.
-const BAR_WIDTH = 6;
+const BAR_WIDTH = 8;
 const BAR_GAP = 3;
 const CHART_HEIGHT = 44;
 
