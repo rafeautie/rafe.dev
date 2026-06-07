@@ -9,6 +9,10 @@ interface __BaseEnv_Env {
 	CLOUDFLARE_ACCOUNT_ID: string;
 	CLOUDFLARE_DATABASE_ID: string;
 	CLOUDFLARE_D1_TOKEN: string;
+	// API token (Account Analytics: Read) for the Analytics Engine SQL API. Set via `wrangler secret put`.
+	CLOUDFLARE_ANALYTICS_TOKEN: string;
+	// Write binding for the game_stats dataset (see wrangler.jsonc).
+	GAME_STATS: AnalyticsEngineDataset;
 	THE_RACE_GAME: DurableObjectNamespace<import("./worker/server").TheRaceGame>;
 }
 declare namespace Cloudflare {
