@@ -1,8 +1,9 @@
 import { TrackView } from './TrackView';
 import { HandView } from './HandView';
 import { ActionView } from './ActionView';
-import { StandingsView } from './StandingsView';
-import { GameLog } from './GameLog';
+import { LogView } from './LogView';
+import { TurnBanner } from './TurnBanner';
+import { turnPrompt } from '../engine/raceView';
 import type { RaceSession } from '../hooks/useRaceSession';
 
 interface RaceViewProps {
@@ -27,28 +28,27 @@ export function RaceView({ session }: RaceViewProps) {
 
 	if (!state || !view) return null;
 
+	// The screen is a fixed h-dvh column that never scrolls: the standings/log
+	// row and the hand row scale with viewport height (clamped in each
+	// component), and the track absorbs whatever is left — zooming its lanes
+	// down to fit — so the hand is never pushed off the bottom.
 	return (
-		<div className="flex h-dvh scrollbar-none flex-col gap-5 overflow-y-scroll p-5">
-			<div className="flex justify-between gap-5">
-				<StandingsView
-					state={state}
-					activeCarIds={view.activeCarIds}
-					pendingChallenge={state.pendingChallenge}
-					myCarIds={view.myCarIds}
-					reveal={reveal}
-				/>
-				<GameLog log={state.log} cars={state.cars} className="w-70" />
+		<div className="flex h-dvh flex-col gap-5 overflow-hidden p-5">
+			<div className="flex shrink-0 justify-between gap-5">
+				<LogView state={state} />
+				<TurnBanner prompt={turnPrompt(state, view.myCarIds)} className="min-w-0 flex-1" />
 			</div>
-			<div className="flex flex-1 items-center">
+			<div className="flex min-h-48 flex-1 flex-col overflow-hidden">
 				<TrackView
 					state={state}
 					holdAtStart={view.holdAtStart}
 					reveal={reveal}
 					challenge={challengeReveal}
 					gridReveal={gridReveal}
+					className="h-full"
 				/>
 			</div>
-			<div className="flex items-end gap-5">
+			<div className="flex shrink-0 items-end gap-5">
 				<HandView
 					selectedMainId={view.mainCardId}
 					pairRedlineId={view.pairCardId}
@@ -62,7 +62,7 @@ export function RaceView({ session }: RaceViewProps) {
 				/>
 
 				<ActionView
-					className="h-74 min-w-70"
+					className="h-[clamp(13rem,28dvh,18.5rem)] min-w-70"
 					actions={
 						view.isQualifying
 							? [{ label: 'Qualify', onClick: qualify, disabled: !view.canQualify }]

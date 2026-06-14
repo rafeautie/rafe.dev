@@ -50,7 +50,7 @@ export function DriversChampionship({ standings, myCarIds, crownLeader }: Driver
 							<div className="flex min-w-0 flex-col">
 								<div className="flex items-center gap-2">
 									<span className={cn('truncate', isMine && 'font-semibold')}>
-										{liv.driverName}
+										Car #{liv.number}
 									</span>
 									{isMine && <YouChip />}
 								</div>

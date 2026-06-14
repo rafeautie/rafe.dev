@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { carsOnClock } from '../engine/raceView';
 import type { Card, PublicGameState } from '../engine/types';
@@ -10,6 +10,7 @@ import {
 	type RaceReveal
 } from '../hooks/useRacePresentation';
 import { cn } from '~/lib/utils';
+import { CarInfoCard } from './CarInfoCard';
 import { CarPiece } from './CarPiece';
 import { PlayedCardStack } from './PlayedCardStack';
 
@@ -49,6 +50,9 @@ export function TrackView({
 	gridReveal,
 	className
 }: TrackViewProps) {
+	// While qualifying, cars sit in the start/qualifying lane — the info card has no
+	// position to annotate yet, so keep it hidden until the grid is set.
+	const isQualifying = state.phase === 'qualifying';
 	const maxPosition = state.cars.length > 0 ? Math.max(...state.cars.map((c) => c.position)) : 0;
 	const tileCount = Math.max(20, maxPosition + 2);
 	const laneCount = Math.max(1, state.cars.length);
@@ -80,6 +84,28 @@ export function TrackView({
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const targetScrollLeft = useRef(0);
 	const rafRef = useRef<number | null>(null);
+
+	// Scale the track down (never up) to fit the height the layout gives it, so
+	// no lane is ever cut off. CSS zoom (not transform) so layout — and the
+	// horizontal scroll range — shrinks with it; car positions and card overlays
+	// live in the zoomed coordinate space and need no adjustment.
+	const [scale, setScale] = useState(1);
+	useEffect(() => {
+		const el = scrollRef.current;
+		if (!el) return;
+		const update = () => {
+			const styles = getComputedStyle(el);
+			const padding = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
+			const available = el.clientHeight - padding;
+			// A degenerate measurement (row collapsed to nothing mid-layout) keeps
+			// the previous scale — snapping to full size would be the worst fit.
+			setScale((prev) => (available > 0 ? Math.min(1, available / trackHeight) : prev));
+		};
+		update();
+		const ro = new ResizeObserver(update);
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, [trackHeight]);
 	useEffect(() => {
 		const el = scrollRef.current;
 		if (!el) return;
@@ -122,9 +148,12 @@ export function TrackView({
 			// out far enough that the cards — which overflow their lane by ~half a card —
 			// stay fully visible. The inner `w-max` wrapper is the cars' positioning
 			// context, so they still align to the tiles despite the padding.
-			className={cn('relative scrollbar-none overflow-x-scroll overflow-y-visible py-6', className)}
+			className={cn(
+				'relative flex scrollbar-none flex-col justify-center overflow-x-scroll overflow-y-visible py-6',
+				className
+			)}
 		>
-			<div className="relative w-max">
+			<div className="relative w-max" style={{ zoom: scale }}>
 				<div className="flex items-center" style={{ height: trackHeight }}>
 					{Array.from({ length: tileCount }).map((_, i) => {
 						const dimmed = focusActive && !highlightedTiles.has(i);
@@ -205,9 +234,11 @@ export function TrackView({
 								? REVEAL_MOVE_DELAY_MS / 1000
 								: 0;
 						return (
+							// No `layout` prop here: every real move animates through x/y below,
+							// and layout's re-measured boxes disagree with the zoomed track's
+							// coordinate space, re-animating cars on unrelated state updates.
 							<motion.div
 								key={car.id}
-								layout
 								initial={false}
 								animate={{
 									x: holdAtStart ? 0 : (car.position + 1) * TILE_WIDTH,
@@ -220,6 +251,29 @@ export function TrackView({
 									carDimmed && 'brightness-45'
 								)}
 							>
+								{/* Info card riding above each car (below for the top row, so it
+								    never clips past the track's top edge). Hidden through qualifying;
+								    during the grid reveal it fades in just as its car settles onto the
+								    grid — one beat behind that car's staggered pull-out. */}
+								{!isQualifying && (
+									<motion.div
+										initial={{ opacity: 0 }}
+										animate={{ opacity: 1 }}
+										transition={{
+											duration: 0.3,
+											delay: gridReveal
+												? ((gridRank.get(car.id) ?? 0) * GRID_REVEAL_STAGGER_MS + CAR_MOVE_MS) /
+													1000
+												: 0
+										}}
+										className={cn(
+											'pointer-events-none absolute left-1/2 z-20 -translate-x-1/2',
+											lane === 0 ? 'top-full mt-1' : 'bottom-full mb-1'
+										)}
+									>
+										<CarInfoCard liveryId={car.liveryId} handSize={car.handSize} />
+									</motion.div>
+								)}
 								{playedCards && <PlayedCardStack cards={playedCards} emphasized={emphasized} />}
 								<CarPiece className="w-36" liveryId={car.liveryId} />
 							</motion.div>

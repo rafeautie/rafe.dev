@@ -33,7 +33,7 @@ function Line({ children }: { children: ReactNode }) {
 
 // Render an event's structured data into log row(s). All copy lives here — events
 // carry data only — so wording changes never touch the server or the event shape.
-function renderEvent(event: RaceEvent, liveryOf: (carId: number) => number): ReactNode {
+export function renderEvent(event: RaceEvent, liveryOf: (carId: number) => number): ReactNode {
 	const badge = (carId: number) => <CarBadge liveryId={liveryOf(carId)} />;
 	const cards = (cs: Card[]) => cs.map((c) => <PlayingCard key={c.id} card={c} size="xs" />);
 
@@ -148,7 +148,10 @@ export function GameLog({ log, cars, className }: GameLogProps) {
 	const recent = [...filtered].reverse().slice(0, 20);
 
 	return (
-		<UICard variant="the-race-bg" className={cn('h-60 min-w-60 pb-0', className)}>
+		<UICard
+			variant="the-race-bg"
+			className={cn('h-[clamp(10rem,24dvh,15rem)] min-w-60 pb-0', className)}
+		>
 			<CardHeader className="flex items-center justify-between">
 				<span className="text-lg font-bold tracking-wide uppercase">Log</span>
 				<DropdownMenu>
@@ -171,7 +174,7 @@ export function GameLog({ log, cars, className }: GameLogProps) {
 							{cars.map((c) => (
 								<DropdownMenuRadioItem key={c.id} value={String(c.id)} className="gap-2">
 									<CarBadge liveryId={c.liveryId} />
-									<span className="whitespace-nowrap">{livery(c.liveryId).driverName}</span>
+									<span className="whitespace-nowrap">Car #{livery(c.liveryId).number}</span>
 								</DropdownMenuRadioItem>
 							))}
 						</DropdownMenuRadioGroup>

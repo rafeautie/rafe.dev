@@ -3,7 +3,8 @@ import { isExtendCard } from '../engine/cards';
 import { PlayingCard } from './PlayingCard';
 import { Card as CardComponent, CardContent } from '~/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
-import { livery } from '../engine/liveries';
+import { cn } from '~/lib/utils';
+import { CarInfoCard } from './CarInfoCard';
 import { CarPiece } from './CarPiece';
 import { RaceBorderBeam } from './RaceBorderBeam';
 
@@ -74,13 +75,24 @@ export function HandView({
 			className="w-full"
 		>
 			{myCars.length > 1 && (
-				<TabsList variant="the-race-bg" className="space-x-1 p-1">
+				<TabsList variant="ghost" className="space-x-1">
 					{myCars.map((car) => {
 						const isTabActive = activeCarIds?.includes(car.id);
+						const isSelected = car.id === selectedCarId;
 						return (
-							<RaceBorderBeam active={isTabActive}>
-								<TabsTrigger key={car.id} value={String(car.id)} className="px-3 py-1.5">
-									#{livery(car.liveryId).number}
+							<RaceBorderBeam key={car.id} active={isTabActive}>
+								<TabsTrigger
+									value={String(car.id)}
+									className="h-auto border-0 bg-transparent p-0 data-active:bg-transparent dark:data-active:border-0 dark:data-active:bg-transparent"
+								>
+									<CarInfoCard
+										liveryId={car.liveryId}
+										handSize={car.handSize}
+										className={cn(
+											'transition-opacity',
+											isSelected ? 'ring-1 ring-white/0' : 'brightness-70'
+										)}
+									/>
 								</TabsTrigger>
 							</RaceBorderBeam>
 						);
@@ -90,15 +102,16 @@ export function HandView({
 			{myCars.map((car) => {
 				return (
 					<TabsContent key={car.id} value={String(car.id)}>
-						<CardComponent variant="the-race-bg" className="relative h-74 p-0">
-							<CardContent className="flex p-0">
-								<div className="top-0 bottom-0 flex w-full flex-1 items-center justify-center px-10 py-25 pr-0">
-									<CarPiece
-										liveryId={car.liveryId}
-										className="w-40 -rotate-90 drop-shadow-[0_0_40px_rgba(255,255,255,0.7)]"
-									/>
+						<CardComponent
+							variant="the-race-bg"
+							className="relative h-[clamp(13rem,28dvh,18.5rem)] p-0"
+						>
+							<CardContent className="flex h-full p-0">
+								<div className="flex w-full flex-1 flex-col items-center justify-center gap-6 px-10 pr-0">
+									<CarPiece liveryId={car.liveryId} className="w-40 -rotate-90" />
+									<CarInfoCard liveryId={car.liveryId} handSize={car.handSize} />
 								</div>
-								<div className="flex h-74 flex-5 scrollbar-none flex-wrap items-center justify-center gap-4 overflow-y-scroll px-15 py-15">
+								<div className="flex h-full flex-5 scrollbar-none flex-wrap items-center justify-center gap-4 overflow-y-scroll px-12 py-6">
 									{renderCards(car.hand ?? [])}
 								</div>
 							</CardContent>

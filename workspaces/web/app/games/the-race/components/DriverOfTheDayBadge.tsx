@@ -19,7 +19,7 @@ export function DriverOfTheDayBadge({ dotd, carLiveries }: Props) {
 				<span className="text-[10px] tracking-wider text-the-race-accent uppercase">
 					Driver of the Day
 				</span>
-				<span className="truncate font-semibold">{liv.driverName}</span>
+				<span className="truncate font-semibold">Car #{liv.number}</span>
 			</div>
 			<CarBadge liveryId={liv.id} className="ml-auto" />
 			<span className="text-sm font-semibold tabular-nums">+{dotd.placesGained}</span>

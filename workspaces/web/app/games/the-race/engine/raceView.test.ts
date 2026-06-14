@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { selectRaceView, carsOnClock, autoFocusCarId } from './raceView';
+import { selectRaceView, carsOnClock, autoFocusCarId, turnPrompt } from './raceView';
 import type { Card, PublicCarState, PublicGameState } from './types';
 import type { SelectionState } from './types';
-import { liveryTeamId } from './liveries';
+import { livery, liveryTeamId } from './liveries';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -333,5 +333,100 @@ describe('selectRaceView selection view', () => {
 		// Open solo turn (car 0 has a free space ahead), Redline in hand, main selected.
 		const open = makeState({ cars: [car(0, 0, [reg(1), redline]), car(1, 5, [reg(2)])] });
 		expect(selectRaceView(open, { 0: ['gears:1'] }, 'p1', 0).canPairRedline).toBe(false);
+	});
+});
+
+// ─── Turn prompt ──────────────────────────────────────────────────────────────
+
+describe('turnPrompt', () => {
+	const label = (carId: number) => `Car #${livery(carId).number}`;
+
+	it('qualifying: prompts the viewer while their car is still to lock in', () => {
+		const state = makeState({ phase: 'qualifying' });
+		const p = turnPrompt(state, [0]);
+		expect(p.title).toBe('Qualifying');
+		expect(p.subtitle).toMatch(/pick a card/i);
+	});
+
+	it('qualifying: prompts per-car when both of the viewer cars are pending', () => {
+		const state = makeState({
+			phase: 'qualifying',
+			players: [{ id: 'p1', name: 'Alice', carIds: [0, 1], isHost: true, connected: true }]
+		});
+		expect(turnPrompt(state, [0, 1]).subtitle).toMatch(/each of your cars/i);
+	});
+
+	it('qualifying: waits once the viewer car has locked in', () => {
+		const state = makeState({ phase: 'qualifying', pendingThisRound: [1] });
+		expect(turnPrompt(state, [0]).subtitle).toMatch(/waiting/i);
+	});
+
+	it('race: tells the viewer it is their turn when their car is on the clock', () => {
+		// Default state: car 0 (pos 2) is the lowest-position pending car.
+		const p = turnPrompt(makeState(), [0]);
+		expect(p.title).toBe('Your turn');
+	});
+
+	it('race: labels the car on the clock when waiting', () => {
+		const p = turnPrompt(makeState(), [1]);
+		expect(p.title).toBe(`${label(0)}'s turn`);
+		expect(p.subtitle).toMatch(/waiting/i);
+	});
+
+	it('challenge: prompts the uncommitted challenger to attack the defender', () => {
+		const state = makeState({
+			pendingChallenge: {
+				challengerCarId: 0,
+				defenderCarId: 1,
+				challengerCommitted: false,
+				defenderCommitted: false
+			}
+		});
+		const p = turnPrompt(state, [0]);
+		expect(p.title).toBe('Attack!');
+		expect(p.subtitle).toContain(label(1));
+	});
+
+	it('challenge: prompts the uncommitted defender to hold off the challenger', () => {
+		const state = makeState({
+			pendingChallenge: {
+				challengerCarId: 0,
+				defenderCarId: 1,
+				challengerCommitted: false,
+				defenderCommitted: false
+			}
+		});
+		const p = turnPrompt(state, [1]);
+		expect(p.title).toBe('Defend!');
+		expect(p.subtitle).toContain(label(0));
+	});
+
+	it('challenge: a committed side waits on the other', () => {
+		const state = makeState({
+			pendingChallenge: {
+				challengerCarId: 0,
+				defenderCarId: 1,
+				challengerCommitted: true,
+				defenderCommitted: false
+			}
+		});
+		const p = turnPrompt(state, [0]);
+		expect(p.title).toBe('Challenge');
+		expect(p.subtitle).toContain(label(1));
+	});
+
+	it('challenge: an uninvolved viewer sees who is duelling', () => {
+		const state = makeState({
+			pendingChallenge: {
+				challengerCarId: 0,
+				defenderCarId: 1,
+				challengerCommitted: false,
+				defenderCommitted: false
+			}
+		});
+		const p = turnPrompt(state, []);
+		expect(p.title).toBe('Challenge!');
+		expect(p.subtitle).toContain(label(0));
+		expect(p.subtitle).toContain(label(1));
 	});
 });

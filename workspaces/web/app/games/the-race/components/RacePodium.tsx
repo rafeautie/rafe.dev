@@ -32,7 +32,7 @@ export function RacePodium({ scores, carLiveries, myCarIds }: Props) {
 						<CarBadge liveryId={liv.id} className="size-9 text-base" />
 						{isMine && <YouChip className="mt-1" />}
 						<p className={cn('mt-1 text-center text-sm leading-tight', isWinner && 'font-bold')}>
-							{liv.driverName}
+							Car #{liv.number}
 						</p>
 						<p className="text-center text-xs text-the-race-white-to">{liv.teamName}</p>
 						<p className="mt-0.5 text-xs font-semibold">{score.points} pts</p>

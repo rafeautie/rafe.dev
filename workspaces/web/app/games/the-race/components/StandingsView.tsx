@@ -34,7 +34,7 @@ export function StandingsView({
 	const qualifiedCarIds = new Set(state.qualifiedCarIds ?? []);
 
 	return (
-		<Card variant="the-race-bg" className="h-80 w-100 pb-0">
+		<Card variant="the-race-bg" className="h-[clamp(13rem,28dvh,20rem)] w-100 pb-0">
 			<CardHeader className="flex items-center justify-between">
 				<TheRaceLogo />
 				<HowToPlay />
@@ -102,7 +102,7 @@ export function StandingsView({
 									{isYourTurn && <YouChip className="absolute top-0 left-8 -translate-y-1/4" />}
 									<span className="w-5 font-extrabold">{rank + 1}</span>
 									<CarBadge liveryId={car.liveryId} />
-									<span className="whitespace-nowrap">{liv.driverName ?? '?'}</span>
+									<span className="whitespace-nowrap">Car #{liv.number}</span>
 									<div className="flex w-full items-center justify-end gap-2 py-2 font-bold">
 										{isChallenger && <span className="text-sm">ATK</span>}
 										{isDefender && <span className="text-sm">DEF</span>}
