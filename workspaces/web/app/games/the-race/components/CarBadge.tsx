@@ -6,7 +6,7 @@ export function CarBadge({ liveryId, className }: { liveryId: number; className?
 	return (
 		<span
 			className={cn(
-				'flex min-w-8 items-center justify-center rounded text-sm leading-7 font-bold',
+				'flex min-w-8 items-center justify-center rounded-lg py-1 text-sm font-bold',
 				className
 			)}
 			style={{

@@ -37,7 +37,7 @@ export function RaceClassification({ scores, cars, players, carLiveries, myCarId
 						<CarBadge liveryId={liv.id} />
 						<div className="flex min-w-0 flex-col">
 							<div className="flex items-center gap-2">
-								<span className={cn('truncate', isMine && 'font-semibold')}>{liv.driverName}</span>
+								<span className={cn('truncate', isMine && 'font-semibold')}>Car #{liv.number}</span>
 								{isMine && <YouChip />}
 							</div>
 							<span className="truncate text-xs text-the-race-white-to">

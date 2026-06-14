@@ -26,6 +26,7 @@ const tabsListVariants = cva(
 			variant: {
 				default: 'bg-muted',
 				line: 'gap-1 bg-transparent',
+				ghost: 'bg-transparent p-0 ring-0',
 				'the-race-bg':
 					'bg-linear-to-b from-[oklch(0.18_0.01_50)] to-[oklch(0.24_0.01_50)] ring-1 ring-white/10',
 				'the-race-red': 'bg-linear-to-b from-the-race-red-from to-the-race-red-to',

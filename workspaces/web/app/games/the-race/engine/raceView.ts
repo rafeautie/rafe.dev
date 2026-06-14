@@ -11,6 +11,7 @@
 
 import type { Phase, PublicGameState, RaceView, SelectionState } from './types';
 import { carLegalMoves } from './legalMoves';
+import { livery } from './liveries';
 import { canPairRedline, getSelection, hasMainSelected } from './selection';
 
 /**
@@ -38,6 +39,83 @@ export function carsOnClock(state: {
 		}
 	}
 	return new Set();
+}
+
+// ─── Turn prompt ──────────────────────────────────────────────────────────────
+
+/** Headline + supporting line telling the viewer what to do (or wait for). */
+export interface TurnPrompt {
+	title: string;
+	subtitle: string;
+}
+
+/**
+ * What the viewer should be doing right now, as a title/subtitle pair for the
+ * banner between the standings and the log. Viewer-centric: the same state
+ * yields "Your turn" for the car on the clock and "Car #<n>'s turn" for
+ * everyone else. Cars are labelled by their livery number, matching the badges.
+ */
+export function turnPrompt(
+	state: Pick<PublicGameState, 'phase' | 'pendingThisRound' | 'pendingChallenge'> & {
+		cars: readonly { id: number; position: number; liveryId: number }[];
+	},
+	myCarIds: readonly number[]
+): TurnPrompt {
+	const mine = new Set(myCarIds);
+	const carLabel = (carId: number) => {
+		const car = state.cars.find((c) => c.id === carId);
+		return car ? `Car #${livery(car.liveryId).number}` : `Car #${carId}`;
+	};
+
+	if (state.phase === 'qualifying') {
+		// During qualifying pendingThisRound is the set of cars yet to lock in.
+		const myPending = state.pendingThisRound.filter((id) => mine.has(id));
+		if (myPending.length > 1)
+			return { title: 'Qualifying', subtitle: 'Pick a qualifying card for each of your cars' };
+		if (myPending.length === 1)
+			return { title: 'Qualifying', subtitle: 'Pick a card to set your spot on the grid' };
+		return { title: 'Qualifying', subtitle: 'Waiting for the other drivers to lock in…' };
+	}
+
+	const pc = state.pendingChallenge;
+	if (pc) {
+		const amChallenger = mine.has(pc.challengerCarId);
+		const amDefender = mine.has(pc.defenderCarId);
+		if (amChallenger && !pc.challengerCommitted)
+			return {
+				title: 'Attack!',
+				subtitle: `Play your card(s) to attack ${carLabel(pc.defenderCarId)}`
+			};
+		if (amDefender && !pc.defenderCommitted)
+			return {
+				title: 'Defend!',
+				subtitle: `Play your card(s) to hold off ${carLabel(pc.challengerCarId)}`
+			};
+		if (amChallenger || amDefender) {
+			const waitingOn = amChallenger ? pc.defenderCarId : pc.challengerCarId;
+			return {
+				title: 'Challenge',
+				subtitle: `Waiting for ${carLabel(waitingOn)} to play their card(s)…`
+			};
+		}
+		return {
+			title: 'Challenge!',
+			subtitle: `${carLabel(pc.challengerCarId)} attacks ${carLabel(pc.defenderCarId)}`
+		};
+	}
+
+	if (state.phase === 'race') {
+		const [next] = carsOnClock(state);
+		if (next === undefined) return { title: 'Race', subtitle: 'Starting the next round…' };
+		if (mine.has(next))
+			return {
+				title: 'Your turn',
+				subtitle: 'Extend with a 1–3 card, or discard to hold position'
+			};
+		return { title: `${carLabel(next)}'s turn`, subtitle: 'Waiting for them to play a card…' };
+	}
+
+	return { title: 'The Race', subtitle: '' };
 }
 
 /**

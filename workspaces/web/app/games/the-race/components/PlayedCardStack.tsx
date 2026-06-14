@@ -74,7 +74,7 @@ export function PlayedCardStack({ cards, emphasized }: PlayedCardStackProps) {
 	// piece); the inner motion element owns the animated transform (Framer manages
 	// `transform`, so the two must not share an element or one clobbers the other).
 	return (
-		<div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+		<div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
 			<motion.div
 				// A drop-shadow filter (not box-shadow) so the shadow follows each card's
 				// rounded silhouette and lifts it off the car. Safe to set via class — the

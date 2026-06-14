@@ -26,7 +26,7 @@ export function ChampionsBanner({ driversChampion, constructorsChampion, carLive
 					<span className="text-[10px] tracking-wider text-the-race-white-to uppercase">
 						Drivers&rsquo; Champion
 					</span>
-					<span className="truncate text-lg font-bold">{driverLiv.driverName}</span>
+					<span className="truncate text-lg font-bold">Car #{driverLiv.number}</span>
 					<span className="truncate text-xs text-the-race-white-to">
 						{driverLiv.teamName} · {driversChampion.points} pts
 					</span>
