@@ -1,16 +1,37 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { env } from 'cloudflare:workers';
+import { PhotoFrame, type Photo } from '~/components/PhotoFrame';
 import { getImageUrl } from '../utils';
 
+// Resolve each photo's intrinsic dimensions up front so the grid can reserve
+// exact space and avoid layout shift as images stream in. The JSON metadata is
+// tiny and edge-cached by Cloudflare.
 const getPhotos = createServerFn().handler(async () => {
 	const objectData = await env.PHOTOS.list();
 
 	if (!objectData) {
-		return { images: [] as { key: string }[] };
+		return { images: [] as Photo[] };
 	}
 
-	return { images: objectData.objects.map(({ key }) => ({ key })) };
+	const images = await Promise.all(
+		objectData.objects.map(async ({ key }): Promise<Photo> => {
+			try {
+				const res = await fetch(`https://images.rafe.dev/cdn-cgi/image/format=json/${key}`);
+				if (res.ok) {
+					const data = (await res.json()) as { width?: number; height?: number };
+					if (data.width && data.height) {
+						return { key, width: data.width, height: data.height };
+					}
+				}
+			} catch {
+				// Fall back to a 3:2 frame if metadata can't be fetched.
+			}
+			return { key, width: 3, height: 2 };
+		})
+	);
+
+	return { images };
 });
 
 export const Route = createFileRoute('/photography')({
@@ -59,13 +80,7 @@ function PhotographyPage() {
 	return (
 		<div className="grid grid-cols-1 sm:grid-cols-2">
 			{images.map((image) => (
-				<img
-					key={image.key}
-					src={getImageUrl(image.key)}
-					alt="Photograph"
-					className="self-center object-contain"
-					loading="lazy"
-				/>
+				<PhotoFrame key={image.key} image={image} />
 			))}
 		</div>
 	);
