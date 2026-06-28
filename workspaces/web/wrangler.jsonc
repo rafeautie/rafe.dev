@@ -27,5 +27,20 @@
 			"bucket_name": "photos",
 			"remote": true
 		}
+	],
+	// The TheRaceGame Durable Object was removed with the games feature. v1
+	// created the class (still live in production); v2 deletes the class and
+	// all of its Durable Objects. A deploy cannot drop a DO class without an
+	// explicit delete-class migration. Once v2 has been deployed everywhere,
+	// this whole block can be removed.
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["TheRaceGame"]
+		},
+		{
+			"tag": "v2",
+			"deleted_classes": ["TheRaceGame"]
+		}
 	]
 }
