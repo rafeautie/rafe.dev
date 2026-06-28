@@ -1,3 +1,3 @@
 # rafe.dev
 
-built with svelte kit
+digital business card
