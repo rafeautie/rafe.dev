@@ -57,7 +57,7 @@ function HomePage() {
 	return (
 		<div className="flex w-full flex-col items-center justify-center">
 			<div
-				className="flex h-dvh w-full flex-col items-center justify-center p-10 text-[clamp(1rem,2.5vmin,10rem)] font-semibold tracking-wide text-background transition-colors duration-500 sm:p-15 smh:text-background/0"
+				className="flex h-dvh w-full flex-col items-center justify-center p-10 text-[clamp(1rem,2.5vmin,10rem)] font-medium text-background transition-colors duration-500 sm:p-15 smh:text-background/0"
 				style={{
 					backgroundImage: `url('${imageUrl}')`,
 					backgroundSize: 'contain',

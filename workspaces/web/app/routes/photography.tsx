@@ -1,45 +1,27 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { env } from 'cloudflare:workers';
-import { PhotoFrame, type Photo } from '~/components/PhotoFrame';
+import { PhotoGallery } from '~/components/PhotoFrame';
 import { getImageUrl } from '../utils';
 
-// Resolve each photo's intrinsic dimensions up front so the grid can reserve
-// exact space and avoid layout shift as images stream in. The JSON metadata is
-// tiny and edge-cached by Cloudflare.
+// The gallery measures each photo's real aspect ratio on the client (see
+// PhotoGallery), so the loader only needs to hand over the object keys.
 const getPhotos = createServerFn().handler(async () => {
 	const objectData = await env.PHOTOS.list();
 
 	if (!objectData) {
-		return { images: [] as Photo[] };
+		return { imageKeys: [] as string[] };
 	}
 
-	const images = await Promise.all(
-		objectData.objects.map(async ({ key }): Promise<Photo> => {
-			try {
-				const res = await fetch(`https://images.rafe.dev/cdn-cgi/image/format=json/${key}`);
-				if (res.ok) {
-					const data = (await res.json()) as { width?: number; height?: number };
-					if (data.width && data.height) {
-						return { key, width: data.width, height: data.height };
-					}
-				}
-			} catch {
-				// Fall back to a 3:2 frame if metadata can't be fetched.
-			}
-			return { key, width: 3, height: 2 };
-		})
-	);
-
-	return { images };
+	return { imageKeys: objectData.objects.map(({ key }) => key) };
 });
 
 export const Route = createFileRoute('/photography')({
 	loader: () => getPhotos(),
 	head: ({ loaderData }) => {
 		const firstImg =
-			loaderData?.images && loaderData.images.length > 0
-				? getImageUrl(loaderData.images[0]!.key)
+			loaderData?.imageKeys && loaderData.imageKeys.length > 0
+				? getImageUrl(loaderData.imageKeys[0]!)
 				: undefined;
 
 		return {
@@ -75,13 +57,7 @@ export const Route = createFileRoute('/photography')({
 });
 
 function PhotographyPage() {
-	const { images } = Route.useLoaderData();
+	const { imageKeys } = Route.useLoaderData();
 
-	return (
-		<div className="grid grid-cols-1 sm:grid-cols-2">
-			{images.map((image) => (
-				<PhotoFrame key={image.key} image={image} />
-			))}
-		</div>
-	);
+	return <PhotoGallery imageKeys={imageKeys} />;
 }

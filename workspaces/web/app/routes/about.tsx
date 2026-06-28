@@ -37,7 +37,7 @@ function AboutPage() {
 	return (
 		<div className="flex flex-col gap-8 p-8 text-xl text-black">
 			<div className="space-y-2">
-				<p className="text-4xl font-semibold tracking-wide">
+				<p className="text-4xl font-medium tracking-wide">
 					<a href="/">rafe / about</a>
 				</p>
 				<a href="mailto:rafe@rafe.dev">rafe@rafe.dev</a>
