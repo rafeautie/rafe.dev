@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/development')({
 	head: () => ({
@@ -6,8 +6,7 @@ export const Route = createFileRoute('/development')({
 			{ title: 'Development | Rafe Autie' },
 			{
 				name: 'description',
-				content:
-					'Rafe Autie builds beautiful user experiences and impactful software, and develops games for fun.'
+				content: 'Rafe Autie builds beautiful user experiences and impactful software.'
 			}
 		]
 	}),
@@ -26,16 +25,6 @@ function DevelopmentPage() {
 				<p>
 					I love building beautiful user experiences and impactful software — interfaces that feel
 					as intentional as they are useful, backed by code that holds up.
-				</p>
-				<p>
-					For fun, I also develop games. You can{' '}
-					<Link
-						to="/games"
-						className="underline decoration-dotted underline-offset-4 transition-colors hover:text-black/60"
-					>
-						find them on the games page
-					</Link>
-					.
 				</p>
 			</div>
 		</div>

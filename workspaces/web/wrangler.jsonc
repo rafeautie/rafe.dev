@@ -27,27 +27,5 @@
 			"bucket_name": "photos",
 			"remote": true
 		}
-	],
-	// One data point is written here whenever a game starts (see the-race-game.ts).
-	// The /games page reads it back through the SQL API in app/games/stats.ts.
-	"analytics_engine_datasets": [
-		{
-			"binding": "GAME_STATS",
-			"dataset": "game_stats"
-		}
-	],
-	"durable_objects": {
-		"bindings": [
-			{
-				"name": "THE_RACE_GAME",
-				"class_name": "TheRaceGame"
-			}
-		]
-	},
-	"migrations": [
-		{
-			"tag": "v1",
-			"new_sqlite_classes": ["TheRaceGame"]
-		}
 	]
 }

@@ -11,15 +11,6 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	/* The Race */
-	--the-race-red-from: oklch(0.58 0.2 28);
-	--the-race-red-to: oklch(0.46 0.18 28);
-	--the-race-white-from: oklch(0.93 0.015 80);
-	--the-race-white-to: oklch(0.86 0.012 80);
-	--the-race-accent: oklch(0.8 0.14 85);
-	--the-race-bg-from: oklch(0.17 0.01 50);
-	--the-race-bg-to: oklch(0.2 0.01 50);
-
 	--radius: 0.375rem;
 	--background: oklch(1 0 0);
 	--foreground: oklch(0.145 0 0);
@@ -128,41 +119,9 @@
 	--font-heading: var(--font-sans);
 	--font-sans: 'Geist Variable', sans-serif;
 	--font-archivo: 'Archivo Variable', sans-serif;
-	/* The Race color tokens */
-	--color-the-race-red-from: var(--the-race-red-from);
-	--color-the-race-red-to: var(--the-race-red-to);
-	--color-the-race-white-from: var(--the-race-white-from);
-	--color-the-race-white-to: var(--the-race-white-to);
-	--color-the-race-accent: var(--the-race-accent);
-	--color-the-race-bg-from: var(--the-race-bg-from);
-	--color-the-race-bg-to: var(--the-race-bg-to);
 	--radius-2xl: calc(var(--radius) * 1.8);
 	--radius-3xl: calc(var(--radius) * 2.2);
 	--radius-4xl: calc(var(--radius) * 2.6);
-}
-
-@property --race-glow-angle {
-	syntax: '<angle>';
-	inherits: false;
-	initial-value: 0deg;
-}
-
-@keyframes race-border-beam {
-	to {
-		--race-glow-angle: 360deg;
-	}
-}
-
-@utility animate-race-border-beam {
-	animation: race-border-beam 2.5s linear infinite;
-	background: conic-gradient(
-		from var(--race-glow-angle) at 50% 50%,
-		transparent 0deg,
-		transparent 270deg,
-		oklch(0.8 0.14 85 / 0.25) 300deg,
-		oklch(0.98 0.22 85) 355deg,
-		oklch(0.8 0.14 85 / 0.25) 360deg
-	);
 }
 
 @layer base {

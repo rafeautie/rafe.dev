@@ -19,14 +19,6 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
-        "the-race-red":
-          "bg-linear-to-b from-the-race-red-from to-the-race-red-to text-the-race-white-from hover:brightness-110 active:brightness-95",
-        "the-race-white":
-          "bg-linear-to-b from-the-race-white-from to-the-race-white-to text-the-race-bg-from hover:brightness-105 active:brightness-95",
-        "the-race-accent":
-          "bg-the-race-accent text-the-race-white-from hover:brightness-110 active:brightness-95",
-        "the-race-bg":
-          "bg-linear-to-b from-the-race-bg-from to-the-race-bg-to text-the-race-white-from hover:brightness-150 active:brightness-95",
       },
       size: {
         default:
