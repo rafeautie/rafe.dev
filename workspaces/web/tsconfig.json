@@ -18,6 +18,6 @@
 		},
 		"types": ["./worker-configuration.d.ts"]
 	},
-	"include": ["app/**/*", "worker/**/*", "app.config.ts"],
+	"include": ["app/**/*", "app.config.ts"],
 	"exclude": ["node_modules", ".output", ".vinxi"]
 }

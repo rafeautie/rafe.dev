@@ -6,10 +6,7 @@ export default defineConfig({
 	plugins: [cloudflareTest({ wrangler: { configPath: './wrangler.jsonc' } })],
 	resolve: {
 		alias: {
-			'~/': path.resolve('./app') + '/',
-			'@tanstack/react-start/server-entry': path.resolve(
-				'./worker/__mocks__/tanstack-start-entry.ts',
-			),
-		},
-	},
+			'~/': path.resolve('./app') + '/'
+		}
+	}
 });

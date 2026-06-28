@@ -17,7 +17,7 @@ function DevelopmentPage() {
 	return (
 		<div className="flex flex-col gap-8 p-8 text-xl text-black">
 			<div className="space-y-2">
-				<p className="text-4xl font-medium tracking-wide">
+				<p className="text-4xl font-medium">
 					<a href="/">rafe / development</a>
 				</p>
 			</div>

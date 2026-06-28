@@ -3,7 +3,7 @@
 	"name": "rafe-dev",
 	"compatibility_date": "2026-01-31",
 	"compatibility_flags": ["nodejs_compat"],
-	"main": "./worker/server.ts",
+	"main": "@tanstack/react-start/server-entry",
 	"workers_dev": true,
 	"preview_urls": true,
 	"observability": {
