@@ -77,7 +77,7 @@ function PhotoFrame({
 		started.current = true;
 
 		// Measure the real pixels off-document so the frame can reserve the exact
-		// box before it paints — the frame is sized to the photo, never the photo
+		// box before it paints. The frame is sized to the photo, never the photo
 		// to the frame. The browser serves the same URL from cache on render.
 		const loader = new Image();
 		if (eager) loader.setAttribute('fetchpriority', 'high');

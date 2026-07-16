@@ -33,7 +33,7 @@ function DevelopmentPage() {
 			</div>
 			<div className="flex max-w-4xl flex-col gap-8">
 				<p>
-					I love building beautiful user experiences and impactful software — interfaces that feel
+					I love building beautiful user experiences and impactful software, interfaces that feel
 					as intentional as they are useful, backed by code that holds up.
 				</p>
 			</div>
