@@ -1,12 +1,12 @@
-import { defineConfig } from 'vite'
-import { tanstackStart } from '@tanstack/react-start/plugin/vite'
-import { cloudflare } from '@cloudflare/vite-plugin'
-import viteReact from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
+import { defineConfig } from 'vite';
+import { tanstackStart } from '@tanstack/react-start/plugin/vite';
+import { cloudflare } from '@cloudflare/vite-plugin';
+import viteReact from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
 	resolve: {
-		tsconfigPaths: true,
+		tsconfigPaths: true
 	},
 	plugins: [
 		cloudflare({ viteEnvironment: { name: 'ssr' } }),
@@ -14,9 +14,9 @@ export default defineConfig({
 		tanstackStart({
 			srcDirectory: 'app',
 			router: {
-				routesDirectory: 'routes',
-			},
+				routesDirectory: 'routes'
+			}
 		}),
-		viteReact(),
-	],
-})
+		viteReact()
+	]
+});
