@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { env } from 'cloudflare:workers';
 import { PhotoGallery } from '~/components/PhotoGallery';
+import { SlashNav } from '~/components/SlashNav';
 import { getImageUrl } from '../utils';
 
 // The gallery measures each photo's real aspect ratio on the client (see
@@ -61,9 +62,10 @@ function PhotographyPage() {
 
 	return (
 		<div className="flex flex-col gap-8 p-8 text-black">
-			<p className="text-4xl font-medium">
-				<a href="/">rafe / photography</a>
-			</p>
+			<SlashNav className="text-xl font-medium">
+				<a href="/">rafe</a>
+				photography
+			</SlashNav>
 			<PhotoGallery imageKeys={imageKeys} />
 		</div>
 	);

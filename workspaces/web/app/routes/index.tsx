@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { env } from 'cloudflare:workers';
+import { SlashNav } from '~/components/SlashNav';
 import { getImageUrl } from '../utils';
 
 const getRandomPhoto = createServerFn().handler(async () => {
@@ -66,10 +67,11 @@ function HomePage() {
 					backgroundOrigin: 'content-box'
 				}}
 			>
-				<p>
-					<a href="/about">rafe</a> / <a href="/photography">photography</a> /{' '}
+				<SlashNav separatorClassName="text-inherit opacity-60">
+					<a href="/about">rafe</a>
+					<a href="/photography">photography</a>
 					<a href="/development">development</a>
-				</p>
+				</SlashNav>
 			</div>
 		</div>
 	);

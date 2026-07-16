@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { SlashNav } from '~/components/SlashNav';
 
 export const Route = createFileRoute('/development')({
 	head: () => ({
@@ -25,16 +26,17 @@ const projects = [
 
 function DevelopmentPage() {
 	return (
-		<div className="flex flex-col items-center gap-8 p-8 text-xl text-black">
-			<div className="space-y-2">
-				<p className="text-4xl font-medium">
-					<a href="/">rafe / development</a>
-				</p>
+		<div className="flex flex-col items-center gap-8 p-8 text-base text-black">
+			<div className="w-full max-w-4xl space-y-2">
+				<SlashNav className="text-xl font-medium">
+					<a href="/">rafe</a>
+					development
+				</SlashNav>
 			</div>
 			<div className="flex max-w-4xl flex-col gap-8">
 				<p>
-					I love building beautiful user experiences and impactful software, interfaces that feel
-					as intentional as they are useful, backed by code that holds up.
+					I love building beautiful user experiences and impactful software, interfaces that feel as
+					intentional as they are useful, backed by code that holds up.
 				</p>
 			</div>
 			<div className="flex w-full max-w-4xl flex-col gap-6">
