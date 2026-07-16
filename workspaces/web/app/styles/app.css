@@ -45,30 +45,9 @@
 	--sidebar-accent-foreground: oklch(0.205 0 0);
 	--sidebar-border: oklch(0.922 0 0);
 	--sidebar-ring: oklch(0.708 0 0);
-	--shm-bill: oklch(0.8 0.11 162);
-	--shm-ink-deep: oklch(0.17 0.024 168);
+	--shm-bill: oklch(0.55 0.12 162);
+	--shm-ink-deep: oklch(0.2 0.02 168);
 	--shm-paper: oklch(0.955 0.016 95);
-}
-
-/* Banknote-ledger theme scoped to the shmoney marketing page */
-.shmoney {
-	--background: oklch(0.21 0.028 166);
-	--foreground: oklch(0.955 0.016 95);
-	--card: oklch(0.245 0.028 166);
-	--card-foreground: oklch(0.955 0.016 95);
-	--popover: oklch(0.245 0.028 166);
-	--popover-foreground: oklch(0.955 0.016 95);
-	--primary: oklch(0.955 0.016 95);
-	--primary-foreground: oklch(0.2 0.028 166);
-	--secondary: oklch(0.285 0.028 166);
-	--secondary-foreground: oklch(0.955 0.016 95);
-	--muted: oklch(0.27 0.026 166);
-	--muted-foreground: oklch(0.72 0.028 160);
-	--accent: oklch(0.29 0.032 166);
-	--accent-foreground: oklch(0.955 0.016 95);
-	--border: oklch(0.955 0.016 95 / 12%);
-	--input: oklch(0.955 0.016 95 / 16%);
-	--ring: oklch(0.8 0.11 162 / 60%);
 }
 
 .dark {
