@@ -9,6 +9,9 @@ node_modules
 /build
 dist/
 
+# Editor
+.vscode/
+
 # OS
 .DS_Store
 Thumbs.db
