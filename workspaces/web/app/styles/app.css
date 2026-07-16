@@ -2,7 +2,6 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 @import '@fontsource-variable/geist';
-@import '@fontsource-variable/geist-mono';
 @import '@fontsource-variable/archivo';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
@@ -45,9 +44,7 @@
 	--sidebar-accent-foreground: oklch(0.205 0 0);
 	--sidebar-border: oklch(0.922 0 0);
 	--sidebar-ring: oklch(0.708 0 0);
-	--shm-bill: oklch(0.55 0.12 162);
-	--shm-ink-deep: oklch(0.2 0.02 168);
-	--shm-paper: oklch(0.955 0.016 95);
+	--shm-azure: oklch(0.55 0.19 258);
 }
 
 .dark {
@@ -122,11 +119,8 @@
 	--color-sidebar-ring: var(--sidebar-ring);
 	--font-heading: var(--font-sans);
 	--font-sans: 'Geist Variable', sans-serif;
-	--font-mono: 'Geist Mono Variable', monospace;
 	--font-archivo: 'Archivo Variable', sans-serif;
-	--color-bill: var(--shm-bill);
-	--color-ink-deep: var(--shm-ink-deep);
-	--color-paper: var(--shm-paper);
+	--color-azure: var(--shm-azure);
 	--radius-2xl: calc(var(--radius) * 1.8);
 	--radius-3xl: calc(var(--radius) * 2.2);
 	--radius-4xl: calc(var(--radius) * 2.6);

@@ -17,7 +17,18 @@ import { Button } from '~/components/ui/button';
 import { cn } from '~/lib/utils';
 
 const GITHUB_URL = 'https://github.com/rafeautie/shmoney';
-const RELEASES_URL = `${GITHUB_URL}/releases`;
+const LATEST_RELEASE_URL = `${GITHUB_URL}/releases/latest`;
+
+function DownloadButton({ children }: { children: ReactNode }) {
+	return (
+		<Button asChild size="lg" className="px-4">
+			<a href={LATEST_RELEASE_URL} target="_blank" rel="noreferrer">
+				<Download data-icon="inline-start" className="size-4" />
+				{children}
+			</a>
+		</Button>
+	);
+}
 
 export const Route = createFileRoute('/shmoney')({
 	head: () => ({
@@ -47,11 +58,7 @@ export const Route = createFileRoute('/shmoney')({
 });
 
 function Wordmark({ className }: { className?: string }) {
-	return (
-		<span className={cn('font-semibold tracking-tight', className)}>
-			<span className="text-bill">$</span>hmoney
-		</span>
-	);
+	return <span className={cn('font-semibold tracking-tight', className)}>shmoney</span>;
 }
 
 function GitHubIcon({ className }: { className?: string }) {
@@ -88,11 +95,7 @@ function Guilloche({ className }: { className?: string }) {
 }
 
 function SectionLabel({ children }: { children: ReactNode }) {
-	return (
-		<p className="font-mono text-xs tracking-[0.22em] text-muted-foreground uppercase">
-			{children}
-		</p>
-	);
+	return <p className="text-xs tracking-[0.22em] text-muted-foreground uppercase">{children}</p>;
 }
 
 type Txn = {
@@ -134,7 +137,7 @@ const ENVELOPES = [
 function CategoryChip({ txn }: { txn: Txn }) {
 	if (txn.pending) {
 		return (
-			<span className="inline-flex animate-pulse items-center gap-1 rounded-full bg-bill/10 px-2 py-0.5 text-[11px] text-bill">
+			<span className="inline-flex animate-pulse items-center gap-1 rounded-full bg-azure/10 px-2 py-0.5 text-[11px] text-azure">
 				<Cpu className="size-3" />
 				Categorizing
 			</span>
@@ -157,8 +160,8 @@ function AppWindowMock() {
 					<span className="size-2.5 rounded-full bg-foreground/10" />
 					<span className="size-2.5 rounded-full bg-foreground/10" />
 				</div>
-				<span className="font-mono text-xs text-muted-foreground">shmoney: data.sqlite</span>
-				<Badge variant="outline" className="ml-auto border-bill/30 text-bill">
+				<span className="text-xs text-muted-foreground">shmoney: data.sqlite</span>
+				<Badge variant="outline" className="ml-auto border-azure/30 text-azure">
 					Offline OK
 				</Badge>
 			</div>
@@ -170,20 +173,20 @@ function AppWindowMock() {
 						<p className="px-2 py-1.5">Reports</p>
 					</nav>
 					<div className="space-y-3 border-t border-border pt-3">
-						<p className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
+						<p className="text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
 							Envelopes
 						</p>
 						{ENVELOPES.map((env) => (
 							<div key={env.name} className="space-y-1.5">
 								<div className="flex items-baseline justify-between gap-2">
 									<span className="text-xs text-foreground/80">{env.name}</span>
-									<span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+									<span className="text-[11px] text-muted-foreground tabular-nums">
 										{env.spent} / {env.budget}
 									</span>
 								</div>
 								<div className="h-1.5 overflow-hidden rounded-full bg-muted">
 									<div
-										className="h-full rounded-full bg-bill/70"
+										className="h-full rounded-full bg-azure/70"
 										style={{ width: `${Math.round((env.spent / env.budget) * 100)}%` }}
 									/>
 								</div>
@@ -204,9 +207,7 @@ function AppWindowMock() {
 						<tbody>
 							{TRANSACTIONS.map((txn) => (
 								<tr key={`${txn.date}-${txn.payee}`} className="border-b border-border/60">
-									<td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
-										{txn.date}
-									</td>
+									<td className="px-4 py-2.5 text-xs text-muted-foreground">{txn.date}</td>
 									<td className="max-w-0 truncate px-4 py-2.5 text-[13px] text-foreground/90">
 										{txn.payee}
 									</td>
@@ -215,8 +216,8 @@ function AppWindowMock() {
 									</td>
 									<td
 										className={cn(
-											'px-4 py-2.5 text-right font-mono text-[13px] tabular-nums',
-											txn.incoming ? 'text-bill' : 'text-foreground/80'
+											'px-4 py-2.5 text-right text-[13px] tabular-nums',
+											txn.incoming ? 'text-azure' : 'text-foreground/80'
 										)}
 									>
 										{txn.amount}
@@ -225,9 +226,9 @@ function AppWindowMock() {
 							))}
 						</tbody>
 					</table>
-					<div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
+					<div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-[11px] text-muted-foreground">
 						<span>Synced via SimpleFIN, 2m ago</span>
-						<span className="ml-auto text-bill">0 bytes to the cloud</span>
+						<span className="ml-auto text-azure">0 bytes to the cloud</span>
 					</div>
 				</div>
 			</div>
@@ -279,7 +280,7 @@ const LEDGER_ROWS = [
 function ShmoneyPage() {
 	const reduceMotion = useReducedMotion();
 	return (
-		<div className="overflow-x-clip bg-background font-sans text-foreground selection:bg-bill/20">
+		<div className="overflow-x-clip bg-background font-sans text-foreground selection:bg-azure/20">
 			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8">
 				<header className="flex items-center justify-between pt-8">
 					<p className="text-xl font-medium">
@@ -304,7 +305,7 @@ function ShmoneyPage() {
 					className="relative pt-20 sm:pt-24"
 				>
 					<Guilloche className="pointer-events-none absolute -top-24 -right-56 -z-10 w-[42rem] [mask-image:radial-gradient(closest-side,black,transparent)] text-foreground opacity-[0.05]" />
-					<p className="font-mono text-xs tracking-[0.22em] text-bill uppercase">
+					<p className="text-xs tracking-[0.22em] text-azure uppercase">
 						Private first · Local first · Personal first
 					</p>
 					<h1 className="mt-5 max-w-xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl">
@@ -316,19 +317,14 @@ function ShmoneyPage() {
 						computer. No cloud. No account. No telemetry.
 					</p>
 					<div className="mt-8 flex flex-wrap items-center gap-3">
-						<Button asChild size="lg" className="px-4">
-							<a href={RELEASES_URL} target="_blank" rel="noreferrer">
-								<Download data-icon="inline-start" className="size-4" />
-								Download for free
-							</a>
-						</Button>
+						<DownloadButton>Download for free</DownloadButton>
 						<Button asChild variant="outline" size="lg" className="px-4">
 							<a href={GITHUB_URL} target="_blank" rel="noreferrer">
 								View the source
 							</a>
 						</Button>
 					</div>
-					<p className="mt-4 font-mono text-xs text-muted-foreground">
+					<p className="mt-4 text-xs text-muted-foreground">
 						Windows · macOS · Linux · free for personal use
 					</p>
 				</motion.section>
@@ -347,7 +343,7 @@ function ShmoneyPage() {
 					<div className="mt-6 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
 						{FEATURES.map((feature) => (
 							<div key={feature.title} className="border-t border-border pt-5">
-								<feature.icon className="size-4 text-bill" aria-hidden="true" />
+								<feature.icon className="size-4 text-azure" aria-hidden="true" />
 								<h2 className="mt-3 font-medium">{feature.title}</h2>
 								<p className="mt-1.5 text-sm text-pretty text-muted-foreground">{feature.body}</p>
 							</div>
@@ -357,32 +353,30 @@ function ShmoneyPage() {
 
 				<section className="mt-24">
 					<SectionLabel>The privacy ledger</SectionLabel>
-					<div className="mt-6 rounded-xl bg-ink-deep p-7 text-paper sm:p-10">
-						<div className="flex items-baseline justify-between gap-3 border-b border-paper/60 pb-3">
-							<span className="font-mono text-xs tracking-[0.18em] uppercase">
-								Statement of disclosure
-							</span>
-							<span className="hidden font-mono text-xs text-paper/60 tabular-nums sm:inline">
+					<div className="mt-6 rounded-xl border border-border bg-muted/40 p-7 sm:p-10">
+						<div className="flex items-baseline justify-between gap-3 border-b border-foreground/20 pb-3">
+							<span className="text-xs tracking-[0.18em] uppercase">Statement of disclosure</span>
+							<span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">
 								No. 000000
 							</span>
 						</div>
-						<dl className="divide-y divide-paper/15">
+						<dl className="divide-y divide-foreground/10">
 							{LEDGER_ROWS.map((row) => (
 								<div key={row.item} className="flex items-baseline gap-3 py-3">
-									<dt className="text-sm text-paper/85">{row.item}</dt>
+									<dt className="text-sm text-foreground/80">{row.item}</dt>
 									<span
 										aria-hidden="true"
-										className="mx-1 flex-1 border-b border-dotted border-paper/30"
+										className="mx-1 flex-1 border-b border-dotted border-foreground/25"
 									/>
-									<dd className="font-mono text-sm whitespace-nowrap tabular-nums">{row.value}</dd>
+									<dd className="text-sm whitespace-nowrap tabular-nums">{row.value}</dd>
 								</div>
 							))}
 						</dl>
-						<div className="flex items-baseline justify-between gap-3 border-t border-paper/60 pt-4">
+						<div className="flex items-baseline justify-between gap-3 border-t border-foreground/20 pt-4">
 							<span className="font-medium">Total leaving your machine</span>
-							<span className="font-mono font-semibold text-[oklch(0.82_0.1_162)]">Nothing</span>
+							<span className="font-semibold text-azure">Nothing</span>
 						</div>
-						<p className="mt-5 max-w-xl text-xs text-pretty text-paper/60">
+						<p className="mt-5 max-w-xl text-xs text-pretty text-muted-foreground">
 							The only network calls shmoney makes are the ones you ask for: pulling transactions
 							from your banks through SimpleFIN. Everything else, including the optional AI, runs
 							offline.
@@ -395,12 +389,7 @@ function ShmoneyPage() {
 						Bring your money home.
 					</h2>
 					<div className="flex flex-wrap items-center justify-center gap-3">
-						<Button asChild size="lg" className="px-4">
-							<a href={RELEASES_URL} target="_blank" rel="noreferrer">
-								<Download data-icon="inline-start" className="size-4" />
-								Download shmoney
-							</a>
-						</Button>
+						<DownloadButton>Download shmoney</DownloadButton>
 						<Button asChild variant="outline" size="lg" className="px-4">
 							<a href={GITHUB_URL} target="_blank" rel="noreferrer">
 								<GitHubIcon className="size-4" />
@@ -408,7 +397,7 @@ function ShmoneyPage() {
 							</a>
 						</Button>
 					</div>
-					<p className="font-mono text-xs text-muted-foreground">
+					<p className="text-xs text-muted-foreground">
 						Pre-1.0 · PolyForm Noncommercial 1.0.0 · free for personal use
 					</p>
 				</section>
