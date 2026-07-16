@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ShmoneyRouteImport } from './routes/shmoney'
 import { Route as PhotographyRouteImport } from './routes/photography'
 import { Route as DevelopmentRouteImport } from './routes/development'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 
+const ShmoneyRoute = ShmoneyRouteImport.update({
+  id: '/shmoney',
+  path: '/shmoney',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PhotographyRoute = PhotographyRouteImport.update({
   id: '/photography',
   path: '/photography',
@@ -40,12 +46,14 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
+  '/shmoney': typeof ShmoneyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
+  '/shmoney': typeof ShmoneyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,14 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
+  '/shmoney': typeof ShmoneyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/development' | '/photography'
+  fullPaths: '/' | '/about' | '/development' | '/photography' | '/shmoney'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/development' | '/photography'
-  id: '__root__' | '/' | '/about' | '/development' | '/photography'
+  to: '/' | '/about' | '/development' | '/photography' | '/shmoney'
+  id: '__root__' | '/' | '/about' | '/development' | '/photography' | '/shmoney'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,10 +76,18 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   DevelopmentRoute: typeof DevelopmentRoute
   PhotographyRoute: typeof PhotographyRoute
+  ShmoneyRoute: typeof ShmoneyRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/shmoney': {
+      id: '/shmoney'
+      path: '/shmoney'
+      fullPath: '/shmoney'
+      preLoaderRoute: typeof ShmoneyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/photography': {
       id: '/photography'
       path: '/photography'
@@ -107,6 +124,7 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   DevelopmentRoute: DevelopmentRoute,
   PhotographyRoute: PhotographyRoute,
+  ShmoneyRoute: ShmoneyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

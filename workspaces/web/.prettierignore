@@ -11,5 +11,9 @@ bun.lockb
 # Generated config snapshots
 app.config.timestamp_*.js
 
+# Generated files
+app/routeTree.gen.ts
+worker-configuration.d.ts
+
 # Miscellaneous
 /static/

@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { SlashNav } from '~/components/SlashNav';
 import { getImageUrl } from '../utils';
 
 export const Route = createFileRoute('/about')({
@@ -35,11 +36,12 @@ export const Route = createFileRoute('/about')({
 
 function AboutPage() {
 	return (
-		<div className="flex flex-col gap-8 p-8 text-xl text-black">
+		<div className="flex flex-col gap-8 p-8 text-base text-black">
 			<div className="space-y-2">
-				<p className="text-4xl font-medium">
-					<a href="/">rafe / about</a>
-				</p>
+				<SlashNav className="text-xl font-medium">
+					<a href="/">rafe</a>
+					about
+				</SlashNav>
 				<a href="mailto:rafe@rafe.dev">rafe@rafe.dev</a>
 			</div>
 			<div className="flex max-w-4xl flex-col gap-8">
