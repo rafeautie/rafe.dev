@@ -17,7 +17,7 @@ const projects = [
 	{
 		name: 'shmoney',
 		description: 'personal finance app - private first, local first, personal first',
-		url: 'https://github.com/rafeautie/shmoney',
+		url: '/shmoney',
 		language: 'TypeScript',
 		topics: ['local-first', 'self-hosted', 'personal-finance', 'local-llm']
 	}
@@ -42,8 +42,8 @@ function DevelopmentPage() {
 					<a
 						key={project.name}
 						href={project.url}
-						target="_blank"
-						rel="noreferrer"
+						target={project.url.startsWith('http') ? '_blank' : undefined}
+						rel={project.url.startsWith('http') ? 'noreferrer' : undefined}
 						className="flex flex-col gap-2 rounded-lg border border-black/10 p-6 transition-colors hover:border-black/30"
 					>
 						<div className="flex items-baseline justify-between">
