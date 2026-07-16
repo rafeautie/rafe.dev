@@ -56,11 +56,21 @@ function AboutPage() {
 				</p>
 			</div>
 			<div className="flex flex-col gap-6">
-				<img src={getImageUrl('DSCF0740.JPEG')} alt="Yosemite Valley" />
+				<img src={getImageUrl('DSCF0740.JPEG')} alt="Yosemite Valley" width={6240} height={4160} />
 				<div className="grid grid-cols-3 gap-6">
-					<img src={getImageUrl('DSCF0770.JPEG')} alt="Yosemite Lodge" />
-					<img src={getImageUrl('DSCF0784.JPEG')} alt="Yosemite Abandoned Gas Station" />
-					<img src={getImageUrl('DSCF0754.JPEG')} alt="Half Dome and a Plane" />
+					<img src={getImageUrl('DSCF0770.JPEG')} alt="Yosemite Lodge" width={4160} height={6240} />
+					<img
+						src={getImageUrl('DSCF0784.JPEG')}
+						alt="Yosemite Abandoned Gas Station"
+						width={4160}
+						height={6240}
+					/>
+					<img
+						src={getImageUrl('DSCF0754.JPEG')}
+						alt="Half Dome and a Plane"
+						width={4160}
+						height={6240}
+					/>
 				</div>
 			</div>
 		</div>

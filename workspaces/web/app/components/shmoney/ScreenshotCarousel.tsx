@@ -183,14 +183,16 @@ export function ScreenshotCarousel() {
 				    peeking side slides toward the edges without dimming the arrows. */}
 				<div className="mask-x-from-[calc(100%-9rem)] mask-x-to-100%">
 					<CarouselContent className="pt-3 pb-14">
-						{SCREENSHOTS.map((shot, index) => (
+						{/* All slides load eagerly: the neighbors peek into view immediately
+						    and lazy loading makes them pop in mid-scroll. */}
+						{SCREENSHOTS.map((shot) => (
 							<CarouselItem key={shot.src} className="basis-3/4">
 								<img
 									src={shot.src}
 									alt={shot.alt}
 									width={1200}
 									height={800}
-									loading={index === 0 ? 'eager' : 'lazy'}
+									decoding="async"
 									draggable={false}
 									className="w-full rounded-xl border border-border select-none"
 								/>
