@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { env } from 'cloudflare:workers';
-import { PhotoGallery } from '~/components/PhotoFrame';
+import { PhotoGallery } from '~/components/PhotoGallery';
 import { getImageUrl } from '../utils';
 
 // The gallery measures each photo's real aspect ratio on the client (see
@@ -59,5 +59,12 @@ export const Route = createFileRoute('/photography')({
 function PhotographyPage() {
 	const { imageKeys } = Route.useLoaderData();
 
-	return <PhotoGallery imageKeys={imageKeys} />;
+	return (
+		<div className="flex flex-col gap-8 p-8 text-black">
+			<p className="text-4xl font-medium">
+				<a href="/">rafe / photography</a>
+			</p>
+			<PhotoGallery imageKeys={imageKeys} />
+		</div>
+	);
 }
