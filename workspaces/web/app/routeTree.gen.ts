@@ -8,115 +8,133 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as PhotographyRouteImport } from './routes/photography'
-import { Route as DevelopmentRouteImport } from './routes/development'
-import { Route as AboutRouteImport } from './routes/about'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as rootRouteImport } from './routes/__root';
+import { Route as ShmoneyRouteImport } from './routes/shmoney';
+import { Route as PhotographyRouteImport } from './routes/photography';
+import { Route as DevelopmentRouteImport } from './routes/development';
+import { Route as AboutRouteImport } from './routes/about';
+import { Route as IndexRouteImport } from './routes/index';
 
+const ShmoneyRoute = ShmoneyRouteImport.update({
+	id: '/shmoney',
+	path: '/shmoney',
+	getParentRoute: () => rootRouteImport
+} as any);
 const PhotographyRoute = PhotographyRouteImport.update({
-  id: '/photography',
-  path: '/photography',
-  getParentRoute: () => rootRouteImport,
-} as any)
+	id: '/photography',
+	path: '/photography',
+	getParentRoute: () => rootRouteImport
+} as any);
 const DevelopmentRoute = DevelopmentRouteImport.update({
-  id: '/development',
-  path: '/development',
-  getParentRoute: () => rootRouteImport,
-} as any)
+	id: '/development',
+	path: '/development',
+	getParentRoute: () => rootRouteImport
+} as any);
 const AboutRoute = AboutRouteImport.update({
-  id: '/about',
-  path: '/about',
-  getParentRoute: () => rootRouteImport,
-} as any)
+	id: '/about',
+	path: '/about',
+	getParentRoute: () => rootRouteImport
+} as any);
 const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
+	id: '/',
+	path: '/',
+	getParentRoute: () => rootRouteImport
+} as any);
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/about': typeof AboutRoute
-  '/development': typeof DevelopmentRoute
-  '/photography': typeof PhotographyRoute
+	'/': typeof IndexRoute;
+	'/about': typeof AboutRoute;
+	'/development': typeof DevelopmentRoute;
+	'/photography': typeof PhotographyRoute;
+	'/shmoney': typeof ShmoneyRoute;
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/about': typeof AboutRoute
-  '/development': typeof DevelopmentRoute
-  '/photography': typeof PhotographyRoute
+	'/': typeof IndexRoute;
+	'/about': typeof AboutRoute;
+	'/development': typeof DevelopmentRoute;
+	'/photography': typeof PhotographyRoute;
+	'/shmoney': typeof ShmoneyRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/about': typeof AboutRoute
-  '/development': typeof DevelopmentRoute
-  '/photography': typeof PhotographyRoute
+	__root__: typeof rootRouteImport;
+	'/': typeof IndexRoute;
+	'/about': typeof AboutRoute;
+	'/development': typeof DevelopmentRoute;
+	'/photography': typeof PhotographyRoute;
+	'/shmoney': typeof ShmoneyRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/development' | '/photography'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/development' | '/photography'
-  id: '__root__' | '/' | '/about' | '/development' | '/photography'
-  fileRoutesById: FileRoutesById
+	fileRoutesByFullPath: FileRoutesByFullPath;
+	fullPaths: '/' | '/about' | '/development' | '/photography' | '/shmoney';
+	fileRoutesByTo: FileRoutesByTo;
+	to: '/' | '/about' | '/development' | '/photography' | '/shmoney';
+	id: '__root__' | '/' | '/about' | '/development' | '/photography' | '/shmoney';
+	fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AboutRoute: typeof AboutRoute
-  DevelopmentRoute: typeof DevelopmentRoute
-  PhotographyRoute: typeof PhotographyRoute
+	IndexRoute: typeof IndexRoute;
+	AboutRoute: typeof AboutRoute;
+	DevelopmentRoute: typeof DevelopmentRoute;
+	PhotographyRoute: typeof PhotographyRoute;
+	ShmoneyRoute: typeof ShmoneyRoute;
 }
 
 declare module '@tanstack/react-router' {
-  interface FileRoutesByPath {
-    '/photography': {
-      id: '/photography'
-      path: '/photography'
-      fullPath: '/photography'
-      preLoaderRoute: typeof PhotographyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/development': {
-      id: '/development'
-      path: '/development'
-      fullPath: '/development'
-      preLoaderRoute: typeof DevelopmentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/about': {
-      id: '/about'
-      path: '/about'
-      fullPath: '/about'
-      preLoaderRoute: typeof AboutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-  }
+	interface FileRoutesByPath {
+		'/shmoney': {
+			id: '/shmoney';
+			path: '/shmoney';
+			fullPath: '/shmoney';
+			preLoaderRoute: typeof ShmoneyRouteImport;
+			parentRoute: typeof rootRouteImport;
+		};
+		'/photography': {
+			id: '/photography';
+			path: '/photography';
+			fullPath: '/photography';
+			preLoaderRoute: typeof PhotographyRouteImport;
+			parentRoute: typeof rootRouteImport;
+		};
+		'/development': {
+			id: '/development';
+			path: '/development';
+			fullPath: '/development';
+			preLoaderRoute: typeof DevelopmentRouteImport;
+			parentRoute: typeof rootRouteImport;
+		};
+		'/about': {
+			id: '/about';
+			path: '/about';
+			fullPath: '/about';
+			preLoaderRoute: typeof AboutRouteImport;
+			parentRoute: typeof rootRouteImport;
+		};
+		'/': {
+			id: '/';
+			path: '/';
+			fullPath: '/';
+			preLoaderRoute: typeof IndexRouteImport;
+			parentRoute: typeof rootRouteImport;
+		};
+	}
 }
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  AboutRoute: AboutRoute,
-  DevelopmentRoute: DevelopmentRoute,
-  PhotographyRoute: PhotographyRoute,
-}
+	IndexRoute: IndexRoute,
+	AboutRoute: AboutRoute,
+	DevelopmentRoute: DevelopmentRoute,
+	PhotographyRoute: PhotographyRoute,
+	ShmoneyRoute: ShmoneyRoute
+};
 export const routeTree = rootRouteImport
-  ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+	._addFileChildren(rootRouteChildren)
+	._addFileTypes<FileRouteTypes>();
 
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
+import type { getRouter } from './router.tsx';
+import type { createStart } from '@tanstack/react-start';
 declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
+	interface Register {
+		ssr: true;
+		router: Awaited<ReturnType<typeof getRouter>>;
+	}
 }
