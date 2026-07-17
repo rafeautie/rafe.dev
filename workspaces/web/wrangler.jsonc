@@ -4,8 +4,18 @@
 	"compatibility_date": "2026-01-31",
 	"compatibility_flags": ["nodejs_compat"],
 	"main": "@tanstack/react-start/server-entry",
-	"workers_dev": true,
-	"preview_urls": true,
+	// Cloudflare Access protects the rafe.dev hostname. A workers.dev or preview
+	// hostname would reach /admin with no Access policy in front of it, so both
+	// are off. See ACCESS_SETUP.md.
+	"workers_dev": false,
+	"preview_urls": false,
+	"vars": {
+		// Fill both in before deploying, see ACCESS_SETUP.md. Neither is a
+		// secret: the team domain is public and the aud tag is an identifier,
+		// not a credential. Empty values make /admin refuse every request.
+		"CF_ACCESS_TEAM_DOMAIN": "",
+		"CF_ACCESS_AUD": ""
+	},
 	"observability": {
 		"enabled": true,
 		"head_sampling_rate": 1,

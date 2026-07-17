@@ -1,30 +1,23 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
-import { env } from 'cloudflare:workers';
+import { loadPhotos } from '~/gallery-store';
 import { PhotoGallery } from '~/components/PhotoGallery';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { getImageUrl } from '../utils';
 
 // The gallery measures each photo's real aspect ratio on the client (see
-// PhotoGallery), so the loader only needs to hand over the object keys.
+// PhotoGallery), so the loader hands over keys and metadata but no dimensions.
 const getPhotos = createServerFn().handler(async () => {
-	const objectData = await env.PHOTOS.list();
-
-	if (!objectData) {
-		return { imageKeys: [] as string[] };
-	}
-
-	return { imageKeys: objectData.objects.map(({ key }) => key) };
+	const photos = await loadPhotos();
+	return { photos: photos.filter(({ hidden }) => !hidden) };
 });
 
 export const Route = createFileRoute('/photography')({
 	loader: () => getPhotos(),
 	head: ({ loaderData }) => {
-		const firstImg =
-			loaderData?.imageKeys && loaderData.imageKeys.length > 0
-				? getImageUrl(loaderData.imageKeys[0]!)
-				: undefined;
+		const firstPhoto = loaderData?.photos?.[0];
+		const firstImg = firstPhoto ? getImageUrl(firstPhoto.key) : undefined;
 
 		return {
 			meta: [
@@ -59,7 +52,7 @@ export const Route = createFileRoute('/photography')({
 });
 
 function PhotographyPage() {
-	const { imageKeys } = Route.useLoaderData();
+	const { photos } = Route.useLoaderData();
 
 	return (
 		<div className="flex flex-col gap-8 p-8 text-black">
@@ -67,7 +60,7 @@ function PhotographyPage() {
 				<Link href="/">rafe</Link>
 				photography
 			</SlashNav>
-			<PhotoGallery imageKeys={imageKeys} />
+			<PhotoGallery photos={photos} />
 		</div>
 	);
 }
