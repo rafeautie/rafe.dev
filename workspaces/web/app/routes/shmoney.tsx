@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { Cpu, FileUp, Landmark, Mail, TrendingUp, Undo2 } from 'lucide-react';
 import { GITHUB_URL } from '~/components/shmoney/constants';
+import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { DownloadButton } from '~/components/shmoney/DownloadButton';
 import { GitHubIcon } from '~/components/shmoney/GitHubIcon';
@@ -87,19 +88,19 @@ function ShmoneyPage() {
 					<div className="flex items-center gap-3">
 						<Logo />
 						<SlashNav className="text-xl font-medium">
-							<a href="/">rafe</a>
+							<Link href="/">rafe</Link>
 							<Wordmark className="font-medium" />
 						</SlashNav>
 					</div>
-					<a
+					<Link
 						href={GITHUB_URL}
 						target="_blank"
 						rel="noreferrer"
-						className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+						className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
 					>
 						<GitHubIcon className="size-4" />
 						GitHub
-					</a>
+					</Link>
 				</header>
 
 				<section className="relative pt-20 sm:pt-24">
@@ -118,9 +119,9 @@ function ShmoneyPage() {
 					<div className="mt-8 flex flex-wrap items-center gap-3">
 						<DownloadButton>Download for free</DownloadButton>
 						<Button asChild variant="outline" size="lg" className="px-4">
-							<a href={GITHUB_URL} target="_blank" rel="noreferrer">
+							<Link plain href={GITHUB_URL} target="_blank" rel="noreferrer">
 								View the source
-							</a>
+							</Link>
 						</Button>
 					</div>
 					<p className="mt-4 text-xs text-muted-foreground">
@@ -188,10 +189,10 @@ function ShmoneyPage() {
 					<div className="flex flex-wrap items-center justify-center gap-3">
 						<DownloadButton>Download shmoney</DownloadButton>
 						<Button asChild variant="outline" size="lg" className="px-4">
-							<a href={GITHUB_URL} target="_blank" rel="noreferrer">
+							<Link plain href={GITHUB_URL} target="_blank" rel="noreferrer">
 								<GitHubIcon className="size-4" />
 								Star on GitHub
-							</a>
+							</Link>
 						</Button>
 					</div>
 					<p className="text-xs text-muted-foreground">
@@ -206,18 +207,18 @@ function ShmoneyPage() {
 					</span>
 					<p>
 						Built by{' '}
-						<a href="https://rafe.dev" className="text-foreground/80 hover:text-foreground">
+						<Link href="https://rafe.dev" className="text-foreground/80 hover:text-foreground">
 							Rafe Autie
-						</a>
+						</Link>
 					</p>
-					<a
+					<Link
 						href={GITHUB_URL}
 						target="_blank"
 						rel="noreferrer"
 						className="ml-auto hover:text-foreground"
 					>
 						GitHub
-					</a>
+					</Link>
 				</footer>
 			</div>
 		</div>

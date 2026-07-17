@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 
 export const Route = createFileRoute('/development')({
@@ -29,7 +30,7 @@ function DevelopmentPage() {
 		<div className="flex flex-col items-center gap-8 p-8 text-base text-black">
 			<div className="w-full max-w-4xl space-y-2">
 				<SlashNav className="text-xl font-medium">
-					<a href="/">rafe</a>
+					<Link href="/">rafe</Link>
 					development
 				</SlashNav>
 			</div>
@@ -41,7 +42,8 @@ function DevelopmentPage() {
 			</div>
 			<div className="flex w-full max-w-4xl flex-col gap-6">
 				{projects.map((project) => (
-					<a
+					<Link
+						plain
 						key={project.name}
 						href={project.url}
 						target={project.url.startsWith('http') ? '_blank' : undefined}
@@ -58,7 +60,7 @@ function DevelopmentPage() {
 								<span key={topic}>#{topic}</span>
 							))}
 						</div>
-					</a>
+					</Link>
 				))}
 			</div>
 		</div>
