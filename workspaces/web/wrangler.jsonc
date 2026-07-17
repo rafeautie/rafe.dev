@@ -10,11 +10,12 @@
 	"workers_dev": false,
 	"preview_urls": false,
 	"vars": {
-		// Fill both in before deploying, see ACCESS_SETUP.md. Neither is a
-		// secret: the team domain is public and the aud tag is an identifier,
-		// not a credential. Empty values make /admin refuse every request.
-		"CF_ACCESS_TEAM_DOMAIN": "",
-		"CF_ACCESS_AUD": ""
+		// Neither is a secret: the team domain is public and the aud tag is an
+		// identifier, not a credential. See ACCESS_SETUP.md. These live here
+		// rather than in the dashboard because `wrangler deploy` syncs vars from
+		// this file, so a dashboard-only value is wiped by the next deploy.
+		"CF_ACCESS_TEAM_DOMAIN": "rafeautie.cloudflareaccess.com",
+		"CF_ACCESS_AUD": "030a2916d918f18eb46ce8501b856db7637d2ce3e2233c2a8951342c1b7ae447"
 	},
 	"observability": {
 		"enabled": true,
