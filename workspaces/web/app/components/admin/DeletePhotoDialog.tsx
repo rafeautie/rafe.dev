@@ -45,9 +45,7 @@ export function DeletePhotoDialog({
 					</div>
 				)}
 				<DialogFooter>
-					<DialogClose asChild>
-						<Button variant="outline">Cancel</Button>
-					</DialogClose>
+					<DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
 					<Button variant="destructive" onClick={() => photo && onConfirm(photo.key)}>
 						Delete
 					</Button>

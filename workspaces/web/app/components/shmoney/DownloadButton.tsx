@@ -6,11 +6,13 @@ import { LATEST_RELEASE_URL } from '~/components/shmoney/constants';
 
 export function DownloadButton({ children }: { children: ReactNode }) {
 	return (
-		<Button asChild size="lg" className="px-4">
-			<Link plain href={LATEST_RELEASE_URL} target="_blank" rel="noreferrer">
-				<Download data-icon="inline-start" className="size-4" />
-				{children}
-			</Link>
+		<Button
+			size="lg"
+			className="px-4"
+			render={<Link plain href={LATEST_RELEASE_URL} target="_blank" rel="noreferrer" />}
+		>
+			<Download data-icon="inline-start" className="size-4" />
+			{children}
 		</Button>
 	);
 }

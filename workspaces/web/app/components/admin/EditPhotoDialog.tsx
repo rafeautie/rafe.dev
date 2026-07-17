@@ -92,11 +92,7 @@ function EditPhotoForm({ photo, onApply }: { photo: Photo; onApply: (photo: Phot
 			</div>
 
 			<DialogFooter>
-				<DialogClose asChild>
-					<Button type="button" variant="outline">
-						Cancel
-					</Button>
-				</DialogClose>
+				<DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
 				<Button type="submit">Apply</Button>
 			</DialogFooter>
 		</form>

@@ -1,6 +1,6 @@
-import * as React from 'react';
+import type * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Slot } from 'radix-ui';
+import { useRender } from '@base-ui/react/use-render';
 
 import { cn } from '~/lib/utils';
 
@@ -40,27 +40,29 @@ const buttonVariants = cva(
 	}
 );
 
+// `render` is Base UI's answer to Radix's `asChild`: pass an element to render
+// as instead of a <button>, and useRender merges these props into it.
 function Button({
 	className,
 	variant = 'default',
 	size = 'default',
-	asChild = false,
+	render,
 	...props
 }: React.ComponentProps<'button'> &
 	VariantProps<typeof buttonVariants> & {
-		asChild?: boolean;
+		render?: useRender.RenderProp;
 	}) {
-	const Comp = asChild ? Slot.Root : 'button';
-
-	return (
-		<Comp
-			data-slot="button"
-			data-variant={variant}
-			data-size={size}
-			className={cn(buttonVariants({ variant, size, className }))}
-			{...props}
-		/>
-	);
+	return useRender({
+		defaultTagName: 'button',
+		render,
+		props: {
+			'data-slot': 'button',
+			'data-variant': variant,
+			'data-size': size,
+			className: cn(buttonVariants({ variant, size, className })),
+			...props
+		}
+	});
 }
 
 export { Button, buttonVariants };

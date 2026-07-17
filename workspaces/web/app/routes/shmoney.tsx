@@ -118,10 +118,13 @@ function ShmoneyPage() {
 					</p>
 					<div className="mt-8 flex flex-wrap items-center gap-3">
 						<DownloadButton>Download for free</DownloadButton>
-						<Button asChild variant="outline" size="lg" className="px-4">
-							<Link plain href={GITHUB_URL} target="_blank" rel="noreferrer">
-								View the source
-							</Link>
+						<Button
+							variant="outline"
+							size="lg"
+							className="px-4"
+							render={<Link plain href={GITHUB_URL} target="_blank" rel="noreferrer" />}
+						>
+							View the source
 						</Button>
 					</div>
 					<p className="mt-4 text-xs text-muted-foreground">
@@ -188,11 +191,14 @@ function ShmoneyPage() {
 					</h2>
 					<div className="flex flex-wrap items-center justify-center gap-3">
 						<DownloadButton>Download shmoney</DownloadButton>
-						<Button asChild variant="outline" size="lg" className="px-4">
-							<Link plain href={GITHUB_URL} target="_blank" rel="noreferrer">
-								<GitHubIcon className="size-4" />
-								Star on GitHub
-							</Link>
+						<Button
+							variant="outline"
+							size="lg"
+							className="px-4"
+							render={<Link plain href={GITHUB_URL} target="_blank" rel="noreferrer" />}
+						>
+							<GitHubIcon className="size-4" />
+							Star on GitHub
 						</Button>
 					</div>
 					<p className="text-xs text-muted-foreground">

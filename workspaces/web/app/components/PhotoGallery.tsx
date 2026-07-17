@@ -188,13 +188,12 @@ function Lightbox({
 					if (event.key === 'ArrowLeft') step(-1);
 					if (event.key === 'ArrowRight') step(1);
 				}}
-				// There is no Radix trigger to restore focus to, so send it back
-				// to the photo that opened the lightbox. Selected by index rather
-				// than DOM position, which the column layout no longer matches.
-				onCloseAutoFocus={(event) => {
-					event.preventDefault();
-					document.querySelector<HTMLElement>(`[data-photo-index="${lastIndex.current}"]`)?.focus();
-				}}
+				// There is no trigger to restore focus to, so hand back the photo
+				// that opened the lightbox. Selected by index rather than DOM
+				// position, which the column layout no longer matches.
+				finalFocus={() =>
+					document.querySelector<HTMLElement>(`[data-photo-index="${lastIndex.current}"]`)
+				}
 			>
 				<DialogTitle className="sr-only">{photo?.caption || 'Photograph'}</DialogTitle>
 				<DialogDescription className="sr-only">Fullscreen photograph view</DialogDescription>
