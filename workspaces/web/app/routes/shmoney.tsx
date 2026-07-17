@@ -4,7 +4,7 @@ import { GITHUB_URL } from '~/components/shmoney/constants';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { DownloadButton } from '~/components/shmoney/DownloadButton';
-import { GitHubIcon } from '~/components/shmoney/GitHubIcon';
+import { GitHubIcon } from '~/components/GitHubIcon';
 import { Guilloche } from '~/components/shmoney/Guilloche';
 import { Logo } from '~/components/shmoney/Logo';
 import { ScreenshotCarousel } from '~/components/shmoney/ScreenshotCarousel';

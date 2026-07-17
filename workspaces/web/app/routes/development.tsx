@@ -1,6 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
+
+const GITHUB_PROFILE_URL = 'https://github.com/rafeautie';
 
 export const Route = createFileRoute('/development')({
 	head: () => ({
@@ -28,11 +31,20 @@ const projects = [
 function DevelopmentPage() {
 	return (
 		<div className="flex flex-col items-center gap-8 p-8 text-base text-black">
-			<div className="w-full max-w-4xl space-y-2">
+			<div className="flex w-full max-w-4xl items-center justify-between gap-4">
 				<SlashNav className="text-xl font-medium">
 					<Link href="/">rafe</Link>
 					development
 				</SlashNav>
+				<Link
+					href={GITHUB_PROFILE_URL}
+					target="_blank"
+					rel="noreferrer"
+					className="inline-flex items-center gap-1.5 text-sm text-black/60 hover:text-black"
+				>
+					<GitHubIcon className="size-4" />
+					GitHub
+				</Link>
 			</div>
 			<div className="flex max-w-4xl flex-col gap-8">
 				<p>
