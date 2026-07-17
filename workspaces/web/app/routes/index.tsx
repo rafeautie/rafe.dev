@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { env } from 'cloudflare:workers';
+import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { getImageUrl } from '../utils';
 
@@ -68,9 +69,9 @@ function HomePage() {
 				}}
 			>
 				<SlashNav separatorClassName="text-inherit opacity-60">
-					<a href="/about">rafe</a>
-					<a href="/photography">photography</a>
-					<a href="/development">development</a>
+					<Link href="/about">rafe</Link>
+					<Link href="/photography">photography</Link>
+					<Link href="/development">development</Link>
 				</SlashNav>
 			</div>
 		</div>

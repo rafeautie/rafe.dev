@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { env } from 'cloudflare:workers';
 import { PhotoGallery } from '~/components/PhotoGallery';
+import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { getImageUrl } from '../utils';
 
@@ -63,7 +64,7 @@ function PhotographyPage() {
 	return (
 		<div className="flex flex-col gap-8 p-8 text-black">
 			<SlashNav className="text-xl font-medium">
-				<a href="/">rafe</a>
+				<Link href="/">rafe</Link>
 				photography
 			</SlashNav>
 			<PhotoGallery imageKeys={imageKeys} />
