@@ -8,6 +8,8 @@ import {
 	CarouselPrevious,
 	type CarouselApi
 } from '~/components/ui/carousel';
+import { PILL_CLASS } from '~/components/pill';
+import { cn } from '~/lib/utils';
 
 const SCREENSHOTS = [
 	{
@@ -210,7 +212,10 @@ export function ScreenshotCarousel() {
 					layout
 					layoutDependency={captionIndex}
 					transition={{ layout: { duration: 1, ease: [0.22, 1, 0.36, 1] } }}
-					className="pointer-events-none absolute inset-x-0 bottom-[calc(3.5rem+min(1.9vw,1.5rem))] mx-auto w-fit max-w-[85%] overflow-hidden rounded-full border border-border bg-background/60 px-[1.45em] py-[0.6em] text-center text-[clamp(0.625rem,1.1vw,0.875rem)] whitespace-nowrap text-muted-foreground shadow-lg backdrop-blur-md"
+					className={cn(
+						PILL_CLASS,
+						'pointer-events-none absolute inset-x-0 bottom-[calc(3.5rem+min(1.9vw,1.5rem))] mx-auto w-fit max-w-[85%] overflow-hidden px-[1.45em] py-[0.6em] text-center text-[clamp(0.625rem,1.1vw,0.875rem)] whitespace-nowrap text-muted-foreground'
+					)}
 				>
 					<AnimatePresence mode="popLayout" initial={false}>
 						<motion.span
@@ -232,7 +237,7 @@ export function ScreenshotCarousel() {
 				<div
 					onMouseEnter={pauseAutoplay}
 					onMouseLeave={resumeAutoplay}
-					className="rounded-full border border-border bg-background/60 px-4 py-2.5 shadow-lg backdrop-blur-md transition-colors hover:bg-background/80"
+					className={cn(PILL_CLASS, 'px-4 py-2.5 transition-colors hover:bg-background/80')}
 				>
 					<span className="block h-1 w-8 overflow-hidden rounded-full bg-border">
 						<span

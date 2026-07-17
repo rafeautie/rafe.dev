@@ -30,7 +30,7 @@ function RootComponent() {
 			</head>
 			<body>
 				<main>
-					<Toaster position="top-right" richColors />
+					<Toaster position="top-right" />
 					<Outlet />
 				</main>
 				<Scripts />
