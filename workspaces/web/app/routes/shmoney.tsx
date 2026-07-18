@@ -1,5 +1,15 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { Cpu, FileUp, Landmark, Mail, MessagesSquare, TrendingUp, Undo2 } from 'lucide-react';
+import {
+	Cpu,
+	FileUp,
+	Landmark,
+	LayoutDashboard,
+	Mail,
+	MessagesSquare,
+	TrendingUp,
+	Undo2,
+	Workflow
+} from 'lucide-react';
 import { GITHUB_URL } from '~/components/shmoney/constants';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
@@ -46,6 +56,11 @@ const FEATURES = [
 		body: 'Pull fresh transactions straight from your banks. Credentials stay encrypted in your OS keychain.'
 	},
 	{
+		icon: FileUp,
+		title: 'File imports',
+		body: 'Bring your history along from CSV, TSV, OFX, QFX, or QIF exports, with column mapping and duplicate detection.'
+	},
+	{
 		icon: Cpu,
 		title: 'Local AI categorization',
 		body: 'An optional offline model files transactions into categories. Pair it with rules for the recurring stuff.'
@@ -56,14 +71,19 @@ const FEATURES = [
 		body: 'Ask the same on-device model questions about your money. It runs read-only queries, charts the answer, and keeps history on your machine.'
 	},
 	{
+		icon: Workflow,
+		title: 'Rules engine',
+		body: 'Prioritized rules run on every sync, and shmoney suggests new ones from the way you already categorize.'
+	},
+	{
 		icon: Mail,
 		title: 'Envelope budgets',
 		body: 'Fill envelopes each month and catch overspending the moment it happens, not at the statement.'
 	},
 	{
-		icon: FileUp,
-		title: 'File imports',
-		body: 'Bring your history along from CSV, TSV, OFX, QFX, or QIF exports.'
+		icon: LayoutDashboard,
+		title: 'Custom reports',
+		body: 'Build drag-and-drop dashboards from chart, table, and stat widgets, with saved filters you can reuse.'
 	},
 	{
 		icon: TrendingUp,
