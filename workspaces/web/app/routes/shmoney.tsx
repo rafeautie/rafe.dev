@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { Cpu, FileUp, Landmark, Mail, TrendingUp, Undo2 } from 'lucide-react';
+import { Cpu, FileUp, Landmark, Mail, MessagesSquare, TrendingUp, Undo2 } from 'lucide-react';
 import { GITHUB_URL } from '~/components/shmoney/constants';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
@@ -19,7 +19,7 @@ export const Route = createFileRoute('/shmoney')({
 			{
 				name: 'description',
 				content:
-					'shmoney is a private, local-first personal finance app for your desktop. Bank sync, envelope budgets, and offline AI categorization, all stored in a single SQLite file on your computer.'
+					'shmoney is a private, local-first personal finance app for your desktop. Bank sync, envelope budgets, offline AI categorization, and a chat that answers questions about your money, all stored in a single SQLite file on your computer.'
 			},
 			{ property: 'og:type', content: 'website' },
 			{ property: 'og:url', content: 'https://rafe.dev/shmoney' },
@@ -49,6 +49,11 @@ const FEATURES = [
 		icon: Cpu,
 		title: 'Local AI categorization',
 		body: 'An optional offline model files transactions into categories. Pair it with rules for the recurring stuff.'
+	},
+	{
+		icon: MessagesSquare,
+		title: 'Chat with your finances',
+		body: 'Ask the same on-device model questions about your money. It runs read-only queries, charts the answer, and keeps history on your machine.'
 	},
 	{
 		icon: Mail,
@@ -113,8 +118,9 @@ function ShmoneyPage() {
 					</h1>
 					<p className="mt-6 max-w-xl text-lg text-pretty text-muted-foreground">
 						shmoney is a desktop app for your whole financial life: bank sync, envelope budgets, and
-						AI categorization that runs offline. Everything lives in one SQLite file on your
-						computer. No cloud. No account. No telemetry.
+						AI that categorizes your transactions and answers questions about your money, all
+						offline. Everything lives in one SQLite file on your computer. No cloud. No account. No
+						telemetry.
 					</p>
 					<div className="mt-8 flex flex-wrap items-center gap-3">
 						<DownloadButton>Download for free</DownloadButton>

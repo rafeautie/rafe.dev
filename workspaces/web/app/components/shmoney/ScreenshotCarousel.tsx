@@ -28,6 +28,16 @@ const SCREENSHOTS = [
 		description: 'All your accounts and balances at a glance.'
 	},
 	{
+		src: '/shmoney/chat.png',
+		alt: 'shmoney chat answering a finance question with a generated income-versus-spending chart',
+		description: 'Chat with your finances. The on-device model queries and charts, fully offline.'
+	},
+	{
+		src: '/shmoney/reports.png',
+		alt: 'shmoney reports list with a saved custom dashboard',
+		description: 'Custom report dashboards of charts, tables, and stats over your transactions.'
+	},
+	{
 		src: '/shmoney/report-detail.png',
 		alt: 'shmoney spending report detail',
 		description: 'Reports that break down exactly where the money went.'
