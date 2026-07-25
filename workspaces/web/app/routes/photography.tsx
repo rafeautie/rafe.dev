@@ -4,7 +4,7 @@ import { loadPhotos } from '~/gallery-store';
 import { PhotoGallery } from '~/components/PhotoGallery';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
-import { getImageUrl } from '../utils';
+import { getImageUrl, SOCIAL_IMAGE_WIDTH } from '../utils';
 
 // The gallery measures each photo's real aspect ratio on the client (see
 // PhotoGallery), so the loader hands over keys and metadata but no dimensions.
@@ -17,7 +17,7 @@ export const Route = createFileRoute('/photography')({
 	loader: () => getPhotos(),
 	head: ({ loaderData }) => {
 		const firstPhoto = loaderData?.photos?.[0];
-		const firstImg = firstPhoto ? getImageUrl(firstPhoto.key) : undefined;
+		const firstImg = firstPhoto ? getImageUrl(firstPhoto.key, SOCIAL_IMAGE_WIDTH) : undefined;
 
 		return {
 			meta: [

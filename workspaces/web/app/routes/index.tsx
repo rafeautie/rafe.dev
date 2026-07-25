@@ -3,7 +3,11 @@ import { createServerFn } from '@tanstack/react-start';
 import { env } from 'cloudflare:workers';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
-import { getImageUrl } from '../utils';
+import { getImageUrl, SOCIAL_IMAGE_WIDTH } from '../utils';
+
+// The hero is background-size: contain inside a viewport-height box, so it is
+// never painted wider than the viewport. Matches the lightbox ceiling.
+const HERO_WIDTH = 2048;
 
 const getRandomPhoto = createServerFn().handler(async () => {
 	const objectData = await env.PHOTOS.list();
@@ -19,8 +23,13 @@ const getRandomPhoto = createServerFn().handler(async () => {
 export const Route = createFileRoute('/')({
 	loader: () => getRandomPhoto(),
 	head: ({ loaderData }) => {
-		const img = loaderData?.key ? getImageUrl(loaderData.key) : '';
+		const img = loaderData?.key ? getImageUrl(loaderData.key, SOCIAL_IMAGE_WIDTH) : '';
+		const hero = loaderData?.key ? getImageUrl(loaderData.key, HERO_WIDTH) : '';
 		return {
+			// The hero is a background-image on an inline style, which the preload
+			// scanner does not read: without this hint the fetch waits on CSS and
+			// layout. Same URL as the element, so the two share one request.
+			links: hero ? [{ rel: 'preload', as: 'image', href: hero, fetchPriority: 'high' }] : [],
 			meta: [
 				{ title: 'Rafe Autie | Developer & Photographer' },
 				{
@@ -54,7 +63,7 @@ export const Route = createFileRoute('/')({
 
 function HomePage() {
 	const { key } = Route.useLoaderData();
-	const imageUrl = key ? getImageUrl(key) : '';
+	const imageUrl = key ? getImageUrl(key, HERO_WIDTH) : '';
 
 	return (
 		<div className="flex w-full flex-col items-center justify-center">

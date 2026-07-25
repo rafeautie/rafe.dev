@@ -1,7 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
-import { getImageUrl } from '../utils';
+import { getImageUrl, SOCIAL_IMAGE_WIDTH } from '../utils';
+
+// The portrait sits full width of a half-page column; the three below it share
+// a 3-column grid, so each is painted at roughly a third of that.
+const FEATURE_WIDTH = 1600;
+const THUMB_WIDTH = 640;
 
 export const Route = createFileRoute('/about')({
 	head: () => ({
@@ -20,7 +25,7 @@ export const Route = createFileRoute('/about')({
 				content:
 					'Based in California, I am a developer specializing in mobile interfaces and front-end architecture.'
 			},
-			{ property: 'og:image', content: getImageUrl('DSCF0740.JPEG') },
+			{ property: 'og:image', content: getImageUrl('DSCF0740.JPEG', SOCIAL_IMAGE_WIDTH) },
 			{ property: 'twitter:card', content: 'summary_large_image' },
 			{ property: 'twitter:url', content: 'https://rafe.dev/about' },
 			{ property: 'twitter:title', content: 'About | Rafe Autie' },
@@ -29,7 +34,7 @@ export const Route = createFileRoute('/about')({
 				content:
 					'Based in California, I am a developer specializing in mobile interfaces and front-end architecture.'
 			},
-			{ property: 'twitter:image', content: getImageUrl('DSCF0740.JPEG') }
+			{ property: 'twitter:image', content: getImageUrl('DSCF0740.JPEG', SOCIAL_IMAGE_WIDTH) }
 		]
 	}),
 	component: AboutPage
@@ -57,17 +62,27 @@ function AboutPage() {
 				</p>
 			</div>
 			<div className="flex flex-col gap-6">
-				<img src={getImageUrl('DSCF0740.JPEG')} alt="Yosemite Valley" width={6240} height={4160} />
+				<img
+					src={getImageUrl('DSCF0740.JPEG', FEATURE_WIDTH)}
+					alt="Yosemite Valley"
+					width={6240}
+					height={4160}
+				/>
 				<div className="grid grid-cols-3 gap-6">
-					<img src={getImageUrl('DSCF0770.JPEG')} alt="Yosemite Lodge" width={4160} height={6240} />
 					<img
-						src={getImageUrl('DSCF0784.JPEG')}
+						src={getImageUrl('DSCF0770.JPEG', THUMB_WIDTH)}
+						alt="Yosemite Lodge"
+						width={4160}
+						height={6240}
+					/>
+					<img
+						src={getImageUrl('DSCF0784.JPEG', THUMB_WIDTH)}
 						alt="Yosemite Abandoned Gas Station"
 						width={4160}
 						height={6240}
 					/>
 					<img
-						src={getImageUrl('DSCF0754.JPEG')}
+						src={getImageUrl('DSCF0754.JPEG', THUMB_WIDTH)}
 						alt="Half Dome and a Plane"
 						width={4160}
 						height={6240}
