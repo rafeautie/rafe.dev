@@ -9,46 +9,49 @@ import {
 	type CarouselApi
 } from '~/components/ui/carousel';
 import { PILL_CLASS } from '~/components/pill';
+import { screenshotUrl } from '~/components/shmoney/constants';
 import { cn } from '~/lib/utils';
 
+// `file` is a filename in the shmoney repo's docs/screenshots directory. Adding
+// a slide here means committing the screenshot there, not to this repo.
 const SCREENSHOTS = [
 	{
-		src: '/shmoney/transactions.png',
+		file: 'transactions.png',
 		alt: 'shmoney transactions view with net worth, search and filters, and a categorized transaction list',
 		description: 'Every account and transaction in one searchable, filterable list.'
 	},
 	{
-		src: '/shmoney/budget.png',
+		file: 'budget.png',
 		alt: 'shmoney envelope budget view',
 		description: 'Envelope budgets you fill each month and drain as you spend.'
 	},
 	{
-		src: '/shmoney/accounts.png',
+		file: 'accounts.png',
 		alt: 'shmoney accounts overview',
 		description: 'All your accounts and balances at a glance.'
 	},
 	{
-		src: '/shmoney/chat.png',
+		file: 'chat.png',
 		alt: 'shmoney chat answering a finance question with a generated income-versus-spending chart',
 		description: 'Chat with your finances. The on-device model queries and charts, fully offline.'
 	},
 	{
-		src: '/shmoney/reports.png',
+		file: 'reports.png',
 		alt: 'shmoney reports list with a saved custom dashboard',
 		description: 'Custom report dashboards of charts, tables, and stats over your transactions.'
 	},
 	{
-		src: '/shmoney/report-detail.png',
+		file: 'report-detail.png',
 		alt: 'shmoney spending report detail',
 		description: 'Reports that break down exactly where the money went.'
 	},
 	{
-		src: '/shmoney/activity.png',
+		file: 'activity.png',
 		alt: 'shmoney activity log of reversible changes',
 		description: 'An activity log where every change can be undone.'
 	},
 	{
-		src: '/shmoney/settings-llm.png',
+		file: 'settings-llm.png',
 		alt: 'shmoney settings for the offline AI categorization model',
 		description: 'Offline AI categorization, configured entirely on your machine.'
 	}
@@ -198,9 +201,9 @@ export function ScreenshotCarousel() {
 						{/* All slides load eagerly: the neighbors peek into view immediately
 						    and lazy loading makes them pop in mid-scroll. */}
 						{SCREENSHOTS.map((shot) => (
-							<CarouselItem key={shot.src} className="basis-3/4">
+							<CarouselItem key={shot.file} className="basis-3/4">
 								<img
-									src={shot.src}
+									src={screenshotUrl(shot.file)}
 									alt={shot.alt}
 									width={1200}
 									height={800}

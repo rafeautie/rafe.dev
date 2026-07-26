@@ -45,6 +45,9 @@ export const Route = createFileRoute('/shmoney')({
 				content: 'A private, local-first personal finance app. No cloud, no account, no telemetry.'
 			}
 		]
+		// No preconnect for the screenshot CDN. The slides are eager <img> tags in
+		// the server-rendered markup, so React emits a rel=preload for each one at
+		// the top of <head> and that opens the connection already.
 	}),
 	component: ShmoneyPage
 });
