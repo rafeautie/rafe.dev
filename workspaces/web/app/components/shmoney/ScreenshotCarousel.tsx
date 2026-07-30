@@ -195,8 +195,12 @@ export function ScreenshotCarousel() {
 				{/* Vertical padding gives the active slide's shadow room inside the
 				    overflow-hidden scroll container; the negative margins above cancel
 				    it out so page spacing is unchanged. The wrapper mask fades the
-				    peeking side slides toward the edges without dimming the arrows. */}
-				<div className="mask-x-from-[calc(100%-9rem)] mask-x-to-100%">
+				    peeking side slides toward the edges without dimming the arrows.
+				    `basis-3/4` centered leaves each neighbor a 12.5% sliver, so the fade
+				    starts at its leading edge — 12.5% in, past the 1rem slide gutter —
+				    rather than at a fixed width that would cover the center slide on
+				    narrow screens. */}
+				<div className="mask-x-from-[calc(87.5%+1rem)] mask-x-to-100%">
 					<CarouselContent className="pt-3 pb-14">
 						{/* All slides load eagerly: the neighbors peek into view immediately
 						    and lazy loading makes them pop in mid-scroll. */}
