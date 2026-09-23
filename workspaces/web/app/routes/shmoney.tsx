@@ -18,7 +18,6 @@ import { GitHubIcon } from '~/components/GitHubIcon';
 import { Guilloche } from '~/components/shmoney/Guilloche';
 import { Logo } from '~/components/shmoney/Logo';
 import { ScreenshotCarousel } from '~/components/shmoney/ScreenshotCarousel';
-import { SectionLabel } from '~/components/shmoney/SectionLabel';
 import { Wordmark } from '~/components/shmoney/Wordmark';
 import { Button } from '~/components/ui/button';
 
@@ -100,12 +99,12 @@ const FEATURES = [
 	}
 ];
 
-const LEDGER_ROWS = [
-	{ item: 'Transactions uploaded to our servers', value: '0 bytes' },
-	{ item: 'Credentials stored in the cloud', value: '0' },
-	{ item: 'Telemetry and analytics events', value: '0' },
-	{ item: 'Third parties with access to your data', value: '0' },
-	{ item: 'Monthly subscription, personal use', value: '$0.00' }
+const PRIVACY_FACTS = [
+	{ label: 'Where your data lives', value: 'One SQLite file on your computer' },
+	{ label: 'Bank credentials', value: 'Encrypted in your OS keychain' },
+	{ label: 'Account or sign-up', value: 'None' },
+	{ label: 'Telemetry and analytics', value: 'None' },
+	{ label: 'Price for personal use', value: 'Free' }
 ];
 
 function ShmoneyPage() {
@@ -133,10 +132,7 @@ function ShmoneyPage() {
 
 				<section className="relative pt-20 sm:pt-24">
 					<Guilloche className="pointer-events-none absolute -top-24 -right-56 -z-10 w-[42rem] [mask-image:radial-gradient(closest-side,black,transparent)] text-foreground opacity-[0.05]" />
-					<p className="text-xs tracking-[0.22em] text-azure uppercase">
-						Private first · Local first · Personal first
-					</p>
-					<h1 className="mt-5 max-w-xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl">
+					<h1 className="max-w-xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl">
 						Your money, on your machine.
 					</h1>
 					<p className="mt-6 max-w-xl text-lg text-pretty text-muted-foreground">
@@ -169,49 +165,40 @@ function ShmoneyPage() {
 				</section>
 
 				<section className="mt-24">
-					<SectionLabel>What it does</SectionLabel>
-					<div className="mt-6 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+					<h2 className="text-2xl font-semibold tracking-tight">What it does</h2>
+					<div className="mt-8 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
 						{FEATURES.map((feature) => (
 							<div key={feature.title} className="border-t border-border pt-5">
 								<feature.icon className="size-4 text-azure" aria-hidden="true" />
-								<h2 className="mt-3 font-medium">{feature.title}</h2>
+								<h3 className="mt-3 font-medium">{feature.title}</h3>
 								<p className="mt-1.5 text-sm text-pretty text-muted-foreground">{feature.body}</p>
 							</div>
 						))}
 					</div>
 				</section>
 
-				<section className="mt-24">
-					<SectionLabel>The privacy ledger</SectionLabel>
-					<div className="mt-6 rounded-xl border border-border bg-muted/40 p-7 sm:p-10">
-						<div className="flex items-baseline justify-between gap-3 border-b border-foreground/20 pb-3">
-							<span className="text-xs tracking-[0.18em] uppercase">Statement of disclosure</span>
-							<span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">
-								No. 000000
-							</span>
-						</div>
-						<dl className="py-2">
-							{LEDGER_ROWS.map((row) => (
-								<div key={row.item} className="flex items-baseline gap-3 py-2.5">
-									<dt className="text-sm text-foreground/80">{row.item}</dt>
-									<span
-										aria-hidden="true"
-										className="mx-1 flex-1 border-b border-dotted border-foreground/25"
-									/>
-									<dd className="text-sm whitespace-nowrap tabular-nums">{row.value}</dd>
-								</div>
-							))}
-						</dl>
-						<div className="flex items-baseline justify-between gap-3 border-t border-foreground/20 pt-4">
-							<span className="font-medium">Total leaving your machine</span>
-							<span className="font-semibold text-azure">Nothing</span>
-						</div>
-						<p className="mt-5 max-w-xl text-xs text-pretty text-muted-foreground">
+				<section className="mt-24 grid gap-8 rounded-xl border border-border bg-muted/40 p-7 sm:p-10 lg:grid-cols-[2fr_3fr] lg:gap-14">
+					<div>
+						<h2 className="text-2xl font-semibold tracking-tight text-balance">
+							Nothing leaves your machine.
+						</h2>
+						<p className="mt-3 text-sm text-pretty text-muted-foreground">
 							The only network calls shmoney makes are the ones you ask for: pulling transactions
 							from your banks through SimpleFIN. Everything else, including the optional AI, runs
 							offline.
 						</p>
 					</div>
+					<dl className="divide-y divide-border">
+						{PRIVACY_FACTS.map((fact) => (
+							<div
+								key={fact.label}
+								className="flex flex-col gap-0.5 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6"
+							>
+								<dt className="text-sm text-muted-foreground">{fact.label}</dt>
+								<dd className="text-sm font-medium sm:text-right">{fact.value}</dd>
+							</div>
+						))}
+					</dl>
 				</section>
 
 				<section className="mt-24 flex flex-col items-center gap-5 text-center">
