@@ -1,23 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { createServerFn } from '@tanstack/react-start';
-import { loadPhotos } from '~/gallery-store';
 import { PhotoGallery } from '~/components/PhotoGallery';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
-import { getImageUrl, SOCIAL_IMAGE_WIDTH } from '../utils';
-
-// The gallery measures each photo's real aspect ratio on the client (see
-// PhotoGallery), so the loader hands over keys and metadata but no dimensions.
-const getPhotos = createServerFn().handler(async () => {
-	const photos = await loadPhotos();
-	return { photos: photos.filter(({ hidden }) => !hidden) };
-});
+import { absoluteUrl, PHOTOS } from '~/photos';
 
 export const Route = createFileRoute('/photography')({
-	loader: () => getPhotos(),
-	head: ({ loaderData }) => {
-		const firstPhoto = loaderData?.photos?.[0];
-		const firstImg = firstPhoto ? getImageUrl(firstPhoto.key, SOCIAL_IMAGE_WIDTH) : undefined;
+	head: () => {
+		const firstImg = PHOTOS[0] ? absoluteUrl(PHOTOS[0].socialImage) : undefined;
 
 		return {
 			meta: [
@@ -52,15 +41,13 @@ export const Route = createFileRoute('/photography')({
 });
 
 function PhotographyPage() {
-	const { photos } = Route.useLoaderData();
-
 	return (
 		<div className="flex flex-col gap-8 p-8 text-black">
 			<SlashNav className="text-xl font-medium">
 				<Link href="/">rafe</Link>
 				photography
 			</SlashNav>
-			<PhotoGallery photos={photos} />
+			<PhotoGallery photos={PHOTOS} />
 		</div>
 	);
 }

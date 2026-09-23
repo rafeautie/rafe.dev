@@ -15,4 +15,4 @@ Live at [rafe.dev](https://rafe.dev).
 
 - [TanStack Start](https://tanstack.com/start) with React
 - [Tailwind CSS](https://tailwindcss.com)
-- [Cloudflare Workers](https://workers.cloudflare.com), with photos served from R2
+- [Cloudflare Workers](https://workers.cloudflare.com), with photos built into the site as static assets

@@ -5,22 +5,21 @@ import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
 import { cn } from '~/lib/utils';
 import { PILL_CLASS } from '~/components/pill';
-import type { Photo } from '~/gallery-manifest';
+import { PhotoPicture } from '~/components/PhotoPicture';
+import type { Photo } from '~/photos';
 import {
 	COLUMNS_CLASS,
 	COLUMN_CLASS,
 	GRID_SIZES,
 	PHOTO_ITEM_CLASS,
-	srcSetFor,
 	toColumns,
-	useColumnCount,
-	usePhotoRatio
+	useColumnCount
 } from '~/components/photo-grid';
-import { getImageUrl } from '~/utils';
 
 // The first few photos paint the initial screen, so they skip lazy loading.
 const EAGER_COUNT = 6;
-const LIGHTBOX_WIDTH = 2048;
+// The lightbox fills the viewport.
+const LIGHTBOX_SIZES = '100vw';
 
 export function PhotoGallery({ photos }: { photos: Photo[] }) {
 	const [openIndex, setOpenIndex] = useState<number | null>(null);
@@ -41,7 +40,7 @@ export function PhotoGallery({ photos }: { photos: Photo[] }) {
 					<div key={columnIndex} className={COLUMN_CLASS}>
 						{column.map(({ photo, index }) => (
 							<GalleryPhoto
-								key={photo.key}
+								key={photo.file}
 								photo={photo}
 								index={index}
 								eager={index < EAGER_COUNT}
@@ -67,8 +66,6 @@ function GalleryPhoto({
 	eager: boolean;
 	onOpen: () => void;
 }) {
-	const ratio = usePhotoRatio();
-
 	return (
 		<button
 			type="button"
@@ -76,13 +73,14 @@ function GalleryPhoto({
 			data-photo-index={index}
 			className={cn(PHOTO_ITEM_CLASS, 'cursor-pointer')}
 		>
-			<img
-				{...ratio}
-				src={getImageUrl(photo.key, 1024)}
-				srcSet={srcSetFor(photo.key, getImageUrl)}
+			<PhotoPicture
+				picture={photo.picture}
 				sizes={GRID_SIZES}
 				alt={photo.alt}
 				loading={eager ? 'eager' : 'lazy'}
+				// The first photo leads the grid at every column count, so it is
+				// the likeliest LCP element.
+				fetchPriority={index === 0 ? 'high' : undefined}
 				decoding="async"
 				className="w-full object-cover"
 			/>
@@ -123,7 +121,7 @@ function PhotoCaption({ photo }: { photo: Photo }) {
 					// layoutDependency keeps that to caption swaps, so a window
 					// resize reflows instantly instead of sliding the pill.
 					layout
-					layoutDependency={photo.key}
+					layoutDependency={photo.file}
 					initial={{ opacity: 0 }}
 					animate={{ opacity: 1 }}
 					exit={{ opacity: 0 }}
@@ -141,9 +139,9 @@ function PhotoCaption({ photo }: { photo: Photo }) {
 				>
 					<AnimatePresence mode="popLayout" initial={false}>
 						<motion.span
-							key={photo.key}
+							key={photo.file}
 							layout="position"
-							layoutDependency={photo.key}
+							layoutDependency={photo.file}
 							initial={{ opacity: 0 }}
 							animate={{ opacity: 1 }}
 							exit={{ opacity: 0 }}
@@ -175,10 +173,18 @@ function Lightbox({
 		if (openIndex !== null) lastIndex.current = openIndex;
 	}, [openIndex]);
 
+	const wrap = (index: number) => (index + photos.length) % photos.length;
 	const step = (delta: number) => {
 		if (openIndex === null) return;
-		onOpenChange((openIndex + delta + photos.length) % photos.length);
+		onOpenChange(wrap(openIndex + delta));
 	};
+	// Stepping is instant only if the neighbour is already downloaded. They are
+	// rendered hidden rather than fetched from script so the browser still
+	// picks the format and size, exactly as it will for the visible one.
+	const neighbours =
+		openIndex !== null && photos.length > 1
+			? [...new Set([wrap(openIndex - 1), wrap(openIndex + 1)])].map((index) => photos[index])
+			: [];
 
 	return (
 		<Dialog open={photo !== null} onOpenChange={(open) => !open && onOpenChange(null)}>
@@ -199,13 +205,24 @@ function Lightbox({
 				<DialogDescription className="sr-only">Fullscreen photograph view</DialogDescription>
 				{photo && (
 					<>
-						<img
-							src={getImageUrl(photo.key, LIGHTBOX_WIDTH)}
+						<PhotoPicture
+							picture={photo.picture}
+							sizes={LIGHTBOX_SIZES}
 							alt={photo.alt}
 							className="h-full w-full object-contain"
 							onClick={() => onOpenChange(null)}
 						/>
 						<PhotoCaption photo={photo} />
+						<div hidden>
+							{neighbours.map((neighbour) => (
+								<PhotoPicture
+									key={neighbour.file}
+									picture={neighbour.picture}
+									sizes={LIGHTBOX_SIZES}
+									alt=""
+								/>
+							))}
+						</div>
 					</>
 				)}
 				{photos.length > 1 && (

@@ -1,0 +1,2 @@
+# sh reads a CRLF shebang as a request for "/bin/sh".
+.githooks/* text eol=lf

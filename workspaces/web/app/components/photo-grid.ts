@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 
 // CSS columns can only pack top-to-bottom, filling one column before starting
 // the next, so photo 2 lands under photo 1 rather than beside it. Dealing the
@@ -9,15 +9,10 @@ export const COLUMNS_CLASS = 'flex items-start gap-3';
 export const COLUMN_CLASS = 'flex min-w-0 flex-1 flex-col gap-3';
 export const PHOTO_ITEM_CLASS = 'block w-full';
 
-// Neutral ratio reserving space until the real pixels arrive.
-const PLACEHOLDER_RATIO = '3 / 2';
-
-const GRID_WIDTHS = [640, 1024, 1600];
-export const GRID_SIZES = '(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw';
-
-export function srcSetFor(imageKey: string, getUrl: (key: string, width: number) => string) {
-	return GRID_WIDTHS.map((width) => `${getUrl(imageKey, width)} ${width}w`).join(', ');
-}
+// A column's width: the viewport less the page's p-8 padding and the gap-3
+// between columns, split by the column count at each breakpoint.
+export const GRID_SIZES =
+	'(min-width: 1280px) calc((100vw - 88px) / 3), (min-width: 640px) calc((100vw - 76px) / 2), calc(100vw - 64px)';
 
 // Dealt round-robin rather than sliced into contiguous chunks: reading order
 // runs across the columns, so photo N belongs in column N % count.
@@ -54,26 +49,4 @@ function currentColumnCount() {
 // renders the single-column case, then the client widens on hydration.
 export function useColumnCount() {
 	return useSyncExternalStore(subscribeToWidth, currentColumnCount, () => NARROW_COLUMNS);
-}
-
-// Dimensions are measured in the browser rather than served: a same-zone
-// Worker gets a 404 from /cdn-cgi/image/format=json.
-export function usePhotoRatio() {
-	const [ratio, setRatio] = useState<string | null>(null);
-
-	const measure = (img: HTMLImageElement | null) => {
-		if (img?.naturalWidth && img.naturalHeight) {
-			setRatio(`${img.naturalWidth} / ${img.naturalHeight}`);
-		}
-	};
-
-	return {
-		// The ref covers images that finished loading before hydration, where
-		// onLoad never fires.
-		ref: (img: HTMLImageElement | null) => {
-			if (img?.complete) measure(img);
-		},
-		onLoad: (event: { currentTarget: HTMLImageElement }) => measure(event.currentTarget),
-		style: { aspectRatio: ratio ?? PLACEHOLDER_RATIO }
-	};
 }

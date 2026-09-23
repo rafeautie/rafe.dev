@@ -1,48 +1,40 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { createServerFn } from '@tanstack/react-start';
-import { env } from 'cloudflare:workers';
 import { Link } from '~/components/Link';
+import { PhotoPicture } from '~/components/PhotoPicture';
 import { SlashNav } from '~/components/SlashNav';
-import { AVIF_CEILING_WIDTH, buildSrcSet, getImageUrl, SOCIAL_IMAGE_WIDTH } from '../utils';
+import { absoluteUrl, getPhoto, PHOTOS } from '~/photos';
 
-// The hero is object-contain inside a viewport box, so a phone paints it at a
-// fraction of the width a desktop does. Serving one size to both meant mobile
-// downloading several times what it could display. Topping out at the AVIF
-// ceiling keeps every candidate on the cheap side of the codec cliff.
-const HERO_WIDTHS = [640, 1024, AVIF_CEILING_WIDTH];
-// Contained, so the painted width never exceeds the viewport. An upper bound is
-// the best that can be stated here: the real width depends on each photo's
-// aspect ratio, which is not known until the pixels land.
-const HERO_SIZES = '100vw';
-
-// The bucket holds more than photographs: gallery.json, the manifest the
-// photography route reads, sits alongside them. Handing that key to the image
-// transform returns a 415 and the hero renders blank, so drawing is restricted
-// to things that are actually images.
-const PHOTO_KEY = /\.(jpe?g|png|webp|avif)$/i;
-
-const getRandomPhoto = createServerFn().handler(async () => {
-	const objectData = await env.PHOTOS.list();
-	const photos = objectData?.objects?.filter(({ key }) => PHOTO_KEY.test(key)) ?? [];
-
-	if (!photos.length) {
-		return { key: '' };
-	}
-
-	const randomIndex = Math.floor(Math.random() * photos.length);
-	return { key: photos[randomIndex]?.key ?? '' };
-});
+// The hero is object-contain inside the padded viewport box below, so the
+// padding is the most it can lose. Its real painted width depends on the
+// photo's aspect ratio against the viewport's, so this is an upper bound.
+const HERO_SIZES = '(min-width: 640px) calc(100vw - 120px), calc(100vw - 80px)';
 
 export const Route = createFileRoute('/')({
-	loader: () => getRandomPhoto(),
+	// The photo list is bundled, so drawing one costs nothing. Drawn in the
+	// loader rather than the component so the server and the hydrating client
+	// agree on which photo it is.
+	loader: () => ({ file: PHOTOS[Math.floor(Math.random() * PHOTOS.length)].file }),
 	head: ({ loaderData }) => {
-		const img = loaderData?.key ? getImageUrl(loaderData.key, SOCIAL_IMAGE_WIDTH) : '';
+		const photo = loaderData ? getPhoto(loaderData.file) : undefined;
+		const img = photo ? absoluteUrl(photo.socialImage) : '';
 		return {
-			// No hand-written preload for the hero. It is a real <img> in the
-			// server-rendered markup, and React emits a matching rel=preload for it
-			// automatically because of fetchPriority="high" — one that restates the
-			// srcset, so it cannot drift out of sync with the element the way a
-			// hand-maintained hint would.
+			// React preloads a fetchPriority="high" <img> by itself, but not one
+			// inside <picture>, since it cannot tell which source the browser will
+			// pick. The AVIF candidates are the ones worth starting early; the type
+			// makes a browser that cannot decode AVIF skip the hint rather than
+			// download bytes it will throw away.
+			links: photo
+				? [
+						{
+							rel: 'preload',
+							as: 'image',
+							type: 'image/avif',
+							imageSrcSet: photo.picture.sources.avif,
+							imageSizes: HERO_SIZES,
+							fetchPriority: 'high'
+						}
+					]
+				: [],
 			meta: [
 				{ title: 'Rafe Autie | Developer & Photographer' },
 				{
@@ -75,7 +67,7 @@ export const Route = createFileRoute('/')({
 });
 
 function HomePage() {
-	const { key } = Route.useLoaderData();
+	const photo = getPhoto(Route.useLoaderData().file);
 
 	return (
 		<div className="flex w-full flex-col items-center justify-center">
@@ -83,19 +75,16 @@ function HomePage() {
 			    element and the image fills what is left. This is the content box the
 			    old background-origin: content-box was measuring against. */}
 			<div className="relative h-dvh w-full p-10 sm:p-15">
-				{key && (
-					<img
-						src={getImageUrl(key, AVIF_CEILING_WIDTH)}
-						srcSet={buildSrcSet(key, HERO_WIDTHS)}
-						sizes={HERO_SIZES}
-						// Decorative: the photo rotates per request and carries no
-						// caption here, and the nav below is the page's actual content.
-						alt=""
-						fetchPriority="high"
-						decoding="async"
-						className="h-full w-full object-contain"
-					/>
-				)}
+				<PhotoPicture
+					picture={photo.picture}
+					sizes={HERO_SIZES}
+					// Decorative: the photo rotates per request and carries no
+					// caption here, and the nav below is the page's actual content.
+					alt=""
+					fetchPriority="high"
+					decoding="async"
+					className="h-full w-full object-contain"
+				/>
 				{/* Overlaid rather than a sibling in flow, so the nav stays centred on
 				    the viewport whether or not a photo loaded. */}
 				<div className="absolute inset-0 flex flex-col items-center justify-center text-[clamp(1rem,2.5vmin,10rem)] font-medium text-background transition-colors duration-500 smh:text-background/0">

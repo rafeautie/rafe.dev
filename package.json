@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "pnpm --parallel run dev"
+    "dev": "pnpm --parallel run dev",
+    "prepare": "git config core.hooksPath .githooks || exit 0"
   },
   "keywords": [],
   "author": "",
