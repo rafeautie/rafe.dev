@@ -4,19 +4,9 @@
 	"compatibility_date": "2026-01-31",
 	"compatibility_flags": ["nodejs_compat"],
 	"main": "@tanstack/react-start/server-entry",
-	// Cloudflare Access protects the rafe.dev hostname. A workers.dev or preview
-	// hostname would reach /admin with no Access policy in front of it, so both
-	// are off. See ACCESS_SETUP.md.
+	// Served at rafe.dev only.
 	"workers_dev": false,
 	"preview_urls": false,
-	"vars": {
-		// Neither is a secret: the team domain is public and the aud tag is an
-		// identifier, not a credential. See ACCESS_SETUP.md. These live here
-		// rather than in the dashboard because `wrangler deploy` syncs vars from
-		// this file, so a dashboard-only value is wiped by the next deploy.
-		"CF_ACCESS_TEAM_DOMAIN": "rafeautie.cloudflareaccess.com",
-		"CF_ACCESS_AUD": "030a2916d918f18eb46ce8501b856db7637d2ce3e2233c2a8951342c1b7ae447"
-	},
 	"observability": {
 		"enabled": true,
 		"head_sampling_rate": 1,
@@ -32,13 +22,6 @@
 			"head_sampling_rate": 1
 		}
 	},
-	"r2_buckets": [
-		{
-			"binding": "PHOTOS",
-			"bucket_name": "photos",
-			"remote": true
-		}
-	],
 	// The TheRaceGame Durable Object was removed with the games feature. v1
 	// created the class (still live in production); v2 deletes the class and
 	// all of its Durable Objects. A deploy cannot drop a DO class without an

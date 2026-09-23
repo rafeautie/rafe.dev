@@ -1,0 +1,4 @@
+#!/bin/sh
+# Installed by `pnpm install` (the root prepare script sets core.hooksPath).
+# Resizes photos and strips their metadata before they reach the public history.
+exec node workspaces/web/scripts/normalize-staged-photos.mjs

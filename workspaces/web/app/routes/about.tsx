@@ -1,12 +1,16 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { Link } from '~/components/Link';
+import { PhotoPicture } from '~/components/PhotoPicture';
 import { SlashNav } from '~/components/SlashNav';
-import { getImageUrl, SOCIAL_IMAGE_WIDTH } from '../utils';
+import { absoluteUrl, getPhoto } from '~/photos';
 
-// The portrait sits full width of a half-page column; the three below it share
-// a 3-column grid, so each is painted at roughly a third of that.
-const FEATURE_WIDTH = 1600;
-const THUMB_WIDTH = 640;
+const FEATURE = getPhoto('DSCF0740.jpg');
+const THUMBS = ['DSCF0770.jpg', 'DSCF0784.jpg', 'DSCF0754.jpg'].map(getPhoto);
+
+// The feature spans the page inside its p-8 padding; the three below share a
+// 3-column grid with gap-6 between them.
+const FEATURE_SIZES = 'calc(100vw - 4rem)';
+const THUMB_SIZES = 'calc((100vw - 7rem) / 3)';
 
 export const Route = createFileRoute('/about')({
 	head: () => ({
@@ -25,7 +29,7 @@ export const Route = createFileRoute('/about')({
 				content:
 					'Based in California, I am a developer specializing in mobile interfaces and front-end architecture.'
 			},
-			{ property: 'og:image', content: getImageUrl('DSCF0740.JPEG', SOCIAL_IMAGE_WIDTH) },
+			{ property: 'og:image', content: absoluteUrl(FEATURE.socialImage) },
 			{ property: 'twitter:card', content: 'summary_large_image' },
 			{ property: 'twitter:url', content: 'https://rafe.dev/about' },
 			{ property: 'twitter:title', content: 'About | Rafe Autie' },
@@ -34,7 +38,7 @@ export const Route = createFileRoute('/about')({
 				content:
 					'Based in California, I am a developer specializing in mobile interfaces and front-end architecture.'
 			},
-			{ property: 'twitter:image', content: getImageUrl('DSCF0740.JPEG', SOCIAL_IMAGE_WIDTH) }
+			{ property: 'twitter:image', content: absoluteUrl(FEATURE.socialImage) }
 		]
 	}),
 	component: AboutPage
@@ -62,31 +66,25 @@ function AboutPage() {
 				</p>
 			</div>
 			<div className="flex flex-col gap-6">
-				<img
-					src={getImageUrl('DSCF0740.JPEG', FEATURE_WIDTH)}
-					alt="Yosemite Valley"
-					width={6240}
-					height={4160}
+				{/* Usually the largest thing on screen, so it is the LCP candidate. */}
+				<PhotoPicture
+					picture={FEATURE.picture}
+					sizes={FEATURE_SIZES}
+					alt={FEATURE.alt}
+					fetchPriority="high"
+					decoding="async"
 				/>
 				<div className="grid grid-cols-3 gap-6">
-					<img
-						src={getImageUrl('DSCF0770.JPEG', THUMB_WIDTH)}
-						alt="Yosemite Lodge"
-						width={4160}
-						height={6240}
-					/>
-					<img
-						src={getImageUrl('DSCF0784.JPEG', THUMB_WIDTH)}
-						alt="Yosemite Abandoned Gas Station"
-						width={4160}
-						height={6240}
-					/>
-					<img
-						src={getImageUrl('DSCF0754.JPEG', THUMB_WIDTH)}
-						alt="Half Dome and a Plane"
-						width={4160}
-						height={6240}
-					/>
+					{THUMBS.map((photo) => (
+						<PhotoPicture
+							key={photo.file}
+							picture={photo.picture}
+							sizes={THUMB_SIZES}
+							alt={photo.alt}
+							loading="lazy"
+							decoding="async"
+						/>
+					))}
 				</div>
 			</div>
 		</div>
