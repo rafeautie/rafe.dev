@@ -3,6 +3,7 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
 import viteReact from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { imagetools } from 'vite-imagetools';
 
 export default defineConfig({
 	resolve: {
@@ -11,6 +12,7 @@ export default defineConfig({
 	plugins: [
 		cloudflare({ viteEnvironment: { name: 'ssr' } }),
 		tailwindcss(),
+		imagetools(),
 		tanstackStart({
 			srcDirectory: 'app',
 			router: {

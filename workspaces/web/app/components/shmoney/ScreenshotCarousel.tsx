@@ -9,11 +9,25 @@ import {
 	type CarouselApi
 } from '~/components/ui/carousel';
 import { PILL_CLASS } from '~/components/pill';
-import { screenshotUrl } from '~/components/shmoney/constants';
 import { cn } from '~/lib/utils';
 
-// `file` is a filename in the shmoney repo's docs/screenshots directory. Adding
-// a slide here means committing the screenshot there, not to this repo.
+// Copies of the shmoney repo's docs/screenshots, refreshed with
+// `pnpm sync-screenshots`. The build encodes each into AVIF and WebP srcsets
+// under hashed asset names, which public/_headers caches as immutable.
+type Picture = {
+	sources: Record<string, string>;
+	img: { src: string; w: number; h: number };
+};
+
+const PICTURES = import.meta.glob<Picture>('./screenshots/*.png', {
+	query: '?w=640;960;1280;1920&format=avif;webp&as=picture',
+	import: 'default',
+	eager: true
+});
+
+// A slide is three quarters of the carousel, which is capped at max-w-7xl.
+const SLIDE_SIZES = '(min-width: 1280px) 960px, 75vw';
+
 const SCREENSHOTS = [
 	{
 		file: 'transactions.png',
@@ -204,19 +218,32 @@ export function ScreenshotCarousel() {
 					<CarouselContent className="pt-3 pb-14">
 						{/* All slides load eagerly: the neighbors peek into view immediately
 						    and lazy loading makes them pop in mid-scroll. */}
-						{SCREENSHOTS.map((shot) => (
-							<CarouselItem key={shot.file} className="basis-3/4">
-								<img
-									src={screenshotUrl(shot.file)}
-									alt={shot.alt}
-									width={1200}
-									height={800}
-									decoding="async"
-									draggable={false}
-									className="w-full rounded-xl border border-border select-none"
-								/>
-							</CarouselItem>
-						))}
+						{SCREENSHOTS.map((shot) => {
+							const picture = PICTURES[`./screenshots/${shot.file}`];
+							return (
+								<CarouselItem key={shot.file} className="basis-3/4">
+									<picture>
+										{Object.entries(picture.sources).map(([format, srcSet]) => (
+											<source
+												key={format}
+												type={`image/${format}`}
+												srcSet={srcSet}
+												sizes={SLIDE_SIZES}
+											/>
+										))}
+										<img
+											src={picture.img.src}
+											alt={shot.alt}
+											width={picture.img.w}
+											height={picture.img.h}
+											decoding="async"
+											draggable={false}
+											className="w-full rounded-xl border border-border select-none"
+										/>
+									</picture>
+								</CarouselItem>
+							);
+						})}
 					</CarouselContent>
 				</div>
 				<CarouselPrevious className="left-3 bg-background/80 backdrop-blur-sm" />
