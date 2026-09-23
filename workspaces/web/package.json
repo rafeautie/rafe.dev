@@ -11,6 +11,7 @@
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"gen": "wrangler types",
+		"sync-screenshots": "node scripts/sync-screenshots.mjs",
 		"test": "vitest run --passWithNoTests"
 	},
 	"dependencies": {
@@ -65,6 +66,7 @@
 		"typescript": "^6.0.3",
 		"typescript-eslint": "^8.59.4",
 		"vite": "^8.0.14",
+		"vite-imagetools": "^12.0.1",
 		"vitest": "^4.1.7",
 		"wrangler": "^4.105.0"
 	}
