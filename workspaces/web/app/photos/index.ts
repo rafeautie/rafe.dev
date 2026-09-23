@@ -24,11 +24,29 @@ export type Photo = {
 
 // 2048 is the widest anything paints: the lightbox, full screen on a large
 // display. The grid and the hero top out below it.
-const PICTURES = import.meta.glob<Picture>('./*.jpg', {
-	query: '?w=640;1024;1600;2048&format=avif;webp&as=picture',
+//
+// One import per format because quality is per import, and sharp's defaults
+// (AVIF 50, WebP 80) visibly smooth away grass, foliage and shadow detail at
+// 1:1. AVIF 75 is close to the master while still smaller than WebP 90.
+const AVIF = import.meta.glob<Picture>('./*.jpg', {
+	query: '?w=640;1024;1600;2048&format=avif&quality=75&as=picture',
 	import: 'default',
 	eager: true
 });
+
+const WEBP = import.meta.glob<Picture>('./*.jpg', {
+	query: '?w=640;1024;1600;2048&format=webp&quality=90&as=picture',
+	import: 'default',
+	eager: true
+});
+
+function buildPicture(path: string): Picture | undefined {
+	const avif = AVIF[path];
+	const webp = WEBP[path];
+	if (!avif || !webp) return undefined;
+	// AVIF first: the browser takes the first <source> it can decode.
+	return { sources: { ...avif.sources, ...webp.sources }, img: webp.img };
+}
 
 const SOCIAL_IMAGES = import.meta.glob<string>('./*.jpg', {
 	query: '?w=1200&format=jpg',
@@ -37,9 +55,10 @@ const SOCIAL_IMAGES = import.meta.glob<string>('./*.jpg', {
 });
 
 export const PHOTOS: Photo[] = manifest.map((entry) => {
-	const picture = PICTURES[`./${entry.file}`];
+	const picture = buildPicture(`./${entry.file}`);
 	const socialImage = SOCIAL_IMAGES[`./${entry.file}`];
-	// photos.test.ts keeps the two in sync; this is the error if it was skipped.
+	// scripts/photos.test.mjs keeps the two in sync; this is the error if it was
+	// skipped.
 	if (!picture || !socialImage) throw new Error(`photos.json lists missing ${entry.file}`);
 	return { ...entry, picture, socialImage };
 });
