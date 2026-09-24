@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
@@ -86,14 +86,6 @@ const TOUR: Stop[] = [
 		hint: 'Try it: change a category under Transactions, then come back here and undo it.'
 	}
 ];
-
-// the demo can't run the on-device model, so its settings stay a picture
-const MODEL: Stop = {
-	name: 'settings-llm',
-	alt: 'shmoney settings for the offline AI categorization model',
-	title: 'AI that stays offline',
-	body: 'The optional categorization model is configured and run entirely on your machine.'
-};
 
 // Label on the left, content on the right. Captions, the privacy note, and the
 // download block all share it so the page keeps one rhythm.
@@ -221,21 +213,64 @@ function Tour() {
 				<div className="sticky top-0 col-start-1 row-start-1 flex h-screen items-center self-start xl:col-start-2">
 					<div className="tour-demo relative mx-auto w-full max-xl:max-w-[calc((100vh-19rem)*1.6)]">
 						<Tip className="mb-3 xl:hidden" />
-						<h3 className="mb-5 text-center text-2xl font-semibold tracking-tight text-balance xl:hidden">
-							{TOUR[active].title}
-						</h3>
+						<Slide index={active} className="mb-5 xl:hidden">
+							{(index) => (
+								<h3 className="text-center text-2xl font-semibold tracking-tight text-balance">
+									{TOUR[index].title}
+								</h3>
+							)}
+						</Slide>
 						<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
 						{/* hangs below the demo, so the demo itself stays centered */}
 						<Tip className="absolute inset-x-0 top-full mt-4 hidden xl:block" />
 						{/* a fixed height, so the demo holds still between stops */}
-						<div className="mt-5 min-h-24 text-center text-pretty xl:hidden">
-							<p className="text-lg text-black/60">{TOUR[active].body}</p>
-							{TOUR[active].hint && <p className="mt-2 text-black/50">{TOUR[active].hint}</p>}
-						</div>
+						<Slide index={active} className="mt-5 min-h-24 xl:hidden">
+							{(index) => (
+								<div className="text-center text-pretty">
+									<p className="text-lg text-black/60">{TOUR[index].body}</p>
+									{TOUR[index].hint && <p className="mt-2 text-black/50">{TOUR[index].hint}</p>}
+								</div>
+							)}
+						</Slide>
 					</div>
 				</div>
 			</div>
 		</section>
+	);
+}
+
+// Stop text beside a pinned demo that has no room to scroll it: the old stop
+// slides out and the new one in, in the direction of the scroll.
+function Slide({
+	index,
+	className,
+	children
+}: {
+	index: number;
+	className?: string;
+	children: (index: number) => ReactNode;
+}) {
+	const [shown, setShown] = useState({ index, previous: -1, direction: 1 });
+	if (shown.index !== index) {
+		setShown({ index, previous: shown.index, direction: index > shown.index ? 1 : -1 });
+	}
+	const style = { '--direction': shown.direction } as CSSProperties;
+	return (
+		<div className={cn('grid', className)} style={style}>
+			{shown.previous >= 0 && (
+				<div
+					key={`${shown.previous}-${shown.index}`}
+					aria-hidden
+					className="slide-out col-start-1 row-start-1"
+					onAnimationEnd={() => setShown((current) => ({ ...current, previous: -1 }))}
+				>
+					{children(shown.previous)}
+				</div>
+			)}
+			<div key={shown.index} className="slide-in col-start-1 row-start-1">
+				{children(shown.index)}
+			</div>
+		</div>
 	);
 }
 
@@ -322,18 +357,6 @@ function ShmoneyPage() {
 						</figure>
 					))}
 				</div>
-
-				<figure className="reveal mt-20 grid items-center gap-6 sm:mt-28 sm:grid-cols-2 sm:gap-10">
-					<Screenshot
-						name={MODEL.name}
-						alt={MODEL.alt}
-						sizes="(min-width: 1024px) 470px, (min-width: 640px) 50vw, 100vw"
-					/>
-					<figcaption>
-						<p className="font-medium">{MODEL.title}</p>
-						<p className="mt-1 text-pretty text-black/60">{MODEL.body}</p>
-					</figcaption>
-				</figure>
 
 				<section className="mt-28 space-y-12 border-t border-black/10 pt-10 sm:mt-36">
 					<div className="reveal">
