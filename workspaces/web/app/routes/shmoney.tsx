@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
@@ -12,6 +11,7 @@ import { SmoothScroll, easeOutQuint, useLenis } from '~/components/shmoney/smoot
 import { Screenshot, type ScreenName } from '~/components/shmoney/Screenshot';
 import { Button } from '~/components/ui/button';
 import { useMedia } from '~/lib/use-media';
+import { cn } from '~/lib/utils';
 
 export const Route = createFileRoute('/shmoney')({
 	head: () => ({
@@ -44,9 +44,9 @@ export const Route = createFileRoute('/shmoney')({
 
 type Stop = { name: ScreenName; alt: string; title: string; body: string; hint?: string };
 
-// One live app, steered by the page: on wide screens each stop's text scrolls
-// past the pinned demo and the demo follows along; narrower screens pick stops
-// from a row of tabs. Phones get the screenshots.
+// One live app, steered by the page: scrolling moves through the stops beside
+// (or, below xl, behind) the pinned demo, and the demo follows along. Phones
+// get the screenshots.
 const TOUR: Stop[] = [
 	{
 		name: 'transactions',
@@ -108,7 +108,7 @@ function Split({ label, children }: { label: ReactNode; children: ReactNode }) {
 
 function Tour() {
 	const [active, setActive] = useState(0);
-	const pinned = useMedia('(min-width: 1280px)');
+	const pinned = useMedia('(min-width: 768px)');
 	const lenis = useLenis();
 	const stops = useRef<(HTMLLIElement | null)[]>([]);
 
@@ -188,10 +188,12 @@ function Tour() {
 
 	return (
 		<section className="mx-auto max-w-5xl px-6 sm:px-8 xl:max-w-7xl">
-			<div className="tour xl:grid xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-16">
+			{/* Below xl the stops are invisible spacers under the pinned demo, which
+			    shows the stop's title above it and its description below */}
+			<div className="tour grid xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-16">
 				{/* the padding makes the tour a full viewport taller than its stops, so the
 				    demo is pinned, and centered, even at the first and last */}
-				<ol className="hidden xl:block xl:py-[15vh]">
+				<ol className="col-start-1 row-start-1 py-[15vh]">
 					{TOUR.map((stop, index) => (
 						<li
 							key={stop.name}
@@ -201,7 +203,7 @@ function Tour() {
 							data-active={index === active}
 							className="group flex min-h-[70vh] snap-center flex-col justify-center"
 						>
-							<div className="translate-y-3 opacity-20 transition-[opacity,translate] duration-700 ease-out group-data-[active=true]:translate-y-0 group-data-[active=true]:opacity-100">
+							<div className="translate-y-3 opacity-20 transition-[opacity,translate] duration-700 ease-out group-data-[active=true]:translate-y-0 group-data-[active=true]:opacity-100 max-xl:invisible">
 								<button
 									type="button"
 									aria-pressed={index === active}
@@ -216,46 +218,33 @@ function Tour() {
 						</li>
 					))}
 				</ol>
-				<div className="xl:sticky xl:top-0 xl:flex xl:h-screen xl:items-center xl:self-start">
-					<div className="tour-demo relative w-full">
-						{/* narrower screens step through the stops around the demo instead */}
-						<div className="mb-6 flex items-center justify-between gap-4 xl:hidden">
-							<Button
-								variant="ghost"
-								size="icon-lg"
-								aria-label="Previous"
-								disabled={active === 0}
-								onClick={() => setActive(active - 1)}
-							>
-								<ChevronLeftIcon className="size-5" />
-							</Button>
-							<h3 className="text-center text-2xl font-semibold tracking-tight text-balance">
-								{TOUR[active].title}
-							</h3>
-							<Button
-								variant="ghost"
-								size="icon-lg"
-								aria-label="Next"
-								disabled={active === TOUR.length - 1}
-								onClick={() => setActive(active + 1)}
-							>
-								<ChevronRightIcon className="size-5" />
-							</Button>
-						</div>
+				<div className="sticky top-0 col-start-1 row-start-1 flex h-screen items-center self-start xl:col-start-2">
+					<div className="tour-demo relative mx-auto w-full max-xl:max-w-[calc((100vh-19rem)*1.6)]">
+						<Tip className="mb-3 xl:hidden" />
+						<h3 className="mb-5 text-center text-2xl font-semibold tracking-tight text-balance xl:hidden">
+							{TOUR[active].title}
+						</h3>
 						<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
-						{/* hangs below the demo when pinned, so the demo itself stays centered */}
-						<p className="mt-4 text-center text-sm text-pretty text-black/50 xl:absolute xl:inset-x-0 xl:top-full">
-							<strong className="font-semibold text-black/70">Tip:</strong> this is the real app,
-							running in your browser with sample data. Click around; nothing is saved.
-						</p>
-						<div className="mx-auto mt-8 max-w-2xl text-center text-pretty xl:hidden">
+						{/* hangs below the demo, so the demo itself stays centered */}
+						<Tip className="absolute inset-x-0 top-full mt-4 hidden xl:block" />
+						{/* a fixed height, so the demo holds still between stops */}
+						<div className="mt-5 min-h-24 text-center text-pretty xl:hidden">
 							<p className="text-lg text-black/60">{TOUR[active].body}</p>
-							{TOUR[active].hint && <p className="mt-3 text-black/50">{TOUR[active].hint}</p>}
+							{TOUR[active].hint && <p className="mt-2 text-black/50">{TOUR[active].hint}</p>}
 						</div>
 					</div>
 				</div>
 			</div>
 		</section>
+	);
+}
+
+function Tip({ className }: { className?: string }) {
+	return (
+		<p className={cn('text-center text-sm text-pretty text-black/50', className)}>
+			<strong className="font-semibold text-black/70">Tip:</strong> this is the real app, running in
+			your browser with sample data. Click around; nothing is saved.
+		</p>
 	);
 }
 
