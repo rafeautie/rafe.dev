@@ -118,9 +118,9 @@ function Tour() {
 
 	// Scrolling always settles with a stop in the middle of the viewport,
 	// beside the pinned demo. With smooth scrolling on, each flick of the wheel
-	// glides straight to the next stop, however hard the flick; without it, CSS
-	// snapping does the job, with the blocks above and below the tour as snap
-	// areas.
+	// glides straight to the stop nearest where it would have carried the page,
+	// at least one stop along; without it, CSS snapping does the job, with the
+	// blocks above and below the tour as snap areas.
 	useEffect(() => {
 		if (!pinned) return;
 		const root = document.documentElement;
@@ -132,42 +132,63 @@ function Tour() {
 		}
 		const centers = () => stops.current.flatMap((stop) => (stop ? [centerOf(stop)] : []));
 		const reach = () => (stops.current[0]?.offsetHeight ?? 0) / 4;
-		const glideTo = (target: number) => lenis.scrollTo(target, { userData: { stop: target } });
+		const glideTo = (target: number) => lenis.scrollTo(target, { userData: { to: target } });
 
-		// A flick arrives as a burst of wheel events, momentum and all: the
-		// first one sets off for the next stop and the rest ride along. Past the
-		// last stop the page scrolls freely on to the footer, until heading back
-		// up brings the last stop within reach.
+		// A flick arrives as a burst of wheel events, momentum and all. As it
+		// comes in, the page heads for the stop nearest where the flick would
+		// have carried it, at least one stop along. For a moment, and for as
+		// long as the wheel keeps turning, more of it pushes that stop further
+		// on; once the flick fades to its momentum, the stop is set and the rest
+		// is spent. Past the last stop the page scrolls freely on to the footer,
+		// until heading back up brings the last stop within reach.
 		let burstEnd = -Infinity;
 		let burstHeading = 0;
-		let stepped = false;
+		let origin = 0;
+		let travel = 0;
+		let aimedAt: number | undefined;
+		let strongest = 0;
 		const offWheel = onVirtualScroll(({ deltaY, event }) => {
 			if (!(event instanceof WheelEvent) || event.ctrlKey || !deltaY) return true;
 			const heading = Math.sign(deltaY);
-			if (heading !== burstHeading || event.timeStamp - burstEnd > FLICK_GAP) stepped = false;
+			// set while a glide is on its way, cleared once it lands
+			const held = lenis.userData.to;
+			const gliding = typeof held === 'number' ? held : undefined;
+			if (heading !== burstHeading || event.timeStamp - burstEnd > FLICK_GAP) {
+				// mid-glide, a new flick carries on from where the page is heading
+				origin = gliding ?? lenis.scroll;
+				travel = 0;
+				aimedAt = undefined;
+				strongest = 0;
+			}
+			strongest = Math.max(strongest, Math.abs(deltaY));
 			burstEnd = event.timeStamp;
 			burstHeading = heading;
-			if (!stepped) {
-				// mid-glide, a new flick carries on from the stop the page is heading to
-				const heldStop = lenis.userData.stop;
-				const from =
-					lenis.isScrolling === 'smooth' && typeof heldStop === 'number' ? heldStop : lenis.scroll;
-				const all = centers();
-				const last = all[all.length - 1];
-				let target: number | undefined;
-				if (from > last + 1) {
-					if (heading < 0 && lenis.targetScroll + deltaY < last + reach()) target = last;
-				} else if (heading > 0) {
-					target = all.find((center) => center > from + 1);
-				} else {
-					// the top of the page is a stop too
-					target = all.filter((center) => center < from - 1).pop() ?? 0;
-				}
-				if (target === undefined) return true;
-				stepped = true;
-				if (Math.abs(target - from) >= 1) glideTo(target);
-			}
 			event.preventDefault();
+			const fading = Math.abs(deltaY) < strongest / 2;
+			if (
+				aimedAt !== undefined &&
+				(gliding === undefined || (fading && event.timeStamp - aimedAt > AIM_WINDOW))
+			)
+				return false;
+			travel += deltaY;
+			const landing = origin + travel;
+			const all = centers();
+			const last = all[all.length - 1];
+			if ((heading > 0 && origin >= last - 1) || landing > last + reach()) {
+				glideTo(Math.max(0, Math.min(landing, lenis.limit)));
+				return false;
+			}
+			// the top of the page is a stop too
+			const spots = [0, ...all];
+			const ahead = spots.filter((spot) => heading * (spot - origin) >= 1);
+			if (ahead.length === 0) return false;
+			const nearest = spots.reduce((a, b) =>
+				Math.abs(b - landing) < Math.abs(a - landing) ? b : a
+			);
+			const target =
+				heading > 0 ? Math.max(nearest, ahead[0]) : Math.min(nearest, ahead[ahead.length - 1]);
+			aimedAt ??= event.timeStamp;
+			if (target !== gliding) glideTo(target);
 			return false;
 		});
 
@@ -439,6 +460,8 @@ function Tip({ className, ...props }: ComponentProps<'p'>) {
 
 // wheel events closer together than this are one flick, its momentum included
 const FLICK_GAP = 300;
+// for this long into a flick, even its fading momentum can push its stop on
+const AIM_WINDOW = 350;
 
 // the scroll position that puts an element's middle at the viewport's
 function centerOf(element: HTMLElement): number {
