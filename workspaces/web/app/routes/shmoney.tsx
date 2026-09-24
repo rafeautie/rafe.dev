@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
@@ -103,6 +103,7 @@ function Tour() {
 	const pinned = useMedia('(min-width: 768px)');
 	const lenis = useLenis();
 	const stops = useRef<(HTMLLIElement | null)[]>([]);
+	const tour = useRef<HTMLDivElement>(null);
 
 	// the stop crossing the middle of the viewport is the one on screen
 	useEffect(() => {
@@ -171,6 +172,34 @@ function Tour() {
 		};
 	}, [pinned, lenis]);
 
+	// Below xl each stop's title and description sit stacked by the pinned demo
+	// and move with the scroll: a stop's text is where its (invisible) stop is,
+	// scaled down to a short slide, and fades out halfway to the next.
+	useEffect(() => {
+		if (!pinned || !tour.current) return;
+		const items = [...tour.current.querySelectorAll<HTMLElement>('[data-track]')];
+		const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const update = () => {
+			const offsets = stops.current.map((stop) => {
+				if (!stop) return 0;
+				const { top, height } = stop.getBoundingClientRect();
+				return (top + height / 2 - window.innerHeight / 2) / height;
+			});
+			for (const item of items) {
+				const offset = offsets[Number(item.dataset.track)];
+				item.style.opacity = String(Math.max(0, 1 - Math.abs(offset) * 2));
+				if (!still) item.style.translate = `0 ${offset * Number(item.dataset.distance)}px`;
+			}
+		};
+		update();
+		window.addEventListener('scroll', update, { passive: true });
+		window.addEventListener('resize', update);
+		return () => {
+			window.removeEventListener('scroll', update);
+			window.removeEventListener('resize', update);
+		};
+	}, [pinned]);
+
 	const select = (index: number) => {
 		const stop = stops.current[index];
 		if (!pinned || !stop) setActive(index);
@@ -182,7 +211,7 @@ function Tour() {
 		<section className="mx-auto max-w-5xl px-6 sm:px-8 xl:max-w-7xl">
 			{/* Below xl the stops are invisible spacers under the pinned demo, which
 			    shows the stop's title above it and its description below */}
-			<div className="tour grid xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-16">
+			<div ref={tour} className="tour grid xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-16">
 				{/* the padding makes the tour a full viewport taller than its stops, so the
 				    demo is pinned, and centered, even at the first and last */}
 				<ol className="col-start-1 row-start-1 py-[15vh]">
@@ -212,65 +241,44 @@ function Tour() {
 				</ol>
 				<div className="sticky top-0 col-start-1 row-start-1 flex h-screen items-center self-start xl:col-start-2">
 					<div className="tour-demo relative mx-auto w-full max-xl:max-w-[calc((100vh-19rem)*1.6)]">
-						<Tip className="mb-3 xl:hidden" />
-						<Slide index={active} className="mb-5 xl:hidden">
-							{(index) => (
-								<h3 className="text-center text-2xl font-semibold tracking-tight text-balance">
-									{TOUR[index].title}
+						<div className="grid xl:hidden">
+							{TOUR.map((stop, index) => (
+								<h3
+									key={stop.name}
+									data-track={index}
+									data-distance={48}
+									aria-hidden={index !== active}
+									style={{ opacity: index === 0 ? 1 : 0 }}
+									className="col-start-1 row-start-1 text-center text-2xl font-semibold tracking-tight text-balance"
+								>
+									{stop.title}
 								</h3>
-							)}
-						</Slide>
+							))}
+						</div>
+						<Tip className="mt-2 mb-5 xl:hidden" />
 						<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
 						{/* hangs below the demo, so the demo itself stays centered */}
 						<Tip className="absolute inset-x-0 top-full mt-4 hidden xl:block" />
 						{/* a fixed height, so the demo holds still between stops */}
-						<Slide index={active} className="mt-5 min-h-24 xl:hidden">
-							{(index) => (
-								<div className="text-center text-pretty">
-									<p className="text-lg text-black/60">{TOUR[index].body}</p>
-									{TOUR[index].hint && <p className="mt-2 text-black/50">{TOUR[index].hint}</p>}
+						<div className="mt-5 grid xl:hidden">
+							{TOUR.map((stop, index) => (
+								<div
+									key={stop.name}
+									data-track={index}
+									data-distance={64}
+									aria-hidden={index !== active}
+									style={{ opacity: index === 0 ? 1 : 0 }}
+									className="col-start-1 row-start-1 text-center text-pretty"
+								>
+									<p className="text-lg text-black/60">{stop.body}</p>
+									{stop.hint && <p className="mt-2 text-black/50">{stop.hint}</p>}
 								</div>
-							)}
-						</Slide>
+							))}
+						</div>
 					</div>
 				</div>
 			</div>
 		</section>
-	);
-}
-
-// Stop text beside a pinned demo that has no room to scroll it: the old stop
-// slides out and the new one in, in the direction of the scroll.
-function Slide({
-	index,
-	className,
-	children
-}: {
-	index: number;
-	className?: string;
-	children: (index: number) => ReactNode;
-}) {
-	const [shown, setShown] = useState({ index, previous: -1, direction: 1 });
-	if (shown.index !== index) {
-		setShown({ index, previous: shown.index, direction: index > shown.index ? 1 : -1 });
-	}
-	const style = { '--direction': shown.direction } as CSSProperties;
-	return (
-		<div className={cn('grid', className)} style={style}>
-			{shown.previous >= 0 && (
-				<div
-					key={`${shown.previous}-${shown.index}`}
-					aria-hidden
-					className="slide-out col-start-1 row-start-1"
-					onAnimationEnd={() => setShown((current) => ({ ...current, previous: -1 }))}
-				>
-					{children(shown.previous)}
-				</div>
-			)}
-			<div key={shown.index} className="slide-in col-start-1 row-start-1">
-				{children(shown.index)}
-			</div>
-		</div>
 	);
 }
 

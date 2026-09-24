@@ -163,35 +163,7 @@
 	}
 }
 
-@keyframes slide-in {
-	from {
-		opacity: 0;
-		translate: 0 calc(var(--direction, 1) * 2rem);
-	}
-}
-
-@keyframes slide-out {
-	to {
-		opacity: 0;
-		translate: 0 calc(var(--direction, 1) * -2rem);
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.slide-out {
-		display: none;
-	}
-}
-
 @media (prefers-reduced-motion: no-preference) {
-	.slide-in {
-		animation: slide-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
-	}
-
-	.slide-out {
-		animation: slide-out 0.3s ease-in both;
-	}
-
 	.rise {
 		animation: rise 1s cubic-bezier(0.16, 1, 0.3, 1) both;
 		animation-delay: var(--delay, 0ms);
