@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
@@ -190,7 +191,7 @@ function Tour() {
 			<div className="tour xl:grid xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-16">
 				{/* the padding makes the tour a full viewport taller than its stops, so the
 				    demo is pinned, and centered, even at the first and last */}
-				<ol className="flex flex-wrap justify-center gap-2 xl:block xl:py-[15vh]">
+				<ol className="hidden xl:block xl:py-[15vh]">
 					{TOUR.map((stop, index) => (
 						<li
 							key={stop.name}
@@ -198,43 +199,61 @@ function Tour() {
 								stops.current[index] = element;
 							}}
 							data-active={index === active}
-							className="group xl:flex xl:min-h-[70vh] xl:snap-center xl:flex-col xl:justify-center"
+							className="group flex min-h-[70vh] snap-center flex-col justify-center"
 						>
-							<div className="transition-[opacity,translate] duration-700 ease-out xl:translate-y-3 xl:opacity-20 xl:group-data-[active=true]:translate-y-0 xl:group-data-[active=true]:opacity-100">
+							<div className="translate-y-3 opacity-20 transition-[opacity,translate] duration-700 ease-out group-data-[active=true]:translate-y-0 group-data-[active=true]:opacity-100">
 								<button
 									type="button"
 									aria-pressed={index === active}
 									onClick={() => select(index)}
-									className="cursor-pointer rounded-full border border-black/10 px-3 py-1 text-sm text-black/60 transition-colors group-data-[active=true]:border-black group-data-[active=true]:bg-black group-data-[active=true]:text-white hover:text-black xl:rounded-none xl:border-0 xl:p-0 xl:text-left xl:text-3xl xl:font-semibold xl:tracking-tight xl:text-balance xl:text-black xl:group-data-[active=true]:bg-transparent xl:group-data-[active=true]:text-black"
+									className="cursor-pointer text-left text-3xl font-semibold tracking-tight text-balance"
 								>
 									{stop.title}
 								</button>
-								<p className="mt-4 hidden text-lg text-pretty text-black/60 xl:block">
-									{stop.body}
-								</p>
-								{stop.hint && (
-									<p className="mt-4 hidden text-pretty text-black/50 xl:block">{stop.hint}</p>
-								)}
+								<p className="mt-4 text-lg text-pretty text-black/60">{stop.body}</p>
+								{stop.hint && <p className="mt-4 text-pretty text-black/50">{stop.hint}</p>}
 							</div>
 						</li>
 					))}
 				</ol>
-				<div className="mt-6 xl:sticky xl:top-0 xl:mt-0 xl:flex xl:h-screen xl:items-center xl:self-start">
+				<div className="xl:sticky xl:top-0 xl:flex xl:h-screen xl:items-center xl:self-start">
 					<div className="tour-demo relative w-full">
+						{/* narrower screens step through the stops around the demo instead */}
+						<div className="mb-6 flex items-center justify-between gap-4 xl:hidden">
+							<Button
+								variant="ghost"
+								size="icon-lg"
+								aria-label="Previous"
+								disabled={active === 0}
+								onClick={() => setActive(active - 1)}
+							>
+								<ChevronLeftIcon className="size-5" />
+							</Button>
+							<h3 className="text-center text-2xl font-semibold tracking-tight text-balance">
+								{TOUR[active].title}
+							</h3>
+							<Button
+								variant="ghost"
+								size="icon-lg"
+								aria-label="Next"
+								disabled={active === TOUR.length - 1}
+								onClick={() => setActive(active + 1)}
+							>
+								<ChevronRightIcon className="size-5" />
+							</Button>
+						</div>
 						<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
 						{/* hangs below the demo when pinned, so the demo itself stays centered */}
 						<p className="mt-4 text-center text-sm text-pretty text-black/50 xl:absolute xl:inset-x-0 xl:top-full">
 							<strong className="font-semibold text-black/70">Tip:</strong> this is the real app,
 							running in your browser with sample data. Click around; nothing is saved.
 						</p>
+						<div className="mx-auto mt-8 max-w-2xl text-center text-pretty xl:hidden">
+							<p className="text-lg text-black/60">{TOUR[active].body}</p>
+							{TOUR[active].hint && <p className="mt-3 text-black/50">{TOUR[active].hint}</p>}
+						</div>
 					</div>
 				</div>
-			</div>
-			<div className="mt-6 xl:hidden">
-				<Split label={TOUR[active].title}>
-					{TOUR[active].body}
-					{TOUR[active].hint && <span className="mt-2 block text-sm">{TOUR[active].hint}</span>}
-				</Split>
 			</div>
 		</section>
 	);
