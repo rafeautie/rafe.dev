@@ -26,7 +26,7 @@ export function useLenis(): Lenis | null {
 export function SmoothScroll() {
 	useEffect(() => {
 		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-		const lenis = new Lenis({ autoRaf: true, lerp: 0.08 });
+		const lenis = new Lenis({ autoRaf: true, duration: SCROLL_DURATION, easing: easeOutQuint });
 		set(lenis);
 		return () => {
 			lenis.destroy();
@@ -36,5 +36,10 @@ export function SmoothScroll() {
 	return null;
 }
 
-// a long, soft landing for programmatic scrolls
-export const easeOutQuint = (t: number): number => 1 - Math.pow(1 - t, 5);
+// Wheel scrolling, snaps, and jumps to a stop all glide with the same long,
+// soft landing; scrollTo calls pick it up as Lenis's defaults.
+const SCROLL_DURATION = 1.2;
+
+function easeOutQuint(t: number): number {
+	return 1 - Math.pow(1 - t, 5);
+}

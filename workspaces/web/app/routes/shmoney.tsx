@@ -15,7 +15,7 @@ import { DEMO_URL, GITHUB_URL } from '~/components/shmoney/constants';
 import { DownloadButton } from '~/components/shmoney/DownloadButton';
 import { Logo } from '~/components/shmoney/Logo';
 import { LiveDemo } from '~/components/shmoney/LiveDemo';
-import { SmoothScroll, easeOutQuint, useLenis } from '~/components/shmoney/smooth-scroll';
+import { SmoothScroll, useLenis } from '~/components/shmoney/smooth-scroll';
 import { Screenshot, type ScreenName } from '~/components/shmoney/Screenshot';
 import { Button } from '~/components/ui/button';
 import { useMedia } from '~/lib/use-media';
@@ -113,6 +113,8 @@ function Tour() {
 	const stops = useRef<(HTMLLIElement | null)[]>([]);
 	const tour = useRef<HTMLDivElement>(null);
 	const introStop = useRef<HTMLLIElement>(null);
+	const firstText = useRef<HTMLDivElement>(null);
+	const pin = useRef<HTMLDivElement>(null);
 
 	// Scrolling always settles with a stop in the middle of the viewport,
 	// beside the pinned demo. With smooth scrolling on, the page eases there
@@ -137,10 +139,11 @@ function Tour() {
 			const last = centers[centers.length - 1];
 			let target: number | undefined;
 			if (destination < first) {
-				// the scroll prompt is never a resting place: heading down past the
-				// hero carries on to the first stop, heading up leaves the tour
-				const reach = heading > 0 ? height * 1.5 : height / 4;
-				if (first - destination < reach) target = first;
+				// the top of the page is a stop too, and nothing between it and the
+				// first stop is a resting place: heading down carries on to the first
+				// stop, heading up to the top
+				if (heading > 0) target = first;
+				else target = first - destination < height / 4 ? first : 0;
 			} else if (destination > last) {
 				// past the last stop the page scrolls freely on to the footer
 				if (destination - last < height / 4) target = last;
@@ -150,7 +153,7 @@ function Tour() {
 				);
 			}
 			if (target === undefined || Math.abs(target - destination) < 1) return;
-			lenis.scrollTo(target, { duration: 0.9, easing: easeOutQuint });
+			lenis.scrollTo(target);
 		};
 		const settle = () => {
 			clearTimeout(timer);
@@ -191,6 +194,40 @@ function Tour() {
 				if (Math.abs(offset) < Math.abs(offsets[nearest])) nearest = index;
 			});
 			setActive(nearest);
+			// On xl the demo waits centered under the prompt, and moves over beside
+			// the stops as the first one scrolls in, with its text rising alongside,
+			// so arriving and docking are one motion. Once docked, stop text goes
+			// back to fading on its own as each stop becomes active.
+			const from = middleOf(introStop.current);
+			const to = middleOf(stops.current[0]);
+			const progress = from === to ? 1 : clamp(from / (from - to));
+			// eased so the slide settles, rather than stops, at the first stop
+			const dock = still ? Math.round(progress) : 1 - (1 - progress) ** 2;
+			tour.current?.style.setProperty('--dock', String(dock));
+			// Left alone, the demo would ride up with the page and stop dead the
+			// moment it pins. Instead it rises with the page at first, then slows
+			// to rest as the first stop arrives, keeping its peek on load.
+			const box = pin.current;
+			if (box && tour.current) {
+				// its offset below the pin: where the page puts it, and where it's
+				// drawn instead, starting out at the page's speed
+				const { top } = tour.current.getBoundingClientRect();
+				const natural = Math.max(0, top);
+				const start = top + window.scrollY;
+				const end = window.scrollY + to;
+				const drawn =
+					still || start <= 0
+						? natural
+						: start * (1 - clamp(window.scrollY / end)) ** (end / start);
+				box.style.translate = drawn === natural ? '' : `0 ${drawn - natural}px`;
+			}
+			const text = firstText.current;
+			if (text) {
+				const docking = dock < 1;
+				text.style.transition = docking ? 'none' : '';
+				text.style.opacity = docking ? String(dock) : '';
+				text.style.translate = docking && !still ? `0 ${0.75 * (1 - dock)}rem` : '';
+			}
 			// the intro holds until its spot scrolls past, so it shows in full while
 			// the tour approaches
 			const intro = Math.min(0, offsetOf(introStop.current));
@@ -221,7 +258,7 @@ function Tour() {
 	const select = (index: number) => {
 		const stop = stops.current[index];
 		if (!pinned || !stop) setActive(index);
-		else if (lenis) lenis.scrollTo(centerOf(stop), { duration: 1.2, easing: easeOutQuint });
+		else if (lenis) lenis.scrollTo(centerOf(stop));
 		else stop.scrollIntoView({ block: 'center' });
 	};
 
@@ -233,9 +270,7 @@ function Tour() {
 				{/* the padding makes the tour a full viewport taller than its stops, so the
 				    demo is pinned, and centered, even at the first and last */}
 				<ol className="col-start-1 row-start-1 py-[15vh]">
-					<li ref={introStop} className="flex min-h-[70vh] flex-col justify-center">
-						<ScrollPrompt className="max-xl:invisible" />
-					</li>
+					<li ref={introStop} className="min-h-[70vh]" />
 					{TOUR.map((stop, index) => (
 						<li
 							key={stop.name}
@@ -245,7 +280,10 @@ function Tour() {
 							data-active={index === active}
 							className="group flex min-h-[70vh] snap-center flex-col justify-center"
 						>
-							<div className="translate-y-3 opacity-20 transition-[opacity,translate] duration-700 ease-out group-data-[active=true]:translate-y-0 group-data-[active=true]:opacity-100 max-xl:invisible">
+							<div
+								ref={index === 0 ? firstText : undefined}
+								className="translate-y-3 opacity-20 transition-[opacity,translate] duration-700 ease-out group-data-[active=true]:translate-y-0 group-data-[active=true]:opacity-100 max-xl:invisible"
+							>
 								<button
 									type="button"
 									aria-pressed={index === active}
@@ -260,8 +298,24 @@ function Tour() {
 						</li>
 					))}
 				</ol>
-				<div className="sticky top-0 col-start-1 row-start-1 flex h-screen items-center self-start xl:col-start-2">
-					<div className="tour-demo relative mx-auto w-full max-xl:max-w-[calc((100vh-19rem)*1.6)] xl:max-w-[calc((100vh-9rem)*1.6)]">
+				<div
+					ref={pin}
+					className="sticky top-0 col-start-1 row-start-1 flex h-screen items-center self-start xl:col-start-2"
+				>
+					{/* undocked (--dock 0), the demo shifts left by half the stops' column and
+					    the gap, which centers it in the tour. Below xl it's capped at 52rem, the width
+					    of that column in a full-width tour, so it stays one size throughout */}
+					<div className="tour-demo relative mx-auto w-full max-xl:max-w-[min(52rem,calc((100vh-19rem)*1.6))] xl:max-w-[calc((100vh-9rem)*1.6)] xl:translate-x-[calc(-12rem*(1-var(--dock,0)))]">
+						{/* hangs above the demo, so the demo itself stays centered */}
+						<div
+							data-track="intro"
+							data-distance={40}
+							aria-hidden
+							className="absolute inset-x-0 bottom-full mb-6 hidden flex-col items-center gap-2 text-center text-2xl font-semibold tracking-tight xl:flex"
+						>
+							Scroll to take the tour
+							<ChevronDownIcon className="size-6 animate-bounce text-black/40" />
+						</div>
 						<div className="-my-1 grid overflow-hidden py-1 xl:hidden">
 							<p
 								data-track="intro"
@@ -290,7 +344,8 @@ function Tour() {
 							</div>
 							<Tip data-fade="tip" style={{ opacity: 0 }} className="col-start-1 row-start-1" />
 						</div>
-						<div className="tour-rise">
+						{/* above the text below it, which the expand button hangs into */}
+						<div className="tour-rise relative z-10">
 							<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
 						</div>
 						{/* hangs below the demo, so the demo itself stays centered */}
@@ -318,23 +373,15 @@ function Tour() {
 	);
 }
 
-function ScrollPrompt({ className }: { className?: string }) {
-	return (
-		<div
-			aria-hidden
-			className={cn(
-				'flex w-max flex-col items-center gap-3 text-center text-3xl font-semibold tracking-tight',
-				className
-			)}
-		>
-			<span>
-				Scroll to
-				<br />
-				take the tour
-			</span>
-			<ChevronDownIcon className="size-6 animate-bounce text-black/40" />
-		</div>
-	);
+function clamp(value: number): number {
+	return Math.min(1, Math.max(0, value));
+}
+
+// how far an element's middle is below the viewport's, in pixels
+function middleOf(element: HTMLElement | null): number {
+	if (!element) return 0;
+	const { top, height } = element.getBoundingClientRect();
+	return top + height / 2 - window.innerHeight / 2;
 }
 
 // how far an element's middle is from the viewport's, in its own heights
@@ -417,7 +464,7 @@ function ShmoneyPage() {
 			</div>
 
 			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8 xl:max-w-7xl xl:snap-end">
-				<div className="mt-20 space-y-20 md:hidden">
+				<div className="mt-8 space-y-20 md:hidden">
 					{TOUR.map((stop, index) => (
 						<figure key={stop.name} className="reveal">
 							<Screenshot name={stop.name} alt={stop.alt} sizes="100vw" eager={index === 0} />
