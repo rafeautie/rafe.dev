@@ -224,8 +224,8 @@ function Tour() {
 						<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
 						{/* hangs below the demo when pinned, so the demo itself stays centered */}
 						<p className="mt-4 text-center text-sm text-pretty text-black/50 xl:absolute xl:inset-x-0 xl:top-full">
-							Tip: this is the real app, running in your browser with sample data. Click around;
-							nothing is saved.
+							<strong className="font-semibold text-black/70">Tip:</strong> this is the real app,
+							running in your browser with sample data. Click around; nothing is saved.
 						</p>
 					</div>
 				</div>
