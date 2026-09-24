@@ -1,6 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { ChevronDownIcon } from 'lucide-react';
-import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import {
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+	type ComponentProps,
+	type ReactNode
+} from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
@@ -121,32 +128,43 @@ function Tour() {
 			};
 		}
 		let timer = 0;
+		let heading = 0;
 		const snap = () => {
 			const destination = lenis.targetScroll;
-			let target = 0;
-			let gap = Infinity;
-			let reach = 0;
-			for (const stop of stops.current) {
-				if (!stop) continue;
-				const y = centerOf(stop);
-				if (Math.abs(y - destination) < gap) {
-					gap = Math.abs(y - destination);
-					target = y;
-					reach = stop.offsetHeight / 2;
-				}
+			const centers = stops.current.flatMap((stop) => (stop ? [centerOf(stop)] : []));
+			const height = stops.current[0]?.offsetHeight ?? 0;
+			const first = centers[0];
+			const last = centers[centers.length - 1];
+			let target: number | undefined;
+			if (destination < first) {
+				// the scroll prompt is never a resting place: heading down past the
+				// hero carries on to the first stop, heading up leaves the tour
+				const reach = heading > 0 ? height * 1.5 : height / 4;
+				if (first - destination < reach) target = first;
+			} else if (destination > last) {
+				// past the last stop the page scrolls freely on to the footer
+				if (destination - last < height / 4) target = last;
+			} else {
+				target = centers.reduce((a, b) =>
+					Math.abs(b - destination) < Math.abs(a - destination) ? b : a
+				);
 			}
-			// outside the tour, the page scrolls freely
-			if (gap < 1 || gap > reach) return;
+			if (target === undefined || Math.abs(target - destination) < 1) return;
 			lenis.scrollTo(target, { duration: 0.9, easing: easeOutQuint });
 		};
 		const settle = () => {
 			clearTimeout(timer);
 			timer = window.setTimeout(snap, 150);
 		};
-		const offInput = lenis.on('virtual-scroll', settle);
+		const offInput = lenis.on('virtual-scroll', ({ deltaY }) => {
+			if (deltaY) heading = Math.sign(deltaY);
+			settle();
+		});
 		// keyboard, scrollbar and touch momentum scroll natively
 		const offScroll = lenis.on('scroll', () => {
-			if (lenis.isScrolling === 'native') settle();
+			if (lenis.isScrolling !== 'native') return;
+			if (lenis.direction) heading = lenis.direction;
+			settle();
 		});
 		return () => {
 			clearTimeout(timer);
@@ -155,12 +173,13 @@ function Tour() {
 		};
 	}, [pinned, lenis]);
 
-	// On every scroll: the stop nearest the middle of the viewport is the one
-	// on screen (the first above the tour, the last below it). Below xl, each
-	// stop's title and description sit stacked by the pinned demo and move with
-	// the scroll: a stop's text is where its (invisible) stop is, scaled down to
-	// a short slide, and fades out halfway to the next.
-	useEffect(() => {
+	// On every scroll, and before the first paint: the stop nearest the middle
+	// of the viewport is the one on screen (the first above the tour, the last
+	// below it). Below xl, each stop's title and description sit stacked by the
+	// pinned demo and move with the scroll: a stop's text is where its
+	// (invisible) stop is, scaled down to a short slide, and fades out halfway
+	// to the next.
+	useLayoutEffect(() => {
 		if (!pinned || !tour.current) return;
 		const items = [...tour.current.querySelectorAll<HTMLElement>('[data-track]')];
 		const fades = [...tour.current.querySelectorAll<HTMLElement>('[data-fade]')];
@@ -176,13 +195,15 @@ function Tour() {
 			// the tour approaches
 			const intro = Math.min(0, offsetOf(introStop.current));
 			const shown = (offset: number) => Math.max(0, 1 - Math.abs(offset) * 2);
+			// the prompt only ever shows while no stop's title does
+			const prompt = Math.min(shown(intro), 1 - Math.max(...offsets.map(shown)));
 			for (const item of items) {
 				const offset = item.dataset.track === 'intro' ? intro : offsets[Number(item.dataset.track)];
-				item.style.opacity = String(shown(offset));
+				item.style.opacity = String(item.dataset.track === 'intro' ? prompt : shown(offset));
 				if (!still) item.style.translate = `0 ${offset * Number(item.dataset.distance)}px`;
 			}
 			// the intro's arrow hands its row over to the tip, one after the other
-			const arrow = shown(intro);
+			const arrow = prompt;
 			const tip = Math.min(1, Math.max(0, (-intro - 0.5) * 2));
 			for (const item of fades) {
 				item.style.opacity = String(item.dataset.fade === 'arrow' ? arrow : tip);
