@@ -304,10 +304,10 @@ function Tour() {
 									data-distance={48}
 									aria-hidden={index !== active}
 									style={{ opacity: 0 }}
-									className="col-start-1 row-start-1 text-center text-pretty"
+									className="col-start-1 row-start-1 mx-auto max-w-2xl text-center text-pretty"
 								>
-									<p className="text-lg text-black/60">{stop.body}</p>
-									{stop.hint && <p className="mt-2 text-black/50">{stop.hint}</p>}
+									<p className="text-black/60">{stop.body}</p>
+									{stop.hint && <p className="mt-2 text-sm text-black/50">{stop.hint}</p>}
 								</div>
 							))}
 						</div>
