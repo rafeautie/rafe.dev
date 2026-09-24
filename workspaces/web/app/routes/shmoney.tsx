@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { ChevronDownIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
@@ -186,7 +187,11 @@ function Tour() {
 				return (top + height / 2 - window.innerHeight / 2) / height;
 			});
 			for (const item of items) {
-				const offset = offsets[Number(item.dataset.track)];
+				// the intro stands in before the first stop, and leaves as it arrives
+				const offset =
+					item.dataset.track === 'intro'
+						? Math.min(0, offsets[0] - 1)
+						: offsets[Number(item.dataset.track)];
 				item.style.opacity = String(Math.max(0, 1 - Math.abs(offset) * 2));
 				if (!still) item.style.translate = `0 ${offset * Number(item.dataset.distance)}px`;
 			}
@@ -242,13 +247,22 @@ function Tour() {
 				<div className="sticky top-0 col-start-1 row-start-1 flex h-screen items-center self-start xl:col-start-2">
 					<div className="tour-demo relative mx-auto w-full max-xl:max-w-[calc((100vh-19rem)*1.6)]">
 						<div className="grid xl:hidden">
+							<h3
+								data-track="intro"
+								data-distance={48}
+								aria-hidden
+								className="col-start-1 row-start-1 flex items-center justify-center gap-2 text-2xl font-semibold tracking-tight"
+							>
+								Scroll to take the tour
+								<ChevronDownIcon className="size-6 animate-bounce text-black/40" />
+							</h3>
 							{TOUR.map((stop, index) => (
 								<h3
 									key={stop.name}
 									data-track={index}
 									data-distance={48}
 									aria-hidden={index !== active}
-									style={{ opacity: index === 0 ? 1 : 0 }}
+									style={{ opacity: 0 }}
 									className="col-start-1 row-start-1 text-center text-2xl font-semibold tracking-tight text-balance"
 								>
 									{stop.title}
@@ -267,7 +281,7 @@ function Tour() {
 									data-track={index}
 									data-distance={64}
 									aria-hidden={index !== active}
-									style={{ opacity: index === 0 ? 1 : 0 }}
+									style={{ opacity: 0 }}
 									className="col-start-1 row-start-1 text-center text-pretty"
 								>
 									<p className="text-lg text-black/60">{stop.body}</p>
