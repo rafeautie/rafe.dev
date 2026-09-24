@@ -1,53 +1,46 @@
+import { DEMO_URL } from '~/components/shmoney/constants';
 import { cn } from '~/lib/utils';
 
-// Copies of the shmoney repo's docs/screenshots, refreshed with
-// `pnpm sync-screenshots`. The build encodes each into AVIF and WebP srcsets
-// under hashed asset names, which public/_headers caches as immutable.
-type Picture = {
-	sources: Record<string, string>;
-	img: { src: string; w: number; h: number };
-};
+// Shot from the live demo by the shmoney repo's release workflow and deployed
+// next to it, so the page and the demo always show the same build and data.
+// Names match the demo's screens.json.
+export type ScreenName =
+	| 'accounts'
+	| 'activity'
+	| 'budget'
+	| 'chat'
+	| 'report-detail'
+	| 'reports'
+	| 'settings-llm'
+	| 'transactions';
 
-const PICTURES = import.meta.glob<Picture>('./screenshots/*.png', {
-	query: '?w=640;960;1280;1920&format=avif;webp&as=picture',
-	import: 'default',
-	eager: true
-});
+const WIDTHS = [640, 960, 1280, 1920];
 
-export type ScreenshotFile =
-	| 'accounts.png'
-	| 'activity.png'
-	| 'budget.png'
-	| 'chat.png'
-	| 'report-detail.png'
-	| 'reports.png'
-	| 'settings-llm.png'
-	| 'transactions.png';
+const srcSet = (name: ScreenName, format: 'avif' | 'webp'): string =>
+	WIDTHS.map((w) => `${DEMO_URL}/screenshots/${name}-${w}.${format} ${w}w`).join(', ');
 
 export function Screenshot({
-	file,
+	name,
 	alt,
 	sizes,
 	eager = false,
 	className
 }: {
-	file: ScreenshotFile;
+	name: ScreenName;
 	alt: string;
 	sizes: string;
 	eager?: boolean;
 	className?: string;
 }) {
-	const picture = PICTURES[`./screenshots/${file}`];
 	return (
 		<picture>
-			{Object.entries(picture.sources).map(([format, srcSet]) => (
-				<source key={format} type={`image/${format}`} srcSet={srcSet} sizes={sizes} />
-			))}
+			<source type="image/avif" srcSet={srcSet(name, 'avif')} sizes={sizes} />
+			<source type="image/webp" srcSet={srcSet(name, 'webp')} sizes={sizes} />
 			<img
-				src={picture.img.src}
+				src={`${DEMO_URL}/screenshots/${name}-1280.webp`}
 				alt={alt}
-				width={picture.img.w}
-				height={picture.img.h}
+				width={2560}
+				height={1600}
 				loading={eager ? 'eager' : 'lazy'}
 				fetchPriority={eager ? 'high' : undefined}
 				decoding="async"

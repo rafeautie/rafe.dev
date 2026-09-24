@@ -3,10 +3,11 @@ import type { ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
-import { GITHUB_URL } from '~/components/shmoney/constants';
+import { DEMO_URL, GITHUB_URL } from '~/components/shmoney/constants';
 import { DownloadButton } from '~/components/shmoney/DownloadButton';
 import { Logo } from '~/components/shmoney/Logo';
-import { Screenshot, type ScreenshotFile } from '~/components/shmoney/Screenshot';
+import { LiveDemo } from '~/components/shmoney/LiveDemo';
+import { Screenshot, type ScreenName } from '~/components/shmoney/Screenshot';
 import { Button } from '~/components/ui/button';
 
 export const Route = createFileRoute('/shmoney')({
@@ -31,81 +32,69 @@ export const Route = createFileRoute('/shmoney')({
 				property: 'twitter:description',
 				content: 'A private, local-first personal finance app. No cloud, no account, no telemetry.'
 			}
-		]
-		// No preconnect for the screenshots. They are hashed build assets served
-		// from this origin, and the first one is eager, so React preloads it.
+		],
+		// the screenshots and the live demo both come from the demo's origin
+		links: [{ rel: 'preconnect', href: DEMO_URL }]
 	}),
 	component: ShmoneyPage
 });
 
-type Shot = { file: ScreenshotFile; alt: string; title: string; body: string };
+type Shot = { name: ScreenName; alt: string; title: string; body: string };
 
-// The page reads top to bottom as a series: a full-width shot, then a pair, and
-// so on. Each row is either one shot or two side by side.
-const ROWS: Shot[][] = [
-	[
-		{
-			file: 'transactions.png',
-			alt: 'shmoney transactions view with net worth, search and filters, and a categorized transaction list',
-			title: 'Every transaction in one place',
-			body: 'Sync from your banks through SimpleFIN, or import CSV, TSV, OFX, QFX, and QIF files. Rules and an optional offline model sort everything into categories.'
-		}
-	],
-	[
-		{
-			file: 'budget.png',
-			alt: 'shmoney envelope budget view',
-			title: 'Envelope budgets',
-			body: 'Fill envelopes at the start of the month and watch them drain as you spend.'
-		},
-		{
-			file: 'accounts.png',
-			alt: 'shmoney accounts overview',
-			title: 'Accounts and net worth',
-			body: 'Investment holdings next to cash, with net worth as one number. Transfers between your own accounts never count as spending.'
-		}
-	],
-	[
-		{
-			file: 'chat.png',
-			alt: 'shmoney chat answering a finance question with a generated income-versus-spending chart',
-			title: 'Ask about your money',
-			body: 'Ask a question in plain English. The on-device model runs read-only queries against your data and charts the answer, and the conversation never leaves your computer.'
-		}
-	],
-	[
-		{
-			file: 'reports.png',
-			alt: 'shmoney reports list with a saved custom dashboard',
-			title: 'Custom reports',
-			body: 'Drag charts, tables, and stats onto a dashboard and save the filters you use.'
-		},
-		{
-			file: 'report-detail.png',
-			alt: 'shmoney spending report detail',
-			title: 'Where it went',
-			body: 'Drill into any report to see exactly where the money went.'
-		}
-	],
-	[
-		{
-			file: 'activity.png',
-			alt: 'shmoney activity log of reversible changes',
-			title: 'Undo anything',
-			body: 'Every change lands in an activity log and can be reversed, bulk edits included.'
-		},
-		{
-			file: 'settings-llm.png',
-			alt: 'shmoney settings for the offline AI categorization model',
-			title: 'AI that stays offline',
-			body: 'The optional categorization model is configured and run entirely on your machine.'
-		}
-	]
+// The page reads top to bottom as a series of screens, each the real app
+// running with sample data (see LiveDemo). The model picker and the accounts
+// overview close it out as stills: the demo can't run the on-device model,
+// and accounts are a click away inside every live screen.
+const LIVE: Shot[] = [
+	{
+		name: 'transactions',
+		alt: 'shmoney transactions view with net worth, search and filters, and a categorized transaction list',
+		title: 'Every transaction in one place',
+		body: 'Sync from your banks through SimpleFIN, or import CSV, TSV, OFX, QFX, and QIF files. Rules and an optional offline model sort everything into categories.'
+	},
+	{
+		name: 'budget',
+		alt: 'shmoney envelope budget view',
+		title: 'Envelope budgets',
+		body: 'Fill envelopes at the start of the month and watch them drain as you spend.'
+	},
+	{
+		name: 'chat',
+		alt: 'shmoney chat answering a finance question with a generated income-versus-spending chart',
+		title: 'Ask about your money',
+		body: 'Ask a question in plain English. The on-device model runs read-only queries against your data and charts the answer, and the conversation never leaves your computer. Here the answers are recorded; in the app, you ask your own.'
+	},
+	{
+		name: 'report-detail',
+		alt: 'shmoney spending report with stat, bar, pie, and line widgets',
+		title: 'Custom reports',
+		body: 'Drag charts, tables, and stats onto a dashboard, save the filters you use, and drill into exactly where the money went.'
+	},
+	{
+		name: 'activity',
+		alt: 'shmoney activity log of reversible changes',
+		title: 'Undo anything',
+		body: 'Every change lands in an activity log and can be reversed, bulk edits included. Try it: change a category under Accounts, then come back here and undo it.'
+	}
 ];
 
-// The page column is max-w-5xl less its padding, so a full row paints at
-// about 960px and half a row at about 470px.
-const FULL_SIZES = '(min-width: 1024px) 960px, 100vw';
+const STILLS: Shot[] = [
+	{
+		name: 'accounts',
+		alt: 'shmoney accounts overview',
+		title: 'Accounts and net worth',
+		body: 'Investment holdings next to cash, with net worth as one number. Transfers between your own accounts never count as spending.'
+	},
+	{
+		name: 'settings-llm',
+		alt: 'shmoney settings for the offline AI categorization model',
+		title: 'AI that stays offline',
+		body: 'The optional categorization model is configured and run entirely on your machine.'
+	}
+];
+
+// The page column is max-w-5xl less its padding, so half a row paints at
+// about 470px.
 const HALF_SIZES = '(min-width: 1024px) 470px, (min-width: 640px) 50vw, 100vw';
 
 // Label on the left, content on the right. Captions, the privacy note, and the
@@ -164,36 +153,38 @@ function ShmoneyPage() {
 					<p className="mt-4 text-sm text-black/50">
 						Free for personal use · Windows, macOS, and Linux
 					</p>
+					<p className="mt-10 text-sm text-black/60">
+						{/* LiveDemo only runs the app from md up; phones get the screenshots */}
+						<span className="hidden md:inline">
+							The screens below are the real app, not pictures of it. Click around: it runs in your
+							browser with sample data, and nothing is saved.
+						</span>
+						<span className="md:hidden">
+							On a larger screen, the screens below are the live app with sample data.
+						</span>
+					</p>
 				</section>
 
 				<div className="mt-20 space-y-20 sm:mt-24 sm:space-y-28">
-					{ROWS.map((row, rowIndex) =>
-						row.length === 1 ? (
-							<figure key={row[0].file}>
-								<Screenshot
-									file={row[0].file}
-									alt={row[0].alt}
-									sizes={FULL_SIZES}
-									eager={rowIndex === 0}
-								/>
-								<figcaption className="mt-6">
-									<Split label={row[0].title}>{row[0].body}</Split>
+					{LIVE.map((shot, index) => (
+						<figure key={shot.name}>
+							<LiveDemo name={shot.name} alt={shot.alt} eager={index === 0} />
+							<figcaption className="mt-6">
+								<Split label={shot.title}>{shot.body}</Split>
+							</figcaption>
+						</figure>
+					))}
+					<div className="grid gap-x-8 gap-y-16 sm:grid-cols-2">
+						{STILLS.map((shot) => (
+							<figure key={shot.name}>
+								<Screenshot name={shot.name} alt={shot.alt} sizes={HALF_SIZES} />
+								<figcaption className="mt-5">
+									<p className="font-medium">{shot.title}</p>
+									<p className="mt-1 text-pretty text-black/60">{shot.body}</p>
 								</figcaption>
 							</figure>
-						) : (
-							<div key={row[0].file} className="grid gap-x-8 gap-y-16 sm:grid-cols-2">
-								{row.map((shot) => (
-									<figure key={shot.file}>
-										<Screenshot file={shot.file} alt={shot.alt} sizes={HALF_SIZES} />
-										<figcaption className="mt-5">
-											<p className="font-medium">{shot.title}</p>
-											<p className="mt-1 text-pretty text-black/60">{shot.body}</p>
-										</figcaption>
-									</figure>
-								))}
-							</div>
-						)
-					)}
+						))}
+					</div>
 				</div>
 
 				<section className="mt-28 space-y-12 border-t border-black/10 pt-10 sm:mt-36">
