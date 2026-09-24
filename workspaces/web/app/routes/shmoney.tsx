@@ -121,10 +121,11 @@ function Tour() {
 			{ rootMargin: '-50% 0px' }
 		);
 		for (const stop of stops.current) if (stop) observer.observe(stop);
-		// stops snap to the middle of the viewport, beside the pinned demo;
-		// proximity leaves the rest of the page free to scroll
+		// scrolling always lands a stop in the middle of the viewport, beside the
+		// pinned demo; the blocks above and below the tour are snap areas too, so
+		// the rest of the page stays reachable
 		const root = document.documentElement;
-		root.style.scrollSnapType = 'y proximity';
+		root.style.scrollSnapType = 'y mandatory';
 		return () => {
 			observer.disconnect();
 			root.style.scrollSnapType = '';
@@ -139,7 +140,9 @@ function Tour() {
 	return (
 		<section className="mx-auto max-w-5xl px-6 sm:px-8 xl:max-w-7xl">
 			<div className="xl:grid xl:grid-cols-[17rem_minmax(0,1fr)] xl:gap-14">
-				<ol className="flex flex-wrap gap-2 xl:block">
+				{/* the padding makes the tour a full viewport taller than its stops, so the
+				    demo is pinned, and centered, even at the first and last */}
+				<ol className="flex flex-wrap gap-2 xl:block xl:py-[15vh]">
 					{TOUR.map((stop, index) => (
 						<li
 							key={stop.name}
@@ -185,7 +188,7 @@ function Tour() {
 function ShmoneyPage() {
 	return (
 		<div className="bg-background text-base text-black">
-			<div className="mx-auto max-w-5xl px-6 sm:px-8">
+			<div className="mx-auto max-w-5xl px-6 sm:px-8 xl:snap-start">
 				<header className="flex items-center justify-between gap-4 pt-8">
 					<SlashNav className="text-lg font-medium sm:text-xl">
 						<Link href="/">rafe</Link>
@@ -244,7 +247,7 @@ function ShmoneyPage() {
 				<Tour />
 			</div>
 
-			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8">
+			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8 xl:snap-end">
 				<div className="mt-20 space-y-20 md:hidden">
 					{TOUR.map((stop, index) => (
 						<figure key={stop.name}>
