@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { ChevronDownIcon } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
@@ -94,7 +94,7 @@ function Split({ label, children }: { label: ReactNode; children: ReactNode }) {
 	return (
 		<div className="grid gap-2 sm:grid-cols-[1fr_2fr] sm:gap-10">
 			<div className="font-medium">{label}</div>
-			<div className="text-pretty text-black/60">{children}</div>
+			<div className="max-w-2xl text-pretty text-black/60">{children}</div>
 		</div>
 	);
 }
@@ -163,6 +163,7 @@ function Tour() {
 	useEffect(() => {
 		if (!pinned || !tour.current) return;
 		const items = [...tour.current.querySelectorAll<HTMLElement>('[data-track]')];
+		const fades = [...tour.current.querySelectorAll<HTMLElement>('[data-fade]')];
 		const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const update = () => {
 			const offsets = stops.current.map(offsetOf);
@@ -173,12 +174,18 @@ function Tour() {
 			setActive(nearest);
 			// the intro holds until its spot scrolls past, so it shows in full while
 			// the tour approaches
-			const intro = offsetOf(introStop.current);
+			const intro = Math.min(0, offsetOf(introStop.current));
+			const shown = (offset: number) => Math.max(0, 1 - Math.abs(offset) * 2);
 			for (const item of items) {
-				const offset =
-					item.dataset.track === 'intro' ? Math.min(0, intro) : offsets[Number(item.dataset.track)];
-				item.style.opacity = String(Math.max(0, 1 - Math.abs(offset) * 2));
+				const offset = item.dataset.track === 'intro' ? intro : offsets[Number(item.dataset.track)];
+				item.style.opacity = String(shown(offset));
 				if (!still) item.style.translate = `0 ${offset * Number(item.dataset.distance)}px`;
+			}
+			// the intro's arrow hands its row over to the tip, one after the other
+			const arrow = shown(intro);
+			const tip = Math.min(1, Math.max(0, (-intro - 0.5) * 2));
+			for (const item of fades) {
+				item.style.opacity = String(item.dataset.fade === 'arrow' ? arrow : tip);
 			}
 		};
 		update();
@@ -201,7 +208,7 @@ function Tour() {
 		<section className="mx-auto max-w-5xl px-6 sm:px-8 xl:max-w-7xl">
 			{/* Below xl the stops are invisible spacers under the pinned demo, which
 			    shows the stop's title above it and its description below */}
-			<div ref={tour} className="tour grid xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-16">
+			<div ref={tour} className="tour grid xl:grid-cols-[20rem_minmax(0,1fr)] xl:gap-16">
 				{/* the padding makes the tour a full viewport taller than its stops, so the
 				    demo is pinned, and centered, even at the first and last */}
 				<ol className="col-start-1 row-start-1 py-[15vh]">
@@ -233,16 +240,21 @@ function Tour() {
 					))}
 				</ol>
 				<div className="sticky top-0 col-start-1 row-start-1 flex h-screen items-center self-start xl:col-start-2">
-					<div className="tour-demo relative mx-auto w-full max-xl:max-w-[calc((100vh-19rem)*1.6)]">
-						<div className="grid xl:hidden">
-							<div data-track="intro" data-distance={48} className="col-start-1 row-start-1">
-								<ScrollPrompt className="mx-auto text-2xl" />
-							</div>
+					<div className="tour-demo relative mx-auto w-full max-xl:max-w-[calc((100vh-19rem)*1.6)] xl:max-w-[calc((100vh-9rem)*1.6)]">
+						<div className="-my-1 grid overflow-hidden py-1 xl:hidden">
+							<p
+								data-track="intro"
+								data-distance={40}
+								aria-hidden
+								className="col-start-1 row-start-1 text-center text-2xl font-semibold tracking-tight"
+							>
+								Scroll to take the tour
+							</p>
 							{TOUR.map((stop, index) => (
 								<h3
 									key={stop.name}
 									data-track={index}
-									data-distance={48}
+									data-distance={40}
 									aria-hidden={index !== active}
 									style={{ opacity: 0 }}
 									className="col-start-1 row-start-1 text-center text-2xl font-semibold tracking-tight text-balance"
@@ -251,19 +263,24 @@ function Tour() {
 								</h3>
 							))}
 						</div>
-						<Tip className="mt-2 mb-5 xl:hidden" />
+						<div className="mt-2 mb-5 grid xl:hidden">
+							<div data-fade="arrow" className="col-start-1 row-start-1 flex justify-center">
+								<ChevronDownIcon className="size-6 animate-bounce text-black/40" />
+							</div>
+							<Tip data-fade="tip" style={{ opacity: 0 }} className="col-start-1 row-start-1" />
+						</div>
 						<div className="tour-rise">
 							<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
 						</div>
 						{/* hangs below the demo, so the demo itself stays centered */}
 						<Tip className="absolute inset-x-0 top-full mt-4 hidden xl:block" />
 						{/* a fixed height, so the demo holds still between stops */}
-						<div className="mt-5 grid xl:hidden">
+						<div className="mt-5 grid overflow-hidden xl:hidden">
 							{TOUR.map((stop, index) => (
 								<div
 									key={stop.name}
 									data-track={index}
-									data-distance={64}
+									data-distance={48}
 									aria-hidden={index !== active}
 									style={{ opacity: 0 }}
 									className="col-start-1 row-start-1 text-center text-pretty"
@@ -285,11 +302,15 @@ function ScrollPrompt({ className }: { className?: string }) {
 		<div
 			aria-hidden
 			className={cn(
-				'flex w-fit flex-col items-center gap-3 text-center text-3xl font-semibold tracking-tight text-balance',
+				'flex w-max flex-col items-center gap-3 text-center text-3xl font-semibold tracking-tight',
 				className
 			)}
 		>
-			Scroll to take the tour
+			<span>
+				Scroll to
+				<br />
+				take the tour
+			</span>
 			<ChevronDownIcon className="size-6 animate-bounce text-black/40" />
 		</div>
 	);
@@ -302,9 +323,9 @@ function offsetOf(element: HTMLElement | null): number {
 	return (top + height / 2 - window.innerHeight / 2) / height;
 }
 
-function Tip({ className }: { className?: string }) {
+function Tip({ className, ...props }: ComponentProps<'p'>) {
 	return (
-		<p className={cn('text-center text-sm text-pretty text-black/50', className)}>
+		<p {...props} className={cn('text-center text-sm text-pretty text-black/50', className)}>
 			<strong className="font-semibold text-black/70">Tip:</strong> this is the real app, running in
 			your browser with sample data. Click around; nothing is saved.
 		</p>
@@ -321,7 +342,7 @@ function ShmoneyPage() {
 	return (
 		<div className="bg-background text-base text-black">
 			<SmoothScroll />
-			<div className="mx-auto max-w-5xl px-6 sm:px-8 xl:snap-start">
+			<div className="mx-auto max-w-5xl px-6 sm:px-8 xl:max-w-7xl xl:snap-start">
 				<header className="flex items-center justify-between gap-4 pt-8">
 					<SlashNav className="text-lg font-medium sm:text-xl">
 						<Link href="/">rafe</Link>
@@ -364,17 +385,17 @@ function ShmoneyPage() {
 						Free for personal use · Windows, macOS, and Linux
 					</p>
 					{/* LiveDemo only runs the app from md up; phones get the screenshots */}
-					<p className="rise mt-10 text-sm text-black/60 [--delay:320ms] md:hidden">
+					<p className="rise mt-10 text-sm text-balance text-black/60 [--delay:320ms] md:hidden">
 						On a larger screen, the app below is live, with sample data.
 					</p>
 				</section>
 			</div>
 
-			<div className="mt-32 hidden md:block">
+			<div className="mt-8 hidden md:block">
 				<Tour />
 			</div>
 
-			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8 xl:snap-end">
+			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8 xl:max-w-7xl xl:snap-end">
 				<div className="mt-20 space-y-20 md:hidden">
 					{TOUR.map((stop, index) => (
 						<figure key={stop.name} className="reveal">
@@ -386,7 +407,7 @@ function ShmoneyPage() {
 					))}
 				</div>
 
-				<section className="mt-28 space-y-12 border-t border-black/10 pt-10 sm:mt-36">
+				<section className="mt-28 space-y-12 border-t border-black/10 pt-10 sm:mt-36 md:mt-4">
 					<div className="reveal">
 						<Split label={<h2>Privacy</h2>}>
 							Nothing leaves your machine. Your data lives in one SQLite file, bank credentials stay
