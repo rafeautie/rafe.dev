@@ -305,7 +305,11 @@ function Tour() {
 					{/* undocked (--dock 0), the demo shifts left by half the stops' column and
 					    the gap, which centers it in the tour. Below xl it's capped at 52rem, the width
 					    of that column in a full-width tour, so it stays one size throughout */}
-					<div className="tour-demo relative mx-auto w-full max-xl:max-w-[min(52rem,calc((100vh-19rem)*1.6))] xl:max-w-[calc((100vh-9rem)*1.6)] xl:translate-x-[calc(-12rem*(1-var(--dock,0)))]">
+					{/* The demo and its prompt rise in from below the page once the demo
+					    has something to show, the demo a beat behind; opening scrolled
+					    down, they're simply there. The rise uses transform, leaving translate
+					    to the dock. */}
+					<div className="tour-demo relative mx-auto w-full [transition:opacity_1.6s_ease-out,transform_1.6s_cubic-bezier(0.16,1,0.3,1)] has-[[data-entrance=instant]]:transition-none has-[[data-entrance=waiting]]:opacity-0 motion-safe:has-[[data-entrance=waiting]]:[transform:translateY(60vh)] max-xl:max-w-[min(52rem,calc((100vh-19rem)*1.6))] xl:max-w-[calc((100vh-9rem)*1.6)] xl:translate-x-[calc(-12rem*(1-var(--dock,0)))]">
 						{/* hangs above the demo, so the demo itself stays centered */}
 						<div
 							data-track="intro"
@@ -346,7 +350,9 @@ function Tour() {
 						</div>
 						{/* above the text below it, which the expand button hangs into */}
 						<div className="tour-rise relative z-10">
-							<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
+							<div className="[transition:opacity_1.6s_ease-out_200ms,transform_1.6s_cubic-bezier(0.16,1,0.3,1)_200ms] has-[[data-entrance=instant]]:transition-none has-[[data-entrance=waiting]]:opacity-0 motion-safe:has-[[data-entrance=waiting]]:[transform:translateY(8vh)]">
+								<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
+							</div>
 						</div>
 						{/* hangs below the demo, so the demo itself stays centered */}
 						<Tip className="absolute inset-x-0 top-full mt-4 hidden xl:block" />
