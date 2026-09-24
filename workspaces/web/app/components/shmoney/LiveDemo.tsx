@@ -61,7 +61,7 @@ export function LiveDemo({ screen, alt }: { screen: ScreenName; alt: string }) {
 	return (
 		<div
 			ref={box}
-			className="relative aspect-[16/10] w-full overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm"
+			className="relative aspect-[16/10] w-full overflow-hidden rounded-xl border border-black/10 bg-white shadow-[0_40px_100px_-30px_rgb(0_0_0/0.3)]"
 		>
 			{!ready && (
 				<Screenshot

@@ -7,6 +7,7 @@ import { DEMO_URL, GITHUB_URL } from '~/components/shmoney/constants';
 import { DownloadButton } from '~/components/shmoney/DownloadButton';
 import { Logo } from '~/components/shmoney/Logo';
 import { LiveDemo } from '~/components/shmoney/LiveDemo';
+import { SmoothScroll, easeOutQuint, useLenis } from '~/components/shmoney/smooth-scroll';
 import { Screenshot, type ScreenName } from '~/components/shmoney/Screenshot';
 import { Button } from '~/components/ui/button';
 import { useMedia } from '~/lib/use-media';
@@ -107,6 +108,7 @@ function Split({ label, children }: { label: ReactNode; children: ReactNode }) {
 function Tour() {
 	const [active, setActive] = useState(0);
 	const pinned = useMedia('(min-width: 1280px)');
+	const lenis = useLenis();
 	const stops = useRef<(HTMLLIElement | null)[]>([]);
 
 	// the stop crossing the middle of the viewport is the one on screen
@@ -115,34 +117,89 @@ function Tour() {
 		const observer = new IntersectionObserver(
 			(entries) => {
 				for (const entry of entries) {
-					if (entry.isIntersecting) setActive(stops.current.indexOf(entry.target as HTMLLIElement));
+					const index = stops.current.indexOf(entry.target as HTMLLIElement);
+					if (entry.isIntersecting) setActive(index);
+					// back above the tour, it starts over
+					else if (stops.current[0]!.getBoundingClientRect().top > window.innerHeight / 2)
+						setActive(0);
 				}
 			},
 			{ rootMargin: '-50% 0px' }
 		);
 		for (const stop of stops.current) if (stop) observer.observe(stop);
-		// scrolling always lands a stop in the middle of the viewport, beside the
-		// pinned demo; the blocks above and below the tour are snap areas too, so
-		// the rest of the page stays reachable
-		const root = document.documentElement;
-		root.style.scrollSnapType = 'y mandatory';
-		return () => {
-			observer.disconnect();
-			root.style.scrollSnapType = '';
-		};
+		return () => observer.disconnect();
 	}, [pinned]);
 
+	// Scrolling always settles with a stop in the middle of the viewport,
+	// beside the pinned demo. With smooth scrolling on, the page eases there
+	// itself once the wheel goes quiet; without it, CSS snapping does the job,
+	// with the blocks above and below the tour as snap areas.
+	useEffect(() => {
+		if (!pinned) return;
+		const root = document.documentElement;
+		if (!lenis) {
+			root.style.scrollSnapType = 'y mandatory';
+			return () => {
+				root.style.scrollSnapType = '';
+			};
+		}
+		let timer = 0;
+		const snap = () => {
+			const destination = lenis.targetScroll;
+			let target = 0;
+			let gap = Infinity;
+			let reach = 0;
+			for (const stop of stops.current) {
+				if (!stop) continue;
+				const y = centerOf(stop);
+				if (Math.abs(y - destination) < gap) {
+					gap = Math.abs(y - destination);
+					target = y;
+					reach = stop.offsetHeight / 2;
+				}
+			}
+			// outside the tour, the page scrolls freely
+			if (gap < 1 || gap > reach) return;
+			lenis.scrollTo(target, { duration: 0.9, easing: easeOutQuint });
+		};
+		const settle = () => {
+			clearTimeout(timer);
+			timer = window.setTimeout(snap, 150);
+		};
+		const offInput = lenis.on('virtual-scroll', settle);
+		// keyboard, scrollbar and touch momentum scroll natively
+		const offScroll = lenis.on('scroll', () => {
+			if (lenis.isScrolling === 'native') settle();
+		});
+		return () => {
+			clearTimeout(timer);
+			offInput();
+			offScroll();
+		};
+	}, [pinned, lenis]);
+
 	const select = (index: number) => {
-		if (pinned) stops.current[index]?.scrollIntoView({ block: 'center' });
-		else setActive(index);
+		const stop = stops.current[index];
+		if (!pinned || !stop) setActive(index);
+		else if (lenis) lenis.scrollTo(centerOf(stop), { duration: 1.2, easing: easeOutQuint });
+		else stop.scrollIntoView({ block: 'center' });
 	};
 
 	return (
 		<section className="mx-auto max-w-5xl px-6 sm:px-8 xl:max-w-7xl">
-			<div className="xl:grid xl:grid-cols-[17rem_minmax(0,1fr)] xl:gap-14">
+			<header className="reveal mx-auto max-w-3xl text-center">
+				<h2 className="text-4xl font-semibold tracking-tight text-balance xl:text-6xl">
+					The real app, right here.
+				</h2>
+				<p className="mt-5 text-lg text-pretty text-black/60 xl:text-xl">
+					Not a video and not screenshots: shmoney itself, running in your browser with sample data.
+					Scroll to take the tour, or click around. Nothing is saved.
+				</p>
+			</header>
+			<div className="tour mt-16 xl:mt-8 xl:grid xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-16">
 				{/* the padding makes the tour a full viewport taller than its stops, so the
 				    demo is pinned, and centered, even at the first and last */}
-				<ol className="flex flex-wrap gap-2 xl:block xl:py-[15vh]">
+				<ol className="flex flex-wrap justify-center gap-2 xl:block xl:py-[15vh]">
 					{TOUR.map((stop, index) => (
 						<li
 							key={stop.name}
@@ -152,27 +209,29 @@ function Tour() {
 							data-active={index === active}
 							className="group xl:flex xl:min-h-[70vh] xl:snap-center xl:flex-col xl:justify-center"
 						>
-							<button
-								type="button"
-								aria-pressed={index === active}
-								onClick={() => select(index)}
-								className="cursor-pointer rounded-full border border-black/10 px-3 py-1 text-sm text-black/60 transition-colors group-data-[active=true]:border-black group-data-[active=true]:bg-black group-data-[active=true]:text-white hover:text-black xl:rounded-none xl:border-0 xl:p-0 xl:text-left xl:text-lg xl:font-medium xl:text-black/35 xl:group-data-[active=true]:bg-transparent xl:group-data-[active=true]:text-black"
-							>
-								{stop.title}
-							</button>
-							<p className="mt-2 hidden text-pretty text-black/35 transition-colors group-data-[active=true]:text-black/60 xl:block">
-								{stop.body}
-							</p>
-							{stop.hint && (
-								<p className="mt-3 hidden text-sm text-pretty text-black/35 transition-colors group-data-[active=true]:text-black/60 xl:block">
-									{stop.hint}
+							<div className="transition-[opacity,translate] duration-700 ease-out xl:translate-y-3 xl:opacity-20 xl:group-data-[active=true]:translate-y-0 xl:group-data-[active=true]:opacity-100">
+								<button
+									type="button"
+									aria-pressed={index === active}
+									onClick={() => select(index)}
+									className="cursor-pointer rounded-full border border-black/10 px-3 py-1 text-sm text-black/60 transition-colors group-data-[active=true]:border-black group-data-[active=true]:bg-black group-data-[active=true]:text-white hover:text-black xl:rounded-none xl:border-0 xl:p-0 xl:text-left xl:text-3xl xl:font-semibold xl:tracking-tight xl:text-balance xl:text-black xl:group-data-[active=true]:bg-transparent xl:group-data-[active=true]:text-black"
+								>
+									{stop.title}
+								</button>
+								<p className="mt-4 hidden text-lg text-pretty text-black/60 xl:block">
+									{stop.body}
 								</p>
-							)}
+								{stop.hint && (
+									<p className="mt-4 hidden text-pretty text-black/50 xl:block">{stop.hint}</p>
+								)}
+							</div>
 						</li>
 					))}
 				</ol>
 				<div className="mt-6 xl:sticky xl:top-0 xl:mt-0 xl:flex xl:h-screen xl:items-center xl:self-start">
-					<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
+					<div className="tour-demo w-full">
+						<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
+					</div>
 				</div>
 			</div>
 			<div className="mt-6 xl:hidden">
@@ -185,9 +244,16 @@ function Tour() {
 	);
 }
 
+// the scroll position that puts an element's middle at the viewport's
+function centerOf(element: HTMLElement): number {
+	const { top, height } = element.getBoundingClientRect();
+	return window.scrollY + top + height / 2 - window.innerHeight / 2;
+}
+
 function ShmoneyPage() {
 	return (
 		<div className="bg-background text-base text-black">
+			<SmoothScroll />
 			<div className="mx-auto max-w-5xl px-6 sm:px-8 xl:snap-start">
 				<header className="flex items-center justify-between gap-4 pt-8">
 					<SlashNav className="text-lg font-medium sm:text-xl">
@@ -207,16 +273,16 @@ function ShmoneyPage() {
 				</header>
 
 				<section className="pt-20 sm:pt-28">
-					<Logo className="size-14 rounded-2xl" />
-					<h1 className="mt-8 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+					<Logo className="rise size-14 rounded-2xl" />
+					<h1 className="rise mt-8 text-4xl font-semibold tracking-tight text-balance [--delay:80ms] sm:text-5xl">
 						Your money, on your machine.
 					</h1>
-					<p className="mt-5 max-w-xl text-lg text-pretty text-black/60">
+					<p className="rise mt-5 max-w-xl text-lg text-pretty text-black/60 [--delay:160ms]">
 						A personal finance app that runs entirely on your computer. Sync your banks, budget with
 						envelopes, build reports, and ask questions about your spending. It all lives in one
 						SQLite file, with no account and no cloud.
 					</p>
-					<div className="mt-8 flex flex-wrap items-center gap-3">
+					<div className="rise mt-8 flex flex-wrap items-center gap-3 [--delay:240ms]">
 						<DownloadButton>Download</DownloadButton>
 						<Button
 							variant="outline"
@@ -227,30 +293,24 @@ function ShmoneyPage() {
 							View the source
 						</Button>
 					</div>
-					<p className="mt-4 text-sm text-black/50">
+					<p className="rise mt-4 text-sm text-black/50 [--delay:240ms]">
 						Free for personal use · Windows, macOS, and Linux
 					</p>
-					<p className="mt-10 text-sm text-black/60">
-						{/* LiveDemo only runs the app from md up; phones get the screenshots */}
-						<span className="hidden md:inline">
-							The app below is the real thing, not pictures of it. Click around: it runs in your
-							browser with sample data, and nothing is saved.
-						</span>
-						<span className="md:hidden">
-							On a larger screen, the app below is live, with sample data.
-						</span>
+					{/* LiveDemo only runs the app from md up; phones get the screenshots */}
+					<p className="mt-10 text-sm text-black/60 md:hidden">
+						On a larger screen, the app below is live, with sample data.
 					</p>
 				</section>
 			</div>
 
-			<div className="mt-24 hidden md:block">
+			<div className="mt-32 hidden md:block">
 				<Tour />
 			</div>
 
 			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8 xl:snap-end">
 				<div className="mt-20 space-y-20 md:hidden">
 					{TOUR.map((stop, index) => (
-						<figure key={stop.name}>
+						<figure key={stop.name} className="reveal">
 							<Screenshot name={stop.name} alt={stop.alt} sizes="100vw" eager={index === 0} />
 							<figcaption className="mt-6">
 								<Split label={stop.title}>{stop.body}</Split>
@@ -259,7 +319,7 @@ function ShmoneyPage() {
 					))}
 				</div>
 
-				<figure className="mt-20 grid items-center gap-6 sm:mt-28 sm:grid-cols-2 sm:gap-10">
+				<figure className="reveal mt-20 grid items-center gap-6 sm:mt-28 sm:grid-cols-2 sm:gap-10">
 					<Screenshot
 						name={MODEL.name}
 						alt={MODEL.alt}
@@ -272,29 +332,33 @@ function ShmoneyPage() {
 				</figure>
 
 				<section className="mt-28 space-y-12 border-t border-black/10 pt-10 sm:mt-36">
-					<Split label={<h2>Privacy</h2>}>
-						Nothing leaves your machine. Your data lives in one SQLite file, bank credentials stay
-						encrypted in your OS keychain, and there is no account and no telemetry. The only
-						network calls are the SimpleFIN syncs you ask for.
-					</Split>
-					<Split label={<h2>Get shmoney</h2>}>
-						<p>
-							Free for personal use under the PolyForm Noncommercial 1.0.0 license. shmoney is
-							pre-1.0.
-						</p>
-						<div className="mt-5 flex flex-wrap items-center gap-3">
-							<DownloadButton>Download</DownloadButton>
-							<Button
-								variant="outline"
-								size="lg"
-								className="px-4"
-								render={<Link plain href={GITHUB_URL} target="_blank" rel="noreferrer" />}
-							>
-								<GitHubIcon className="size-4" />
-								Star on GitHub
-							</Button>
-						</div>
-					</Split>
+					<div className="reveal">
+						<Split label={<h2>Privacy</h2>}>
+							Nothing leaves your machine. Your data lives in one SQLite file, bank credentials stay
+							encrypted in your OS keychain, and there is no account and no telemetry. The only
+							network calls are the SimpleFIN syncs you ask for.
+						</Split>
+					</div>
+					<div className="reveal">
+						<Split label={<h2>Get shmoney</h2>}>
+							<p>
+								Free for personal use under the PolyForm Noncommercial 1.0.0 license. shmoney is
+								pre-1.0.
+							</p>
+							<div className="mt-5 flex flex-wrap items-center gap-3">
+								<DownloadButton>Download</DownloadButton>
+								<Button
+									variant="outline"
+									size="lg"
+									className="px-4"
+									render={<Link plain href={GITHUB_URL} target="_blank" rel="noreferrer" />}
+								>
+									<GitHubIcon className="size-4" />
+									Star on GitHub
+								</Button>
+							</div>
+						</Split>
+					</div>
 				</section>
 
 				<footer className="mt-24 flex items-center justify-between gap-4 text-sm text-black/60">
