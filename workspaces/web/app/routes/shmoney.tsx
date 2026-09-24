@@ -220,8 +220,13 @@ function Tour() {
 					))}
 				</ol>
 				<div className="mt-6 xl:sticky xl:top-0 xl:mt-0 xl:flex xl:h-screen xl:items-center xl:self-start">
-					<div className="tour-demo w-full">
+					<div className="tour-demo relative w-full">
 						<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
+						{/* hangs below the demo when pinned, so the demo itself stays centered */}
+						<p className="mt-4 text-center text-sm text-pretty text-black/50 xl:absolute xl:inset-x-0 xl:top-full">
+							Tip: this is the real app, running in your browser with sample data. Click around;
+							nothing is saved.
+						</p>
 					</div>
 				</div>
 			</div>
@@ -287,15 +292,9 @@ function ShmoneyPage() {
 					<p className="rise mt-4 text-sm text-black/50 [--delay:240ms]">
 						Free for personal use · Windows, macOS, and Linux
 					</p>
-					<p className="rise mt-10 text-sm text-black/60 [--delay:320ms]">
-						{/* LiveDemo only runs the app from md up; phones get the screenshots */}
-						<span className="hidden md:inline">
-							The app below is the real thing, not pictures of it. Scroll to take the tour or click
-							around: it runs in your browser with sample data, and nothing is saved.
-						</span>
-						<span className="md:hidden">
-							On a larger screen, the app below is live, with sample data.
-						</span>
+					{/* LiveDemo only runs the app from md up; phones get the screenshots */}
+					<p className="rise mt-10 text-sm text-black/60 [--delay:320ms] md:hidden">
+						On a larger screen, the app below is live, with sample data.
 					</p>
 				</section>
 			</div>
