@@ -3,6 +3,7 @@
 @import 'shadcn/tailwind.css';
 @import '@fontsource-variable/geist';
 @import '@fontsource-variable/archivo';
+@import 'lenis/dist/lenis.css';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
 
@@ -143,5 +144,47 @@
 
 	body {
 		@apply bg-background text-foreground;
+	}
+}
+
+/* shmoney page motion. Scroll-linked pieces only run where the browser drives
+   animations from scrolling; elsewhere everything simply shows. */
+@keyframes rise {
+	from {
+		opacity: 0;
+		translate: 0 1.5rem;
+	}
+}
+
+@keyframes tour-rise {
+	from {
+		opacity: 0.5;
+		scale: 0.86;
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.rise {
+		animation: rise 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+		animation-delay: var(--delay, 0ms);
+	}
+
+	@supports (animation-timeline: view()) {
+		.reveal {
+			animation: rise linear both;
+			animation-timeline: view();
+			animation-range: entry 0% entry 70%;
+		}
+
+		.tour {
+			view-timeline: --tour;
+		}
+
+		/* the demo grows into place as the tour scrolls up to meet it */
+		.tour-rise {
+			animation: tour-rise linear both;
+			animation-timeline: --tour;
+			animation-range: entry 0% entry 100%;
+		}
 	}
 }
