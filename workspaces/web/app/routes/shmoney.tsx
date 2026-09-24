@@ -187,16 +187,7 @@ function Tour() {
 
 	return (
 		<section className="mx-auto max-w-5xl px-6 sm:px-8 xl:max-w-7xl">
-			<header className="reveal mx-auto max-w-3xl text-center">
-				<h2 className="text-4xl font-semibold tracking-tight text-balance xl:text-6xl">
-					The real app, right here.
-				</h2>
-				<p className="mt-5 text-lg text-pretty text-black/60 xl:text-xl">
-					Not a video and not screenshots: shmoney itself, running in your browser with sample data.
-					Scroll to take the tour, or click around. Nothing is saved.
-				</p>
-			</header>
-			<div className="tour mt-16 xl:mt-8 xl:grid xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-16">
+			<div className="tour xl:grid xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-16">
 				{/* the padding makes the tour a full viewport taller than its stops, so the
 				    demo is pinned, and centered, even at the first and last */}
 				<ol className="flex flex-wrap justify-center gap-2 xl:block xl:py-[15vh]">
@@ -296,9 +287,15 @@ function ShmoneyPage() {
 					<p className="rise mt-4 text-sm text-black/50 [--delay:240ms]">
 						Free for personal use · Windows, macOS, and Linux
 					</p>
-					{/* LiveDemo only runs the app from md up; phones get the screenshots */}
-					<p className="mt-10 text-sm text-black/60 md:hidden">
-						On a larger screen, the app below is live, with sample data.
+					<p className="rise mt-10 text-sm text-black/60 [--delay:320ms]">
+						{/* LiveDemo only runs the app from md up; phones get the screenshots */}
+						<span className="hidden md:inline">
+							The app below is the real thing, not pictures of it. Scroll to take the tour or click
+							around: it runs in your browser with sample data, and nothing is saved.
+						</span>
+						<span className="md:hidden">
+							On a larger screen, the app below is live, with sample data.
+						</span>
 					</p>
 				</section>
 			</div>
