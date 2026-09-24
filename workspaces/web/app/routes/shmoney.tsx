@@ -105,25 +105,7 @@ function Tour() {
 	const lenis = useLenis();
 	const stops = useRef<(HTMLLIElement | null)[]>([]);
 	const tour = useRef<HTMLDivElement>(null);
-
-	// the stop crossing the middle of the viewport is the one on screen
-	useEffect(() => {
-		if (!pinned) return;
-		const observer = new IntersectionObserver(
-			(entries) => {
-				for (const entry of entries) {
-					const index = stops.current.indexOf(entry.target as HTMLLIElement);
-					if (entry.isIntersecting) setActive(index);
-					// back above the tour, it starts over
-					else if (stops.current[0]!.getBoundingClientRect().top > window.innerHeight / 2)
-						setActive(0);
-				}
-			},
-			{ rootMargin: '-50% 0px' }
-		);
-		for (const stop of stops.current) if (stop) observer.observe(stop);
-		return () => observer.disconnect();
-	}, [pinned]);
+	const introStop = useRef<HTMLLIElement>(null);
 
 	// Scrolling always settles with a stop in the middle of the viewport,
 	// beside the pinned demo. With smooth scrolling on, the page eases there
@@ -173,25 +155,28 @@ function Tour() {
 		};
 	}, [pinned, lenis]);
 
-	// Below xl each stop's title and description sit stacked by the pinned demo
-	// and move with the scroll: a stop's text is where its (invisible) stop is,
-	// scaled down to a short slide, and fades out halfway to the next.
+	// On every scroll: the stop nearest the middle of the viewport is the one
+	// on screen (the first above the tour, the last below it). Below xl, each
+	// stop's title and description sit stacked by the pinned demo and move with
+	// the scroll: a stop's text is where its (invisible) stop is, scaled down to
+	// a short slide, and fades out halfway to the next.
 	useEffect(() => {
 		if (!pinned || !tour.current) return;
 		const items = [...tour.current.querySelectorAll<HTMLElement>('[data-track]')];
 		const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const update = () => {
-			const offsets = stops.current.map((stop) => {
-				if (!stop) return 0;
-				const { top, height } = stop.getBoundingClientRect();
-				return (top + height / 2 - window.innerHeight / 2) / height;
+			const offsets = stops.current.map(offsetOf);
+			let nearest = 0;
+			offsets.forEach((offset, index) => {
+				if (Math.abs(offset) < Math.abs(offsets[nearest])) nearest = index;
 			});
+			setActive(nearest);
+			// the intro holds until its spot scrolls past, so it shows in full while
+			// the tour approaches
+			const intro = offsetOf(introStop.current);
 			for (const item of items) {
-				// the intro stands in before the first stop, and leaves as it arrives
 				const offset =
-					item.dataset.track === 'intro'
-						? Math.min(0, offsets[0] - 1)
-						: offsets[Number(item.dataset.track)];
+					item.dataset.track === 'intro' ? Math.min(0, intro) : offsets[Number(item.dataset.track)];
 				item.style.opacity = String(Math.max(0, 1 - Math.abs(offset) * 2));
 				if (!still) item.style.translate = `0 ${offset * Number(item.dataset.distance)}px`;
 			}
@@ -220,6 +205,9 @@ function Tour() {
 				{/* the padding makes the tour a full viewport taller than its stops, so the
 				    demo is pinned, and centered, even at the first and last */}
 				<ol className="col-start-1 row-start-1 py-[15vh]">
+					<li ref={introStop} className="flex min-h-[70vh] flex-col justify-center">
+						<ScrollPrompt className="max-xl:invisible" />
+					</li>
 					{TOUR.map((stop, index) => (
 						<li
 							key={stop.name}
@@ -247,15 +235,9 @@ function Tour() {
 				<div className="sticky top-0 col-start-1 row-start-1 flex h-screen items-center self-start xl:col-start-2">
 					<div className="tour-demo relative mx-auto w-full max-xl:max-w-[calc((100vh-19rem)*1.6)]">
 						<div className="grid xl:hidden">
-							<h3
-								data-track="intro"
-								data-distance={48}
-								aria-hidden
-								className="col-start-1 row-start-1 flex items-center justify-center gap-2 text-2xl font-semibold tracking-tight"
-							>
-								Scroll to take the tour
-								<ChevronDownIcon className="size-6 animate-bounce text-black/40" />
-							</h3>
+							<div data-track="intro" data-distance={48} className="col-start-1 row-start-1">
+								<ScrollPrompt className="mx-auto text-2xl" />
+							</div>
 							{TOUR.map((stop, index) => (
 								<h3
 									key={stop.name}
@@ -270,7 +252,9 @@ function Tour() {
 							))}
 						</div>
 						<Tip className="mt-2 mb-5 xl:hidden" />
-						<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
+						<div className="tour-rise">
+							<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
+						</div>
 						{/* hangs below the demo, so the demo itself stays centered */}
 						<Tip className="absolute inset-x-0 top-full mt-4 hidden xl:block" />
 						{/* a fixed height, so the demo holds still between stops */}
@@ -294,6 +278,28 @@ function Tour() {
 			</div>
 		</section>
 	);
+}
+
+function ScrollPrompt({ className }: { className?: string }) {
+	return (
+		<div
+			aria-hidden
+			className={cn(
+				'flex w-fit flex-col items-center gap-3 text-center text-3xl font-semibold tracking-tight text-balance',
+				className
+			)}
+		>
+			Scroll to take the tour
+			<ChevronDownIcon className="size-6 animate-bounce text-black/40" />
+		</div>
+	);
+}
+
+// how far an element's middle is from the viewport's, in its own heights
+function offsetOf(element: HTMLElement | null): number {
+	if (!element) return 0;
+	const { top, height } = element.getBoundingClientRect();
+	return (top + height / 2 - window.innerHeight / 2) / height;
 }
 
 function Tip({ className }: { className?: string }) {

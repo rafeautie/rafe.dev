@@ -181,7 +181,7 @@
 		}
 
 		/* the demo grows into place as the tour scrolls up to meet it */
-		.tour-demo {
+		.tour-rise {
 			animation: tour-rise linear both;
 			animation-timeline: --tour;
 			animation-range: entry 0% entry 100%;
