@@ -15,7 +15,7 @@ import { DEMO_URL, GITHUB_URL } from '~/components/shmoney/constants';
 import { DownloadButton } from '~/components/shmoney/DownloadButton';
 import { Logo } from '~/components/shmoney/Logo';
 import { LiveDemo } from '~/components/shmoney/LiveDemo';
-import { SmoothScroll, useLenis } from '~/components/shmoney/smooth-scroll';
+import { SmoothScroll, onVirtualScroll, useLenis } from '~/components/shmoney/smooth-scroll';
 import { Screenshot, type ScreenName } from '~/components/shmoney/Screenshot';
 import { Button } from '~/components/ui/button';
 import { useMedia } from '~/lib/use-media';
@@ -117,9 +117,10 @@ function Tour() {
 	const pin = useRef<HTMLDivElement>(null);
 
 	// Scrolling always settles with a stop in the middle of the viewport,
-	// beside the pinned demo. With smooth scrolling on, the page eases there
-	// itself once the wheel goes quiet; without it, CSS snapping does the job,
-	// with the blocks above and below the tour as snap areas.
+	// beside the pinned demo. With smooth scrolling on, each flick of the wheel
+	// glides straight to the next stop, however hard the flick; without it, CSS
+	// snapping does the job, with the blocks above and below the tour as snap
+	// areas.
 	useEffect(() => {
 		if (!pinned) return;
 		const root = document.documentElement;
@@ -129,49 +130,79 @@ function Tour() {
 				root.style.scrollSnapType = '';
 			};
 		}
+		const centers = () => stops.current.flatMap((stop) => (stop ? [centerOf(stop)] : []));
+		const reach = () => (stops.current[0]?.offsetHeight ?? 0) / 4;
+		const glideTo = (target: number) => lenis.scrollTo(target, { userData: { stop: target } });
+
+		// A flick arrives as a burst of wheel events, momentum and all: the
+		// first one sets off for the next stop and the rest ride along. Past the
+		// last stop the page scrolls freely on to the footer, until heading back
+		// up brings the last stop within reach.
+		let burstEnd = -Infinity;
+		let burstHeading = 0;
+		let stepped = false;
+		const offWheel = onVirtualScroll(({ deltaY, event }) => {
+			if (!(event instanceof WheelEvent) || event.ctrlKey || !deltaY) return true;
+			const heading = Math.sign(deltaY);
+			if (heading !== burstHeading || event.timeStamp - burstEnd > FLICK_GAP) stepped = false;
+			burstEnd = event.timeStamp;
+			burstHeading = heading;
+			if (!stepped) {
+				// mid-glide, a new flick carries on from the stop the page is heading to
+				const heldStop = lenis.userData.stop;
+				const from =
+					lenis.isScrolling === 'smooth' && typeof heldStop === 'number' ? heldStop : lenis.scroll;
+				const all = centers();
+				const last = all[all.length - 1];
+				let target: number | undefined;
+				if (from > last + 1) {
+					if (heading < 0 && lenis.targetScroll + deltaY < last + reach()) target = last;
+				} else if (heading > 0) {
+					target = all.find((center) => center > from + 1);
+				} else {
+					// the top of the page is a stop too
+					target = all.filter((center) => center < from - 1).pop() ?? 0;
+				}
+				if (target === undefined) return true;
+				stepped = true;
+				if (Math.abs(target - from) >= 1) glideTo(target);
+			}
+			event.preventDefault();
+			return false;
+		});
+
+		// keyboard, scrollbar and touch momentum scroll natively, and the page
+		// eases to the nearest stop once they go quiet
 		let timer = 0;
 		let heading = 0;
 		const snap = () => {
-			const destination = lenis.targetScroll;
-			const centers = stops.current.flatMap((stop) => (stop ? [centerOf(stop)] : []));
-			const height = stops.current[0]?.offsetHeight ?? 0;
-			const first = centers[0];
-			const last = centers[centers.length - 1];
+			const at = lenis.scroll;
+			const all = centers();
+			const first = all[0];
+			const last = all[all.length - 1];
 			let target: number | undefined;
-			if (destination < first) {
-				// the top of the page is a stop too, and nothing between it and the
-				// first stop is a resting place: heading down carries on to the first
-				// stop, heading up to the top
+			if (at < first) {
+				// nothing between the top and the first stop is a resting place:
+				// heading down carries on to the first stop, heading up to the top
 				if (heading > 0) target = first;
-				else target = first - destination < height / 4 ? first : 0;
-			} else if (destination > last) {
-				// past the last stop the page scrolls freely on to the footer
-				if (destination - last < height / 4) target = last;
+				else target = first - at < reach() ? first : 0;
+			} else if (at > last) {
+				if (at - last < reach()) target = last;
 			} else {
-				target = centers.reduce((a, b) =>
-					Math.abs(b - destination) < Math.abs(a - destination) ? b : a
-				);
+				target = all.reduce((a, b) => (Math.abs(b - at) < Math.abs(a - at) ? b : a));
 			}
-			if (target === undefined || Math.abs(target - destination) < 1) return;
-			lenis.scrollTo(target);
+			if (target === undefined || Math.abs(target - at) < 1) return;
+			glideTo(target);
 		};
-		const settle = () => {
-			clearTimeout(timer);
-			timer = window.setTimeout(snap, 150);
-		};
-		const offInput = lenis.on('virtual-scroll', ({ deltaY }) => {
-			if (deltaY) heading = Math.sign(deltaY);
-			settle();
-		});
-		// keyboard, scrollbar and touch momentum scroll natively
 		const offScroll = lenis.on('scroll', () => {
 			if (lenis.isScrolling !== 'native') return;
 			if (lenis.direction) heading = lenis.direction;
-			settle();
+			clearTimeout(timer);
+			timer = window.setTimeout(snap, 150);
 		});
 		return () => {
 			clearTimeout(timer);
-			offInput();
+			offWheel();
 			offScroll();
 		};
 	}, [pinned, lenis]);
@@ -405,6 +436,9 @@ function Tip({ className, ...props }: ComponentProps<'p'>) {
 		</p>
 	);
 }
+
+// wheel events closer together than this are one flick, its momentum included
+const FLICK_GAP = 300;
 
 // the scroll position that puts an element's middle at the viewport's
 function centerOf(element: HTMLElement): number {
