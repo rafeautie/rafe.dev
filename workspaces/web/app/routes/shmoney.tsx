@@ -1,25 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router';
-import {
-	Cpu,
-	FileUp,
-	Landmark,
-	LayoutDashboard,
-	Mail,
-	MessagesSquare,
-	TrendingUp,
-	Undo2,
-	Workflow
-} from 'lucide-react';
-import { GITHUB_URL } from '~/components/shmoney/constants';
+import type { ReactNode } from 'react';
+import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
+import { GITHUB_URL } from '~/components/shmoney/constants';
 import { DownloadButton } from '~/components/shmoney/DownloadButton';
-import { GitHubIcon } from '~/components/GitHubIcon';
-import { Guilloche } from '~/components/shmoney/Guilloche';
 import { Logo } from '~/components/shmoney/Logo';
-import { ScreenshotCarousel } from '~/components/shmoney/ScreenshotCarousel';
-import { SectionLabel } from '~/components/shmoney/SectionLabel';
-import { Wordmark } from '~/components/shmoney/Wordmark';
+import { Screenshot, type ScreenshotFile } from '~/components/shmoney/Screenshot';
 import { Button } from '~/components/ui/button';
 
 export const Route = createFileRoute('/shmoney')({
@@ -45,108 +32,126 @@ export const Route = createFileRoute('/shmoney')({
 				content: 'A private, local-first personal finance app. No cloud, no account, no telemetry.'
 			}
 		]
-		// No preconnect for the screenshot CDN. The slides are eager <img> tags in
-		// the server-rendered markup, so React emits a rel=preload for each one at
-		// the top of <head> and that opens the connection already.
+		// No preconnect for the screenshots. They are hashed build assets served
+		// from this origin, and the first one is eager, so React preloads it.
 	}),
 	component: ShmoneyPage
 });
 
-const FEATURES = [
-	{
-		icon: Landmark,
-		title: 'Bank sync via SimpleFIN',
-		body: 'Pull fresh transactions straight from your banks. Credentials stay encrypted in your OS keychain.'
-	},
-	{
-		icon: FileUp,
-		title: 'File imports',
-		body: 'Bring your history along from CSV, TSV, OFX, QFX, or QIF exports, with column mapping and duplicate detection.'
-	},
-	{
-		icon: Cpu,
-		title: 'Local AI categorization',
-		body: 'An optional offline model files transactions into categories. Pair it with rules for the recurring stuff.'
-	},
-	{
-		icon: MessagesSquare,
-		title: 'Chat with your finances',
-		body: 'Ask the same on-device model questions about your money. It runs read-only queries, charts the answer, and keeps history on your machine.'
-	},
-	{
-		icon: Workflow,
-		title: 'Rules engine',
-		body: 'Prioritized rules run on every sync, and shmoney suggests new ones from the way you already categorize.'
-	},
-	{
-		icon: Mail,
-		title: 'Envelope budgets',
-		body: 'Fill envelopes each month and catch overspending the moment it happens, not at the statement.'
-	},
-	{
-		icon: LayoutDashboard,
-		title: 'Custom reports',
-		body: 'Build drag-and-drop dashboards from chart, table, and stat widgets, with saved filters you can reuse.'
-	},
-	{
-		icon: TrendingUp,
-		title: 'Investments and net worth',
-		body: 'Track holdings next to cash and see net worth as one number. Transfers between your accounts never count as spending.'
-	},
-	{
-		icon: Undo2,
-		title: 'Undo anything',
-		body: 'Every change lands in an activity log and is reversible. Fat-finger a bulk edit? Take it back.'
-	}
+type Shot = { file: ScreenshotFile; alt: string; title: string; body: string };
+
+// The page reads top to bottom as a series: a full-width shot, then a pair, and
+// so on. Each row is either one shot or two side by side.
+const ROWS: Shot[][] = [
+	[
+		{
+			file: 'transactions.png',
+			alt: 'shmoney transactions view with net worth, search and filters, and a categorized transaction list',
+			title: 'Every transaction in one place',
+			body: 'Sync from your banks through SimpleFIN, or import CSV, TSV, OFX, QFX, and QIF files. Rules and an optional offline model sort everything into categories.'
+		}
+	],
+	[
+		{
+			file: 'budget.png',
+			alt: 'shmoney envelope budget view',
+			title: 'Envelope budgets',
+			body: 'Fill envelopes at the start of the month and watch them drain as you spend.'
+		},
+		{
+			file: 'accounts.png',
+			alt: 'shmoney accounts overview',
+			title: 'Accounts and net worth',
+			body: 'Investment holdings next to cash, with net worth as one number. Transfers between your own accounts never count as spending.'
+		}
+	],
+	[
+		{
+			file: 'chat.png',
+			alt: 'shmoney chat answering a finance question with a generated income-versus-spending chart',
+			title: 'Ask about your money',
+			body: 'Ask a question in plain English. The on-device model runs read-only queries against your data and charts the answer, and the conversation never leaves your computer.'
+		}
+	],
+	[
+		{
+			file: 'reports.png',
+			alt: 'shmoney reports list with a saved custom dashboard',
+			title: 'Custom reports',
+			body: 'Drag charts, tables, and stats onto a dashboard and save the filters you use.'
+		},
+		{
+			file: 'report-detail.png',
+			alt: 'shmoney spending report detail',
+			title: 'Where it went',
+			body: 'Drill into any report to see exactly where the money went.'
+		}
+	],
+	[
+		{
+			file: 'activity.png',
+			alt: 'shmoney activity log of reversible changes',
+			title: 'Undo anything',
+			body: 'Every change lands in an activity log and can be reversed, bulk edits included.'
+		},
+		{
+			file: 'settings-llm.png',
+			alt: 'shmoney settings for the offline AI categorization model',
+			title: 'AI that stays offline',
+			body: 'The optional categorization model is configured and run entirely on your machine.'
+		}
+	]
 ];
 
-const LEDGER_ROWS = [
-	{ item: 'Transactions uploaded to our servers', value: '0 bytes' },
-	{ item: 'Credentials stored in the cloud', value: '0' },
-	{ item: 'Telemetry and analytics events', value: '0' },
-	{ item: 'Third parties with access to your data', value: '0' },
-	{ item: 'Monthly subscription, personal use', value: '$0.00' }
-];
+// The page column is max-w-5xl less its padding, so a full row paints at
+// about 960px and half a row at about 470px.
+const FULL_SIZES = '(min-width: 1024px) 960px, 100vw';
+const HALF_SIZES = '(min-width: 1024px) 470px, (min-width: 640px) 50vw, 100vw';
+
+// Label on the left, content on the right. Captions, the privacy note, and the
+// download block all share it so the page keeps one rhythm.
+function Split({ label, children }: { label: ReactNode; children: ReactNode }) {
+	return (
+		<div className="grid gap-2 sm:grid-cols-[1fr_2fr] sm:gap-10">
+			<div className="font-medium">{label}</div>
+			<div className="text-pretty text-black/60">{children}</div>
+		</div>
+	);
+}
 
 function ShmoneyPage() {
 	return (
-		<div className="overflow-x-clip bg-background font-sans text-foreground selection:bg-azure/20">
+		<div className="bg-background text-base text-black">
 			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8">
-				<header className="flex items-center justify-between pt-8">
-					<div className="flex items-center gap-3">
-						<Logo />
-						<SlashNav className="text-xl font-medium">
-							<Link href="/">rafe</Link>
-							<Wordmark className="font-medium" />
-						</SlashNav>
-					</div>
+				<header className="flex items-center justify-between gap-4 pt-8">
+					<SlashNav className="text-lg font-medium sm:text-xl">
+						<Link href="/">rafe</Link>
+						<Link href="/development">development</Link>
+						shmoney
+					</SlashNav>
 					<Link
 						href={GITHUB_URL}
 						target="_blank"
 						rel="noreferrer"
-						className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+						className="inline-flex items-center gap-1.5 text-sm text-black/60 hover:text-black"
 					>
 						<GitHubIcon className="size-4" />
 						GitHub
 					</Link>
 				</header>
 
-				<section className="relative pt-20 sm:pt-24">
-					<Guilloche className="pointer-events-none absolute -top-24 -right-56 -z-10 w-[42rem] [mask-image:radial-gradient(closest-side,black,transparent)] text-foreground opacity-[0.05]" />
-					<p className="text-xs tracking-[0.22em] text-azure uppercase">
-						Private first · Local first · Personal first
-					</p>
-					<h1 className="mt-5 max-w-xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl">
+				<section className="pt-20 sm:pt-28">
+					<Logo className="size-14 rounded-2xl" />
+					<h1 className="mt-8 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
 						Your money, on your machine.
 					</h1>
-					<p className="mt-6 max-w-xl text-lg text-pretty text-muted-foreground">
-						shmoney is a desktop app for your whole financial life: bank sync, envelope budgets, and
-						AI that categorizes your transactions and answers questions about your money, all
-						offline. Everything lives in one SQLite file on your computer. No cloud. No account. No
-						telemetry.
+					<p className="mt-5 max-w-xl text-lg text-pretty text-black/60">
+						A personal finance app that runs entirely on your computer. Sync your banks, budget with
+						envelopes, build reports, and ask questions about your spending. It all lives in one
+						SQLite file, with no account and no cloud.
 					</p>
 					<div className="mt-8 flex flex-wrap items-center gap-3">
-						<DownloadButton>Download for free</DownloadButton>
+						<DownloadButton>Download</DownloadButton>
 						<Button
 							variant="outline"
 							size="lg"
@@ -156,102 +161,75 @@ function ShmoneyPage() {
 							View the source
 						</Button>
 					</div>
-					<p className="mt-4 text-xs text-muted-foreground">
-						Windows · macOS · Linux · free for personal use
+					<p className="mt-4 text-sm text-black/50">
+						Free for personal use · Windows, macOS, and Linux
 					</p>
 				</section>
 
-				<section className="mt-14">
-					{/* Break out of the center column so the side slides overflow it. */}
-					<div className="relative left-1/2 w-screen max-w-7xl -translate-x-1/2">
-						<ScreenshotCarousel />
-					</div>
-				</section>
-
-				<section className="mt-24">
-					<SectionLabel>What it does</SectionLabel>
-					<div className="mt-6 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
-						{FEATURES.map((feature) => (
-							<div key={feature.title} className="border-t border-border pt-5">
-								<feature.icon className="size-4 text-azure" aria-hidden="true" />
-								<h2 className="mt-3 font-medium">{feature.title}</h2>
-								<p className="mt-1.5 text-sm text-pretty text-muted-foreground">{feature.body}</p>
+				<div className="mt-20 space-y-20 sm:mt-24 sm:space-y-28">
+					{ROWS.map((row, rowIndex) =>
+						row.length === 1 ? (
+							<figure key={row[0].file}>
+								<Screenshot
+									file={row[0].file}
+									alt={row[0].alt}
+									sizes={FULL_SIZES}
+									eager={rowIndex === 0}
+								/>
+								<figcaption className="mt-6">
+									<Split label={row[0].title}>{row[0].body}</Split>
+								</figcaption>
+							</figure>
+						) : (
+							<div key={row[0].file} className="grid gap-x-8 gap-y-16 sm:grid-cols-2">
+								{row.map((shot) => (
+									<figure key={shot.file}>
+										<Screenshot file={shot.file} alt={shot.alt} sizes={HALF_SIZES} />
+										<figcaption className="mt-5">
+											<p className="font-medium">{shot.title}</p>
+											<p className="mt-1 text-pretty text-black/60">{shot.body}</p>
+										</figcaption>
+									</figure>
+								))}
 							</div>
-						))}
-					</div>
-				</section>
+						)
+					)}
+				</div>
 
-				<section className="mt-24">
-					<SectionLabel>The privacy ledger</SectionLabel>
-					<div className="mt-6 rounded-xl border border-border bg-muted/40 p-7 sm:p-10">
-						<div className="flex items-baseline justify-between gap-3 border-b border-foreground/20 pb-3">
-							<span className="text-xs tracking-[0.18em] uppercase">Statement of disclosure</span>
-							<span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">
-								No. 000000
-							</span>
-						</div>
-						<dl className="py-2">
-							{LEDGER_ROWS.map((row) => (
-								<div key={row.item} className="flex items-baseline gap-3 py-2.5">
-									<dt className="text-sm text-foreground/80">{row.item}</dt>
-									<span
-										aria-hidden="true"
-										className="mx-1 flex-1 border-b border-dotted border-foreground/25"
-									/>
-									<dd className="text-sm whitespace-nowrap tabular-nums">{row.value}</dd>
-								</div>
-							))}
-						</dl>
-						<div className="flex items-baseline justify-between gap-3 border-t border-foreground/20 pt-4">
-							<span className="font-medium">Total leaving your machine</span>
-							<span className="font-semibold text-azure">Nothing</span>
-						</div>
-						<p className="mt-5 max-w-xl text-xs text-pretty text-muted-foreground">
-							The only network calls shmoney makes are the ones you ask for: pulling transactions
-							from your banks through SimpleFIN. Everything else, including the optional AI, runs
-							offline.
+				<section className="mt-28 space-y-12 border-t border-black/10 pt-10 sm:mt-36">
+					<Split label={<h2>Privacy</h2>}>
+						Nothing leaves your machine. Your data lives in one SQLite file, bank credentials stay
+						encrypted in your OS keychain, and there is no account and no telemetry. The only
+						network calls are the SimpleFIN syncs you ask for.
+					</Split>
+					<Split label={<h2>Get shmoney</h2>}>
+						<p>
+							Free for personal use under the PolyForm Noncommercial 1.0.0 license. shmoney is
+							pre-1.0.
 						</p>
-					</div>
+						<div className="mt-5 flex flex-wrap items-center gap-3">
+							<DownloadButton>Download</DownloadButton>
+							<Button
+								variant="outline"
+								size="lg"
+								className="px-4"
+								render={<Link plain href={GITHUB_URL} target="_blank" rel="noreferrer" />}
+							>
+								<GitHubIcon className="size-4" />
+								Star on GitHub
+							</Button>
+						</div>
+					</Split>
 				</section>
 
-				<section className="mt-24 flex flex-col items-center gap-5 text-center">
-					<h2 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-						Bring your money home.
-					</h2>
-					<div className="flex flex-wrap items-center justify-center gap-3">
-						<DownloadButton>Download shmoney</DownloadButton>
-						<Button
-							variant="outline"
-							size="lg"
-							className="px-4"
-							render={<Link plain href={GITHUB_URL} target="_blank" rel="noreferrer" />}
-						>
-							<GitHubIcon className="size-4" />
-							Star on GitHub
-						</Button>
-					</div>
-					<p className="text-xs text-muted-foreground">
-						Pre-1.0 · PolyForm Noncommercial 1.0.0 · free for personal use
-					</p>
-				</section>
-
-				<footer className="mt-20 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-6 text-sm text-muted-foreground">
-					<span className="flex items-center gap-2">
-						<Logo className="size-5 rounded-md" />
-						<Wordmark className="text-foreground" />
-					</span>
+				<footer className="mt-24 flex items-center justify-between gap-4 text-sm text-black/60">
 					<p>
 						Built by{' '}
-						<Link href="https://rafe.dev" className="text-foreground/80 hover:text-foreground">
+						<Link href="/about" className="text-black hover:text-black">
 							Rafe Autie
 						</Link>
 					</p>
-					<Link
-						href={GITHUB_URL}
-						target="_blank"
-						rel="noreferrer"
-						className="ml-auto hover:text-foreground"
-					>
+					<Link href={GITHUB_URL} target="_blank" rel="noreferrer" className="hover:text-black">
 						GitHub
 					</Link>
 				</footer>
