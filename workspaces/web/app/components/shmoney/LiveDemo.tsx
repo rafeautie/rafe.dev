@@ -23,6 +23,7 @@ const EXPAND_TIMING: KeyframeAnimationOptions = {
 };
 
 const CLEAR = 'rgb(0 0 0 / 0)';
+const REVEAL_MS = 600;
 
 // the transform that draws a box laid out at `at` over the rect `over`
 function placing(at: DOMRect, over: DOMRect): string {
@@ -42,6 +43,17 @@ export function LiveDemo({ screen, alt }: { screen: ScreenName; alt: string }) {
 	const wide = useMedia('(min-width: 768px)');
 	const [scale, setScale] = useState(0);
 	const [ready, setReady] = useState(false);
+	// `data-entrance` holds off the page's entrance for the demo until it has
+	// something to show, and skips it when the page opens scrolled away from
+	// the top, restored from an earlier visit. Once the app is ready it fades
+	// in over the screenshot, which stays until the fade is done.
+	const [entrance, setEntrance] = useState<'waiting' | 'rising' | 'instant'>('waiting');
+	const show = () =>
+		setEntrance((current) =>
+			current !== 'waiting' ? current : window.scrollY > 0 ? 'instant' : 'rising'
+		);
+	const [revealed, setRevealed] = useState(false);
+	const [settled, setSettled] = useState(false);
 	const [initial] = useState(screen);
 	const [expanded, setExpanded] = useState(false);
 	const moving = useRef(false);
@@ -60,11 +72,37 @@ export function LiveDemo({ screen, alt }: { screen: ScreenName; alt: string }) {
 	useEffect(() => {
 		const onMessage = (event: MessageEvent) => {
 			if (event.origin !== DEMO_ORIGIN || event.source !== frame.current?.contentWindow) return;
-			if (event.data?.type === 'shmoney-demo' && event.data.event === 'ready') setReady(true);
+			if (event.data?.type === 'shmoney-demo' && event.data.event === 'ready') {
+				setReady(true);
+				show();
+			}
 		};
 		window.addEventListener('message', onMessage);
 		return () => window.removeEventListener('message', onMessage);
 	}, []);
+
+	useEffect(() => {
+		// a cached screenshot can finish before hydration, missing onLoad; a
+		// slow one shouldn't hold the demo back forever
+		const loaded = box.current?.querySelector('img')?.complete;
+		const timer = setTimeout(() => show(), loaded ? 0 : 1500);
+		return () => clearTimeout(timer);
+	}, []);
+
+	useEffect(() => {
+		if (!ready) return;
+		// a couple of frames for the app's first paint before fading it in
+		let frame = requestAnimationFrame(() => {
+			frame = requestAnimationFrame(() => setRevealed(true));
+		});
+		return () => cancelAnimationFrame(frame);
+	}, [ready]);
+
+	useEffect(() => {
+		if (!revealed) return;
+		const timer = setTimeout(() => setSettled(true), REVEAL_MS);
+		return () => clearTimeout(timer);
+	}, [revealed]);
 
 	// waits for the screen to settle, so scrolling past several stops at once
 	// doesn't render each one on the way
@@ -178,7 +216,7 @@ export function LiveDemo({ screen, alt }: { screen: ScreenName; alt: string }) {
 	});
 
 	return (
-		<div ref={slot} className="relative aspect-[16/10] w-full">
+		<div ref={slot} data-entrance={entrance} className="relative aspect-[16/10] w-full">
 			<div
 				ref={pop}
 				popover="manual"
@@ -194,8 +232,9 @@ export function LiveDemo({ screen, alt }: { screen: ScreenName; alt: string }) {
 						ref={box}
 						className="relative size-full origin-top-left overflow-hidden rounded-xl border border-black/10 bg-white shadow-[0_40px_100px_-30px_rgb(0_0_0/0.3)]"
 					>
-						{!ready && (
+						{!settled && (
 							<Screenshot
+								onLoad={() => show()}
 								name={screen}
 								alt={alt}
 								sizes="(min-width: 1280px) 880px, (min-width: 1024px) 960px, 100vw"
@@ -210,9 +249,9 @@ export function LiveDemo({ screen, alt }: { screen: ScreenName; alt: string }) {
 								src={`${DEMO_URL}/?screen=${initial}&theme=light`}
 								width={APP_WIDTH}
 								height={APP_HEIGHT}
-								style={{ transform: `scale(${scale})` }}
-								className="absolute top-0 left-0 origin-top-left border-0 bg-white data-[ready=false]:opacity-0"
-								data-ready={ready}
+								style={{ transform: `scale(${scale})`, transitionDuration: `${REVEAL_MS}ms` }}
+								className="absolute top-0 left-0 origin-top-left border-0 bg-white opacity-0 transition-opacity ease-out data-[revealed=true]:opacity-100"
+								data-revealed={revealed}
 							/>
 						)}
 					</div>

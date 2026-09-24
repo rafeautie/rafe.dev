@@ -24,13 +24,15 @@ export function Screenshot({
 	alt,
 	sizes,
 	eager = false,
-	className
+	className,
+	onLoad
 }: {
 	name: ScreenName;
 	alt: string;
 	sizes: string;
 	eager?: boolean;
 	className?: string;
+	onLoad?: () => void;
 }) {
 	return (
 		<picture>
@@ -44,6 +46,7 @@ export function Screenshot({
 				loading={eager ? 'eager' : 'lazy'}
 				fetchPriority={eager ? 'high' : undefined}
 				decoding="async"
+				onLoad={onLoad}
 				className={cn('w-full rounded-lg border border-black/10 shadow-sm', className)}
 			/>
 		</picture>
