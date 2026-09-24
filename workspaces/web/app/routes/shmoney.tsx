@@ -1,15 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router';
-import {
-	Cpu,
-	FileUp,
-	Landmark,
-	LayoutDashboard,
-	Mail,
-	MessagesSquare,
-	TrendingUp,
-	Undo2,
-	Workflow
-} from 'lucide-react';
 import { GITHUB_URL } from '~/components/shmoney/constants';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
@@ -51,51 +40,57 @@ export const Route = createFileRoute('/shmoney')({
 	component: ShmoneyPage
 });
 
-const FEATURES = [
+const FEATURE_GROUPS = [
 	{
-		icon: Landmark,
-		title: 'Bank sync via SimpleFIN',
-		body: 'Pull fresh transactions straight from your banks. Credentials stay encrypted in your OS keychain.'
+		title: 'Get your data in',
+		features: [
+			{
+				title: 'Bank sync via SimpleFIN',
+				body: 'Pull fresh transactions straight from your banks. Credentials stay encrypted in your OS keychain.'
+			},
+			{
+				title: 'File imports',
+				body: 'Bring your history along from CSV, TSV, OFX, QFX, or QIF exports, with column mapping and duplicate detection.'
+			}
+		]
 	},
 	{
-		icon: FileUp,
-		title: 'File imports',
-		body: 'Bring your history along from CSV, TSV, OFX, QFX, or QIF exports, with column mapping and duplicate detection.'
+		title: 'Keep it organized',
+		features: [
+			{
+				title: 'Local AI categorization',
+				body: 'An optional offline model files transactions into categories.'
+			},
+			{
+				title: 'Rules engine',
+				body: 'Prioritized rules run on every sync, and shmoney suggests new ones from the way you already categorize.'
+			},
+			{
+				title: 'Undo anything',
+				body: 'Every change lands in an activity log and is reversible. Fat-finger a bulk edit? Take it back.'
+			}
+		]
 	},
 	{
-		icon: Cpu,
-		title: 'Local AI categorization',
-		body: 'An optional offline model files transactions into categories. Pair it with rules for the recurring stuff.'
-	},
-	{
-		icon: MessagesSquare,
-		title: 'Chat with your finances',
-		body: 'Ask the same on-device model questions about your money. It runs read-only queries, charts the answer, and keeps history on your machine.'
-	},
-	{
-		icon: Workflow,
-		title: 'Rules engine',
-		body: 'Prioritized rules run on every sync, and shmoney suggests new ones from the way you already categorize.'
-	},
-	{
-		icon: Mail,
-		title: 'Envelope budgets',
-		body: 'Fill envelopes each month and catch overspending the moment it happens, not at the statement.'
-	},
-	{
-		icon: LayoutDashboard,
-		title: 'Custom reports',
-		body: 'Build drag-and-drop dashboards from chart, table, and stat widgets, with saved filters you can reuse.'
-	},
-	{
-		icon: TrendingUp,
-		title: 'Investments and net worth',
-		body: 'Track holdings next to cash and see net worth as one number. Transfers between your accounts never count as spending.'
-	},
-	{
-		icon: Undo2,
-		title: 'Undo anything',
-		body: 'Every change lands in an activity log and is reversible. Fat-finger a bulk edit? Take it back.'
+		title: 'Understand it',
+		features: [
+			{
+				title: 'Chat with your finances',
+				body: 'Ask the on-device model questions about your money. It runs read-only queries and charts the answer.'
+			},
+			{
+				title: 'Envelope budgets',
+				body: 'Fill envelopes each month and catch overspending the moment it happens, not at the statement.'
+			},
+			{
+				title: 'Custom reports',
+				body: 'Build drag-and-drop dashboards from chart, table, and stat widgets, with saved filters.'
+			},
+			{
+				title: 'Investments and net worth',
+				body: 'Track holdings next to cash. Transfers between your accounts never count as spending.'
+			}
+		]
 	}
 ];
 
@@ -166,12 +161,20 @@ function ShmoneyPage() {
 
 				<section className="mt-24">
 					<h2 className="text-2xl font-semibold tracking-tight">What it does</h2>
-					<div className="mt-8 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
-						{FEATURES.map((feature) => (
-							<div key={feature.title} className="border-t border-border pt-5">
-								<feature.icon className="size-4 text-azure" aria-hidden="true" />
-								<h3 className="mt-3 font-medium">{feature.title}</h3>
-								<p className="mt-1.5 text-sm text-pretty text-muted-foreground">{feature.body}</p>
+					<div className="mt-8 grid gap-x-10 gap-y-12 md:grid-cols-3">
+						{FEATURE_GROUPS.map((group) => (
+							<div key={group.title} className="border-t border-foreground/15 pt-5">
+								<h3 className="text-sm text-muted-foreground">{group.title}</h3>
+								<ul className="mt-5 space-y-5">
+									{group.features.map((feature) => (
+										<li key={feature.title}>
+											<p className="font-medium">{feature.title}</p>
+											<p className="mt-1 text-sm text-pretty text-muted-foreground">
+												{feature.body}
+											</p>
+										</li>
+									))}
+								</ul>
 							</div>
 						))}
 					</div>
