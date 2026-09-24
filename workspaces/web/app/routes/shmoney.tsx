@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
@@ -9,6 +9,7 @@ import { Logo } from '~/components/shmoney/Logo';
 import { LiveDemo } from '~/components/shmoney/LiveDemo';
 import { Screenshot, type ScreenName } from '~/components/shmoney/Screenshot';
 import { Button } from '~/components/ui/button';
+import { useMedia } from '~/lib/use-media';
 
 export const Route = createFileRoute('/shmoney')({
 	head: () => ({
@@ -39,18 +40,23 @@ export const Route = createFileRoute('/shmoney')({
 	component: ShmoneyPage
 });
 
-type Shot = { name: ScreenName; alt: string; title: string; body: string };
+type Stop = { name: ScreenName; alt: string; title: string; body: string; hint?: string };
 
-// The page reads top to bottom as a series of screens, each the real app
-// running with sample data (see LiveDemo). The model picker and the accounts
-// overview close it out as stills: the demo can't run the on-device model,
-// and accounts are a click away inside every live screen.
-const LIVE: Shot[] = [
+// One live app, steered by the page: on wide screens each stop's text scrolls
+// past the pinned demo and the demo follows along; narrower screens pick stops
+// from a row of tabs. Phones get the screenshots.
+const TOUR: Stop[] = [
 	{
 		name: 'transactions',
 		alt: 'shmoney transactions view with net worth, search and filters, and a categorized transaction list',
 		title: 'Every transaction in one place',
 		body: 'Sync from your banks through SimpleFIN, or import CSV, TSV, OFX, QFX, and QIF files. Rules and an optional offline model sort everything into categories.'
+	},
+	{
+		name: 'accounts',
+		alt: 'shmoney accounts overview',
+		title: 'Accounts and net worth',
+		body: 'Investment holdings next to cash, with net worth as one number. Transfers between your own accounts never count as spending.'
 	},
 	{
 		name: 'budget',
@@ -74,28 +80,18 @@ const LIVE: Shot[] = [
 		name: 'activity',
 		alt: 'shmoney activity log of reversible changes',
 		title: 'Undo anything',
-		body: 'Every change lands in an activity log and can be reversed, bulk edits included. Try it: change a category under Accounts, then come back here and undo it.'
+		body: 'Every change lands in an activity log and can be reversed, bulk edits included.',
+		hint: 'Try it: change a category under Transactions, then come back here and undo it.'
 	}
 ];
 
-const STILLS: Shot[] = [
-	{
-		name: 'accounts',
-		alt: 'shmoney accounts overview',
-		title: 'Accounts and net worth',
-		body: 'Investment holdings next to cash, with net worth as one number. Transfers between your own accounts never count as spending.'
-	},
-	{
-		name: 'settings-llm',
-		alt: 'shmoney settings for the offline AI categorization model',
-		title: 'AI that stays offline',
-		body: 'The optional categorization model is configured and run entirely on your machine.'
-	}
-];
-
-// The page column is max-w-5xl less its padding, so half a row paints at
-// about 470px.
-const HALF_SIZES = '(min-width: 1024px) 470px, (min-width: 640px) 50vw, 100vw';
+// the demo can't run the on-device model, so its settings stay a picture
+const MODEL: Stop = {
+	name: 'settings-llm',
+	alt: 'shmoney settings for the offline AI categorization model',
+	title: 'AI that stays offline',
+	body: 'The optional categorization model is configured and run entirely on your machine.'
+};
 
 // Label on the left, content on the right. Captions, the privacy note, and the
 // download block all share it so the page keeps one rhythm.
@@ -108,10 +104,88 @@ function Split({ label, children }: { label: ReactNode; children: ReactNode }) {
 	);
 }
 
+function Tour() {
+	const [active, setActive] = useState(0);
+	const pinned = useMedia('(min-width: 1280px)');
+	const stops = useRef<(HTMLLIElement | null)[]>([]);
+
+	// the stop crossing the middle of the viewport is the one on screen
+	useEffect(() => {
+		if (!pinned) return;
+		const observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (entry.isIntersecting) setActive(stops.current.indexOf(entry.target as HTMLLIElement));
+				}
+			},
+			{ rootMargin: '-50% 0px' }
+		);
+		for (const stop of stops.current) if (stop) observer.observe(stop);
+		// stops snap to the middle of the viewport, beside the pinned demo;
+		// proximity leaves the rest of the page free to scroll
+		const root = document.documentElement;
+		root.style.scrollSnapType = 'y proximity';
+		return () => {
+			observer.disconnect();
+			root.style.scrollSnapType = '';
+		};
+	}, [pinned]);
+
+	const select = (index: number) => {
+		if (pinned) stops.current[index]?.scrollIntoView({ block: 'center' });
+		else setActive(index);
+	};
+
+	return (
+		<section className="mx-auto max-w-5xl px-6 sm:px-8 xl:max-w-7xl">
+			<div className="xl:grid xl:grid-cols-[17rem_minmax(0,1fr)] xl:gap-14">
+				<ol className="flex flex-wrap gap-2 xl:block">
+					{TOUR.map((stop, index) => (
+						<li
+							key={stop.name}
+							ref={(element) => {
+								stops.current[index] = element;
+							}}
+							data-active={index === active}
+							className="group xl:flex xl:min-h-[70vh] xl:snap-center xl:flex-col xl:justify-center"
+						>
+							<button
+								type="button"
+								aria-pressed={index === active}
+								onClick={() => select(index)}
+								className="cursor-pointer rounded-full border border-black/10 px-3 py-1 text-sm text-black/60 transition-colors group-data-[active=true]:border-black group-data-[active=true]:bg-black group-data-[active=true]:text-white hover:text-black xl:rounded-none xl:border-0 xl:p-0 xl:text-left xl:text-lg xl:font-medium xl:text-black/35 xl:group-data-[active=true]:bg-transparent xl:group-data-[active=true]:text-black"
+							>
+								{stop.title}
+							</button>
+							<p className="mt-2 hidden text-pretty text-black/35 transition-colors group-data-[active=true]:text-black/60 xl:block">
+								{stop.body}
+							</p>
+							{stop.hint && (
+								<p className="mt-3 hidden text-sm text-pretty text-black/35 transition-colors group-data-[active=true]:text-black/60 xl:block">
+									{stop.hint}
+								</p>
+							)}
+						</li>
+					))}
+				</ol>
+				<div className="mt-6 xl:sticky xl:top-0 xl:mt-0 xl:flex xl:h-screen xl:items-center xl:self-start">
+					<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
+				</div>
+			</div>
+			<div className="mt-6 xl:hidden">
+				<Split label={TOUR[active].title}>
+					{TOUR[active].body}
+					{TOUR[active].hint && <span className="mt-2 block text-sm">{TOUR[active].hint}</span>}
+				</Split>
+			</div>
+		</section>
+	);
+}
+
 function ShmoneyPage() {
 	return (
 		<div className="bg-background text-base text-black">
-			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8">
+			<div className="mx-auto max-w-5xl px-6 sm:px-8">
 				<header className="flex items-center justify-between gap-4 pt-8">
 					<SlashNav className="text-lg font-medium sm:text-xl">
 						<Link href="/">rafe</Link>
@@ -156,36 +230,43 @@ function ShmoneyPage() {
 					<p className="mt-10 text-sm text-black/60">
 						{/* LiveDemo only runs the app from md up; phones get the screenshots */}
 						<span className="hidden md:inline">
-							The screens below are the real app, not pictures of it. Click around: it runs in your
+							The app below is the real thing, not pictures of it. Click around: it runs in your
 							browser with sample data, and nothing is saved.
 						</span>
 						<span className="md:hidden">
-							On a larger screen, the screens below are the live app with sample data.
+							On a larger screen, the app below is live, with sample data.
 						</span>
 					</p>
 				</section>
+			</div>
 
-				<div className="mt-20 space-y-20 sm:mt-24 sm:space-y-28">
-					{LIVE.map((shot, index) => (
-						<figure key={shot.name}>
-							<LiveDemo name={shot.name} alt={shot.alt} eager={index === 0} />
+			<div className="mt-24 hidden md:block">
+				<Tour />
+			</div>
+
+			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8">
+				<div className="mt-20 space-y-20 md:hidden">
+					{TOUR.map((stop, index) => (
+						<figure key={stop.name}>
+							<Screenshot name={stop.name} alt={stop.alt} sizes="100vw" eager={index === 0} />
 							<figcaption className="mt-6">
-								<Split label={shot.title}>{shot.body}</Split>
+								<Split label={stop.title}>{stop.body}</Split>
 							</figcaption>
 						</figure>
 					))}
-					<div className="grid gap-x-8 gap-y-16 sm:grid-cols-2">
-						{STILLS.map((shot) => (
-							<figure key={shot.name}>
-								<Screenshot name={shot.name} alt={shot.alt} sizes={HALF_SIZES} />
-								<figcaption className="mt-5">
-									<p className="font-medium">{shot.title}</p>
-									<p className="mt-1 text-pretty text-black/60">{shot.body}</p>
-								</figcaption>
-							</figure>
-						))}
-					</div>
 				</div>
+
+				<figure className="mt-20 grid items-center gap-6 sm:mt-28 sm:grid-cols-2 sm:gap-10">
+					<Screenshot
+						name={MODEL.name}
+						alt={MODEL.alt}
+						sizes="(min-width: 1024px) 470px, (min-width: 640px) 50vw, 100vw"
+					/>
+					<figcaption>
+						<p className="font-medium">{MODEL.title}</p>
+						<p className="mt-1 text-pretty text-black/60">{MODEL.body}</p>
+					</figcaption>
+				</figure>
 
 				<section className="mt-28 space-y-12 border-t border-black/10 pt-10 sm:mt-36">
 					<Split label={<h2>Privacy</h2>}>
