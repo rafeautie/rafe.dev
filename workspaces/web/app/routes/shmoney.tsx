@@ -139,32 +139,40 @@ function Tour() {
 		// have carried it, at least one stop along. For a moment, and for as
 		// long as the wheel keeps turning, more of it pushes that stop further
 		// on; once the flick fades to its momentum, the stop is set and the rest
-		// is spent. Past the last stop the page scrolls freely on to the footer,
-		// until heading back up brings the last stop within reach.
+		// is spent, unless another swipe picks it back up. Past the last stop
+		// the page scrolls freely on to the footer, until heading back up
+		// brings the last stop within reach.
 		let burstEnd = -Infinity;
 		let burstHeading = 0;
 		let origin = 0;
 		let travel = 0;
 		let aimedAt: number | undefined;
 		let strongest = 0;
+		let faded = false;
 		const offWheel = onVirtualScroll(({ deltaY, event }) => {
 			if (!(event instanceof WheelEvent) || event.ctrlKey || !deltaY) return true;
 			const heading = Math.sign(deltaY);
+			const size = Math.abs(deltaY);
 			// set while a glide is on its way, cleared once it lands
 			const held = lenis.userData.to;
 			const gliding = typeof held === 'number' ? held : undefined;
-			if (heading !== burstHeading || event.timeStamp - burstEnd > FLICK_GAP) {
+			// momentum only ever dies away, so a flick that faded and then picks
+			// up again is a fresh swipe landing on its tail
+			const renewed = faded && size >= strongest / 2;
+			if (heading !== burstHeading || event.timeStamp - burstEnd > FLICK_GAP || renewed) {
 				// mid-glide, a new flick carries on from where the page is heading
 				origin = gliding ?? lenis.scroll;
 				travel = 0;
 				aimedAt = undefined;
 				strongest = 0;
+				faded = false;
 			}
-			strongest = Math.max(strongest, Math.abs(deltaY));
+			strongest = Math.max(strongest, size);
 			burstEnd = event.timeStamp;
 			burstHeading = heading;
 			event.preventDefault();
-			const fading = Math.abs(deltaY) < strongest / 2;
+			const fading = size < strongest / 2;
+			faded ||= fading;
 			if (
 				aimedAt !== undefined &&
 				(gliding === undefined || (fading && event.timeStamp - aimedAt > AIM_WINDOW))
