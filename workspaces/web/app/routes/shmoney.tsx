@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { ChevronDownIcon } from 'lucide-react';
+import { ChevronDownIcon, MousePointerClickIcon } from 'lucide-react';
 import { useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
@@ -21,7 +21,7 @@ export const Route = createFileRoute('/shmoney')({
 			{
 				name: 'description',
 				content:
-					'shmoney is a private, local-first personal finance app for your desktop. Bank sync, envelope budgets, offline AI categorization, and a chat that answers questions about your money, all stored in a single SQLite file on your computer.'
+					'shmoney is a private, local-first personal finance app for your desktop. Bank sync, envelope budgets, savings goals, offline AI categorization, and a chat that answers questions about your money, all stored in a single SQLite file on your computer.'
 			},
 			{ property: 'og:type', content: 'website' },
 			{ property: 'og:url', content: 'https://rafe.dev/shmoney' },
@@ -43,7 +43,7 @@ export const Route = createFileRoute('/shmoney')({
 	component: ShmoneyPage
 });
 
-type Stop = { name: ScreenName; alt: string; title: string; body: string; hint?: string };
+type Stop = { name: ScreenName; alt: string; title: string; body: string; hint: string };
 
 // One live app, steered by the page: scrolling moves through the stops beside
 // (or, below xl, behind) the pinned demo, and the demo follows along. Phones
@@ -53,38 +53,50 @@ const TOUR: Stop[] = [
 		name: 'transactions',
 		alt: 'shmoney transactions view with net worth, search and filters, and a categorized transaction list',
 		title: 'Every transaction in one place',
-		body: 'Sync from your banks through SimpleFIN, or import CSV, TSV, OFX, QFX, and QIF files. Rules and an optional offline model sort everything into categories.'
+		body: 'Sync your banks through SimpleFIN or import statement files. Rules and an offline model categorize everything.',
+		hint: 'Search for a merchant, or change a category.'
 	},
 	{
 		name: 'accounts',
 		alt: 'shmoney accounts overview',
 		title: 'Accounts and net worth',
-		body: 'Investment holdings next to cash, with net worth as one number. Transfers between your own accounts never count as spending.'
+		body: 'Investments next to cash, with net worth as one number. Transfers between your accounts never count as spending.',
+		hint: 'Open an account to see just its transactions.'
 	},
 	{
 		name: 'budget',
 		alt: 'shmoney envelope budget view',
 		title: 'Envelope budgets',
-		body: 'Fill envelopes at the start of the month and watch them drain as you spend.'
+		body: 'Fill envelopes each month and watch them drain as you spend.',
+		hint: 'Switch between the card and table views.'
+	},
+	{
+		name: 'goals',
+		alt: 'shmoney goals page with savings goal cards showing progress, pace, and on-track status',
+		title: 'Savings goals',
+		body: 'Pick a target and the accounts that fund it. Progress and pace come straight from your transactions.',
+		hint: 'Add a goal, then find it on the Budget page.'
 	},
 	{
 		name: 'chat',
 		alt: 'shmoney chat answering a finance question with a generated income-versus-spending chart',
 		title: 'Ask about your money',
-		body: 'Ask a question in plain English. The on-device model runs read-only queries against your data and charts the answer, and the conversation never leaves your computer. Here the answers are recorded; in the app, you ask your own.'
+		body: 'An on-device model answers in plain English, charts the results, and proposes changes for you to approve. Nothing leaves your computer.',
+		hint: 'Open another conversation from the sidebar.'
 	},
 	{
 		name: 'report-detail',
 		alt: 'shmoney spending report with stat, bar, pie, and line widgets',
 		title: 'Custom reports',
-		body: 'Drag charts, tables, and stats onto a dashboard, save the filters you use, and drill into exactly where the money went.'
+		body: 'Build dashboards from charts, tables, and stats, or start from a ready-made one.',
+		hint: 'Press Edit to rearrange the widgets.'
 	},
 	{
 		name: 'activity',
 		alt: 'shmoney activity log of reversible changes',
 		title: 'Undo anything',
-		body: 'Every change lands in an activity log and can be reversed, bulk edits included.',
-		hint: 'Try it: change a category under Transactions, then come back here and undo it.'
+		body: 'Every change is logged and can be reversed, bulk edits included.',
+		hint: 'Change a category under Transactions, then undo it here.'
 	}
 ];
 
@@ -101,6 +113,8 @@ function Split({ label, children }: { label: ReactNode; children: ReactNode }) {
 
 function Tour() {
 	const [active, setActive] = useState(0);
+	// below xl, whether the tour prompt still holds the spot the stops' text takes over
+	const [intro, setIntro] = useState(true);
 	const pinned = useMedia('(min-width: 768px)');
 	const lenis = useLenis();
 	const stops = useRef<(HTMLLIElement | null)[]>([]);
@@ -111,13 +125,12 @@ function Tour() {
 
 	// On every scroll, and before the first paint: the stop nearest the middle
 	// of the viewport is the one on screen (the first above the tour, the last
-	// below it). Below xl, each stop's title and description sit stacked by the
-	// pinned demo and move with the scroll: a stop's text is where its
-	// (invisible) stop is, scaled down to a short slide, and fades out halfway
-	// to the next.
+	// below it). Below xl, each stop's text sits stacked by the pinned demo and
+	// fades in whole once its stop is the nearest, so wherever the scroll rests
+	// one stop reads in full.
 	useLayoutEffect(() => {
 		if (!pinned || !tour.current) return;
-		const items = [...tour.current.querySelectorAll<HTMLElement>('[data-track]')];
+		const prompts = [...tour.current.querySelectorAll<HTMLElement>('[data-track]')];
 		const fades = [...tour.current.querySelectorAll<HTMLElement>('[data-fade]')];
 		const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const update = () => {
@@ -127,6 +140,7 @@ function Tour() {
 				if (Math.abs(offset) < Math.abs(offsets[nearest])) nearest = index;
 			});
 			setActive(nearest);
+			setIntro(Math.abs(offsetOf(introStop.current)) < Math.abs(offsets[0]));
 			// On xl the demo waits centered under the prompt, and moves over beside
 			// the stops as the first one scrolls in, with its text rising alongside,
 			// so arriving and docking are one motion. Once docked, stop text goes
@@ -161,23 +175,17 @@ function Tour() {
 				text.style.opacity = docking ? String(dock) : '';
 				text.style.translate = docking && !still ? `0 ${0.75 * (1 - dock)}rem` : '';
 			}
-			// the intro holds until its spot scrolls past, so it shows in full while
-			// the tour approaches
-			const intro = Math.min(0, offsetOf(introStop.current));
-			const shown = (offset: number) => Math.max(0, 1 - Math.abs(offset) * 2);
-			// the prompt only ever shows while no stop's title does
-			const prompt = Math.min(shown(intro), 1 - Math.max(...offsets.map(shown)));
-			for (const item of items) {
-				const offset = item.dataset.track === 'intro' ? intro : offsets[Number(item.dataset.track)];
-				item.style.opacity = String(item.dataset.track === 'intro' ? prompt : shown(offset));
+			// The prompt holds until its spot scrolls past, so it shows in full while
+			// the tour approaches, then rides out with the scroll, gone by the time
+			// the first stop takes over
+			const offset = Math.min(0, offsetOf(introStop.current));
+			const prompt = Math.max(0, 1 - Math.abs(offset) * 2);
+			for (const item of prompts) {
+				item.style.opacity = String(prompt);
 				if (!still) item.style.translate = `0 ${offset * Number(item.dataset.distance)}px`;
 			}
-			// the intro's arrow hands its row over to the tip, one after the other
-			const arrow = prompt;
-			const tip = Math.min(1, Math.max(0, (-intro - 0.5) * 2));
-			for (const item of fades) {
-				item.style.opacity = String(item.dataset.fade === 'arrow' ? arrow : tip);
-			}
+			// the intro's arrow shares its row with the stops' descriptions
+			for (const item of fades) item.style.opacity = String(prompt);
 		};
 		update();
 		window.addEventListener('scroll', update, { passive: true });
@@ -187,6 +195,12 @@ function Tour() {
 			window.removeEventListener('resize', update);
 		};
 	}, [pinned]);
+
+	// below xl, stop text swaps in place: the outgoing text fades out, then the
+	// incoming fades in, each nudged the way the scroll went (passed stops wait
+	// just above, stops to come just below)
+	const place = (index: number) =>
+		intro || index > active ? 'after' : index < active ? 'before' : 'here';
 
 	const select = (index: number) => {
 		const stop = stops.current[index];
@@ -198,7 +212,7 @@ function Tour() {
 	return (
 		<section className="mx-auto max-w-5xl px-6 sm:px-8 xl:max-w-7xl">
 			{/* Below xl the stops are invisible spacers under the pinned demo, which
-			    shows the stop's title above it and its description below */}
+			    shows the stop's title and description above it and its hint below */}
 			<div ref={tour} className="tour grid xl:grid-cols-[20rem_minmax(0,1fr)] xl:gap-16">
 				{/* the padding makes the tour a full viewport taller than its stops, so the
 				    demo is pinned, and centered, even at the first and last */}
@@ -226,7 +240,7 @@ function Tour() {
 									{stop.title}
 								</button>
 								<p className="mt-4 text-lg text-pretty text-black/60">{stop.body}</p>
-								{stop.hint && <p className="mt-4 text-pretty text-black/50">{stop.hint}</p>}
+								<TryIt className="mt-5">{stop.hint}</TryIt>
 							</div>
 						</li>
 					))}
@@ -254,7 +268,7 @@ function Tour() {
 							Scroll to take the tour
 							<ChevronDownIcon className="size-6 animate-bounce text-black/40" />
 						</div>
-						<div className="-my-1 grid overflow-hidden py-1 xl:hidden">
+						<div className="grid xl:hidden">
 							<p
 								data-track="intro"
 								data-distance={40}
@@ -266,21 +280,29 @@ function Tour() {
 							{TOUR.map((stop, index) => (
 								<h3
 									key={stop.name}
-									data-track={index}
-									data-distance={40}
-									aria-hidden={index !== active}
-									style={{ opacity: 0 }}
-									className="col-start-1 row-start-1 text-center text-2xl font-semibold tracking-tight text-balance"
+									data-place={place(index)}
+									aria-hidden={intro || index !== active}
+									className="col-start-1 row-start-1 text-center text-2xl font-semibold tracking-tight text-balance transition-[opacity,translate] duration-200 ease-out not-data-[place=here]:opacity-0 data-[place=here]:delay-200 data-[place=here]:duration-300 motion-safe:data-[place=after]:translate-y-2 motion-safe:data-[place=before]:-translate-y-2"
 								>
 									{stop.title}
 								</h3>
 							))}
 						</div>
+						{/* a fixed height, so the demo holds still between stops */}
 						<div className="mt-2 mb-5 grid xl:hidden">
 							<div data-fade="arrow" className="col-start-1 row-start-1 flex justify-center">
 								<ChevronDownIcon className="size-6 animate-bounce text-black/40" />
 							</div>
-							<Tip data-fade="tip" style={{ opacity: 0 }} className="col-start-1 row-start-1" />
+							{TOUR.map((stop, index) => (
+								<p
+									key={stop.name}
+									data-place={place(index)}
+									aria-hidden={intro || index !== active}
+									className="col-start-1 row-start-1 mx-auto max-w-2xl text-center text-pretty text-black/60 transition-[opacity,translate] duration-200 ease-out not-data-[place=here]:opacity-0 data-[place=here]:delay-200 data-[place=here]:duration-300 motion-safe:data-[place=after]:translate-y-2 motion-safe:data-[place=before]:-translate-y-2"
+								>
+									{stop.body}
+								</p>
+							))}
 						</div>
 						{/* above the text below it, which the expand button hangs into */}
 						<div className="tour-rise relative z-10">
@@ -288,22 +310,17 @@ function Tour() {
 								<LiveDemo screen={TOUR[active].name} alt={TOUR[active].alt} />
 							</div>
 						</div>
-						{/* hangs below the demo, so the demo itself stays centered */}
-						<Tip className="absolute inset-x-0 top-full mt-4 hidden xl:block" />
-						{/* a fixed height, so the demo holds still between stops */}
-						<div className="mt-5 grid overflow-hidden xl:hidden">
+						<div className="mt-5 grid xl:hidden">
 							{TOUR.map((stop, index) => (
-								<div
+								<TryIt
 									key={stop.name}
-									data-track={index}
-									data-distance={48}
-									aria-hidden={index !== active}
-									style={{ opacity: 0 }}
-									className="col-start-1 row-start-1 mx-auto max-w-2xl text-center text-pretty"
+									data-place={place(index)}
+									aria-hidden={intro || index !== active}
+									plain
+									className="col-start-1 row-start-1 transition-[opacity,translate] duration-200 ease-out not-data-[place=here]:opacity-0 data-[place=here]:delay-200 data-[place=here]:duration-300 motion-safe:data-[place=after]:translate-y-2 motion-safe:data-[place=before]:-translate-y-2"
 								>
-									<p className="text-black/60">{stop.body}</p>
-									{stop.hint && <p className="mt-2 text-sm text-black/50">{stop.hint}</p>}
-								</div>
+									{stop.hint}
+								</TryIt>
 							))}
 						</div>
 					</div>
@@ -331,11 +348,34 @@ function offsetOf(element: HTMLElement | null): number {
 	return (top + height / 2 - window.innerHeight / 2) / height;
 }
 
-function Tip({ className, ...props }: ComponentProps<'p'>) {
+// something to do in the live demo at this stop
+// boxed beside the stops on xl; plain text under the demo below it, where a
+// box would crowd the demo
+function TryIt({
+	plain = false,
+	className,
+	children,
+	...props
+}: ComponentProps<'p'> & { plain?: boolean }) {
+	if (plain) {
+		return (
+			<p {...props} className={cn('text-center text-sm text-pretty text-black/50', className)}>
+				<strong className="font-semibold text-black/70">Try it:</strong> {children}
+			</p>
+		);
+	}
 	return (
-		<p {...props} className={cn('text-center text-sm text-pretty text-black/50', className)}>
-			<strong className="font-semibold text-black/70">Tip:</strong> this is the real app, running in
-			your browser with sample data. Click around; nothing is saved.
+		<p
+			{...props}
+			className={cn(
+				'inline-flex items-start gap-2 rounded-lg border border-black/10 bg-black/[0.03] px-3 py-2 text-left text-sm text-pretty text-black/70',
+				className
+			)}
+		>
+			<MousePointerClickIcon className="mt-0.5 size-4 shrink-0 text-black/40" aria-hidden />
+			<span>
+				<strong className="font-semibold text-black">Try it</strong> {children}
+			</span>
 		</p>
 	);
 }
@@ -375,8 +415,8 @@ function ShmoneyPage() {
 					</h1>
 					<p className="rise mt-5 max-w-xl text-lg text-pretty text-black/60 [--delay:160ms]">
 						A personal finance app that runs entirely on your computer. Sync your banks, budget with
-						envelopes, build reports, and ask questions about your spending. It all lives in one
-						SQLite file, with no account and no cloud.
+						envelopes, save toward goals, build reports, and ask questions about your spending. It
+						all lives in one SQLite file, with no account and no cloud.
 					</p>
 					<div className="rise mt-8 flex flex-wrap items-center gap-3 [--delay:240ms]">
 						<DownloadButton />

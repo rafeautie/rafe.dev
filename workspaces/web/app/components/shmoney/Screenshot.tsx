@@ -9,8 +9,10 @@ export type ScreenName =
 	| 'activity'
 	| 'budget'
 	| 'chat'
+	| 'goals'
 	| 'report-detail'
 	| 'reports'
+	| 'savings-goals-report'
 	| 'settings-llm'
 	| 'transactions';
 
