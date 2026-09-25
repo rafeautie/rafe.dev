@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { ChevronDownIcon, MousePointerClickIcon } from 'lucide-react';
+import { ChevronDownIcon, MonitorIcon, MousePointerClickIcon } from 'lucide-react';
 import { useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
@@ -433,8 +433,9 @@ function ShmoneyPage() {
 						Free for personal use · Windows, macOS, and Linux
 					</p>
 					{/* LiveDemo only runs the app from md up; phones get the screenshots */}
-					<p className="rise mt-10 text-sm text-balance text-black/60 [--delay:320ms] md:hidden">
-						On a larger screen, the app below is live, with sample data.
+					<p className="rise mt-10 flex items-start gap-2 rounded-lg border border-black/10 bg-black/[0.03] px-3 py-2 text-sm text-pretty text-black/70 [--delay:320ms] md:hidden">
+						<MonitorIcon className="mt-0.5 size-4 shrink-0 text-black/40" aria-hidden />
+						<span>On a larger screen, the app below is live, with sample data.</span>
 					</p>
 				</section>
 			</div>
