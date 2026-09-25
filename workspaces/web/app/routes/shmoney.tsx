@@ -139,11 +139,19 @@ function Tour() {
 		// wheel is still turning when the page lands, it carries on to the stop
 		// after. Past the last stop the page scrolls freely on to the footer,
 		// until heading back up brings the last stop within reach.
+		// A trackpad brings its own momentum, so it scrolls natively under the
+		// fingers, cutting short any glide, and settles like the keyboard below.
 		let burstEnd = -Infinity;
 		let burstHeading = 0;
 		let stepped = false;
+		let trackpadUntil = -Infinity;
 		const offWheel = onVirtualScroll(({ deltaY, event }) => {
 			if (!(event instanceof WheelEvent) || event.ctrlKey || !deltaY) return true;
+			if (event.timeStamp < trackpadUntil || isTrackpad(event)) {
+				trackpadUntil = event.timeStamp + FLICK_GAP;
+				if (lenis.isScrolling === 'smooth') lenis.scrollTo(lenis.scroll, { immediate: true });
+				return false;
+			}
 			const heading = Math.sign(deltaY);
 			// set while a glide is on its way, cleared once it lands
 			const heldStop = lenis.userData.stop;
@@ -446,6 +454,17 @@ function Tip({ className, ...props }: ComponentProps<'p'>) {
 
 // wheel events closer together than this are one flick, its momentum included
 const FLICK_GAP = 300;
+
+// Mouse wheels turn in notches: whole lines in Firefox, and a wheelDelta of
+// 120 in Chrome and Safari. Trackpads send a stream of small pixel deltas,
+// often with some sideways drift.
+function isTrackpad(event: WheelEvent): boolean {
+	if (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) return false;
+	if (event.deltaX !== 0) return true;
+	const notch = (event as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY;
+	if (notch) return notch % 120 !== 0;
+	return Math.abs(event.deltaY) < 50;
+}
 
 // the scroll position that puts an element's middle at the viewport's
 function centerOf(element: HTMLElement): number {
