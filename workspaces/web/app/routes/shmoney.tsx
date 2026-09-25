@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode 
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
-import { DEMO_URL, GITHUB_URL } from '~/components/shmoney/constants';
+import { DEMO_URL, GITHUB_URL, TOUR_QUERY } from '~/components/shmoney/constants';
 import { DownloadButton } from '~/components/shmoney/DownloadButton';
 import { Logo } from '~/components/shmoney/Logo';
 import { LiveDemo } from '~/components/shmoney/LiveDemo';
@@ -115,7 +115,7 @@ function Tour() {
 	const [active, setActive] = useState(0);
 	// below xl, whether the tour prompt still holds the spot the stops' text takes over
 	const [intro, setIntro] = useState(true);
-	const pinned = useMedia('(min-width: 768px)');
+	const pinned = useMedia(TOUR_QUERY);
 	const lenis = useLenis();
 	const stops = useRef<(HTMLLIElement | null)[]>([]);
 	const tour = useRef<HTMLDivElement>(null);
@@ -432,20 +432,20 @@ function ShmoneyPage() {
 					<p className="rise mt-4 text-sm text-black/50 [--delay:240ms]">
 						Free for personal use · Windows, macOS, and Linux
 					</p>
-					{/* LiveDemo only runs the app from md up; phones get the screenshots */}
-					<p className="rise mt-10 flex items-start gap-2 rounded-lg border border-black/10 bg-black/[0.03] px-3 py-2 text-sm text-pretty text-black/70 [--delay:320ms] md:hidden">
+					{/* LiveDemo only runs the app on screens big enough for the tour; phones get the screenshots */}
+					<p className="rise mt-10 flex items-start gap-2 rounded-lg border border-black/10 bg-black/[0.03] px-3 py-2 text-sm text-pretty text-black/70 [--delay:320ms] tour:hidden">
 						<MonitorIcon className="mt-0.5 size-4 shrink-0 text-black/40" aria-hidden />
 						<span>On a larger screen, the app below is live, with sample data.</span>
 					</p>
 				</section>
 			</div>
 
-			<div className="mt-8 hidden md:block">
+			<div className="mt-8 hidden tour:block">
 				<Tour />
 			</div>
 
 			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8 xl:max-w-7xl">
-				<div className="mt-8 space-y-20 md:hidden">
+				<div className="mt-8 space-y-20 tour:hidden">
 					{TOUR.map((stop, index) => (
 						<figure key={stop.name} className="reveal">
 							<Screenshot name={stop.name} alt={stop.alt} sizes="100vw" eager={index === 0} />
@@ -456,7 +456,7 @@ function ShmoneyPage() {
 					))}
 				</div>
 
-				<section className="mt-28 space-y-12 border-t border-black/10 pt-10 sm:mt-36 md:mt-4">
+				<section className="mt-28 space-y-12 border-t border-black/10 pt-10 sm:mt-36 tour:mt-4">
 					<div className="reveal">
 						<Split label={<h2>Privacy</h2>}>
 							Nothing leaves your machine. Your data lives in one SQLite file, bank credentials stay
