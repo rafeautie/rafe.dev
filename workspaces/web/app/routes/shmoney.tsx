@@ -505,7 +505,7 @@ function ShmoneyPage() {
 						SQLite file, with no account and no cloud.
 					</p>
 					<div className="rise mt-8 flex flex-wrap items-center gap-3 [--delay:240ms]">
-						<DownloadButton>Download</DownloadButton>
+						<DownloadButton />
 						<Button
 							variant="outline"
 							size="lg"
@@ -556,7 +556,7 @@ function ShmoneyPage() {
 								pre-1.0.
 							</p>
 							<div className="mt-5 flex flex-wrap items-center gap-3">
-								<DownloadButton>Download</DownloadButton>
+								<DownloadButton />
 								<Button
 									variant="outline"
 									size="lg"
