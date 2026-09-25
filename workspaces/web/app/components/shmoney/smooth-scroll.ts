@@ -1,4 +1,4 @@
-import Lenis, { type VirtualScrollData } from 'lenis';
+import Lenis from 'lenis';
 import { useEffect, useSyncExternalStore } from 'react';
 
 // Inertial wheel scrolling for the page. Visitors who ask for reduced motion
@@ -6,7 +6,6 @@ import { useEffect, useSyncExternalStore } from 'react';
 
 let current: Lenis | null = null;
 const listeners = new Set<() => void>();
-let wheel: ((data: VirtualScrollData) => boolean) | null = null;
 
 function set(next: Lenis | null): void {
 	current = next;
@@ -30,8 +29,7 @@ export function SmoothScroll() {
 		const lenis = new Lenis({
 			autoRaf: true,
 			duration: SCROLL_DURATION,
-			easing: easeOutQuint,
-			virtualScroll: (data) => wheel?.(data) ?? true
+			easing: easeOutQuint
 		});
 		set(lenis);
 		return () => {
@@ -42,16 +40,7 @@ export function SmoothScroll() {
 	return null;
 }
 
-// Lets the page see wheel and touch input before Lenis does; returning false
-// keeps Lenis from scrolling for it. Returns a function that lets go.
-export function onVirtualScroll(handler: (data: VirtualScrollData) => boolean): () => void {
-	wheel = handler;
-	return () => {
-		if (wheel === handler) wheel = null;
-	};
-}
-
-// Wheel scrolling, snaps, and jumps to a stop all glide with the same long,
+// Wheel scrolling and jumps to a stop both glide with the same long,
 // soft landing; scrollTo calls pick it up as Lenis's defaults.
 const SCROLL_DURATION = 1.2;
 

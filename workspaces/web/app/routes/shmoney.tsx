@@ -1,13 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { ChevronDownIcon } from 'lucide-react';
-import {
-	useEffect,
-	useLayoutEffect,
-	useRef,
-	useState,
-	type ComponentProps,
-	type ReactNode
-} from 'react';
+import { useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
@@ -15,7 +8,7 @@ import { DEMO_URL, GITHUB_URL } from '~/components/shmoney/constants';
 import { DownloadButton } from '~/components/shmoney/DownloadButton';
 import { Logo } from '~/components/shmoney/Logo';
 import { LiveDemo } from '~/components/shmoney/LiveDemo';
-import { SmoothScroll, onVirtualScroll, useLenis } from '~/components/shmoney/smooth-scroll';
+import { SmoothScroll, useLenis } from '~/components/shmoney/smooth-scroll';
 import { Screenshot, type ScreenName } from '~/components/shmoney/Screenshot';
 import { Button } from '~/components/ui/button';
 import { useMedia } from '~/lib/use-media';
@@ -115,112 +108,6 @@ function Tour() {
 	const introStop = useRef<HTMLLIElement>(null);
 	const firstText = useRef<HTMLDivElement>(null);
 	const pin = useRef<HTMLDivElement>(null);
-
-	// Scrolling always settles with a stop in the middle of the viewport,
-	// beside the pinned demo. With smooth scrolling on, each flick of the wheel
-	// glides straight to the next stop, however hard the flick; without it, CSS
-	// snapping does the job, with the blocks above and below the tour as snap
-	// areas.
-	useEffect(() => {
-		if (!pinned) return;
-		const root = document.documentElement;
-		if (!lenis) {
-			root.style.scrollSnapType = 'y mandatory';
-			return () => {
-				root.style.scrollSnapType = '';
-			};
-		}
-		const centers = () => stops.current.flatMap((stop) => (stop ? [centerOf(stop)] : []));
-		const reach = () => (stops.current[0]?.offsetHeight ?? 0) / 4;
-		const glideTo = (target: number) => lenis.scrollTo(target, { userData: { stop: target } });
-
-		// A flick arrives as a burst of wheel events, momentum and all: the
-		// first one sets off for the next stop and the rest ride along. If the
-		// wheel is still turning when the page lands, it carries on to the stop
-		// after. Past the last stop the page scrolls freely on to the footer,
-		// until heading back up brings the last stop within reach.
-		// A trackpad brings its own momentum, so it scrolls natively under the
-		// fingers, cutting short any glide, and settles like the keyboard below.
-		let burstEnd = -Infinity;
-		let burstHeading = 0;
-		let stepped = false;
-		let trackpadUntil = -Infinity;
-		const offWheel = onVirtualScroll(({ deltaY, event }) => {
-			if (!(event instanceof WheelEvent) || event.ctrlKey || !deltaY) return true;
-			if (event.timeStamp < trackpadUntil || isTrackpad(event)) {
-				trackpadUntil = event.timeStamp + FLICK_GAP;
-				if (lenis.isScrolling === 'smooth') lenis.scrollTo(lenis.scroll, { immediate: true });
-				return false;
-			}
-			const heading = Math.sign(deltaY);
-			// set while a glide is on its way, cleared once it lands
-			const heldStop = lenis.userData.stop;
-			if (
-				heading !== burstHeading ||
-				event.timeStamp - burstEnd > FLICK_GAP ||
-				typeof heldStop !== 'number'
-			)
-				stepped = false;
-			burstEnd = event.timeStamp;
-			burstHeading = heading;
-			if (!stepped) {
-				// mid-glide, a new flick carries on from the stop the page is heading to
-				const from =
-					lenis.isScrolling === 'smooth' && typeof heldStop === 'number' ? heldStop : lenis.scroll;
-				const all = centers();
-				const last = all[all.length - 1];
-				let target: number | undefined;
-				if (from > last + 1) {
-					if (heading < 0 && lenis.targetScroll + deltaY < last + reach()) target = last;
-				} else if (heading > 0) {
-					target = all.find((center) => center > from + 1);
-				} else {
-					// the top of the page is a stop too
-					target = all.filter((center) => center < from - 1).pop() ?? 0;
-				}
-				if (target === undefined) return true;
-				stepped = true;
-				if (Math.abs(target - from) >= 1) glideTo(target);
-			}
-			event.preventDefault();
-			return false;
-		});
-
-		// keyboard, scrollbar and touch momentum scroll natively, and the page
-		// eases to the nearest stop once they go quiet
-		let timer = 0;
-		let heading = 0;
-		const snap = () => {
-			const at = lenis.scroll;
-			const all = centers();
-			const first = all[0];
-			const last = all[all.length - 1];
-			let target: number | undefined;
-			if (at < first) {
-				// nothing between the top and the first stop is a resting place:
-				// heading down carries on to the first stop, heading up to the top
-				if (heading > 0) target = first;
-				else target = first - at < reach() ? first : 0;
-			} else if (at > last) {
-				if (at - last < reach()) target = last;
-			} else {
-				target = all.reduce((a, b) => (Math.abs(b - at) < Math.abs(a - at) ? b : a));
-			}
-			if (target === undefined || Math.abs(target - at) < 1) return;
-			glideTo(target);
-		};
-		const offScroll = lenis.on('scroll', () => {
-			if (lenis.isScrolling !== 'native') return;
-			if (lenis.direction) heading = lenis.direction;
-			clearTimeout(timer);
-			timer = window.setTimeout(snap, 150);
-		});
-		return () => {
-			clearTimeout(timer);
-			offWheel();
-			offScroll();
-		};
-	}, [pinned, lenis]);
 
 	// On every scroll, and before the first paint: the stop nearest the middle
 	// of the viewport is the one on screen (the first above the tour, the last
@@ -324,7 +211,7 @@ function Tour() {
 								stops.current[index] = element;
 							}}
 							data-active={index === active}
-							className="group flex min-h-[70vh] snap-center flex-col justify-center"
+							className="group flex min-h-[70vh] flex-col justify-center"
 						>
 							<div
 								ref={index === 0 ? firstText : undefined}
@@ -356,12 +243,13 @@ function Tour() {
 					    down, they're simply there. The rise uses transform, leaving translate
 					    to the dock. */}
 					<div className="tour-demo relative mx-auto w-full [transition:opacity_1.6s_ease-out,transform_1.6s_cubic-bezier(0.16,1,0.3,1)] has-[[data-entrance=instant]]:transition-none has-[[data-entrance=waiting]]:opacity-0 motion-safe:has-[[data-entrance=waiting]]:[transform:translateY(60vh)] max-xl:max-w-[min(52rem,calc((100vh-19rem)*1.6))] xl:max-w-[calc((100vh-9rem)*1.6)] xl:translate-x-[calc(-12rem*(1-var(--dock,0)))]">
-						{/* hangs above the demo, so the demo itself stays centered */}
+						{/* hangs above the demo, so the demo itself stays centered. It undoes
+						    the dock's shift, staying put to fade out while the demo moves over */}
 						<div
 							data-track="intro"
 							data-distance={40}
 							aria-hidden
-							className="absolute inset-x-0 bottom-full mb-6 hidden flex-col items-center gap-2 text-center text-2xl font-semibold tracking-tight xl:flex"
+							className="absolute inset-x-0 bottom-full mb-6 hidden flex-col items-center gap-2 text-center text-2xl font-semibold tracking-tight xl:flex xl:[transform:translateX(calc(-12rem*var(--dock,0)))]"
 						>
 							Scroll to take the tour
 							<ChevronDownIcon className="size-6 animate-bounce text-black/40" />
@@ -452,20 +340,6 @@ function Tip({ className, ...props }: ComponentProps<'p'>) {
 	);
 }
 
-// wheel events closer together than this are one flick, its momentum included
-const FLICK_GAP = 300;
-
-// Mouse wheels turn in notches: whole lines in Firefox, and a wheelDelta of
-// 120 in Chrome and Safari. Trackpads send a stream of small pixel deltas,
-// often with some sideways drift.
-function isTrackpad(event: WheelEvent): boolean {
-	if (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) return false;
-	if (event.deltaX !== 0) return true;
-	const notch = (event as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY;
-	if (notch) return notch % 120 !== 0;
-	return Math.abs(event.deltaY) < 50;
-}
-
 // the scroll position that puts an element's middle at the viewport's
 function centerOf(element: HTMLElement): number {
 	const { top, height } = element.getBoundingClientRect();
@@ -476,7 +350,7 @@ function ShmoneyPage() {
 	return (
 		<div className="bg-background text-base text-black">
 			<SmoothScroll />
-			<div className="mx-auto max-w-5xl px-6 sm:px-8 xl:max-w-7xl xl:snap-start">
+			<div className="mx-auto max-w-5xl px-6 sm:px-8 xl:max-w-7xl">
 				<header className="flex items-center justify-between gap-4 pt-8">
 					<SlashNav className="text-lg font-medium sm:text-xl">
 						<Link href="/">rafe</Link>
@@ -529,7 +403,7 @@ function ShmoneyPage() {
 				<Tour />
 			</div>
 
-			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8 xl:max-w-7xl xl:snap-end">
+			<div className="mx-auto max-w-5xl px-6 pb-16 sm:px-8 xl:max-w-7xl">
 				<div className="mt-8 space-y-20 md:hidden">
 					{TOUR.map((stop, index) => (
 						<figure key={stop.name} className="reveal">
