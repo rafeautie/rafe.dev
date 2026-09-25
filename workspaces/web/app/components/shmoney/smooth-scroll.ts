@@ -29,7 +29,7 @@ export function SmoothScroll() {
 		const lenis = new Lenis({
 			autoRaf: true,
 			duration: SCROLL_DURATION,
-			easing: easeOutQuint
+			easing: easeOutQuart
 		});
 		set(lenis);
 		return () => {
@@ -40,10 +40,10 @@ export function SmoothScroll() {
 	return null;
 }
 
-// Wheel scrolling and jumps to a stop both glide with the same long,
+// Wheel scrolling and jumps to a stop both glide with the same short,
 // soft landing; scrollTo calls pick it up as Lenis's defaults.
-const SCROLL_DURATION = 1.2;
+const SCROLL_DURATION = 0.8;
 
-function easeOutQuint(t: number): number {
-	return 1 - Math.pow(1 - t, 5);
+function easeOutQuart(t: number): number {
+	return 1 - Math.pow(1 - t, 4);
 }
