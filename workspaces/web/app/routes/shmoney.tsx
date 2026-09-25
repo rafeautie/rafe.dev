@@ -156,9 +156,10 @@ function Tour() {
 			// set while a glide is on its way, cleared once it lands
 			const held = lenis.userData.to;
 			const gliding = typeof held === 'number' ? held : undefined;
-			// momentum only ever dies away, so a flick that faded and then picks
-			// up again is a fresh swipe landing on its tail
-			const renewed = faded && size >= strongest / 2;
+			// momentum only dies away, give or take a little jitter, so a flick
+			// that has died well down and then picks up again, and hard enough to
+			// be a swipe, is a fresh swipe landing on its tail
+			const renewed = faded && size >= Math.max(strongest / 2, SWIPE_FLOOR);
 			if (heading !== burstHeading || event.timeStamp - burstEnd > FLICK_GAP || renewed) {
 				// mid-glide, a new flick carries on from where the page is heading
 				origin = gliding ?? lenis.scroll;
@@ -172,7 +173,7 @@ function Tour() {
 			burstHeading = heading;
 			event.preventDefault();
 			const fading = size < strongest / 2;
-			faded ||= fading;
+			faded ||= size < strongest / 4;
 			if (
 				aimedAt !== undefined &&
 				(gliding === undefined || (fading && event.timeStamp - aimedAt > AIM_WINDOW))
@@ -470,6 +471,9 @@ function Tip({ className, ...props }: ComponentProps<'p'>) {
 const FLICK_GAP = 300;
 // for this long into a flick, even its fading momentum can push its stop on
 const AIM_WINDOW = 350;
+// the least a wheel event can move to start a new flick while the last one's
+// momentum is still coming in
+const SWIPE_FLOOR = 10;
 
 // the scroll position that puts an element's middle at the viewport's
 function centerOf(element: HTMLElement): number {
