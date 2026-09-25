@@ -18,8 +18,10 @@ export type ScreenName =
 
 const WIDTHS = [640, 960, 1280, 1920];
 
-const srcSet = (name: ScreenName, format: 'avif' | 'webp'): string =>
-	WIDTHS.map((w) => `${DEMO_URL}/screenshots/${name}-${w}.${format} ${w}w`).join(', ');
+// WebP only: the release workflow's AVIFs are 4:4:4 (AV1 High profile), which
+// iOS Safari advertises support for but can't decode, leaving a broken image.
+const srcSet = (name: ScreenName): string =>
+	WIDTHS.map((w) => `${DEMO_URL}/screenshots/${name}-${w}.webp ${w}w`).join(', ');
 
 export function Screenshot({
 	name,
@@ -38,8 +40,7 @@ export function Screenshot({
 }) {
 	return (
 		<picture>
-			<source type="image/avif" srcSet={srcSet(name, 'avif')} sizes={sizes} />
-			<source type="image/webp" srcSet={srcSet(name, 'webp')} sizes={sizes} />
+			<source type="image/webp" srcSet={srcSet(name)} sizes={sizes} />
 			<img
 				src={`${DEMO_URL}/screenshots/${name}-1280.webp`}
 				alt={alt}
