@@ -1,7 +1,7 @@
 import { Maximize2Icon, Minimize2Icon } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { DEMO_URL } from '~/components/shmoney/constants';
+import { DEMO_URL, TOUR_QUERY } from '~/components/shmoney/constants';
 import { Screenshot, type ScreenName } from '~/components/shmoney/Screenshot';
 import { useLenis } from '~/components/shmoney/smooth-scroll';
 import { useMedia } from '~/lib/use-media';
@@ -38,9 +38,9 @@ export function LiveDemo({ screen, alt }: { screen: ScreenName; alt: string }) {
 	const box = useRef<HTMLDivElement>(null);
 	const button = useRef<HTMLButtonElement>(null);
 	const frame = useRef<HTMLIFrameElement>(null);
-	// a desktop layout scaled onto a phone is unusable, so small screens keep
-	// the screenshot
-	const wide = useMedia('(min-width: 768px)');
+	// a desktop layout scaled onto a phone is unusable, so small screens, phones
+	// held sideways included, keep the screenshot
+	const wide = useMedia(TOUR_QUERY);
 	const [scale, setScale] = useState(0);
 	const [ready, setReady] = useState(false);
 	// `data-entrance` holds off the page's entrance for the demo until it has
