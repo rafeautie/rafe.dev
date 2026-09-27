@@ -498,7 +498,7 @@ function ShmoneyPage() {
 				<footer className="mt-24 flex items-center justify-between gap-4 text-sm text-black/60">
 					<p>
 						Built by{' '}
-						<Link href="/about" className="text-black hover:text-black">
+						<Link href="/" className="text-black hover:text-black">
 							Rafe Autie
 						</Link>
 					</p>

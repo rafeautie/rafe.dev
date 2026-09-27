@@ -29,7 +29,7 @@ export const Route = createFileRoute('/writing/$slug')({
 				{ property: 'og:image:height', content: String(image.height) },
 				{ property: 'og:image:alt', content: image.alt },
 				{ property: 'article:published_time', content: post.date },
-				{ property: 'article:author', content: 'https://rafe.dev/about' },
+				{ property: 'article:author', content: 'https://rafe.dev' },
 				{ property: 'twitter:card', content: 'summary_large_image' },
 				{ property: 'twitter:url', content: post.url },
 				{ property: 'twitter:title', content: post.title },
@@ -71,7 +71,7 @@ function PostPage() {
 				<footer className="mt-24 flex items-center justify-between gap-4 border-t border-black/10 pt-8 text-sm text-black/60">
 					<p>
 						Written by{' '}
-						<Link href="/about" className="text-black">
+						<Link href="/" className="text-black">
 							Rafe Autie
 						</Link>
 					</p>
