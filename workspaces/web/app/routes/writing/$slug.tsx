@@ -2,7 +2,14 @@ import { createFileRoute, notFound } from '@tanstack/react-router';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { absoluteUrl } from '~/photos';
-import { DEFAULT_IMAGE, formatDate, getPost, loadHtml } from '~/writing';
+import {
+	DEFAULT_IMAGE,
+	formatDate,
+	getPost,
+	loadHtml,
+	transitionName,
+	VIEW_TRANSITIONS
+} from '~/writing';
 
 export const Route = createFileRoute('/writing/$slug')({
 	loader: async ({ params }) => {
@@ -37,7 +44,8 @@ export const Route = createFileRoute('/writing/$slug')({
 				{ property: 'twitter:image', content: imageUrl },
 				{ property: 'twitter:image:alt', content: image.alt }
 			],
-			links: [{ rel: 'canonical', href: post.url }]
+			links: [{ rel: 'canonical', href: post.url }],
+			styles: [VIEW_TRANSITIONS]
 		};
 	},
 	component: PostPage
@@ -58,10 +66,19 @@ function PostPage() {
 						<time dateTime={post.date} className="text-sm text-black/50">
 							{formatDate(post.date)}
 						</time>
-						<h1 className="mt-3 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+						{/* matched on the index, which morphs into these */}
+						<h1
+							style={{ viewTransitionName: transitionName(post, 'title') }}
+							className="mt-3 w-fit text-4xl font-semibold tracking-tight text-balance sm:text-5xl"
+						>
 							{post.title}
 						</h1>
-						<p className="mt-5 text-lg text-pretty text-black/60">{post.description}</p>
+						<p
+							style={{ viewTransitionName: transitionName(post, 'description') }}
+							className="mt-5 w-fit text-lg text-pretty text-black/60"
+						>
+							{post.description}
+						</p>
 					</header>
 					<div
 						className="post prose mt-12 max-w-none prose-neutral sm:prose-lg"

@@ -3,7 +3,7 @@ import { RssIcon } from 'lucide-react';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { absoluteUrl } from '~/photos';
-import { DEFAULT_IMAGE, formatDate, POSTS } from '~/writing';
+import { DEFAULT_IMAGE, formatDate, POSTS, transitionName, VIEW_TRANSITIONS } from '~/writing';
 
 const DESCRIPTION = 'Long-form writing by Rafe Autie on building software.';
 
@@ -23,7 +23,8 @@ export const Route = createFileRoute('/writing/')({
 			{ property: 'twitter:description', content: DESCRIPTION },
 			{ property: 'twitter:image', content: absoluteUrl(DEFAULT_IMAGE.src) }
 		],
-		links: [{ rel: 'canonical', href: 'https://rafe.dev/writing' }]
+		links: [{ rel: 'canonical', href: 'https://rafe.dev/writing' }],
+		styles: [VIEW_TRANSITIONS]
 	}),
 	component: WritingPage
 });
@@ -55,10 +56,19 @@ function WritingPage() {
 										<time dateTime={post.date} className="text-sm text-black/50">
 											{formatDate(post.date)}
 										</time>
-										<h2 className="mt-2 text-2xl font-semibold tracking-tight text-balance">
+										{/* w-fit, so the morph scales the text rather than stretching a full-width box */}
+										<h2
+											style={{ viewTransitionName: transitionName(post, 'title') }}
+											className="mt-2 w-fit text-2xl font-semibold tracking-tight text-balance"
+										>
 											{post.title}
 										</h2>
-										<p className="mt-2 text-pretty text-black/60">{post.description}</p>
+										<p
+											style={{ viewTransitionName: transitionName(post, 'description') }}
+											className="mt-2 w-fit text-pretty text-black/60"
+										>
+											{post.description}
+										</p>
 									</article>
 								</Link>
 							</li>
