@@ -14,6 +14,12 @@ import { Button } from '~/components/ui/button';
 import { useMedia } from '~/lib/use-media';
 import { cn } from '~/lib/utils';
 
+// shot with the screenshots on every shmoney release; also the repo's GitHub
+// social preview
+const SOCIAL_IMAGE = `${DEMO_URL}/screenshots/social.png`;
+const SOCIAL_IMAGE_ALT =
+	'shmoney: personal finance that never leaves your computer, beside its chat answering with an income versus spending chart';
+
 export const Route = createFileRoute('/shmoney')({
 	head: () => ({
 		meta: [
@@ -30,12 +36,18 @@ export const Route = createFileRoute('/shmoney')({
 				property: 'og:description',
 				content: 'A private, local-first personal finance app. No cloud, no account, no telemetry.'
 			},
-			{ property: 'twitter:card', content: 'summary' },
+			{ property: 'og:image', content: SOCIAL_IMAGE },
+			{ property: 'og:image:width', content: '1280' },
+			{ property: 'og:image:height', content: '640' },
+			{ property: 'og:image:alt', content: SOCIAL_IMAGE_ALT },
+			{ property: 'twitter:card', content: 'summary_large_image' },
 			{ property: 'twitter:title', content: 'shmoney | Your money, on your machine' },
 			{
 				property: 'twitter:description',
 				content: 'A private, local-first personal finance app. No cloud, no account, no telemetry.'
-			}
+			},
+			{ property: 'twitter:image', content: SOCIAL_IMAGE },
+			{ property: 'twitter:image:alt', content: SOCIAL_IMAGE_ALT }
 		],
 		// the screenshots and the live demo both come from the demo's origin
 		links: [{ rel: 'preconnect', href: DEMO_URL }]
