@@ -86,12 +86,18 @@ function HomePage() {
 					className="h-full w-full object-contain"
 				/>
 				{/* Overlaid rather than a sibling in flow, so the nav stays centred on
-				    the viewport whether or not a photo loaded. */}
-				<div className="absolute inset-0 flex flex-col items-center justify-center text-[clamp(1rem,2.5vmin,10rem)] font-medium text-background transition-colors duration-500 smh:text-background/0">
-					<SlashNav separatorClassName="text-inherit opacity-60">
+				    the viewport whether or not a photo loaded. Padded like the photo,
+				    so on a phone, where the photo spans that box, the nav wraps inside
+				    it rather than running white text off onto the white margin. */}
+				<div className="absolute inset-0 flex flex-col items-center justify-center px-10 text-[clamp(1rem,2.5vmin,10rem)] font-medium text-background transition-colors duration-500 sm:px-15 smh:text-background/0">
+					<SlashNav
+						className="text-center text-balance"
+						separatorClassName="text-inherit opacity-60"
+					>
 						<Link href="/about">rafe</Link>
 						<Link href="/photography">photography</Link>
 						<Link href="/development">development</Link>
+						<Link href="/writing">writing</Link>
 					</SlashNav>
 				</div>
 			</div>

@@ -12,7 +12,15 @@ export const Route = createRootRoute({
 			{ title: 'Rafe Autie' },
 			{ property: 'og:site_name', content: 'Rafe Autie' }
 		],
-		links: [{ rel: 'icon', href: faviconUrl }]
+		links: [
+			{ rel: 'icon', href: faviconUrl },
+			{
+				rel: 'alternate',
+				type: 'application/atom+xml',
+				title: 'Rafe Autie',
+				href: '/writing/feed.xml'
+			}
+		]
 	}),
 	notFoundComponent: () => (
 		<div className="flex h-dvh flex-col items-center justify-center text-3xl font-semibold text-black">
