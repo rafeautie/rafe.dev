@@ -296,3 +296,9 @@
 		color: oklch(0 0 0 / 60%);
 	}
 }
+
+/* Navigations between writing pages, which opt in (see app/writing) */
+::view-transition-group(*) {
+	animation-duration: 500ms;
+	animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}

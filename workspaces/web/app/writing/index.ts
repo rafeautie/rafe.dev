@@ -42,6 +42,18 @@ export const DEFAULT_IMAGE: NonNullable<PostMeta['image']> = {
 	alt: DEFAULT_PHOTO.alt
 };
 
+// Full-page navigations between writing pages morph a post's title and
+// description from the index into the post. Opted into per page, so the rest
+// of the site navigates as before; browsers without support simply navigate.
+export const VIEW_TRANSITIONS = {
+	children:
+		'@media (prefers-reduced-motion: no-preference) { @view-transition { navigation: auto; } }'
+};
+
+export function transitionName(post: Post, part: 'title' | 'description') {
+	return `${part}-${post.slug}`;
+}
+
 const DATE_FORMAT = new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeZone: 'UTC' });
 
 export function formatDate(date: string) {
