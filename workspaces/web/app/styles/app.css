@@ -190,3 +190,109 @@
 		}
 	}
 }
+
+/* Post bodies under /writing: HTML rendered from Markdown at build time
+   (plugins/markdown.ts), so it is styled here, on top of the typography
+   plugin's prose, rather than with utilities. */
+.post {
+	--tw-prose-body: oklch(0 0 0 / 80%);
+	--tw-prose-headings: var(--color-black);
+	--tw-prose-lead: oklch(0 0 0 / 60%);
+	--tw-prose-links: var(--color-black);
+	--tw-prose-bold: var(--color-black);
+	--tw-prose-counters: oklch(0 0 0 / 45%);
+	--tw-prose-bullets: oklch(0 0 0 / 30%);
+	--tw-prose-hr: oklch(0 0 0 / 10%);
+	--tw-prose-quotes: oklch(0 0 0 / 60%);
+	--tw-prose-quote-borders: oklch(0 0 0 / 15%);
+	--tw-prose-captions: oklch(0 0 0 / 50%);
+	--tw-prose-code: var(--color-black);
+	/* github-light, the Shiki theme, without its white background */
+	--tw-prose-pre-code: #24292e;
+	--tw-prose-pre-bg: oklch(0 0 0 / 2.5%);
+	--tw-prose-th-borders: oklch(0 0 0 / 15%);
+	--tw-prose-td-borders: oklch(0 0 0 / 8%);
+
+	& :is(p, li) {
+		text-wrap: pretty;
+	}
+
+	& :is(h2, h3, h4) {
+		font-weight: 600;
+		letter-spacing: -0.025em;
+		text-wrap: balance;
+		scroll-margin-top: 1.5rem;
+	}
+
+	& .anchor {
+		margin-left: 0.3em;
+		color: oklch(0 0 0 / 25%);
+		font-weight: 400;
+		text-decoration: none;
+		opacity: 0;
+		transition: opacity 150ms;
+	}
+
+	& :is(h2, h3, h4):hover .anchor,
+	& .anchor:focus-visible {
+		opacity: 1;
+	}
+
+	@media (hover: none) {
+		& .anchor {
+			opacity: 1;
+		}
+	}
+
+	& a:not(.anchor) {
+		font-weight: inherit;
+		text-decoration-color: oklch(0 0 0 / 25%);
+		text-underline-offset: 3px;
+		transition: text-decoration-color 150ms;
+
+		&:hover {
+			text-decoration-color: currentColor;
+		}
+	}
+
+	& :not(pre) > code {
+		border-radius: 0.25rem;
+		background-color: oklch(0 0 0 / 5%);
+		padding: 0.15em 0.35em;
+		font-weight: 400;
+
+		&::before,
+		&::after {
+			content: none;
+		}
+	}
+
+	/* asides as often as quotations, so no italics or curly quotes */
+	& blockquote {
+		font-style: normal;
+		font-weight: 400;
+
+		& p::before,
+		& p::after {
+			content: none;
+		}
+	}
+
+	& pre {
+		border: 1px solid oklch(0 0 0 / 10%);
+		border-radius: var(--radius-lg);
+		line-height: 1.7;
+	}
+
+	& img {
+		border: 1px solid oklch(0 0 0 / 10%);
+		border-radius: var(--radius-lg);
+	}
+
+	& [data-footnotes] {
+		margin-top: 3em;
+		border-top: 1px solid var(--tw-prose-hr);
+		font-size: 0.875em;
+		color: oklch(0 0 0 / 60%);
+	}
+}

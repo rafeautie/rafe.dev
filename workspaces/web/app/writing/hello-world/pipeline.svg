@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="200" viewBox="0 0 720 200" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="15">
+	<rect width="720" height="200" fill="#fff"/>
+	<g fill="none" stroke="#000" stroke-opacity="0.2">
+		<rect x="20.5" y="75.5" width="130" height="50" rx="6"/>
+		<rect x="220.5" y="75.5" width="190" height="50" rx="6"/>
+		<rect x="510.5" y="35.5" width="190" height="50" rx="6"/>
+		<rect x="510.5" y="115.5" width="190" height="50" rx="6"/>
+	</g>
+	<g fill="none" stroke="#000" stroke-opacity="0.45" stroke-width="1.5">
+		<path d="M151 100h63m-6-5 6 5-6 5"/>
+		<path d="M411 94 504 60m-7-1 7 1-4 6"/>
+		<path d="M411 106 504 140m-4-6 4 6-7 1"/>
+	</g>
+	<g fill="#000" text-anchor="middle">
+		<text x="85" y="105">index.md</text>
+		<text x="315" y="105">plugins/markdown.ts</text>
+		<text x="605" y="65">?meta: frontmatter</text>
+		<text x="605" y="145">html: rendered body</text>
+	</g>
+</svg>

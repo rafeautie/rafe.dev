@@ -14,6 +14,9 @@ import { Route as PhotographyRouteImport } from './routes/photography'
 import { Route as DevelopmentRouteImport } from './routes/development'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WritingIndexRouteImport } from './routes/writing/index'
+import { Route as WritingFeedDotxmlRouteImport } from './routes/writing/feed[.]xml'
+import { Route as WritingSlugRouteImport } from './routes/writing/$slug'
 
 const ShmoneyRoute = ShmoneyRouteImport.update({
   id: '/shmoney',
@@ -40,6 +43,21 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WritingIndexRoute = WritingIndexRouteImport.update({
+  id: '/writing/',
+  path: '/writing/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WritingFeedDotxmlRoute = WritingFeedDotxmlRouteImport.update({
+  id: '/writing/feed.xml',
+  path: '/writing/feed.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WritingSlugRoute = WritingSlugRouteImport.update({
+  id: '/writing/$slug',
+  path: '/writing/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -47,6 +65,9 @@ export interface FileRoutesByFullPath {
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
+  '/writing/$slug': typeof WritingSlugRoute
+  '/writing/feed.xml': typeof WritingFeedDotxmlRoute
+  '/writing/': typeof WritingIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +75,9 @@ export interface FileRoutesByTo {
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
+  '/writing/$slug': typeof WritingSlugRoute
+  '/writing/feed.xml': typeof WritingFeedDotxmlRoute
+  '/writing': typeof WritingIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +86,41 @@ export interface FileRoutesById {
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
+  '/writing/$slug': typeof WritingSlugRoute
+  '/writing/feed.xml': typeof WritingFeedDotxmlRoute
+  '/writing/': typeof WritingIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/development' | '/photography' | '/shmoney'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/development'
+    | '/photography'
+    | '/shmoney'
+    | '/writing/$slug'
+    | '/writing/feed.xml'
+    | '/writing/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/development' | '/photography' | '/shmoney'
-  id: '__root__' | '/' | '/about' | '/development' | '/photography' | '/shmoney'
+  to:
+    | '/'
+    | '/about'
+    | '/development'
+    | '/photography'
+    | '/shmoney'
+    | '/writing/$slug'
+    | '/writing/feed.xml'
+    | '/writing'
+  id:
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/development'
+    | '/photography'
+    | '/shmoney'
+    | '/writing/$slug'
+    | '/writing/feed.xml'
+    | '/writing/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -77,6 +129,9 @@ export interface RootRouteChildren {
   DevelopmentRoute: typeof DevelopmentRoute
   PhotographyRoute: typeof PhotographyRoute
   ShmoneyRoute: typeof ShmoneyRoute
+  WritingSlugRoute: typeof WritingSlugRoute
+  WritingFeedDotxmlRoute: typeof WritingFeedDotxmlRoute
+  WritingIndexRoute: typeof WritingIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -116,6 +171,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/writing/': {
+      id: '/writing/'
+      path: '/writing'
+      fullPath: '/writing/'
+      preLoaderRoute: typeof WritingIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/writing/feed.xml': {
+      id: '/writing/feed.xml'
+      path: '/writing/feed.xml'
+      fullPath: '/writing/feed.xml'
+      preLoaderRoute: typeof WritingFeedDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/writing/$slug': {
+      id: '/writing/$slug'
+      path: '/writing/$slug'
+      fullPath: '/writing/$slug'
+      preLoaderRoute: typeof WritingSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -125,6 +201,9 @@ const rootRouteChildren: RootRouteChildren = {
   DevelopmentRoute: DevelopmentRoute,
   PhotographyRoute: PhotographyRoute,
   ShmoneyRoute: ShmoneyRoute,
+  WritingSlugRoute: WritingSlugRoute,
+  WritingFeedDotxmlRoute: WritingFeedDotxmlRoute,
+  WritingIndexRoute: WritingIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
