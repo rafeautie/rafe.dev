@@ -1,7 +1,7 @@
 ---
 title: Hello, world
-description: rafe.dev has room for longer writing now.
+description: The obligatory first post.
 date: 2026-09-27
 ---
 
-Hi, I'm Rafe. Welcome.
+Oh, hi! I'm Rafe, and you're early. Pull up a chair; the real posts are on their way.
