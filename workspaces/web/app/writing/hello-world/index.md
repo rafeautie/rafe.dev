@@ -1,55 +1,37 @@
 ---
 title: Hello, world
-description: A placeholder that runs every part of the writing pipeline, from frontmatter to the feed.
-date: 2026-09-26
-image: ./cover.png
-imageAlt: 'Hello, world, on rafe.dev/writing'
+description: rafe.dev has room for longer writing now. What it's for, and what's coming first.
+date: 2026-09-27
 ---
 
-This post is a placeholder. It exists to show that a Markdown file in the repo comes out the other end as a fast, readable page, a link preview, and a feed entry.
+Until now, this site has been a business card and a photo gallery. It has room for longer writing now, and this is the first post.
 
-## Code
+## What goes here
 
-Code blocks are highlighted at build time, so the page ships colored HTML and no highlighter:
+Mostly the things I build, and how they work underneath: the decisions that don't fit in a commit message, and the details that turned out more interesting than the feature they were for.
 
-```ts
-const DATE_FORMAT = new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeZone: 'UTC' });
+## Coming first
 
-export function formatDate(date: string) {
-	return DATE_FORMAT.format(new Date(date));
-}
+The first two posts are about [shmoney](/shmoney), a personal finance app that runs entirely on your computer. Everything lives in one SQLite file, with no account and no cloud.
+
+1. **Exact answers from a small model.** shmoney's chat runs a small model on your own machine, and small models can't be trusted with arithmetic. So instead of doing the math, it calls tools that do it in code, and answers with the exact numbers they return.
+2. **The real app in a browser tab.** The live demo on the shmoney page isn't a mockup. It's the Electron app's real backend, running in your browser on sql.js with a few module redirects. That post covers how.
+
+## How this page got here
+
+Posts are Markdown files in this site's repo, compiled at build time into plain HTML with the code highlighted and the images sized. The page you're reading ships no Markdown parser and no highlighter. Each post starts with a little frontmatter, like this:
+
+```md
+---
+title: Hello, world
+date: 2026-09-27
+---
 ```
 
-Inline code, like `import.meta.glob`, gets a quieter treatment. A block without a language stays plain:
+## Follow along
 
-```
-pnpm dev
-```
+There's an [Atom feed](/writing/feed.xml) for your reader of choice, and shmoney's source is on [GitHub](https://github.com/rafeautie/shmoney). If something here is wrong or could be better, [email me](mailto:rafe@rafe.dev).
 
-## Images
+When I'm not behind a screen, I'm usually out with a camera, so it seems right to end the first post with a photo. There are more on the [photography](/photography) page.
 
-Relative images become build assets with their width and height set, so nothing shifts as they load. Rasters are re-encoded to a WebP srcset:
-
-![Hello, world, on rafe.dev/writing](./cover.png)
-
-SVGs are served as they are:
-
-![index.md is compiled by plugins/markdown.ts into a frontmatter module and a rendered body module](./pipeline.svg)
-
-### Everything else
-
-- Lists, **bold**, _italic_, and ~~strikethrough~~
-- [Links](https://github.com/rafeautie/shmoney), and bare ones like https://rafe.dev
-- Headings with anchor links
-
-> A blockquote, for when someone else said it better.
-
-| Feature | Where it happens    |
-| ------- | ------------------- |
-| Parsing | build time          |
-| Styling | the site stylesheet |
-| Feed    | `/writing/feed.xml` |
-
-And a footnote.[^1]
-
-[^1]: Footnotes collect at the bottom of the post.
+![Yosemite Valley](../../photos/DSCF0740.jpg)
