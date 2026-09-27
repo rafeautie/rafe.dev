@@ -442,7 +442,7 @@ function ShmoneyPage() {
 						</Button>
 					</div>
 					<p className="rise mt-4 text-sm text-black/50 [--delay:240ms]">
-						Free for personal use · Windows, macOS, and Linux
+						Free and open source · Windows, macOS, and Linux
 					</p>
 					{/* LiveDemo only runs the app on screens big enough for the tour; phones get the screenshots */}
 					<p className="rise mt-10 flex items-start gap-2 rounded-lg border border-black/10 bg-black/[0.03] px-3 py-2 text-sm text-pretty text-black/70 [--delay:320ms] tour:hidden">
@@ -478,10 +478,7 @@ function ShmoneyPage() {
 					</div>
 					<div className="reveal">
 						<Split label={<h2>Get shmoney</h2>}>
-							<p>
-								Free for personal use under the PolyForm Noncommercial 1.0.0 license. shmoney is
-								pre-1.0.
-							</p>
+							<p>Free and open source under the AGPL-3.0 license. shmoney is pre-1.0.</p>
 							<div className="mt-5 flex flex-wrap items-center gap-3">
 								<DownloadButton />
 								<Button
