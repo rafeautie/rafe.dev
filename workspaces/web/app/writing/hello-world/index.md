@@ -1,7 +1,7 @@
 ---
-title: Hello, world
-description: The obligatory first post.
+title: symbol and irony
+description: a hello to the world
 date: 2026-09-27
 ---
 
-Oh, hi! I'm Rafe, and you're early. Pull up a chair; the real posts are on their way.
+to the future 🥂
