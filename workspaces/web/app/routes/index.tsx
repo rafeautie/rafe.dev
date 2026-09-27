@@ -94,7 +94,6 @@ function HomePage() {
 						className="text-center text-balance"
 						separatorClassName="text-inherit opacity-60"
 					>
-						<Link href="/about">rafe</Link>
 						<Link href="/photography">photography</Link>
 						<Link href="/development">development</Link>
 						<Link href="/writing">writing</Link>

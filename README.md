@@ -9,7 +9,7 @@ Live at [rafe.dev](https://rafe.dev).
 - A landing page that greets you with a random photo from my collection
 - A photography gallery
 - A development page with projects I'm working on
-- A little about me
+- Writing
 
 ## Built with
 
