@@ -49,15 +49,17 @@ function WritingPage() {
 					<ol className="mt-16 flex flex-col gap-12 sm:mt-24">
 						{POSTS.map((post) => (
 							<li key={post.slug}>
-								<article>
-									<time dateTime={post.date} className="text-sm text-black/50">
-										{formatDate(post.date)}
-									</time>
-									<h2 className="mt-2 text-2xl font-semibold tracking-tight text-balance">
-										<Link href={`/writing/${post.slug}`}>{post.title}</Link>
-									</h2>
-									<p className="mt-2 text-pretty text-black/60">{post.description}</p>
-								</article>
+								<Link href={`/writing/${post.slug}`} className="block">
+									<article>
+										<time dateTime={post.date} className="text-sm text-black/50">
+											{formatDate(post.date)}
+										</time>
+										<h2 className="mt-2 text-2xl font-semibold tracking-tight text-balance">
+											{post.title}
+										</h2>
+										<p className="mt-2 text-pretty text-black/60">{post.description}</p>
+									</article>
+								</Link>
 							</li>
 						))}
 					</ol>
