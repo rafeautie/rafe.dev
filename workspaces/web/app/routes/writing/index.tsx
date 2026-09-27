@@ -49,7 +49,8 @@ function WritingPage() {
 					<ol className="mt-16 flex flex-col gap-12 sm:mt-24">
 						{POSTS.map((post) => (
 							<li key={post.slug}>
-								<Link href={`/writing/${post.slug}`} className="block">
+								{/* a whole entry is far wider than a nav link, so the same scale reads larger */}
+								<Link href={`/writing/${post.slug}`} className="block hover:scale-[1.004]">
 									<article>
 										<time dateTime={post.date} className="text-sm text-black/50">
 											{formatDate(post.date)}
