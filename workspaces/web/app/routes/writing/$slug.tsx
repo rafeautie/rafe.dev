@@ -1,5 +1,7 @@
 import { createFileRoute, notFound } from '@tanstack/react-router';
+import { useRef } from 'react';
 import { Link } from '~/components/Link';
+import { ReadAloud } from '~/components/ReadAloud';
 import { SlashNav } from '~/components/SlashNav';
 import { ThemeToggle } from '~/components/ThemeToggle';
 import { absoluteUrl } from '~/photos';
@@ -70,6 +72,7 @@ export const Route = createFileRoute('/writing/$slug')({
 
 function PostPage() {
 	const { post, html } = Route.useLoaderData();
+	const article = useRef<HTMLElement>(null);
 
 	return (
 		<div className="px-6 py-8 text-base text-foreground sm:px-8">
@@ -81,17 +84,21 @@ function PostPage() {
 					</SlashNav>
 					<ThemeToggle />
 				</div>
-				<article className="mt-16 sm:mt-24">
+				<article ref={article} className="mt-16 sm:mt-24">
 					<header>
-						<p className="text-sm text-foreground/50">
-							<time dateTime={post.date}>{formatDate(post.date)}</time>
-							{post.updated && (
-								<>
-									{' · updated '}
-									<time dateTime={post.updated}>{formatDate(post.updated)}</time>
-								</>
-							)}
-						</p>
+						<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+							<p className="text-sm text-foreground/50" data-read-aloud="skip">
+								<time dateTime={post.date}>{formatDate(post.date)}</time>
+								{post.updated && (
+									<>
+										{' · updated '}
+										<time dateTime={post.updated}>{formatDate(post.updated)}</time>
+									</>
+								)}
+							</p>
+							{/* keyed, so moving to another post stops the reading */}
+							<ReadAloud key={post.slug} target={article} />
+						</div>
 						<h1 className="mt-3 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
 							{post.title}
 						</h1>

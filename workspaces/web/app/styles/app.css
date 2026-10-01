@@ -208,6 +208,57 @@
 	transition: none !important;
 }
 
+/* The passage being read aloud (lib/read-aloud.ts): a soft wash that reaches
+   a little past the text. It is a shadow's spread rather than padding, so
+   nothing moves, and only its color changes, so the shape holds while it
+   fades out. Not on blockquotes or table cells, whose borders would round. */
+article :is(h1, h2, h3, h4, h5, h6, p, li, figcaption) {
+	border-radius: 0.25rem;
+	box-shadow: 0 0 0 0.375rem transparent;
+	transition:
+		background-color 600ms ease,
+		box-shadow 600ms ease;
+}
+
+/* while reading, any passage can be clicked to read from there */
+[data-readable] {
+	cursor: pointer;
+}
+
+@media (hover: hover) {
+	[data-readable]:hover:not([data-reading]) {
+		--reading: color-mix(in oklab, var(--foreground) 3%, transparent);
+		background-color: var(--reading);
+		box-shadow: 0 0 0 0.375rem var(--reading);
+	}
+}
+
+[data-reading] {
+	--reading: color-mix(in oklab, var(--foreground) 6%, transparent);
+	background-color: var(--reading);
+	box-shadow: 0 0 0 0.375rem var(--reading);
+}
+
+/* the level meter on the read-aloud trigger (components/ReadAloud.tsx) */
+.listening-bar {
+	scale: 1 0.55;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.listening-bar {
+		animation: listening 1.05s ease-in-out infinite alternate;
+	}
+}
+
+@keyframes listening {
+	from {
+		scale: 1 0.3;
+	}
+	to {
+		scale: 1 1;
+	}
+}
+
 /* Post bodies under /writing: HTML rendered from Markdown at build time
    (plugins/markdown.ts), so it is styled here, on top of the typography
    plugin's prose, rather than with utilities. */
