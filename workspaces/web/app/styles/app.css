@@ -202,6 +202,21 @@
 	animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
 }
 
+/* The toggle's icon is lifted out of that picture: with no old copy fading
+   over it, the live icon is all that shows, so the sun visibly turns into the
+   moon instead of the two crossfading. */
+.theme-toggle svg {
+	view-transition-name: theme-toggle;
+}
+
+::view-transition-old(theme-toggle) {
+	display: none;
+}
+
+::view-transition-new(theme-toggle) {
+	animation: none;
+}
+
 .theme-switching *:not(.theme-toggle svg, .theme-toggle svg *),
 .theme-switching *::before,
 .theme-switching *::after {
