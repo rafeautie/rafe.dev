@@ -79,7 +79,7 @@ function PostPage() {
 							Rafe Autie
 						</Link>
 					</p>
-					<Link href="/writing" className="hover:text-foreground">
+					<Link href="/writing" className="text-foreground">
 						More writing
 					</Link>
 				</footer>
