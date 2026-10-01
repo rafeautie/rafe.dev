@@ -40,14 +40,14 @@ export const Route = createFileRoute('/shmoney')({
 			{ property: 'og:image:width', content: '1280' },
 			{ property: 'og:image:height', content: '640' },
 			{ property: 'og:image:alt', content: SOCIAL_IMAGE_ALT },
-			{ property: 'twitter:card', content: 'summary_large_image' },
-			{ property: 'twitter:title', content: 'shmoney | Your money, on your machine' },
+			{ name: 'twitter:card', content: 'summary_large_image' },
+			{ name: 'twitter:title', content: 'shmoney | Your money, on your machine' },
 			{
-				property: 'twitter:description',
+				name: 'twitter:description',
 				content: 'A private, local-first personal finance app. No cloud, no account, no telemetry.'
 			},
-			{ property: 'twitter:image', content: SOCIAL_IMAGE },
-			{ property: 'twitter:image:alt', content: SOCIAL_IMAGE_ALT }
+			{ name: 'twitter:image', content: SOCIAL_IMAGE },
+			{ name: 'twitter:image:alt', content: SOCIAL_IMAGE_ALT }
 		],
 		// the screenshots and the live demo both come from the demo's origin
 		links: [{ rel: 'preconnect', href: DEMO_URL }]

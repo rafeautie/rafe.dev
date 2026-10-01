@@ -51,15 +51,15 @@ export const Route = createFileRoute('/')({
 						'Digital home of Rafe Autie, a developer specializing in mobile interfaces and front-end architecture.'
 				},
 				{ property: 'og:image', content: img },
-				{ property: 'twitter:card', content: 'summary_large_image' },
-				{ property: 'twitter:url', content: 'https://rafe.dev/' },
-				{ property: 'twitter:title', content: 'Rafe Autie | Developer & Photographer' },
+				{ name: 'twitter:card', content: 'summary_large_image' },
+				{ name: 'twitter:url', content: 'https://rafe.dev/' },
+				{ name: 'twitter:title', content: 'Rafe Autie | Developer & Photographer' },
 				{
-					property: 'twitter:description',
+					name: 'twitter:description',
 					content:
 						'Digital home of Rafe Autie, a developer specializing in mobile interfaces and front-end architecture.'
 				},
-				{ property: 'twitter:image', content: img }
+				{ name: 'twitter:image', content: img }
 			]
 		};
 	},

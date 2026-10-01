@@ -57,6 +57,8 @@ export type PostMeta = {
 	description: string;
 	// ISO yyyy-mm-dd
 	date: string;
+	// ISO yyyy-mm-dd, for a post revised after it went out
+	updated?: string;
 	image?: { src: string; width: number; height: number; alt: string };
 };
 
@@ -123,18 +125,24 @@ async function readMeta(
 	assets: Assets,
 	watch: (asset: string) => void
 ): Promise<PostMeta> {
-	const { title, description, date, image, imageAlt } = frontmatter;
+	const { title, description, date, updated, image, imageAlt } = frontmatter;
 	for (const [key, value] of Object.entries({ title, description, date })) {
 		if (typeof value !== 'string' || !value) throw new Error(`${file}: frontmatter needs ${key}`);
 	}
-	if (!/^\d{4}-\d{2}-\d{2}$/.test(date as string)) {
-		throw new Error(`${file}: date must be yyyy-mm-dd`);
+	for (const [key, value] of Object.entries({ date, updated })) {
+		if (value !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+			throw new Error(`${file}: ${key} must be yyyy-mm-dd`);
+		}
 	}
 	const meta: PostMeta = {
 		title: title as string,
 		description: description as string,
 		date: date as string
 	};
+	if (updated !== undefined) {
+		if (String(updated) < meta.date) throw new Error(`${file}: updated is before date`);
+		meta.updated = String(updated);
+	}
 	if (typeof image === 'string') {
 		const dir = path.dirname(file);
 		const size = await imageSize(path.resolve(dir, image));

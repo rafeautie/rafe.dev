@@ -25,15 +25,15 @@ export const Route = createFileRoute('/photography')({
 						'A curated selection of photographs by Rafe Autie, showcasing moments captured through the lens.'
 				},
 				...(firstImg ? [{ property: 'og:image', content: firstImg }] : []),
-				{ property: 'twitter:card', content: 'summary_large_image' },
-				{ property: 'twitter:url', content: 'https://rafe.dev/photography' },
-				{ property: 'twitter:title', content: 'Photography | Rafe Autie' },
+				{ name: 'twitter:card', content: 'summary_large_image' },
+				{ name: 'twitter:url', content: 'https://rafe.dev/photography' },
+				{ name: 'twitter:title', content: 'Photography | Rafe Autie' },
 				{
-					property: 'twitter:description',
+					name: 'twitter:description',
 					content:
 						'A curated selection of photographs by Rafe Autie, showcasing moments captured through the lens.'
 				},
-				...(firstImg ? [{ property: 'twitter:image', content: firstImg }] : [])
+				...(firstImg ? [{ name: 'twitter:image', content: firstImg }] : [])
 			]
 		};
 	},
