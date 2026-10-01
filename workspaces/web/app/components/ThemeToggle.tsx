@@ -8,7 +8,8 @@ const part =
 // Dark mode switch for /writing. The icon is drawn from the `dark` class on
 // <html> rather than from state, so it is right from the first paint, before
 // hydration. The sun's rays spin away while a shadow slides across it, leaving
-// a crescent.
+// a crescent. The page's crossfade leaves the icon out (styles/app.css), so it
+// fades its own color, timed to match.
 export function ThemeToggle({ className }: { className?: string }) {
 	const dark = useWritingTheme();
 
@@ -26,7 +27,7 @@ export function ThemeToggle({ className }: { className?: string }) {
 			<svg
 				viewBox="0 0 24 24"
 				aria-hidden="true"
-				className={cn(part, 'size-[18px] dark:rotate-40')}
+				className="size-[18px] origin-center transition-[rotate,color] duration-[750ms,700ms] ease-[cubic-bezier(0.34,1.3,0.64,1),cubic-bezier(0.65,0,0.35,1)] motion-reduce:transition-none dark:rotate-40"
 			>
 				<mask
 					id="theme-toggle-eclipse"
