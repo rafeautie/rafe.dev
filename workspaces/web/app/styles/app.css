@@ -51,6 +51,7 @@
 }
 
 .dark {
+	color-scheme: dark;
 	--background: oklch(0.145 0 0);
 	--foreground: oklch(0.985 0 0);
 	--card: oklch(0.205 0 0);
@@ -191,27 +192,53 @@
 	}
 }
 
+/* The /writing dark mode crossfade (lib/writing-theme.ts): a view transition
+   that fades a picture of the old page into the live new one. Inside it,
+   nothing runs a transition of its own, so the whole page moves as one; the
+   toggle's icon is the exception and plays its own motion. */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation-duration: 700ms;
+	animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.theme-switching *:not(.theme-toggle svg, .theme-toggle svg *),
+.theme-switching *::before,
+.theme-switching *::after {
+	transition: none !important;
+}
+
 /* Post bodies under /writing: HTML rendered from Markdown at build time
    (plugins/markdown.ts), so it is styled here, on top of the typography
    plugin's prose, rather than with utilities. */
 .post {
-	--tw-prose-body: oklch(0 0 0 / 80%);
-	--tw-prose-headings: var(--color-black);
-	--tw-prose-lead: oklch(0 0 0 / 60%);
-	--tw-prose-links: var(--color-black);
-	--tw-prose-bold: var(--color-black);
-	--tw-prose-counters: oklch(0 0 0 / 45%);
-	--tw-prose-bullets: oklch(0 0 0 / 30%);
-	--tw-prose-hr: oklch(0 0 0 / 10%);
-	--tw-prose-quotes: oklch(0 0 0 / 60%);
-	--tw-prose-quote-borders: oklch(0 0 0 / 15%);
-	--tw-prose-captions: oklch(0 0 0 / 50%);
-	--tw-prose-code: var(--color-black);
+	--tw-prose-body: color-mix(in oklab, var(--foreground) 80%, transparent);
+	--tw-prose-headings: var(--foreground);
+	--tw-prose-lead: color-mix(in oklab, var(--foreground) 60%, transparent);
+	--tw-prose-links: var(--foreground);
+	--tw-prose-bold: var(--foreground);
+	--tw-prose-counters: color-mix(in oklab, var(--foreground) 45%, transparent);
+	--tw-prose-bullets: color-mix(in oklab, var(--foreground) 30%, transparent);
+	--tw-prose-hr: color-mix(in oklab, var(--foreground) 10%, transparent);
+	--tw-prose-quotes: color-mix(in oklab, var(--foreground) 60%, transparent);
+	--tw-prose-quote-borders: color-mix(in oklab, var(--foreground) 15%, transparent);
+	--tw-prose-captions: color-mix(in oklab, var(--foreground) 50%, transparent);
+	--tw-prose-code: var(--foreground);
 	/* github-light, the Shiki theme, without its white background */
 	--tw-prose-pre-code: #24292e;
-	--tw-prose-pre-bg: oklch(0 0 0 / 2.5%);
-	--tw-prose-th-borders: oklch(0 0 0 / 15%);
-	--tw-prose-td-borders: oklch(0 0 0 / 8%);
+	--tw-prose-pre-bg: color-mix(in oklab, var(--foreground) 2.5%, transparent);
+	--tw-prose-th-borders: color-mix(in oklab, var(--foreground) 15%, transparent);
+	--tw-prose-td-borders: color-mix(in oklab, var(--foreground) 8%, transparent);
+
+	/* Shiki writes both themes onto each token (plugins/markdown.ts). The
+	   inline color is github-light's, so dark mode swaps in github-dark's. */
+	.dark & {
+		--tw-prose-pre-code: #e1e4e8;
+
+		& pre span {
+			color: var(--shiki-dark) !important;
+		}
+	}
 
 	& :is(p, li) {
 		text-wrap: pretty;
@@ -226,7 +253,7 @@
 
 	& .anchor {
 		margin-left: 0.3em;
-		color: oklch(0 0 0 / 25%);
+		color: color-mix(in oklab, var(--foreground) 25%, transparent);
 		font-weight: 400;
 		text-decoration: none;
 		opacity: 0;
@@ -246,7 +273,7 @@
 
 	& a:not(.anchor) {
 		font-weight: inherit;
-		text-decoration-color: oklch(0 0 0 / 25%);
+		text-decoration-color: color-mix(in oklab, var(--foreground) 25%, transparent);
 		text-underline-offset: 3px;
 		transition: text-decoration-color 150ms;
 
@@ -257,7 +284,7 @@
 
 	& :not(pre) > code {
 		border-radius: 0.25rem;
-		background-color: oklch(0 0 0 / 5%);
+		background-color: color-mix(in oklab, var(--foreground) 5%, transparent);
 		padding: 0.15em 0.35em;
 		font-weight: 400;
 
@@ -279,13 +306,13 @@
 	}
 
 	& pre {
-		border: 1px solid oklch(0 0 0 / 10%);
+		border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent);
 		border-radius: var(--radius-lg);
 		line-height: 1.7;
 	}
 
 	& img {
-		border: 1px solid oklch(0 0 0 / 10%);
+		border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent);
 		border-radius: var(--radius-lg);
 	}
 
@@ -293,6 +320,6 @@
 		margin-top: 3em;
 		border-top: 1px solid var(--tw-prose-hr);
 		font-size: 0.875em;
-		color: oklch(0 0 0 / 60%);
+		color: color-mix(in oklab, var(--foreground) 60%, transparent);
 	}
 }

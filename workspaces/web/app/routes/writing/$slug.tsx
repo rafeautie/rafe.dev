@@ -1,6 +1,7 @@
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
+import { ThemeToggle } from '~/components/ThemeToggle';
 import { absoluteUrl } from '~/photos';
 import { DEFAULT_IMAGE, formatDate, getPost, lastModified, loadHtml } from '~/writing';
 
@@ -71,15 +72,18 @@ function PostPage() {
 	const { post, html } = Route.useLoaderData();
 
 	return (
-		<div className="px-6 py-8 text-base text-black sm:px-8">
+		<div className="px-6 py-8 text-base text-foreground sm:px-8">
 			<div className="mx-auto max-w-2xl">
-				<SlashNav className="text-xl font-medium">
-					<Link href="/">rafe</Link>
-					<Link href="/writing">writing</Link>
-				</SlashNav>
+				<div className="flex items-center justify-between gap-4">
+					<SlashNav className="text-xl font-medium">
+						<Link href="/">rafe</Link>
+						<Link href="/writing">writing</Link>
+					</SlashNav>
+					<ThemeToggle />
+				</div>
 				<article className="mt-16 sm:mt-24">
 					<header>
-						<p className="text-sm text-black/50">
+						<p className="text-sm text-foreground/50">
 							<time dateTime={post.date}>{formatDate(post.date)}</time>
 							{post.updated && (
 								<>
@@ -91,21 +95,21 @@ function PostPage() {
 						<h1 className="mt-3 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
 							{post.title}
 						</h1>
-						<p className="mt-5 text-lg text-pretty text-black/60">{post.description}</p>
+						<p className="mt-5 text-lg text-pretty text-foreground/60">{post.description}</p>
 					</header>
 					<div
 						className="post prose mt-12 max-w-none prose-neutral sm:prose-lg"
 						dangerouslySetInnerHTML={{ __html: html }}
 					/>
 				</article>
-				<footer className="mt-24 flex items-center justify-between gap-4 border-t border-black/10 pt-8 text-sm text-black/60">
+				<footer className="mt-24 flex items-center justify-between gap-4 border-t border-foreground/10 pt-8 text-sm text-foreground/60">
 					<p>
 						Written by{' '}
-						<Link href="/" className="text-black">
+						<Link href="/" className="text-foreground">
 							Rafe Autie
 						</Link>
 					</p>
-					<Link href="/writing" className="hover:text-black">
+					<Link href="/writing" className="text-foreground">
 						More writing
 					</Link>
 				</footer>
