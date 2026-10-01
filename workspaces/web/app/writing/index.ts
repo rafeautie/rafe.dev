@@ -3,7 +3,7 @@ import type { PostMeta } from '../../plugins/markdown';
 
 // A post is app/writing/<slug>/index.md, with its images beside it. The
 // frontmatter takes a title, a description, a date (yyyy-mm-dd), and optionally
-// an image (a relative path) and imageAlt for link previews.
+// an updated date, and an image (a relative path) and imageAlt for link previews.
 // plugins/markdown.ts compiles each one at build time.
 export type Post = PostMeta & { slug: string; url: string };
 
@@ -26,6 +26,11 @@ export const POSTS: Post[] = Object.entries(META)
 
 export function getPost(slug: string): Post | undefined {
 	return POSTS.find((post) => post.slug === slug);
+}
+
+// when a post last changed
+export function lastModified(post: Post): string {
+	return post.updated ?? post.date;
 }
 
 export function loadHtml(post: Post): Promise<string> {

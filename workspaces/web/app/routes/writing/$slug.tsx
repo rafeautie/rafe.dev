@@ -2,7 +2,7 @@ import { createFileRoute, notFound } from '@tanstack/react-router';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { absoluteUrl } from '~/photos';
-import { DEFAULT_IMAGE, formatDate, getPost, loadHtml } from '~/writing';
+import { DEFAULT_IMAGE, formatDate, getPost, lastModified, loadHtml } from '~/writing';
 
 export const Route = createFileRoute('/writing/$slug')({
 	loader: async ({ params }) => {
@@ -29,15 +29,39 @@ export const Route = createFileRoute('/writing/$slug')({
 				{ property: 'og:image:height', content: String(image.height) },
 				{ property: 'og:image:alt', content: image.alt },
 				{ property: 'article:published_time', content: post.date },
+				{ property: 'article:modified_time', content: lastModified(post) },
 				{ property: 'article:author', content: 'https://rafe.dev' },
-				{ property: 'twitter:card', content: 'summary_large_image' },
-				{ property: 'twitter:url', content: post.url },
-				{ property: 'twitter:title', content: post.title },
-				{ property: 'twitter:description', content: post.description },
-				{ property: 'twitter:image', content: imageUrl },
-				{ property: 'twitter:image:alt', content: image.alt }
+				{ name: 'twitter:card', content: 'summary_large_image' },
+				{ name: 'twitter:url', content: post.url },
+				{ name: 'twitter:title', content: post.title },
+				{ name: 'twitter:description', content: post.description },
+				{ name: 'twitter:image', content: imageUrl },
+				{ name: 'twitter:image:alt', content: image.alt }
 			],
-			links: [{ rel: 'canonical', href: post.url }]
+			links: [{ rel: 'canonical', href: post.url }],
+			scripts: [
+				{
+					type: 'application/ld+json',
+					// < escaped so a title cannot close the script tag
+					children: JSON.stringify({
+						'@context': 'https://schema.org',
+						'@type': 'BlogPosting',
+						headline: post.title,
+						description: post.description,
+						url: post.url,
+						mainEntityOfPage: post.url,
+						datePublished: post.date,
+						dateModified: lastModified(post),
+						image: {
+							'@type': 'ImageObject',
+							url: imageUrl,
+							width: image.width,
+							height: image.height
+						},
+						author: { '@type': 'Person', name: 'Rafe Autie', url: 'https://rafe.dev' }
+					}).replaceAll('<', '\\u003c')
+				}
+			]
 		};
 	},
 	component: PostPage
@@ -55,9 +79,15 @@ function PostPage() {
 				</SlashNav>
 				<article className="mt-16 sm:mt-24">
 					<header>
-						<time dateTime={post.date} className="text-sm text-black/50">
-							{formatDate(post.date)}
-						</time>
+						<p className="text-sm text-black/50">
+							<time dateTime={post.date}>{formatDate(post.date)}</time>
+							{post.updated && (
+								<>
+									{' · updated '}
+									<time dateTime={post.updated}>{formatDate(post.updated)}</time>
+								</>
+							)}
+						</p>
 						<h1 className="mt-3 text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
 							{post.title}
 						</h1>

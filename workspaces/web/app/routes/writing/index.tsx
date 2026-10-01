@@ -17,11 +17,11 @@ export const Route = createFileRoute('/writing/')({
 			{ property: 'og:title', content: 'Writing | Rafe Autie' },
 			{ property: 'og:description', content: DESCRIPTION },
 			{ property: 'og:image', content: absoluteUrl(DEFAULT_IMAGE.src) },
-			{ property: 'twitter:card', content: 'summary_large_image' },
-			{ property: 'twitter:url', content: 'https://rafe.dev/writing' },
-			{ property: 'twitter:title', content: 'Writing | Rafe Autie' },
-			{ property: 'twitter:description', content: DESCRIPTION },
-			{ property: 'twitter:image', content: absoluteUrl(DEFAULT_IMAGE.src) }
+			{ name: 'twitter:card', content: 'summary_large_image' },
+			{ name: 'twitter:url', content: 'https://rafe.dev/writing' },
+			{ name: 'twitter:title', content: 'Writing | Rafe Autie' },
+			{ name: 'twitter:description', content: DESCRIPTION },
+			{ name: 'twitter:image', content: absoluteUrl(DEFAULT_IMAGE.src) }
 		],
 		links: [{ rel: 'canonical', href: 'https://rafe.dev/writing' }]
 	}),

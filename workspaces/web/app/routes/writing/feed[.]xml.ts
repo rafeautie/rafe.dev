@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { loadHtml, POSTS, type Post } from '~/writing';
+import { lastModified, loadHtml, POSTS, type Post } from '~/writing';
 
 const FEED_URL = 'https://rafe.dev/writing/feed.xml';
 
@@ -20,7 +20,8 @@ export const Route = createFileRoute('/writing/feed.xml')({
 async function atom() {
 	const entries = await Promise.all(POSTS.map(async (post) => entry(post, await loadHtml(post))));
 	// Atom requires an updated time even with nothing in the feed.
-	const updated = POSTS[0] ? timestamp(POSTS[0].date) : new Date().toISOString();
+	const latest = POSTS.map(lastModified).sort().at(-1);
+	const updated = latest ? timestamp(latest) : new Date().toISOString();
 	return `<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 	<title>Rafe Autie</title>
@@ -44,7 +45,7 @@ function entry(post: Post, html: string) {
 		<link rel="alternate" type="text/html" href="${post.url}"/>
 		<id>${post.url}</id>
 		<published>${timestamp(post.date)}</published>
-		<updated>${timestamp(post.date)}</updated>
+		<updated>${timestamp(lastModified(post))}</updated>
 		<summary>${escape(post.description)}</summary>
 		<content type="html">${escape(absolutize(stripAnchors(html), post.url))}</content>
 	</entry>`;
