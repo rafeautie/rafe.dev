@@ -3,6 +3,7 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from '@tanstack/react-r
 import { Toaster } from 'sonner';
 import '../styles/app.css';
 import faviconUrl from '../assets/favicon.png?url';
+import { THEME_SCRIPT } from '../lib/writing-theme';
 
 export const Route = createRootRoute({
 	head: () => ({
@@ -32,8 +33,10 @@ export const Route = createRootRoute({
 
 function RootComponent() {
 	return (
-		<html lang="en" className="light">
+		// THEME_SCRIPT adds a class to <html> before hydration on /writing
+		<html lang="en" className="light" suppressHydrationWarning>
 			<head>
+				<script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
 				<HeadContent />
 			</head>
 			<body>

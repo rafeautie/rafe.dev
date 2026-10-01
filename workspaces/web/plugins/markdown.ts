@@ -41,7 +41,10 @@ const toHast = unified()
 		content: { type: 'text', value: '#' }
 	})
 	.use(rehypeShiki, {
-		theme: 'github-light',
+		// github-dark rides along as a --shiki-dark variable on each token, for
+		// the /writing dark mode (styles/app.css)
+		themes: { light: 'github-light', dark: 'github-dark' },
+		defaultColor: 'light',
 		lazy: true,
 		// the site's CSS colors the block; the theme only colors the tokens
 		rootStyle: false
