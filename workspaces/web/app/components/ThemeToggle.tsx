@@ -19,7 +19,7 @@ export function ThemeToggle({ className }: { className?: string }) {
 			aria-pressed={dark}
 			onClick={() => setWritingTheme(!dark)}
 			className={cn(
-				'theme-toggle -m-1.5 cursor-pointer rounded-md p-1.5 transition-[scale,filter] duration-400 ease-out hover:scale-101 hover:blur-[1px]',
+				'theme-toggle -m-1.5 cursor-pointer rounded-md p-1.5 transition-[scale] duration-400 ease-out hover:scale-101',
 				className
 			)}
 		>
