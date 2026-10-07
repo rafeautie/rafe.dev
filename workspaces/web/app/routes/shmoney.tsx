@@ -472,8 +472,11 @@ function ShmoneyPage() {
 					<div className="reveal">
 						<Split label={<h2>Privacy</h2>}>
 							Nothing leaves your machine. Your data lives in one SQLite file, bank credentials stay
-							encrypted in your OS keychain, and there is no account and no telemetry. The only
-							network calls are the SimpleFIN syncs you ask for.
+							encrypted in your OS keychain, and there is no account and no telemetry. shmoney only
+							connects to your SimpleFIN bridge when you sync, Hugging Face once to download the
+							model, and GitHub to check for updates, and it never uploads anything to them. It
+							takes a backup every day that you can restore from Settings, and everything exports to
+							CSV.
 						</Split>
 					</div>
 					<div className="reveal">
