@@ -93,15 +93,15 @@ const TOUR: Stop[] = [
 		name: 'chat',
 		alt: 'shmoney chat answering a finance question with a generated income-versus-spending chart',
 		title: 'Ask about your money',
-		body: 'An on-device model answers in plain English, charts the results, and proposes changes for you to approve. Nothing leaves your computer.',
-		hint: 'Open another conversation from the sidebar.'
+		body: 'An on-device model answers in plain English and charts the results. Answers link to the transactions behind them, so you can check any figure. Nothing leaves your computer.',
+		hint: 'Click View transactions under the answer.'
 	},
 	{
 		name: 'report-detail',
 		alt: 'shmoney spending report with stat, bar, pie, and line widgets',
 		title: 'Custom reports',
-		body: 'Build dashboards from charts, tables, and stats, or start from a ready-made one.',
-		hint: 'Press Edit to rearrange the widgets.'
+		body: 'Build dashboards from charts, tables, and stats, or start from a ready-made one. Any chart opens the transactions behind it.',
+		hint: 'Click a bar to see its transactions.'
 	},
 	{
 		name: 'activity',
