@@ -27,7 +27,7 @@ const accent = 'var(--chess-accent)';
 // The arrows are SVG, drawn in the board's text color, which is the accent.
 const ARROW = 'currentColor';
 
-const squareTint = 'color-mix(in oklab, var(--chess-accent) 30%, transparent)';
+export const squareTint = 'color-mix(in oklab, var(--chess-accent) 30%, transparent)';
 // The coordinates, quiet on both squares. On a phone's small board they would
 // run into the pieces, so they only show from this width up.
 const coordinate = 'color-mix(in oklab, var(--chess-ink) 55%, transparent)';
