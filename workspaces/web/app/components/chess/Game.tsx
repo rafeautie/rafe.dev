@@ -319,7 +319,7 @@ export default function Game() {
 			    they stack under the board. */}
 			<section
 				className={cn(
-					'order-2 mx-auto flex w-full max-w-[40rem] flex-col gap-2 xl:order-1 xl:mx-0 xl:h-0 xl:min-h-full xl:max-w-72 xl:justify-self-end',
+					'order-2 mx-auto flex w-full max-w-[40rem] flex-col gap-2 xl:order-1 xl:mx-0 xl:h-0 xl:min-h-full xl:w-80 xl:max-w-none xl:justify-self-end 2xl:w-96',
 					phase === 'setup' && 'max-xl:hidden'
 				)}
 			>
@@ -355,7 +355,7 @@ export default function Game() {
 					</>
 				)}
 			</section>
-			<div className="order-1 mx-auto w-full max-w-[min(40rem,calc(100dvh-9rem))] xl:order-2 xl:w-[min(40rem,calc(100dvh-9rem))]">
+			<div className="order-1 mx-auto w-full max-w-[min(40rem,calc(100dvh-9rem))] xl:order-2 xl:w-[min(calc(100dvh-9rem),calc(100vw-49rem))] xl:max-w-none 2xl:w-[min(calc(100dvh-9rem),calc(100vw-57rem))]">
 				<Board
 					chess={chess}
 					fen={fen}
@@ -366,7 +366,7 @@ export default function Game() {
 					onMove={onMove}
 				/>
 			</div>
-			<aside className="order-3 mx-auto flex w-full max-w-[40rem] flex-col gap-8 xl:mx-0 xl:h-0 xl:min-h-full xl:max-w-72">
+			<aside className="order-3 mx-auto flex w-full max-w-[40rem] flex-col gap-8 xl:mx-0 xl:h-0 xl:min-h-full xl:w-80 xl:max-w-none 2xl:w-96">
 				{phase === 'setup' ? (
 					device && model ? (
 						<Picker

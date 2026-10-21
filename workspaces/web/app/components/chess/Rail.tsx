@@ -1,6 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { BrainIcon } from 'lucide-react';
-import { Badge } from '~/components/ui/badge';
+import { BrainIcon, DicesIcon } from 'lucide-react';
 import { Bubble, BubbleContent } from '~/components/ui/bubble';
 import { Message, MessageContent } from '~/components/ui/message';
 import {
@@ -102,48 +101,87 @@ export function Pulse() {
 	);
 }
 
-// The move the model chose, in words: the piece, where it went and from where,
-// and what else it did.
-function MoveCard({ move, random }: { move: Move; random?: boolean }) {
+// The move the model chose, in words: a card with the piece, where it went and
+// from where, and under it one card for each other thing it did, like taking a
+// piece or giving check. Every card is the same width, and every note card the
+// same height, however much a move does.
+function MoveCards({ move, random }: { move: Move; random?: boolean }) {
 	const { title, from, notes } = describeMove(move);
-	const Piece = PIECES[`${move.color}${move.piece.toUpperCase()}`];
-	const tags = random ? [...notes, 'Random move'] : notes;
+	const other = move.color === 'w' ? 'b' : 'w';
 	return (
-		<Card size="sm" className="w-full max-w-64 flex-row items-center gap-3 px-3 py-2.5">
-			<span className="size-9 shrink-0 rounded-md bg-foreground/5">
-				<Piece />
-			</span>
-			<div className="flex min-w-0 flex-col gap-1">
-				<p className="leading-tight font-medium">{title}</p>
-				<p className="text-xs text-muted-foreground">
-					{from ? `${from} · ` : ''}
-					{move.san}
-				</p>
-				{tags.length > 0 && (
-					<div className="flex flex-wrap gap-1 pt-0.5">
-						{tags.map((tag) =>
-							tag === 'Random move' ? (
-								<Badge
-									key={tag}
-									variant="outline"
-									title="Its answers weren't legal moves, so this one was picked at random"
-									className="text-muted-foreground"
-								>
-									{tag}
-								</Badge>
-							) : (
-								<Badge
-									key={tag}
-									variant="secondary"
-									className="bg-(--chess-accent)/10 text-(--chess-accent)"
-								>
-									{tag}
-								</Badge>
-							)
-						)}
-					</div>
-				)}
-			</div>
+		<div className="flex w-full flex-col gap-1.5">
+			<Card size="sm" className="h-16 w-full flex-row items-center gap-3 px-3 py-0">
+				<PieceTile piece={`${move.color}${move.piece.toUpperCase()}`} />
+				<div className="flex min-w-0 flex-col gap-0.5">
+					<p className="truncate leading-tight font-medium">{title}</p>
+					<p className="truncate text-xs text-muted-foreground">
+						{from ? `${from} · ` : ''}
+						{move.san}
+					</p>
+				</div>
+			</Card>
+			{notes.map((note) => (
+				<NoteCard
+					key={note.kind}
+					icon={
+						<PieceTile
+							small
+							piece={`${note.kind === 'promotion' ? move.color : other}${note.piece!.toUpperCase()}`}
+						/>
+					}
+					accent={note.kind === 'check' || note.kind === 'checkmate'}
+				>
+					{note.text}
+				</NoteCard>
+			))}
+			{random && (
+				<NoteCard
+					icon={
+						<span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+							<DicesIcon className="size-4" />
+						</span>
+					}
+					title="Its answers weren't legal moves, so this one was picked at random"
+				>
+					<span className="text-muted-foreground">Random move</span>
+				</NoteCard>
+			)}
+		</div>
+	);
+}
+
+function PieceTile({ piece, small = false }: { piece: string; small?: boolean }) {
+	const Piece = PIECES[piece];
+	return (
+		<span className={cn('shrink-0 rounded-md bg-foreground/5', small ? 'size-6' : 'size-10')}>
+			<Piece />
+		</span>
+	);
+}
+
+function NoteCard({
+	icon,
+	accent = false,
+	title,
+	children
+}: {
+	icon: ReactNode;
+	accent?: boolean;
+	title?: string;
+	children: ReactNode;
+}) {
+	return (
+		<Card
+			size="sm"
+			title={title}
+			className={cn(
+				'h-10 w-full flex-row items-center gap-3 px-3 py-0',
+				accent && 'text-(--chess-accent)'
+			)}
+		>
+			{/* as wide as the piece on the move card above, so the words line up */}
+			<span className="flex w-10 shrink-0 justify-center">{icon}</span>
+			<p className="truncate">{children}</p>
 		</Card>
 	);
 }
@@ -250,7 +288,7 @@ export function Thread({
 													</Trace>
 												))}
 											{moves[i] ? (
-												<MoveCard move={moves[i]} random={entry.random} />
+												<MoveCards move={moves[i]} random={entry.random} />
 											) : (
 												<p className="font-medium">{entry.san}</p>
 											)}

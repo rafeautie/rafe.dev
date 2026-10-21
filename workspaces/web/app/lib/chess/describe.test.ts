@@ -5,7 +5,8 @@ import { describeMove } from './describe';
 function last(pgn: string) {
 	const chess = new Chess();
 	chess.loadPgn(pgn);
-	return describeMove(chess.history({ verbose: true }).at(-1)!);
+	const { notes, ...rest } = describeMove(chess.history({ verbose: true }).at(-1)!);
+	return { ...rest, notes: notes.map((note) => note.text) };
 }
 
 describe('describeMove', () => {
@@ -36,6 +37,8 @@ describe('describeMove', () => {
 		expect(last('1. e4 a6 2. e5 d5 3. exd6').notes).toEqual(['Takes the pawn en passant']);
 		const chess = new Chess('8/P6k/8/8/8/8/8/K7 w - - 0 1');
 		const move = chess.move('a8=Q');
-		expect(describeMove(move).notes).toEqual(['Promotes to a queen']);
+		expect(describeMove(move).notes).toEqual([
+			{ kind: 'promotion', text: 'Promotes to a queen', piece: 'q' }
+		]);
 	});
 });

@@ -29,7 +29,7 @@ export const Route = createFileRoute('/chess')({
 function ChessPage() {
 	return (
 		<div className="min-h-dvh px-6 py-8 text-base text-foreground sm:px-8">
-			<div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+			<div className="flex items-center justify-between gap-4">
 				<SlashNav className="text-xl font-medium">
 					<Link href="/">rafe</Link>
 					chess
@@ -50,6 +50,6 @@ function ChessPage() {
 // Holds the board's place until the game loads, so nothing jumps.
 function BoardPlaceholder() {
 	return (
-		<div className="mx-auto aspect-square w-full max-w-[min(40rem,calc(100dvh-9rem))] rounded-lg bg-foreground/[0.04]" />
+		<div className="mx-auto aspect-square w-full max-w-[min(40rem,calc(100dvh-9rem))] rounded-lg bg-foreground/[0.04] xl:w-[min(calc(100dvh-9rem),calc(100vw-49rem))] xl:max-w-none 2xl:w-[min(calc(100dvh-9rem),calc(100vw-57rem))]" />
 	);
 }
