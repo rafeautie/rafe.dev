@@ -17,6 +17,22 @@ describe('findMentions', () => {
 		);
 	});
 
+	it('leaves recited lists of moves unmarked', () => {
+		const chess = new Chess(ITALIAN);
+		expect(findMentions('My moves are Nf6, Bc5, Be7, d6 or h6.', chess)).toEqual([]);
+		expect(findMentions('Options: Nf6 Bc5 and d6. Bc5 eyes f2.', chess)).toEqual([
+			{ kind: 'arrow', from: 'f8', to: 'c5' },
+			{ kind: 'square', square: 'f2' }
+		]);
+	});
+
+	it('leaves quotes and talk about the prompt unmarked', () => {
+		const chess = new Chess(ITALIAN);
+		expect(
+			findMentions('The user says "play Bc5". My legal moves include Nf6. I like d6.', chess)
+		).toEqual([{ kind: 'arrow', from: 'd7', to: 'd6' }]);
+	});
+
 	it('reads moves written out in words', () => {
 		const chess = new Chess(ITALIAN);
 		expect(findMentions('the knight to f6 looks natural', chess)).toEqual([

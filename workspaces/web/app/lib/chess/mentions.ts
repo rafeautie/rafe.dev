@@ -25,6 +25,10 @@ const PIECE_PHRASE =
 // a move in standard notation, or a bare square
 const SAN = /(?<![\w-])(O-O-O|O-O|[NBRQK]?[a-h]?[1-8]?x?[a-h][1-8](?:=?[NBRQ])?)[+#]?(?![\w-])/g;
 
+// what may sit between the items of a list, and how many items make one
+const LIST_GAP = /^[\s,;/]*(?:(?:or|and)\s+)?$/i;
+const LIST_LENGTH = 3;
+
 export function mentionKey(mention: Mention): string {
 	return mention.kind === 'arrow'
 		? `arrow:${mention.from}${mention.to}`
@@ -33,6 +37,7 @@ export function mentionKey(mention: Mention): string {
 
 // `chess` is the position the model is thinking about, with it to move.
 export function findMentions(text: string, chess: Chess): Mention[] {
+	text = withoutEchoes(text);
 	const side = chess.turn();
 	const legal = chess.moves({ verbose: true });
 	const found = new Map<string, Mention>();
@@ -62,9 +67,27 @@ export function findMentions(text: string, chess: Chess): Mention[] {
 		}
 	}
 
-	for (const match of text.matchAll(SAN)) {
+	// Small models often recite the legal moves back ("Nc6, Na6, Qe7, …"). A
+	// run of three or more moves or squares with nothing but commas and "or" /
+	// "and" between them is a list, not a thought, so none of it is marked.
+	const matches = [...text.matchAll(SAN)].filter((match) => {
 		const start = match.index ?? 0;
-		if (covered.some(([from, to]) => start >= from && start < to)) continue;
+		return !covered.some(([from, to]) => start >= from && start < to);
+	});
+	const listed = new Set<RegExpExecArray>();
+	for (let i = 0; i < matches.length; ) {
+		let j = i;
+		while (
+			j + 1 < matches.length &&
+			LIST_GAP.test(text.slice(matches[j].index! + matches[j][0].length, matches[j + 1].index))
+		)
+			j++;
+		if (j - i + 1 >= LIST_LENGTH) for (let k = i; k <= j; k++) listed.add(matches[k]);
+		i = j + 1;
+	}
+
+	for (const match of matches) {
+		if (listed.has(match)) continue;
 		const written = match[1].replace('=', '');
 		const move = legal.find((m) => m.san.replace(/[+#=]/g, '') === written);
 		if (move) {
@@ -80,6 +103,17 @@ export function findMentions(text: string, chess: Chess): Mention[] {
 	}
 
 	return [...found.values()];
+}
+
+// Blanks out what the model quotes, and sentences about the prompt itself
+// ("the legal moves are …", "the user says …"): that's it re-reading the
+// question, not weighing moves. Blanked with spaces, so positions still line
+// up with the text.
+const QUOTED = /"[^"\n]*"|“[^”\n]*”/g;
+const ECHO = /[^.!?\n]*\b(?:legal moves?|the list|the user|user says|the prompt)\b[^.!?\n]*/gi;
+function withoutEchoes(text: string) {
+	const blank = (part: string) => ' '.repeat(part.length);
+	return text.replace(QUOTED, blank).replace(ECHO, blank);
 }
 
 function ownerColor(owner: string | undefined, side: Color): Color | undefined {

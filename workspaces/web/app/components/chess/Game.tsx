@@ -46,6 +46,8 @@ const YOU: Color = 'w';
 // a board highlight stays this long after the model last mentions it, and
 // fades out over the last FADE_MS of that
 const MARK_MS = 2500;
+// and no more than this many show at once
+const MAX_MARKS = 3;
 
 // The model's turn as it happens: reading the prompt before its first word,
 // thinking, then writing its move. `retry` is the answer it gave before that
@@ -192,15 +194,25 @@ export default function Game() {
 		const notice = (text: string, stage: Live['stage']) => {
 			setLive({ text, started, stage, retry: missed.at(-1) });
 			if (!showThinking) return;
-			// Only up to the last finished phrase, so "my knight" isn't read
-			// before " on g8" arrives, with a little overlap for a move split
-			// across two streamed pieces.
-			const end = Math.max(...[...'.,;:!?\n'].map((mark) => text.lastIndexOf(mark))) + 1;
+			// Only up to the last finished sentence, so "my knight" isn't read
+			// before " on g8" arrives and a list of moves is read whole, with a
+			// little overlap for a move split across two streamed pieces.
+			const end = Math.max(...[...'.;:!?\n'].map((mark) => text.lastIndexOf(mark))) + 1;
 			if (end <= scanned.current) return;
 			const found = findMentions(text.slice(Math.max(0, scanned.current - 12), end), chess);
 			scanned.current = end;
 			const at = Date.now();
-			for (const mention of found) marks.current.set(mentionKey(mention), { mention, at });
+			for (const mention of found) {
+				const key = mentionKey(mention);
+				// a mark mentioned again moves to the front
+				marks.current.delete(key);
+				marks.current.set(key, { mention, at });
+			}
+			// Only the latest few stay; older ones start fading at once.
+			const fadeNow = at - (MARK_MS - FADE_MS);
+			[...marks.current.values()]
+				.slice(0, -MAX_MARKS)
+				.forEach((mark) => (mark.at = Math.min(mark.at, fadeNow)));
 			showMarks();
 		};
 
