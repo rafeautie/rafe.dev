@@ -13,6 +13,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ShmoneyRouteImport } from './routes/shmoney'
 import { Route as PhotographyRouteImport } from './routes/photography'
 import { Route as DevelopmentRouteImport } from './routes/development'
+import { Route as ChessRouteImport } from './routes/chess'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WritingIndexRouteImport } from './routes/writing/index'
 import { Route as WritingFeedDotxmlRouteImport } from './routes/writing/feed[.]xml'
@@ -38,6 +39,11 @@ const DevelopmentRoute = DevelopmentRouteImport.update({
   path: '/development',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChessRoute = ChessRouteImport.update({
+  id: '/chess',
+  path: '/chess',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -61,6 +67,7 @@ const WritingSlugRoute = WritingSlugRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
@@ -71,6 +78,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
@@ -82,6 +90,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
@@ -94,6 +103,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/chess'
     | '/development'
     | '/photography'
     | '/shmoney'
@@ -104,6 +114,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/chess'
     | '/development'
     | '/photography'
     | '/shmoney'
@@ -114,6 +125,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/chess'
     | '/development'
     | '/photography'
     | '/shmoney'
@@ -125,6 +137,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ChessRoute: typeof ChessRoute
   DevelopmentRoute: typeof DevelopmentRoute
   PhotographyRoute: typeof PhotographyRoute
   ShmoneyRoute: typeof ShmoneyRoute
@@ -164,6 +177,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DevelopmentRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/chess': {
+      id: '/chess'
+      path: '/chess'
+      fullPath: '/chess'
+      preLoaderRoute: typeof ChessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -197,6 +217,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ChessRoute: ChessRoute,
   DevelopmentRoute: DevelopmentRoute,
   PhotographyRoute: PhotographyRoute,
   ShmoneyRoute: ShmoneyRoute,

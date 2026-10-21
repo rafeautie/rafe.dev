@@ -190,7 +190,7 @@
 	}
 }
 
-/* The /writing dark mode crossfade (lib/writing-theme.ts): a view transition
+/* The /writing and /chess dark mode crossfade (lib/writing-theme.ts): a view transition
    that fades a picture of the old page into the live new one. Inside it,
    nothing runs a transition of its own, so the whole page moves as one; the
    toggle's icon is the exception and plays its own motion. */
@@ -334,5 +334,21 @@
 		border-top: 1px solid var(--tw-prose-hr);
 		font-size: 0.875em;
 		color: color-mix(in oklab, var(--foreground) 60%, transparent);
+	}
+}
+
+/* The /chess board (components/chess/Board.tsx): two quiet grays, the coordinates' ink, and one mark
+   for what the model is thinking about, all following the theme. */
+.chess-board {
+	--chess-light: oklch(0.97 0 0);
+	--chess-dark: oklch(0.87 0 0);
+	--chess-ink: oklch(0.55 0 0);
+	--chess-mark: oklch(0.3 0 0);
+
+	.dark & {
+		--chess-light: oklch(0.62 0 0);
+		--chess-dark: oklch(0.5 0 0);
+		--chess-ink: oklch(0.85 0 0);
+		--chess-mark: oklch(0.97 0 0);
 	}
 }

@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { lastModified, POSTS } from '~/writing';
 
 // Every indexable page. A new top-level route belongs here too.
-const PAGES = ['/', '/development', '/photography', '/shmoney', '/writing'];
+const PAGES = ['/', '/chess', '/development', '/photography', '/shmoney', '/writing'];
 
 export const Route = createFileRoute('/sitemap.xml')({
 	server: {

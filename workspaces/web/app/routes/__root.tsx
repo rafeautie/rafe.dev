@@ -33,7 +33,7 @@ export const Route = createRootRoute({
 
 function RootComponent() {
 	return (
-		// THEME_SCRIPT adds a class to <html> before hydration on /writing
+		// THEME_SCRIPT adds a class to <html> before hydration on /writing and /chess
 		<html lang="en" className="light" suppressHydrationWarning>
 			<head>
 				<script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />

@@ -5,7 +5,7 @@ import { setWritingTheme, useWritingTheme } from '~/lib/writing-theme';
 const part =
 	'origin-center transform-fill transition-[scale,translate,rotate,opacity] duration-750 ease-[cubic-bezier(0.34,1.3,0.64,1)] motion-reduce:transition-none';
 
-// Dark mode switch for /writing. The icon is drawn from the `dark` class on
+// Dark mode switch for /writing and /chess. The icon is drawn from the `dark` class on
 // <html> rather than from state, so it is right from the first paint, before
 // hydration. The sun's rays spin away while a shadow slides across it, leaving
 // a crescent. The page's crossfade leaves the icon out (styles/app.css), so it
