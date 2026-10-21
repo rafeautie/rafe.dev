@@ -15,6 +15,11 @@ import { ACCENT_BUTTON } from '~/components/chess/Rail';
 // Choosing an opponent: the models that should run on this device, each with
 // its download size and how well it should run. The player always has white.
 
+// A search looks through every model, the ones too large for this device too.
+function matching(words: string[]) {
+	return MODELS.filter((m) => words.every((w) => `${m.name} ${m.maker}`.toLowerCase().includes(w)));
+}
+
 export function Picker({
 	device,
 	model,
@@ -32,13 +37,20 @@ export function Picker({
 	const [showAll, setShowAll] = useState(false);
 	const [query, setQuery] = useState('');
 	const hidden = MODELS.filter((m) => fitFor(m, device) === 'too-large');
-	// a search looks through every model, the ones too large for this device too
 	const words = query.toLowerCase().split(/\s+/).filter(Boolean);
 	const shown = words.length
-		? MODELS.filter((m) => words.every((w) => `${m.name} ${m.maker}`.toLowerCase().includes(w)))
+		? matching(words)
 		: showAll
 			? MODELS
 			: MODELS.filter((m) => !hidden.includes(m) || m === model);
+
+	// When the search hides the chosen model, the first match takes its place,
+	// so the Play button never names a model that isn't in view.
+	function search(value: string) {
+		setQuery(value);
+		const found = matching(value.toLowerCase().split(/\s+/).filter(Boolean));
+		if (found.length && !found.includes(model)) onModel(found[0]);
+	}
 
 	return (
 		<div className="flex flex-col gap-6 xl:min-h-0 xl:flex-1">
@@ -54,7 +66,7 @@ export function Picker({
 					id="model-search"
 					type="search"
 					value={query}
-					onChange={(event) => setQuery(event.target.value)}
+					onChange={(event) => search(event.target.value)}
 					placeholder="Search models"
 					aria-label="Search models"
 					autoComplete="off"

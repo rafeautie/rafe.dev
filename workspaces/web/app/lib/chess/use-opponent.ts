@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { WorkerRequest, WorkerResponse } from './ai.worker';
+import type { LoadStage, WorkerRequest, WorkerResponse } from './ai.worker';
 import { dtypeFor, type ChessModel, type DeviceInfo } from './models';
 import type { PromptInput } from './prompt';
 
@@ -8,7 +8,8 @@ import type { PromptInput } from './prompt';
 
 export type OpponentState =
 	| { status: 'idle' }
-	| { status: 'loading'; model: ChessModel; progress: number }
+	// `starting` until the worker reports what it is doing
+	| { status: 'loading'; model: ChessModel; stage: LoadStage | 'starting'; progress: number }
 	| { status: 'ready'; model: ChessModel }
 	| { status: 'error'; model: ChessModel; message: string };
 
@@ -35,13 +36,20 @@ export function useOpponent() {
 		pending.current.clear();
 		const next = new Worker(new URL('./ai.worker.ts', import.meta.url), { type: 'module' });
 		worker.current = next;
-		setState({ status: 'loading', model, progress: 0 });
+		let stage: LoadStage | 'starting' = 'starting';
+		let progress = 0;
+		setState({ status: 'loading', model, stage, progress });
 
 		next.onmessage = (event: MessageEvent<WorkerResponse>) => {
 			const message = event.data;
 			switch (message.type) {
+				case 'stage':
+					stage = message.stage;
+					setState({ status: 'loading', model, stage, progress });
+					break;
 				case 'progress':
-					setState({ status: 'loading', model, progress: message.progress });
+					progress = message.progress;
+					setState({ status: 'loading', model, stage, progress });
 					break;
 				case 'ready':
 					setState({ status: 'ready', model });

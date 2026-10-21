@@ -32,6 +32,7 @@ import {
 	type Settings
 } from '~/lib/chess/storage';
 import { useOpponent } from '~/lib/chess/use-opponent';
+import { cn } from '~/lib/utils';
 
 // A game of chess against a small language model running in the browser. The
 // board sits in the middle with a rail beside it: the opponent picker before a
@@ -45,6 +46,16 @@ const YOU: Color = 'w';
 
 // a board highlight fades this long after the model last mentions it
 const MARK_MS = 2500;
+
+// The model's turn as it happens: reading the prompt before its first word,
+// thinking, then writing its move. `retry` is the answer it gave before that
+// wasn't a legal move, when it is being asked again.
+type Live = {
+	text: string;
+	started: number;
+	stage: 'reading' | 'thinking' | 'answering';
+	retry?: string;
+};
 
 function promptInput(chess: Chess, think: boolean, model: ChessModel, retry?: string): PromptInput {
 	return {
@@ -97,7 +108,7 @@ export default function Game() {
 	const [device, setDevice] = useState<DeviceInfo>();
 	const [cached, setCached] = useState(new Set<string>());
 	// the model's turn in progress: what it has thought so far, and since when
-	const [live, setLive] = useState<{ text: string; started: number }>();
+	const [live, setLive] = useState<Live>();
 	const [now, setNow] = useState(() => Date.now());
 	// what its thinking points at on the board right now
 	const [mentions, setMentions] = useState<Mention[]>([]);
@@ -172,8 +183,8 @@ export default function Game() {
 		marks.current.clear();
 		scanned.current = 0;
 
-		const notice = (text: string) => {
-			setLive({ text, started });
+		const notice = (text: string, stage: Live['stage']) => {
+			setLive({ text, started, stage, retry: missed.at(-1) });
 			if (!showThinking) return;
 			// Only up to the last finished phrase, so "my knight" isn't read
 			// before " on g8" arrives, with a little overlap for a move split
@@ -202,15 +213,19 @@ export default function Game() {
 		};
 
 		void (async () => {
-			setLive({ text: '', started });
 			for (let attempt = 0; attempt < 2; attempt++) {
 				const input = promptInput(chess, think, current, missed.at(-1));
 				const before = thoughts.join('\n\n');
+				setLive({ text: before, started, stage: 'reading', retry: missed.at(-1) });
 				try {
 					const reply = await ask(input, (partial) => {
 						if (cancelled) return;
-						const { thinking } = splitReply(partial.text, partial.opened);
-						notice(before && thinking ? `${before}\n\n${thinking}` : before || thinking);
+						const { thinking, answer, closed } = splitReply(partial.text, partial.opened);
+						const writing = !think || closed || answer !== '';
+						notice(
+							before && thinking ? `${before}\n\n${thinking}` : before || thinking,
+							writing ? 'answering' : 'thinking'
+						);
 					});
 					if (cancelled) return;
 					const { thinking, answer } = splitReply(reply.text, reply.opened);
@@ -296,8 +311,37 @@ export default function Game() {
 
 	return (
 		<div className="chess grid gap-8 xl:grid-cols-[1fr_auto_1fr] xl:items-start">
-			<div className="hidden xl:block" />
-			<div className="mx-auto w-full max-w-[min(40rem,calc(100dvh-9rem))] xl:w-[min(40rem,calc(100dvh-9rem))]">
+			{/* Beside the board on wide screens, both columns are as tall as the board
+			    and no taller: the opponent on the left, with its thinking, and the game
+			    on the right, its last button level with the board's foot. On a phone
+			    they stack under the board. */}
+			<section
+				className={cn(
+					'order-2 mx-auto flex w-full max-w-[40rem] flex-col gap-2 xl:order-1 xl:mx-0 xl:h-0 xl:min-h-full xl:max-w-72 xl:justify-self-end',
+					phase === 'setup' && 'max-xl:hidden'
+				)}
+			>
+				{phase !== 'setup' && model && (
+					<>
+						<Section label="opponent">
+							<p className="font-medium">{model.name}</p>
+							<Status
+								phase={phase}
+								state={opponent}
+								aiTurn={aiTurn}
+								live={live}
+								now={now}
+								result={result}
+								gpu={device?.webgpu ?? false}
+								onMoveNow={moveNow}
+								onPickAnother={() => reset('setup')}
+							/>
+						</Section>
+						{live && showThinking && <LiveThinking text={live.text} />}
+					</>
+				)}
+			</section>
+			<div className="order-1 mx-auto w-full max-w-[min(40rem,calc(100dvh-9rem))] xl:order-2 xl:w-[min(40rem,calc(100dvh-9rem))]">
 				<Board
 					chess={chess}
 					fen={fen}
@@ -308,9 +352,7 @@ export default function Game() {
 					onMove={onMove}
 				/>
 			</div>
-			<aside className="mx-auto flex w-full max-w-[40rem] flex-col gap-8 xl:mx-0 xl:h-0 xl:min-h-full xl:w-72">
-				{/* as tall as the board and no taller, so its last button sits level with
-				    the board's foot; the model list and the moves scroll inside it */}
+			<aside className="order-3 mx-auto flex w-full max-w-[40rem] flex-col gap-8 xl:mx-0 xl:h-0 xl:min-h-full xl:max-w-72">
 				{phase === 'setup' ? (
 					device && model ? (
 						<Picker
@@ -326,20 +368,6 @@ export default function Game() {
 				) : (
 					model && (
 						<>
-							<Section label="opponent">
-								<p className="font-medium">{model.name}</p>
-								<Status
-									phase={phase}
-									state={opponent}
-									aiTurn={aiTurn}
-									live={live}
-									now={now}
-									result={result}
-									onMoveNow={moveNow}
-									onPickAnother={() => reset('setup')}
-								/>
-								{live && showThinking && <LiveThinking text={live.text} />}
-							</Section>
 							<div className="flex flex-col gap-3">
 								<Switch
 									label="Think before moving"
@@ -399,6 +427,8 @@ export default function Game() {
 	);
 }
 
+// One line on what the model is doing right now, in plain words, and only
+// "Thinking" while it really is.
 function Status({
 	phase,
 	state,
@@ -406,15 +436,18 @@ function Status({
 	live,
 	now,
 	result,
+	gpu,
 	onMoveNow,
 	onPickAnother
 }: {
 	phase: Phase;
 	state: ReturnType<typeof useOpponent>['state'];
 	aiTurn: boolean;
-	live?: { text: string; started: number };
+	live?: Live;
 	now: number;
 	result?: string;
+	// where the weights go once downloaded
+	gpu: boolean;
 	onMoveNow: () => void;
 	onPickAnother: () => void;
 }) {
@@ -433,36 +466,65 @@ function Status({
 		);
 	}
 	if (state.status === 'loading') {
+		const label = {
+			starting: 'Starting up',
+			downloading: `Downloading ${Math.round(state.progress * 100)}%`,
+			preparing: gpu ? 'Loading onto the GPU' : 'Loading into memory',
+			warming: 'Warming up'
+		}[state.stage];
 		return (
 			<div className="flex flex-col gap-2 text-sm text-foreground/60">
-				<p className="flex items-center gap-2">
-					<Pulse />
-					Downloading {Math.round(state.progress * 100)}%
-					{!aiTurn && <span className="text-foreground/40">· your move</span>}
-				</p>
-				<div className="h-1 overflow-hidden rounded-full bg-foreground/10">
-					<div
-						className="h-full rounded-full bg-(--chess-accent) transition-[width] duration-300"
-						style={{ width: `${state.progress * 100}%` }}
-					/>
-				</div>
-				<p className="text-xs text-foreground/40">Only the first time; the browser keeps it.</p>
+				<Line label={label} note={aiTurn ? undefined : 'your move'} />
+				{state.stage === 'downloading' && (
+					<>
+						<div className="h-1 overflow-hidden rounded-full bg-foreground/10">
+							<div
+								className="h-full rounded-full bg-(--chess-accent) transition-[width] duration-300"
+								style={{ width: `${state.progress * 100}%` }}
+							/>
+						</div>
+						<p className="text-xs text-foreground/40">Only the first time; the browser keeps it.</p>
+					</>
+				)}
 			</div>
 		);
 	}
 	if (aiTurn && live) {
 		const seconds = Math.max(0, Math.floor((now - live.started) / 1000));
+		const label = {
+			reading: 'Reading the board',
+			thinking: `Thinking ${seconds}s`,
+			answering: 'Choosing a move'
+		}[live.stage];
 		return (
-			<div className="flex items-center justify-between gap-2 text-sm text-foreground/60">
-				<span className="flex items-center gap-2">
-					<Pulse />
-					Thinking {seconds}s
-				</span>
-				<Button variant="ghost" size="xs" onClick={onMoveNow}>
-					Move now
-				</Button>
+			<div className="flex flex-col gap-1 text-sm text-foreground/60">
+				<div className="flex items-center justify-between gap-2">
+					<Line label={label} />
+					{live.stage === 'thinking' && (
+						<Button variant="ghost" size="xs" onClick={onMoveNow}>
+							Move now
+						</Button>
+					)}
+				</div>
+				{live.retry && (
+					<p className="text-xs text-pretty text-foreground/40">
+						Asked again: “{live.retry}” isn’t a legal move.
+					</p>
+				)}
 			</div>
 		);
 	}
-	return <p className="text-sm text-foreground/60">{aiTurn ? 'Getting ready…' : 'Your move'}</p>;
+	// its turn, between the model being ready and the turn starting
+	if (aiTurn) return <Line label="Getting ready" />;
+	return <p className="text-sm text-foreground/60">Your move</p>;
+}
+
+function Line({ label, note }: { label: string; note?: string }) {
+	return (
+		<p className="flex items-center gap-2 text-sm text-foreground/60">
+			<Pulse />
+			{label}
+			{note && <span className="text-foreground/40">· {note}</span>}
+		</p>
+	);
 }

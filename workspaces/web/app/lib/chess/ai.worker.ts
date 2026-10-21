@@ -24,7 +24,13 @@ export type WorkerRequest =
 	// drop the turn altogether, as when the game is abandoned
 	| { type: 'stop' };
 
+// What loading is doing: fetching the weights (from the network, or the
+// browser's cache), putting them on the GPU or in memory, then one tiny run so
+// the first real move isn't the one that pays for compiling everything.
+export type LoadStage = 'downloading' | 'preparing' | 'warming';
+
 export type WorkerResponse =
+	| { type: 'stage'; stage: LoadStage }
 	| { type: 'progress'; progress: number }
 	| { type: 'ready' }
 	| { type: 'load-error'; message: string }
@@ -59,6 +65,14 @@ async function load(repo: string, dtype: Dtype, device: 'webgpu' | 'wasm'): Prom
 	// never goes backwards when a new one starts.
 	const files = new Map<string, { loaded: number; total: number }>();
 	let shown = 0;
+	// the model's own files, as opposed to the tokenizer's, which come first
+	let modelStep = false;
+	let stage: LoadStage | undefined;
+	const enter = (next: LoadStage) => {
+		if (stage === next) return;
+		stage = next;
+		post({ type: 'stage', stage: next });
+	};
 	const progress_callback = (event: {
 		status: string;
 		file?: string;
@@ -75,12 +89,21 @@ async function load(repo: string, dtype: Dtype, device: 'webgpu' | 'wasm'): Prom
 		}
 		shown = Math.max(shown, total ? done / total : 0);
 		post({ type: 'progress', progress: shown });
+		// every file is in hand: what's left is loading them onto the device
+		enter(modelStep && total > 0 && done >= total ? 'preparing' : 'downloading');
 	};
 	const tokenizer = await AutoTokenizer.from_pretrained(repo, { progress_callback });
+	modelStep = true;
 	const model = await AutoModelForCausalLM.from_pretrained(repo, {
 		dtype,
 		device,
 		progress_callback
+	});
+	enter('warming');
+	await model.generate({
+		...tokenizer('Hello', { add_special_tokens: false }),
+		max_new_tokens: 1,
+		do_sample: false
 	});
 	const config = model.config as {
 		max_position_embeddings?: number;

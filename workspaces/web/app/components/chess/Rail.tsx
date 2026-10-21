@@ -86,7 +86,7 @@ export function LiveThinking({ text }: { text: string }) {
 	return (
 		<div
 			ref={box}
-			className="max-h-56 overflow-y-auto rounded-lg border border-foreground/10 px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap text-foreground/50"
+			className="max-h-56 overflow-y-auto rounded-lg border border-foreground/10 px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap text-foreground/50 xl:max-h-none xl:min-h-0 xl:flex-1"
 		>
 			{text || '…'}
 		</div>
