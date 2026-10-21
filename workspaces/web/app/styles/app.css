@@ -340,6 +340,20 @@
 /* The /chess page (components/chess): a gray board and gray pieces, with one
    accent, Tailwind's blue-500, for everything that is highlighted or can be pressed. The
    pieces' own grays live in their SVGs (assets/chess/pieces). */
+/* The glow behind a piece the model mentions, registered so it can fade */
+@property --chess-glow {
+	syntax: '<color>';
+	inherits: false;
+	initial-value: transparent;
+}
+
+/* the model's arrows ease out as they fade (components/chess/Board.tsx) */
+.chess-board svg :is(path, polygon) {
+	transition:
+		stroke 1s ease-out,
+		fill 1s ease-out;
+}
+
 .chess {
 	--chess-light: oklch(0.93 0 0);
 	--chess-dark: oklch(0.78 0 0);

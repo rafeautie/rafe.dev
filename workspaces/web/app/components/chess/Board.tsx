@@ -8,17 +8,16 @@ import {
 } from 'react-chessboard';
 import type { Mention } from '~/lib/chess/mentions';
 
-// A mention on the board, and how strongly to draw it: 1 while fresh, down to
-// 0 as it fades out.
-export type Highlight = Mention & { strength: number };
-
-const accent = 'var(--chess-accent)';
-function faded(color: string, strength: number) {
-	return strength >= 1
-		? color
-		: `color-mix(in oklab, ${color} ${Math.round(strength * 100)}%, transparent)`;
-}
 import { PIECES } from './pieces';
+
+// A mention on the board, and whether it's on its way out. A fading mark is
+// drawn clear, and the browser eases it there over FADE_MS, so the fade is one
+// smooth transition rather than a step on every tick.
+export type Highlight = Mention & { fading: boolean };
+
+export const FADE_MS = 1000;
+const fadeOut = `${FADE_MS}ms ease-out`;
+const accent = 'var(--chess-accent)';
 
 // The board, drawn by react-chessboard from chess.js's position. Its colors
 // come from --chess-* in styles/app.css, which follow the light and dark
@@ -82,12 +81,19 @@ export function Board({
 	if (selected && canMove) style(selected, { backgroundColor: squareTint });
 	for (const square of targets) style(square, { backgroundImage: targetDot });
 	for (const mention of mentions) {
+		// the transition is only set while fading, so a new mark appears at once
 		if (mention.kind === 'square') {
-			style(mention.square, { boxShadow: `inset 0 0 0 3px ${faded(accent, mention.strength)}` });
-		} else if (mention.kind === 'piece') {
-			const tint = faded(squareTint, mention.strength);
 			style(mention.square, {
-				backgroundImage: `radial-gradient(circle, ${tint} 45%, transparent 70%)`
+				boxShadow: `inset 0 0 0 3px ${mention.fading ? 'transparent' : accent}`,
+				transition: mention.fading ? `box-shadow ${fadeOut}` : undefined
+			});
+		} else if (mention.kind === 'piece') {
+			// a gradient can't be eased, but the color inside it can, as a
+			// registered property (app.css)
+			style(mention.square, {
+				['--chess-glow' as string]: mention.fading ? 'transparent' : squareTint,
+				backgroundImage: 'radial-gradient(circle, var(--chess-glow) 45%, transparent 70%)',
+				transition: mention.fading ? `--chess-glow ${fadeOut}` : undefined
 			});
 		}
 	}
@@ -97,7 +103,7 @@ export function Board({
 					{
 						startSquare: mention.from,
 						endSquare: mention.to,
-						color: faded(ARROW, mention.strength)
+						color: mention.fading ? 'transparent' : ARROW
 					}
 				]
 			: []

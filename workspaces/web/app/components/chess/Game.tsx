@@ -6,7 +6,7 @@ import { Picker } from '~/components/chess/Picker';
 import { ACCENT_BUTTON, MoveList, Thread, Pulse, Section, Switch } from '~/components/chess/Rail';
 import { Button } from '~/components/ui/button';
 import { findMentions, mentionKey, type Mention } from '~/lib/chess/mentions';
-import type { Highlight } from '~/components/chess/Board';
+import { FADE_MS, type Highlight } from '~/components/chess/Board';
 import {
 	defaultModel,
 	findCached,
@@ -41,7 +41,6 @@ const YOU: Color = 'w';
 // a board highlight stays this long after the model last mentions it, and
 // fades out over the last FADE_MS of that
 const MARK_MS = 2500;
-const FADE_MS = 1000;
 
 // The model's turn as it happens: reading the prompt before its first word,
 // thinking, then writing its move. `retry` is the answer it gave before that
@@ -164,7 +163,7 @@ export default function Game() {
 		for (const [key, { mention, at }] of marks.current) {
 			const left = MARK_MS - (time - at);
 			if (left <= 0) marks.current.delete(key);
-			else shown.push({ ...mention, strength: Math.min(1, left / FADE_MS) });
+			else shown.push({ ...mention, fading: left <= FADE_MS });
 		}
 		setMentions(shown);
 	}
