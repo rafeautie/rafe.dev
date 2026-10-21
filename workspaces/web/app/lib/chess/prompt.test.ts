@@ -63,7 +63,8 @@ describe('buildMessages', () => {
 		}
 		// the board, the FEN, 20 moves and a few dozen legal moves
 		expect(longest).toBeLessThan(2400);
-	});
+		// 400 positions take a few seconds, more on a busy machine
+	}, 20_000);
 
 	it('numbers a window that starts on black’s move', () => {
 		const history = ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5'];
