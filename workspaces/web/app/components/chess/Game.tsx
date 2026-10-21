@@ -300,7 +300,7 @@ export default function Game() {
 					onMove={onMove}
 				/>
 			</div>
-			<aside className="mx-auto flex w-full max-w-[40rem] flex-col gap-8 xl:mx-0 xl:w-72">
+			<aside className="mx-auto flex w-full max-w-[40rem] flex-col gap-8 xl:mx-0 xl:w-72 xl:self-stretch">
 				{phase === 'setup' ? (
 					device && model ? (
 						<Picker
@@ -352,23 +352,22 @@ export default function Game() {
 									</p>
 								)}
 							</Section>
-							<div className="flex flex-wrap gap-2">
+							{/* pinned to the bottom of the rail, level with the board's foot */}
+							<div className="flex flex-col gap-2 xl:mt-auto">
 								{phase === 'playing' ? (
-									<Button variant="outline" size="sm" onClick={resign}>
+									<Button variant="outline" onClick={resign}>
 										Resign
 									</Button>
 								) : (
 									<>
-										<Button size="sm" onClick={start}>
-											Rematch
-										</Button>
-										<Button variant="outline" size="sm" onClick={() => reset('setup')}>
+										<Button onClick={start}>Rematch</Button>
+										<Button variant="outline" onClick={() => reset('setup')}>
 											New opponent
 										</Button>
 									</>
 								)}
 								{entries.length > 0 && (
-									<Button variant="ghost" size="sm" onClick={copyPgn}>
+									<Button variant="ghost" onClick={copyPgn}>
 										Copy PGN
 									</Button>
 								)}

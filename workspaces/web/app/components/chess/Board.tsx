@@ -1,6 +1,11 @@
 import type { Chess, Square } from 'chess.js';
-import { useState, type CSSProperties } from 'react';
-import { Chessboard, type ChessboardOptions } from 'react-chessboard';
+import { useState, useSyncExternalStore, type CSSProperties } from 'react';
+import {
+	Chessboard,
+	defaultAlphaNotationStyle,
+	defaultNumericNotationStyle,
+	type ChessboardOptions
+} from 'react-chessboard';
 import type { Mention } from '~/lib/chess/mentions';
 import { PIECES } from './pieces';
 
@@ -14,6 +19,22 @@ import { PIECES } from './pieces';
 const ARROW = 'rgb(128 128 128 / 0.75)';
 
 const squareTint = 'color-mix(in oklab, var(--chess-mark) 25%, transparent)';
+// The coordinates, quiet on both squares. On a phone's small board they would
+// run into the pieces, so they only show from this width up.
+const coordinate = 'color-mix(in oklab, var(--chess-mark) 55%, transparent)';
+const COORDINATES_FROM = '(min-width: 640px)';
+
+function useWideEnough() {
+	return useSyncExternalStore(
+		(onChange) => {
+			const query = window.matchMedia(COORDINATES_FROM);
+			query.addEventListener('change', onChange);
+			return () => query.removeEventListener('change', onChange);
+		},
+		() => window.matchMedia(COORDINATES_FROM).matches,
+		() => true
+	);
+}
 const targetDot = `radial-gradient(circle, ${squareTint} 22%, transparent 24%)`;
 
 export function Board({
@@ -36,6 +57,7 @@ export function Board({
 	onMove: (from: Square, to: Square) => boolean;
 }) {
 	const [selected, setSelected] = useState<Square>();
+	const wide = useWideEnough();
 	const targets =
 		selected && canMove ? chess.moves({ square: selected, verbose: true }).map((m) => m.to) : [];
 
@@ -87,8 +109,11 @@ export function Board({
 		boardStyle: { borderRadius: '0.5rem', overflow: 'hidden' },
 		lightSquareStyle: { backgroundColor: 'var(--chess-light)' },
 		darkSquareStyle: { backgroundColor: 'var(--chess-dark)' },
-		lightSquareNotationStyle: { color: 'var(--chess-dark)' },
-		darkSquareNotationStyle: { color: 'var(--chess-light)' },
+		lightSquareNotationStyle: { color: coordinate },
+		darkSquareNotationStyle: { color: coordinate },
+		showNotation: wide,
+		alphaNotationStyle: { ...defaultAlphaNotationStyle, fontSize: '12px' },
+		numericNotationStyle: { ...defaultNumericNotationStyle, fontSize: '12px' },
 		dropSquareStyle: { boxShadow: 'inset 0 0 0 3px var(--chess-mark)' },
 		animationDurationInMs: 200,
 		canDragPiece: ({ piece }) => canMove && piece.pieceType[0] === chess.turn(),
