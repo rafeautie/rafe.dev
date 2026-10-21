@@ -1,6 +1,13 @@
 import { Chess } from 'chess.js';
 import { describe, expect, it } from 'vitest';
-import { buildMessages, findMove, splitReply, type LegalMove, type PromptInput } from './prompt';
+import {
+	buildMessages,
+	drawBoard,
+	findMove,
+	splitReply,
+	type LegalMove,
+	type PromptInput
+} from './prompt';
 
 function legalMoves(chess: Chess): LegalMove[] {
 	return chess
@@ -11,8 +18,7 @@ function legalMoves(chess: Chess): LegalMove[] {
 function input(chess: Chess, overrides: Partial<PromptInput> = {}): PromptInput {
 	return {
 		color: chess.turn() === 'w' ? 'white' : 'black',
-		fen: chess.fen(),
-		board: chess.ascii(),
+		board: drawBoard(chess.board()),
 		history: chess.history(),
 		legal: legalMoves(chess),
 		think: true,
@@ -28,7 +34,8 @@ describe('buildMessages', () => {
 		chess.move('e5');
 		const [message] = buildMessages(input(chess));
 		expect(message.content).toContain('as white');
-		expect(message.content).toContain(chess.fen());
+		expect(message.content).toContain('5 . . . . p . . .\n4 . . . . P . . .');
+		expect(message.content).not.toContain('FEN');
 		expect(message.content).toContain('Moves so far: 1. e4 e5');
 		expect(message.content).toContain('Nf3');
 		expect(message.content).toContain('<think>');
@@ -61,8 +68,8 @@ describe('buildMessages', () => {
 			const [message] = buildMessages(input(chess, { history }));
 			longest = Math.max(longest, message.content.length);
 		}
-		// the board, the FEN, 20 moves and a few dozen legal moves
-		expect(longest).toBeLessThan(2400);
+		// the board, 20 moves and a few dozen legal moves
+		expect(longest).toBeLessThan(2000);
 		// 400 positions take a few seconds, more on a busy machine
 	}, 20_000);
 

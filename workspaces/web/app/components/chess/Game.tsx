@@ -20,7 +20,7 @@ import {
 	type ChessModel,
 	type DeviceInfo
 } from '~/lib/chess/models';
-import { findMove, splitReply, type PromptInput } from '~/lib/chess/prompt';
+import { drawBoard, findMove, splitReply, type PromptInput } from '~/lib/chess/prompt';
 import {
 	loadGame,
 	loadSettings,
@@ -60,8 +60,7 @@ type Live = {
 function promptInput(chess: Chess, think: boolean, model: ChessModel, retry?: string): PromptInput {
 	return {
 		color: chess.turn() === 'w' ? 'white' : 'black',
-		fen: chess.fen(),
-		board: chess.ascii(),
+		board: drawBoard(chess.board()),
 		history: chess.history(),
 		legal: chess.moves({ verbose: true }).map((move) => ({ san: move.san, uci: move.lan })),
 		think,

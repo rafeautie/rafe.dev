@@ -9,8 +9,7 @@ export type LegalMove = { san: string; uci: string };
 
 export type PromptInput = {
 	color: 'white' | 'black';
-	fen: string;
-	// the board drawn in text, as chess.js's ascii() draws it
+	// the board drawn in text (drawBoard)
 	board: string;
 	// every move of the game so far, in standard notation
 	history: string[];
@@ -26,15 +25,26 @@ export type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: stri
 // How many of the latest moves (each side's counts as one) the model is shown
 export const HISTORY_PLIES = 20;
 
+// The board as rows of letters, rank 8 at the top. It's the one picture of
+// the position in the prompt: the moves so far and the legal moves cover the
+// rest of what a FEN would say (whose turn, castling, en passant), and small
+// models read a grid more easily than a FEN. Single spaces keep each square
+// its own word without spending tokens on a frame.
+export function drawBoard(rows: ({ type: string; color: 'w' | 'b' } | null)[][]): string {
+	const lines = rows.map(
+		(row, i) =>
+			`${8 - i} ${row.map((square) => (square ? (square.color === 'w' ? square.type.toUpperCase() : square.type) : '.')).join(' ')}`
+	);
+	return [...lines, '  a b c d e f g h'].join('\n');
+}
+
 export function buildMessages(input: PromptInput, historyPlies = HISTORY_PLIES): ChatMessage[] {
 	const recent = formatHistory(input.history, historyPlies);
 	const lines = [
 		`You are playing a game of chess as ${input.color}. It is your move.`,
 		'',
 		'The board (uppercase is white, lowercase is black, dots are empty squares):',
-		input.board.trimEnd(),
-		'',
-		`Position in FEN: ${input.fen}`
+		input.board
 	];
 	if (recent) {
 		lines.push(`Moves so far${recent.trimmed ? ' (the latest ones)' : ''}: ${recent.text}`);
