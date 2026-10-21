@@ -110,7 +110,7 @@ export function Picker({
 										<span className="text-sm font-medium">{m.name}</span>
 										<span className="text-xs text-foreground/50">
 											{m.maker} ·{' '}
-											{cached.has(m.id) ? 'downloaded' : `${downloadSize(m, device).toFixed(1)} GB`}
+											{cached.has(m.id) ? 'Downloaded' : `${downloadSize(m, device).toFixed(1)} GB`}
 										</span>
 									</span>
 									<span
