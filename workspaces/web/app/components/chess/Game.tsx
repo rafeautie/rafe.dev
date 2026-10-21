@@ -3,14 +3,7 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Board } from '~/components/chess/Board';
 import { Picker } from '~/components/chess/Picker';
-import {
-	ACCENT_BUTTON,
-	LiveThinking,
-	MoveList,
-	Pulse,
-	Section,
-	Switch
-} from '~/components/chess/Rail';
+import { ACCENT_BUTTON, MoveList, Thread, Pulse, Section, Switch } from '~/components/chess/Rail';
 import { Button } from '~/components/ui/button';
 import { findMentions, mentionKey, type Mention } from '~/lib/chess/mentions';
 import type { Highlight } from '~/components/chess/Board';
@@ -347,7 +340,18 @@ export default function Game() {
 								onPickAnother={() => reset('setup')}
 							/>
 						</Section>
-						{live && showThinking && <LiveThinking text={live.text} />}
+						<Thread
+							entries={entries}
+							live={
+								live && {
+									text: live.text,
+									// still thinking, or about to again after a miss
+									thinking: live.stage !== 'answering',
+									seconds: (now - live.started) / 1000
+								}
+							}
+							revealThinking={showThinking || phase === 'over'}
+						/>
 					</>
 				)}
 			</section>

@@ -1,4 +1,12 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import {
+	Conversation,
+	ConversationContent,
+	ConversationEmpty,
+	ConversationScrollButton
+} from '~/components/ai/conversation';
+import { Message, MessageContent } from '~/components/ai/message';
+import { Reasoning, ReasoningContent, ReasoningTrigger } from '~/components/ai/reasoning';
 import type { Entry } from '~/lib/chess/storage';
 import { cn } from '~/lib/utils';
 
@@ -76,20 +84,88 @@ export function Pulse() {
 	);
 }
 
-// The model's thinking as it streams in, kept scrolled to the newest words.
-export function LiveThinking({ text }: { text: string }) {
-	const box = useRef<HTMLDivElement>(null);
-	useEffect(() => {
-		const element = box.current;
-		if (element) element.scrollTop = element.scrollHeight;
-	}, [text]);
+// The game as a chat with the model: each of your moves, and each of its
+// replies with the thinking behind it, folded away once it's done. Its turn in
+// progress comes last, thinking out loud. Guarded, the thinking stays hidden
+// until the game ends.
+export function Thread({
+	entries,
+	live,
+	revealThinking
+}: {
+	entries: Entry[];
+	// the model's turn as it happens
+	live?: { text: string; thinking: boolean; seconds: number };
+	revealThinking: boolean;
+}) {
 	return (
-		<div
-			ref={box}
-			className="max-h-56 overflow-y-auto rounded-lg border border-foreground/10 px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap text-foreground/50 xl:max-h-none xl:min-h-0 xl:flex-1"
-		>
-			{text || '…'}
-		</div>
+		<Conversation className="max-h-96 min-h-24 xl:max-h-none xl:min-h-0 xl:flex-1">
+			<ConversationContent className="pr-1 pb-2">
+				{entries.length === 0 && !live && (
+					<ConversationEmpty>
+						Your move. Its replies and thinking will show up here.
+					</ConversationEmpty>
+				)}
+				{entries.map((entry, i) =>
+					entry.by === 'you' ? (
+						<Message key={i} from="user">
+							<MessageContent>
+								<span>
+									<span className="text-foreground/40">{Math.floor(i / 2) + 1}. </span>
+									{entry.san}
+								</span>
+							</MessageContent>
+						</Message>
+					) : (
+						<Message key={i} from="assistant">
+							{(entry.thinking || entry.missed?.length) &&
+								(revealThinking ? (
+									<Reasoning>
+										<ReasoningTrigger seconds={entry.seconds} />
+										<ReasoningContent>
+											{entry.thinking}
+											{entry.missed?.map((answer, k) => (
+												<p key={k} className="mt-1 italic">
+													Answered “{answer}”, which isn’t a legal move.
+												</p>
+											))}
+										</ReasoningContent>
+									</Reasoning>
+								) : (
+									<Reasoning>
+										<ReasoningTrigger
+											disabled
+											label={`Thought for ${Math.max(1, Math.round(entry.seconds ?? 0))}s · shown when the game ends`}
+										/>
+									</Reasoning>
+								))}
+							<MessageContent>
+								<span className="flex items-center gap-1.5 font-medium">
+									{entry.san}
+									{entry.random && (
+										<span
+											title="Random move: its answer wasn't a legal move"
+											className="rounded border border-foreground/20 px-1 text-[0.65rem] font-normal text-foreground/50"
+										>
+											random
+										</span>
+									)}
+								</span>
+							</MessageContent>
+						</Message>
+					)
+				)}
+				{live && revealThinking && live.text && (
+					<Message from="assistant">
+						<Reasoning streaming={live.thinking}>
+							<ReasoningTrigger streaming={live.thinking} seconds={live.seconds} />
+							<ReasoningContent>{live.text}</ReasoningContent>
+						</Reasoning>
+					</Message>
+				)}
+			</ConversationContent>
+			<ConversationScrollButton />
+		</Conversation>
 	);
 }
 
