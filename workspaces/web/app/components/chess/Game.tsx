@@ -353,7 +353,7 @@ export default function Game() {
 											onClick={copyPgn}
 											className="rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
 										>
-											Copy PGN
+											copy pgn
 										</button>
 									)
 								}
