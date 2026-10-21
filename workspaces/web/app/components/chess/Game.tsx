@@ -312,14 +312,14 @@ export default function Game() {
 	const showThinking = settings.showThinking;
 
 	return (
-		<div className="chess grid gap-8 xl:grid-cols-[1fr_auto_1fr] xl:items-start">
+		<div className="chess grid gap-8 xl:grid-cols-[minmax(20rem,1fr)_auto_minmax(20rem,1fr)] xl:items-start">
 			{/* Beside the board on wide screens, both columns are as tall as the board
 			    and no taller: the opponent on the left, with its thinking, and the game
 			    on the right, its last button level with the board's foot. On a phone
 			    they stack under the board. */}
 			<section
 				className={cn(
-					'order-2 mx-auto flex w-full max-w-[40rem] flex-col gap-2 xl:order-1 xl:mx-0 xl:h-0 xl:min-h-full xl:w-80 xl:max-w-none xl:justify-self-end 2xl:w-96',
+					'order-2 mx-auto flex w-full max-w-[40rem] flex-col gap-2 xl:order-1 xl:mx-0 xl:h-0 xl:min-h-full xl:max-w-none',
 					phase === 'setup' && 'max-xl:hidden'
 				)}
 			>
@@ -355,7 +355,7 @@ export default function Game() {
 					</>
 				)}
 			</section>
-			<div className="order-1 mx-auto w-full max-w-[min(40rem,calc(100dvh-9rem))] xl:order-2 xl:w-[min(calc(100dvh-9rem),calc(100vw-49rem))] xl:max-w-none 2xl:w-[min(calc(100dvh-9rem),calc(100vw-57rem))]">
+			<div className="order-1 mx-auto w-full max-w-[min(40rem,calc(100dvh-7.75rem))] xl:order-2 xl:w-(--chess-board) xl:max-w-none">
 				<Board
 					chess={chess}
 					fen={fen}
@@ -366,7 +366,7 @@ export default function Game() {
 					onMove={onMove}
 				/>
 			</div>
-			<aside className="order-3 mx-auto flex w-full max-w-[40rem] flex-col gap-8 xl:mx-0 xl:h-0 xl:min-h-full xl:w-80 xl:max-w-none 2xl:w-96">
+			<aside className="order-3 mx-auto flex w-full max-w-[40rem] flex-col gap-8 xl:mx-0 xl:h-0 xl:min-h-full xl:max-w-none">
 				{phase === 'setup' ? (
 					device && model ? (
 						<Picker

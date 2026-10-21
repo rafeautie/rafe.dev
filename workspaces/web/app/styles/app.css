@@ -354,6 +354,14 @@
 		fill 1s ease-out;
 }
 
+:root {
+	/* The board beside the rails on a wide screen: as tall as the screen allows
+	   under the header, with the same 2rem the page keeps at its edges and
+	   between its parts (2rem + 1.75rem header + 2rem above it, 2rem below),
+	   and no wider than leaves 20rem for each rail. */
+	--chess-board: min(calc(100dvh - 7.75rem), calc(100vw - 49rem));
+}
+
 .chess {
 	--chess-light: oklch(0.93 0 0);
 	--chess-dark: oklch(0.78 0 0);

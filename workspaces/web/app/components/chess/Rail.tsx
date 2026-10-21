@@ -129,7 +129,9 @@ function MoveCards({ move, random }: { move: Move; random?: boolean }) {
 							piece={`${note.kind === 'promotion' ? move.color : other}${note.piece!.toUpperCase()}`}
 						/>
 					}
-					accent={note.kind === 'check' || note.kind === 'checkmate'}
+					tone={
+						note.kind === 'capture' ? 'highlight' : note.kind === 'promotion' ? undefined : 'accent'
+					}
 				>
 					{note.text}
 				</NoteCard>
@@ -159,14 +161,16 @@ function PieceTile({ piece, small = false }: { piece: string; small?: boolean })
 	);
 }
 
+// `accent` colors the words (check, checkmate); `highlight` colors the whole
+// card (a capture)
 function NoteCard({
 	icon,
-	accent = false,
+	tone,
 	title,
 	children
 }: {
 	icon: ReactNode;
-	accent?: boolean;
+	tone?: 'accent' | 'highlight';
 	title?: string;
 	children: ReactNode;
 }) {
@@ -176,7 +180,8 @@ function NoteCard({
 			title={title}
 			className={cn(
 				'h-10 w-full flex-row items-center gap-3 px-3 py-0',
-				accent && 'text-(--chess-accent)'
+				tone && 'text-(--chess-accent)',
+				tone === 'highlight' && 'bg-(--chess-accent)/5 ring-(--chess-accent)/40'
 			)}
 		>
 			{/* as wide as the piece on the move card above, so the words line up */}
