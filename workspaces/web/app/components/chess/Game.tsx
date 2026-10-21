@@ -381,6 +381,22 @@ export default function Game() {
 										onChange={(on) => update({ showThinking: on })}
 									/>
 								</div>
+								<div className="mt-3 flex flex-col gap-2">
+									{phase === 'playing' ? (
+										<Button variant="outline" onClick={resign}>
+											Resign
+										</Button>
+									) : (
+										<>
+											<Button className={ACCENT_BUTTON} onClick={start}>
+												Rematch
+											</Button>
+											<Button variant="outline" onClick={() => reset('setup')}>
+												New opponent
+											</Button>
+										</>
+									)}
+								</div>
 							</Section>
 							<Section
 								label="moves"
@@ -404,23 +420,6 @@ export default function Game() {
 									</p>
 								)}
 							</Section>
-							{/* pinned to the bottom of the rail, level with the board's foot */}
-							<div className="flex flex-col gap-2 xl:mt-auto">
-								{phase === 'playing' ? (
-									<Button variant="outline" onClick={resign}>
-										Resign
-									</Button>
-								) : (
-									<>
-										<Button className={ACCENT_BUTTON} onClick={start}>
-											Rematch
-										</Button>
-										<Button variant="outline" onClick={() => reset('setup')}>
-											New opponent
-										</Button>
-									</>
-								)}
-							</div>
 						</>
 					)
 				)}
