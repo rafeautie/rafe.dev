@@ -5,15 +5,15 @@ import type { Mention } from '~/lib/chess/mentions';
 import { PIECES } from './pieces';
 
 // The board, drawn by react-chessboard from chess.js's position. Its colors
-// come from --chess-* in styles/app.css, black and white in both themes, and
-// its pieces from ./pieces. Moves are made by dragging or by clicking a piece
-// and then a square.
+// come from --chess-* in styles/app.css, which follow the light and dark
+// themes, and its pieces from ./pieces. Moves are made by dragging or by
+// clicking a piece and then a square.
 
 // SVG arrows can't read CSS variables, so this one gray has to read on both
-// the black and white squares.
+// the light and dark boards.
 const ARROW = 'rgb(128 128 128 / 0.75)';
 
-const squareTint = 'color-mix(in oklab, var(--chess-mark) 45%, transparent)';
+const squareTint = 'color-mix(in oklab, var(--chess-mark) 25%, transparent)';
 const targetDot = `radial-gradient(circle, ${squareTint} 22%, transparent 24%)`;
 
 export function Board({
@@ -87,8 +87,8 @@ export function Board({
 		boardStyle: { borderRadius: '0.5rem', overflow: 'hidden' },
 		lightSquareStyle: { backgroundColor: 'var(--chess-light)' },
 		darkSquareStyle: { backgroundColor: 'var(--chess-dark)' },
-		lightSquareNotationStyle: { color: 'var(--chess-dark)', opacity: 0.5 },
-		darkSquareNotationStyle: { color: 'var(--chess-light)', opacity: 0.5 },
+		lightSquareNotationStyle: { color: 'var(--chess-dark)' },
+		darkSquareNotationStyle: { color: 'var(--chess-light)' },
 		dropSquareStyle: { boxShadow: 'inset 0 0 0 3px var(--chess-mark)' },
 		animationDurationInMs: 200,
 		canDragPiece: ({ piece }) => canMove && piece.pieceType[0] === chess.turn(),

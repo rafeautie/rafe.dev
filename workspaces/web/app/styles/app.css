@@ -337,11 +337,18 @@
 	}
 }
 
-/* The /chess board (components/chess/Board.tsx): white and black squares in
-   both themes, and one mid gray mark for the last move and for what the model
-   is thinking about, which reads on either square. */
+/* The /chess board (components/chess/Board.tsx): two cool slate grays far
+   enough apart to read as a board, both mid enough that the black and the
+   white pieces stand out on either, and one mark for the last move and for
+   what the model is thinking about. */
 .chess-board {
-	--chess-light: #fff;
-	--chess-dark: #000;
-	--chess-mark: oklch(0.6 0 0);
+	--chess-light: oklch(0.94 0.008 255);
+	--chess-dark: oklch(0.75 0.025 255);
+	--chess-mark: oklch(0.3 0 0);
+
+	.dark & {
+		--chess-light: oklch(0.58 0.02 255);
+		--chess-dark: oklch(0.44 0.03 255);
+		--chess-mark: oklch(0.95 0 0);
+	}
 }
