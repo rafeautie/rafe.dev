@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { BrainIcon, DicesIcon, MessagesSquareIcon } from 'lucide-react';
 import { Bubble, BubbleContent } from '~/components/ui/bubble';
 import {
@@ -63,27 +63,36 @@ export function Section({
 	);
 }
 
+// A labelled on/off switch. `hint` sits just after the label, for a small
+// control of its own (like an info button), so it isn't inside the switch.
 export function Switch({
 	label,
 	checked,
-	onChange
+	onChange,
+	hint
 }: {
 	label: string;
 	checked: boolean;
 	onChange: (checked: boolean) => void;
+	hint?: ReactNode;
 }) {
+	const id = useId();
 	return (
-		<button
-			type="button"
-			role="switch"
-			aria-checked={checked}
-			onClick={() => onChange(!checked)}
-			className="group flex items-center justify-between gap-3 rounded-md text-sm text-foreground/70 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-		>
-			{label}
-			<span
+		<div className="flex items-center justify-between gap-3 text-sm text-foreground/70 has-[button[role=switch]:hover]:text-foreground">
+			<span className="flex items-center gap-1">
+				<label htmlFor={id} className="cursor-pointer hover:text-foreground">
+					{label}
+				</label>
+				{hint}
+			</span>
+			<button
+				id={id}
+				type="button"
+				role="switch"
+				aria-checked={checked}
+				onClick={() => onChange(!checked)}
 				className={cn(
-					'relative h-4 w-7 shrink-0 rounded-full transition-colors',
+					'relative h-4 w-7 shrink-0 rounded-full transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
 					checked ? 'bg-(--chess-accent)' : 'bg-foreground/15'
 				)}
 			>
@@ -93,8 +102,8 @@ export function Switch({
 						checked && 'translate-x-3'
 					)}
 				/>
-			</span>
-		</button>
+			</button>
+		</div>
 	);
 }
 

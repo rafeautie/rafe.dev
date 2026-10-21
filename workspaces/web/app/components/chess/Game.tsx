@@ -1,12 +1,14 @@
 import { Chess, type Color, type Square } from 'chess.js';
-import { FlagIcon, TriangleAlertIcon } from 'lucide-react';
+import { FlagIcon, InfoIcon, TriangleAlertIcon } from 'lucide-react';
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Board } from '~/components/chess/Board';
+import { MarksKey } from '~/components/chess/Key';
 import { Picker } from '~/components/chess/Picker';
 import { ACCENT_BUTTON, MoveList, Thread, Pulse, Section, Switch } from '~/components/chess/Rail';
 import { Button } from '~/components/ui/button';
 import { Card } from '~/components/ui/card';
+import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Spinner } from '~/components/ui/spinner';
 import { findMentions, mentionKey, type Mention } from '~/lib/chess/mentions';
 import { FADE_MS, type Highlight } from '~/components/chess/Board';
@@ -395,6 +397,26 @@ export default function Game() {
 										label="Show its thinking"
 										checked={showThinking}
 										onChange={(on) => update({ showThinking: on })}
+										hint={
+											<Popover>
+												<PopoverTrigger
+													aria-label="What the marks on the board mean"
+													render={
+														<Button
+															variant="ghost"
+															size="icon-xs"
+															className="text-muted-foreground"
+														/>
+													}
+												>
+													<InfoIcon />
+												</PopoverTrigger>
+												{/* `chess` for the board's colors, since it renders outside the page */}
+												<PopoverContent side="bottom" align="start" className="chess w-80 p-4">
+													<MarksKey />
+												</PopoverContent>
+											</Popover>
+										}
 									/>
 								</div>
 								<div className="mt-3 flex flex-col gap-2">
