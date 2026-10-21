@@ -140,6 +140,9 @@ export function Board({
 		dropSquareStyle: { boxShadow: 'inset 0 0 0 3px var(--chess-accent)' },
 		animationDurationInMs: 200,
 		canDragPiece: ({ piece }) => canMove && piece.pieceType[0] === chess.turn(),
+		// show where a piece can go while it's dragged, as when it's clicked
+		onPieceDrag: ({ square }) => setSelected((square as Square | null) ?? undefined),
+		onPieceDragCancel: () => setSelected(undefined),
 		onPieceDrop: ({ sourceSquare, targetSquare }) => {
 			setSelected(undefined);
 			return !!targetSquare && onMove(sourceSquare as Square, targetSquare as Square);
