@@ -409,7 +409,7 @@ export default function Game() {
 														/>
 													}
 												>
-													<InfoIcon />
+													<InfoIcon className="size-4" />
 												</PopoverTrigger>
 												{/* `chess` for the board's colors, since it renders outside the page */}
 												<PopoverContent side="bottom" align="end" className="chess w-80 p-4">
