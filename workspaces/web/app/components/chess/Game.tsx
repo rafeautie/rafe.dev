@@ -344,7 +344,20 @@ export default function Game() {
 									onChange={(on) => update({ showThinking: on })}
 								/>
 							</div>
-							<Section label="moves">
+							<Section
+								label="moves"
+								action={
+									entries.length > 0 && (
+										<button
+											type="button"
+											onClick={copyPgn}
+											className="rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+										>
+											Copy PGN
+										</button>
+									)
+								}
+							>
 								<MoveList entries={entries} revealThinking={showThinking || phase === 'over'} />
 								{!showThinking && phase === 'playing' && entries.some((e) => e.by === 'ai') && (
 									<p className="text-xs text-foreground/40">
@@ -365,11 +378,6 @@ export default function Game() {
 											New opponent
 										</Button>
 									</>
-								)}
-								{entries.length > 0 && (
-									<Button variant="ghost" onClick={copyPgn}>
-										Copy PGN
-									</Button>
 								)}
 							</div>
 						</>

@@ -4,13 +4,23 @@ import { cn } from '~/lib/utils';
 
 // The pieces of the rail beside the board on /chess.
 
-export function Section({ label, children }: { label: string; children: ReactNode }) {
+export function Section({
+	label,
+	action,
+	children
+}: {
+	label: string;
+	// a small control at the far end of the header's rule
+	action?: ReactNode;
+	children: ReactNode;
+}) {
 	return (
 		<section className="flex flex-col gap-2">
-			<h2 className="flex items-center gap-3 text-sm text-foreground/50">
-				{label}
+			<div className="flex items-center gap-3 text-sm text-foreground/50">
+				<h2>{label}</h2>
 				<span className="h-px flex-1 bg-foreground/10" />
-			</h2>
+				{action}
+			</div>
 			{children}
 		</section>
 	);
