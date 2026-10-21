@@ -337,18 +337,19 @@
 	}
 }
 
-/* The /chess board (components/chess/Board.tsx): two cool slate grays far
-   enough apart to read as a board, both mid enough that the black and the
-   white pieces stand out on either, and one mark for the last move and for
-   what the model is thinking about. */
-.chess-board {
-	--chess-light: oklch(0.94 0.008 255);
-	--chess-dark: oklch(0.75 0.025 255);
-	--chess-mark: oklch(0.3 0 0);
+/* The /chess page (components/chess): a gray board and gray pieces, with one
+   blue accent for everything that is highlighted or can be pressed. The
+   pieces' own grays live in their SVGs (assets/chess/pieces). */
+.chess {
+	--chess-light: oklch(0.93 0 0);
+	--chess-dark: oklch(0.78 0 0);
+	--chess-ink: oklch(0.4 0 0);
+	--chess-accent: oklch(0.6 0.17 255);
 
 	.dark & {
-		--chess-light: oklch(0.52 0.02 255);
-		--chess-dark: oklch(0.4 0.03 255);
-		--chess-mark: oklch(0.95 0 0);
+		--chess-light: oklch(0.52 0 0);
+		--chess-dark: oklch(0.4 0 0);
+		--chess-ink: oklch(0.9 0 0);
+		--chess-accent: oklch(0.72 0.14 255);
 	}
 }

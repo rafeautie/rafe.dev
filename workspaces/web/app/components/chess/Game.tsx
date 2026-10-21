@@ -3,7 +3,14 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Board } from '~/components/chess/Board';
 import { Picker } from '~/components/chess/Picker';
-import { LiveThinking, MoveList, Pulse, Section, Switch } from '~/components/chess/Rail';
+import {
+	ACCENT_BUTTON,
+	LiveThinking,
+	MoveList,
+	Pulse,
+	Section,
+	Switch
+} from '~/components/chess/Rail';
 import { Button } from '~/components/ui/button';
 import { findMentions, mentionKey, type Mention } from '~/lib/chess/mentions';
 import {
@@ -33,6 +40,9 @@ import { useOpponent } from '~/lib/chess/use-opponent';
 
 type Phase = 'setup' | 'playing' | 'over';
 
+// the player is always white, the model always black
+const YOU: Color = 'w';
+
 // a board highlight fades this long after the model last mentions it
 const MARK_MS = 2500;
 
@@ -49,9 +59,9 @@ function promptInput(chess: Chess, think: boolean, model: ChessModel, retry?: st
 	};
 }
 
-function outcome(chess: Chess, you: Color, model: ChessModel): string | undefined {
+function outcome(chess: Chess, model: ChessModel): string | undefined {
 	if (chess.isCheckmate()) {
-		return chess.turn() === you ? `${model.name} wins by checkmate` : 'You win by checkmate';
+		return chess.turn() === YOU ? `${model.name} wins by checkmate` : 'You win by checkmate';
 	}
 	if (chess.isStalemate()) return 'Draw by stalemate';
 	if (chess.isInsufficientMaterial()) return 'Draw: not enough pieces left to mate';
@@ -80,7 +90,6 @@ export default function Game() {
 	const [saved] = useState(() => restoreGame(chess));
 	const [fen, setFen] = useState(() => chess.fen());
 	const [entries, setEntries] = useState<Entry[]>(saved?.entries ?? []);
-	const [you, setYou] = useState<Color>(saved?.you ?? 'w');
 	const [phase, setPhase] = useState<Phase>(saved ? (saved.result ? 'over' : 'playing') : 'setup');
 	const [result, setResult] = useState(saved?.result);
 	const [settings, setSettings] = useState(loadSettings);
@@ -114,9 +123,9 @@ export default function Game() {
 	useEffect(() => {
 		if (!model) return;
 		saveGame(
-			phase === 'setup' ? undefined : { pgn: chess.pgn(), you, model: model.id, entries, result }
+			phase === 'setup' ? undefined : { pgn: chess.pgn(), model: model.id, entries, result }
 		);
-	}, [phase, chess, you, model, entries, result]);
+	}, [phase, chess, model, entries, result]);
 
 	function play(
 		move: string | { from: Square; to: Square; promotion: 'q' },
@@ -125,7 +134,7 @@ export default function Game() {
 		const made = chess.move(move);
 		setFen(chess.fen());
 		setEntries((previous) => [...previous, { ...entry, san: made.san }]);
-		const end = model && outcome(chess, you, model);
+		const end = model && outcome(chess, model);
 		if (end) {
 			setResult(end);
 			setPhase('over');
@@ -133,7 +142,7 @@ export default function Game() {
 	}
 
 	function onMove(from: Square, to: Square): boolean {
-		if (phase !== 'playing' || chess.turn() !== you) return false;
+		if (phase !== 'playing' || chess.turn() !== YOU) return false;
 		try {
 			play({ from, to, promotion: 'q' }, { by: 'you' });
 			return true;
@@ -146,7 +155,7 @@ export default function Game() {
 		setMentions([...marks.current.values()].map(({ mention }) => mention));
 	}
 
-	const aiTurn = phase === 'playing' && chess.turn() !== you && !chess.isGameOver();
+	const aiTurn = phase === 'playing' && chess.turn() !== YOU && !chess.isGameOver();
 	const ready = opponent.status === 'ready';
 
 	// The model's turn: ask, check the answer, ask once more naming the
@@ -257,7 +266,6 @@ export default function Game() {
 	function start() {
 		if (!model || !device) return;
 		reset('playing');
-		setYou(settings.side === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : settings.side);
 		if (opponent.status === 'idle' || opponent.status === 'error' || opponent.model !== model) {
 			load(model, device);
 		}
@@ -287,14 +295,14 @@ export default function Game() {
 	const showThinking = settings.showThinking;
 
 	return (
-		<div className="grid gap-8 xl:grid-cols-[1fr_auto_1fr] xl:items-start">
+		<div className="chess grid gap-8 xl:grid-cols-[1fr_auto_1fr] xl:items-start">
 			<div className="hidden xl:block" />
 			<div className="mx-auto w-full max-w-[min(40rem,calc(100dvh-9rem))] xl:w-[min(40rem,calc(100dvh-9rem))]">
 				<Board
 					chess={chess}
 					fen={fen}
-					orientation={you === 'w' ? 'white' : 'black'}
-					canMove={phase === 'playing' && chess.turn() === you}
+					orientation="white"
+					canMove={phase === 'playing' && chess.turn() === YOU}
 					lastMove={last && { from: last.from, to: last.to }}
 					mentions={live && showThinking ? mentions : []}
 					onMove={onMove}
@@ -306,10 +314,8 @@ export default function Game() {
 						<Picker
 							device={device}
 							model={model}
-							side={settings.side}
 							cached={cached}
 							onModel={setModel}
-							onSide={(side) => update({ side })}
 							onStart={start}
 						/>
 					) : (
@@ -351,7 +357,7 @@ export default function Game() {
 										<button
 											type="button"
 											onClick={copyPgn}
-											className="rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+											className="rounded-sm outline-none hover:text-(--chess-accent) focus-visible:ring-2 focus-visible:ring-ring/50"
 										>
 											copy pgn
 										</button>
@@ -373,7 +379,9 @@ export default function Game() {
 									</Button>
 								) : (
 									<>
-										<Button onClick={start}>Rematch</Button>
+										<Button className={ACCENT_BUTTON} onClick={start}>
+											Rematch
+										</Button>
 										<Button variant="outline" onClick={() => reset('setup')}>
 											New opponent
 										</Button>
@@ -431,7 +439,7 @@ function Status({
 				</p>
 				<div className="h-1 overflow-hidden rounded-full bg-foreground/10">
 					<div
-						className="h-full rounded-full bg-foreground/50 transition-[width] duration-300"
+						className="h-full rounded-full bg-(--chess-accent) transition-[width] duration-300"
 						style={{ width: `${state.progress * 100}%` }}
 					/>
 				</div>

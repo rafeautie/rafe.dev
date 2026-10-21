@@ -14,14 +14,13 @@ import { PIECES } from './pieces';
 // themes, and its pieces from ./pieces. Moves are made by dragging or by
 // clicking a piece and then a square.
 
-// SVG arrows can't read CSS variables, so this one gray has to read on both
-// the light and dark boards.
-const ARROW = 'rgb(128 128 128 / 0.75)';
+// The arrows are SVG, drawn in the board's text color, which is the accent.
+const ARROW = 'currentColor';
 
-const squareTint = 'color-mix(in oklab, var(--chess-mark) 25%, transparent)';
+const squareTint = 'color-mix(in oklab, var(--chess-accent) 30%, transparent)';
 // The coordinates, quiet on both squares. On a phone's small board they would
 // run into the pieces, so they only show from this width up.
-const coordinate = 'color-mix(in oklab, var(--chess-mark) 55%, transparent)';
+const coordinate = 'color-mix(in oklab, var(--chess-ink) 55%, transparent)';
 const COORDINATES_FROM = '(min-width: 640px)';
 
 function useWideEnough() {
@@ -35,7 +34,7 @@ function useWideEnough() {
 		() => true
 	);
 }
-const targetDot = `radial-gradient(circle, ${squareTint} 22%, transparent 24%)`;
+const targetDot = 'radial-gradient(circle, var(--chess-accent) 16%, transparent 18%)';
 
 export function Board({
 	chess,
@@ -73,7 +72,7 @@ export function Board({
 	for (const square of targets) style(square, { backgroundImage: targetDot });
 	for (const mention of mentions) {
 		if (mention.kind === 'square') {
-			style(mention.square, { boxShadow: 'inset 0 0 0 3px var(--chess-mark)' });
+			style(mention.square, { boxShadow: 'inset 0 0 0 3px var(--chess-accent)' });
 		} else if (mention.kind === 'piece') {
 			style(mention.square, {
 				backgroundImage: `radial-gradient(circle, ${squareTint} 45%, transparent 70%)`
@@ -114,7 +113,7 @@ export function Board({
 		showNotation: wide,
 		alphaNotationStyle: { ...defaultAlphaNotationStyle, fontSize: '12px' },
 		numericNotationStyle: { ...defaultNumericNotationStyle, fontSize: '12px' },
-		dropSquareStyle: { boxShadow: 'inset 0 0 0 3px var(--chess-mark)' },
+		dropSquareStyle: { boxShadow: 'inset 0 0 0 3px var(--chess-accent)' },
 		animationDurationInMs: 200,
 		canDragPiece: ({ piece }) => canMove && piece.pieceType[0] === chess.turn(),
 		onPieceDrop: ({ sourceSquare, targetSquare }) => {
@@ -125,7 +124,7 @@ export function Board({
 	};
 
 	return (
-		<div className="chess-board">
+		<div className="chess-board text-(--chess-accent)">
 			<Chessboard options={options} />
 		</div>
 	);

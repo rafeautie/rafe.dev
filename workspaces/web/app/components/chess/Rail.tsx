@@ -4,6 +4,9 @@ import { cn } from '~/lib/utils';
 
 // The pieces of the rail beside the board on /chess.
 
+// the main action (Play, Rematch) in the page's accent
+export const ACCENT_BUTTON = 'bg-(--chess-accent) text-white hover:bg-(--chess-accent)/90';
+
 export function Section({
 	label,
 	action,
@@ -47,7 +50,7 @@ export function Switch({
 			<span
 				className={cn(
 					'relative h-4 w-7 shrink-0 rounded-full transition-colors',
-					checked ? 'bg-foreground/70' : 'bg-foreground/15'
+					checked ? 'bg-(--chess-accent)' : 'bg-foreground/15'
 				)}
 			>
 				<span
@@ -65,8 +68,8 @@ export function Switch({
 export function Pulse() {
 	return (
 		<span className="relative flex size-2">
-			<span className="absolute inline-flex size-full rounded-full bg-foreground/40 motion-safe:animate-ping" />
-			<span className="relative inline-flex size-2 rounded-full bg-foreground/60" />
+			<span className="absolute inline-flex size-full rounded-full bg-(--chess-accent)/50 motion-safe:animate-ping" />
+			<span className="relative inline-flex size-2 rounded-full bg-(--chess-accent)" />
 		</span>
 	);
 }

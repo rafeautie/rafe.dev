@@ -4,11 +4,8 @@ import type { Color } from 'chess.js';
 // progress so a refresh doesn't lose it. Storage can be blocked, in which case
 // both last for the page view only.
 
-export type Side = Color | 'random';
-
 export type Settings = {
 	model?: string;
-	side: Side;
 	// whether the model thinks before it moves
 	think: boolean;
 	// whether the player gets to watch it think (off: a guarded opponent)
@@ -27,9 +24,9 @@ export type Entry = {
 	missed?: string[];
 };
 
+// The player is always white and the model always black.
 export type SavedGame = {
 	pgn: string;
-	you: Color;
 	model: string;
 	entries: Entry[];
 	// set once the game has ended
@@ -39,7 +36,7 @@ export type SavedGame = {
 const SETTINGS_KEY = 'chess-settings';
 const GAME_KEY = 'chess-game';
 
-export const DEFAULT_SETTINGS: Settings = { side: 'w', think: true, showThinking: true };
+export const DEFAULT_SETTINGS: Settings = { think: true, showThinking: true };
 
 function read<T>(key: string): Partial<T> | undefined {
 	try {
@@ -63,7 +60,6 @@ export function loadSettings(): Settings {
 	const saved = read<Settings>(SETTINGS_KEY) ?? {};
 	return {
 		model: typeof saved.model === 'string' ? saved.model : undefined,
-		side: saved.side === 'b' || saved.side === 'random' ? saved.side : 'w',
 		think: saved.think !== false,
 		showThinking: saved.showThinking !== false
 	};
@@ -74,17 +70,20 @@ export function saveSettings(settings: Settings) {
 }
 
 export function loadGame(): SavedGame | undefined {
-	const saved = read<SavedGame>(GAME_KEY);
+	// `you` is from when the player could choose a side; a game played as black
+	// can't carry on now
+	const saved = read<SavedGame & { you?: Color }>(GAME_KEY);
 	if (
 		!saved ||
 		typeof saved.pgn !== 'string' ||
-		(saved.you !== 'w' && saved.you !== 'b') ||
+		saved.you === 'b' ||
 		typeof saved.model !== 'string' ||
 		!Array.isArray(saved.entries)
 	) {
 		return undefined;
 	}
-	return saved as SavedGame;
+	const { pgn, model, entries, result } = saved;
+	return { pgn, model, entries, result };
 }
 
 export function saveGame(game: SavedGame | undefined) {
