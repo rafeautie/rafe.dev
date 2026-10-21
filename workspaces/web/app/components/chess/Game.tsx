@@ -308,7 +308,9 @@ export default function Game() {
 					onMove={onMove}
 				/>
 			</div>
-			<aside className="mx-auto flex w-full max-w-[40rem] flex-col gap-8 xl:mx-0 xl:w-72 xl:self-stretch">
+			<aside className="mx-auto flex w-full max-w-[40rem] flex-col gap-8 xl:mx-0 xl:h-0 xl:min-h-full xl:w-72">
+				{/* as tall as the board and no taller, so its last button sits level with
+				    the board's foot; the model list and the moves scroll inside it */}
 				{phase === 'setup' ? (
 					device && model ? (
 						<Picker
@@ -352,6 +354,7 @@ export default function Game() {
 							</div>
 							<Section
 								label="moves"
+								className="xl:min-h-0 xl:flex-1"
 								action={
 									entries.length > 0 && (
 										<button

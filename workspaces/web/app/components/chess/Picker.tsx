@@ -30,21 +30,51 @@ export function Picker({
 	onStart: () => void;
 }) {
 	const [showAll, setShowAll] = useState(false);
+	const [query, setQuery] = useState('');
 	const hidden = MODELS.filter((m) => fitFor(m, device) === 'too-large');
-	const shown = showAll ? MODELS : MODELS.filter((m) => !hidden.includes(m) || m === model);
+	// a search looks through every model, the ones too large for this device too
+	const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+	const shown = words.length
+		? MODELS.filter((m) => words.every((w) => `${m.name} ${m.maker}`.toLowerCase().includes(w)))
+		: showAll
+			? MODELS
+			: MODELS.filter((m) => !hidden.includes(m) || m === model);
 
 	return (
-		<div className="flex flex-col gap-6">
-			<fieldset className="flex flex-col gap-2">
-				<legend className="mb-2 text-sm text-foreground/50">opponent</legend>
+		<div className="flex flex-col gap-6 xl:min-h-0 xl:flex-1">
+			<div
+				role="radiogroup"
+				aria-labelledby="opponent-label"
+				className="flex flex-col gap-2 xl:min-h-0 xl:flex-1"
+			>
+				<p id="opponent-label" className="mb-2 text-sm text-foreground/50">
+					opponent
+				</p>
+				<input
+					id="model-search"
+					type="search"
+					value={query}
+					onChange={(event) => setQuery(event.target.value)}
+					placeholder="Search models"
+					aria-label="Search models"
+					autoComplete="off"
+					className="mr-3 mb-1 h-8 rounded-md border border-foreground/10 bg-transparent px-2.5 text-sm outline-none placeholder:text-foreground/40 focus-visible:border-(--chess-accent) focus-visible:ring-2 focus-visible:ring-(--chess-accent)/25"
+				/>
 				{!device.webgpu && (
 					<p className="mb-1 text-sm text-pretty text-foreground/60">
 						This browser has no WebGPU, so the model runs on the processor and only the lightest are
 						offered.
 					</p>
 				)}
-				<ScrollArea fade viewportClassName="max-h-[min(24rem,50dvh)]">
+				<ScrollArea
+					fade
+					className="xl:min-h-0 xl:flex-1"
+					viewportClassName="max-h-[min(24rem,50dvh)] xl:max-h-none"
+				>
 					<div className="flex flex-col gap-2 pr-3">
+						{shown.length === 0 && (
+							<p className="py-2 text-sm text-foreground/50">No model matches “{query}”.</p>
+						)}
 						{shown.map((m) => {
 							const fit = fitFor(m, device);
 							return (
@@ -84,7 +114,7 @@ export function Picker({
 						})}
 					</div>
 				</ScrollArea>
-				{hidden.length > 0 && (
+				{hidden.length > 0 && !words.length && (
 					<button
 						type="button"
 						onClick={() => setShowAll(!showAll)}
@@ -95,7 +125,7 @@ export function Picker({
 							: `Show all (${hidden.length} more)`}
 					</button>
 				)}
-			</fieldset>
+			</div>
 
 			<Button onClick={onStart} size="lg" className={ACCENT_BUTTON}>
 				Play {model.name}

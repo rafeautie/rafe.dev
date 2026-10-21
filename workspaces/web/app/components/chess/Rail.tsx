@@ -10,15 +10,17 @@ export const ACCENT_BUTTON = 'bg-(--chess-accent) text-white hover:bg-(--chess-a
 export function Section({
 	label,
 	action,
+	className,
 	children
 }: {
 	label: string;
+	className?: string;
 	// a small control at the far end of the header's rule
 	action?: ReactNode;
 	children: ReactNode;
 }) {
 	return (
-		<section className="flex flex-col gap-2">
+		<section className={cn('flex flex-col gap-2', className)}>
 			<div className="flex items-center gap-3 text-sm text-foreground/50">
 				<h2>{label}</h2>
 				<span className="h-px flex-1 bg-foreground/10" />
@@ -115,7 +117,7 @@ export function MoveList({
 	for (let i = 0; i < entries.length; i += 2) rows.push(entries.slice(i, i + 2));
 
 	return (
-		<ol className="flex max-h-72 flex-col gap-1 overflow-y-auto text-sm tabular-nums">
+		<ol className="flex max-h-72 flex-col gap-1 overflow-y-auto text-sm tabular-nums xl:max-h-none xl:min-h-0 xl:flex-1">
 			{rows.map((row, i) => (
 				<li key={i} ref={i === rows.length - 1 ? end : undefined} className="flex flex-col gap-1">
 					<div className="grid grid-cols-[2rem_1fr_1fr] gap-2">
