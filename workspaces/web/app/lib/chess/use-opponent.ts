@@ -89,11 +89,6 @@ export function useOpponent() {
 		[]
 	);
 
-	// "Move now": end the thinking of whatever turn is running
-	const finish = useCallback(() => {
-		for (const id of pending.current.keys()) send({ type: 'finish', id });
-	}, []);
-
 	// Drops any turn in progress; its promise never settles.
 	const stop = useCallback(() => {
 		pending.current.clear();
@@ -102,5 +97,5 @@ export function useOpponent() {
 
 	useEffect(() => () => worker.current?.terminate(), []);
 
-	return { state, load, ask, finish, stop };
+	return { state, load, ask, stop };
 }

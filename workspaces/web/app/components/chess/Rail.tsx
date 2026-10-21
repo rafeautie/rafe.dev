@@ -1,6 +1,13 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { BrainIcon, DicesIcon } from 'lucide-react';
+import { BrainIcon, DicesIcon, MessagesSquareIcon } from 'lucide-react';
 import { Bubble, BubbleContent } from '~/components/ui/bubble';
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle
+} from '~/components/ui/empty';
 import { Message, MessageContent } from '~/components/ui/message';
 import {
 	MessageScroller,
@@ -192,7 +199,7 @@ function NoteCard({
 }
 
 // How long the model thought, in whole seconds
-const secondsOf = (seconds?: number) => `${Math.max(1, Math.round(seconds ?? 0))}s`;
+const secondsOf = (seconds?: number) => `${Math.max(1, Math.floor(seconds ?? 0))}s`;
 
 // The model's thinking for one move, folded under a "Thought 5s" line
 function Thinking({
@@ -253,9 +260,17 @@ export function Thread({
 				<MessageScrollerViewport>
 					<MessageScrollerContent className="gap-4 pr-1 pb-2">
 						{entries.length === 0 && !live && (
-							<p className="text-sm text-muted-foreground">
-								Your move. Its replies and thinking will show up here.
-							</p>
+							<Empty className="flex-1">
+								<EmptyHeader>
+									<EmptyMedia variant="icon">
+										<MessagesSquareIcon />
+									</EmptyMedia>
+									<EmptyTitle>No moves yet</EmptyTitle>
+									<EmptyDescription>
+										You play white. Its replies, and the thinking behind them, show up here.
+									</EmptyDescription>
+								</EmptyHeader>
+							</Empty>
 						)}
 						{entries.map((entry, i) => (
 							// p-px: room for the card's outline, which the item would clip

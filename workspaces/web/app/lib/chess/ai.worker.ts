@@ -19,8 +19,6 @@ import { buildMessages, HISTORY_PLIES, splitReply, type PromptInput } from './pr
 export type WorkerRequest =
 	| { type: 'load'; repo: string; dtype: Dtype; device: 'webgpu' | 'wasm' }
 	| { type: 'move'; id: number; input: PromptInput }
-	// "Move now": end the thinking and answer with what it has
-	| { type: 'finish'; id: number }
 	// drop the turn altogether, as when the game is abandoned
 	| { type: 'stop' };
 
@@ -49,7 +47,7 @@ const ANSWER_TOKENS = 24;
 type Loaded = { model: PreTrainedModel; tokenizer: PreTrainedTokenizer; context: number };
 
 let loaded: Promise<Loaded> | undefined;
-let turn: { id: number; stopping: InterruptableStoppingCriteria; thinking: boolean } | undefined;
+let turn: { id: number; stopping: InterruptableStoppingCriteria } | undefined;
 // one turn at a time, in the order they were asked for
 let queue = Promise.resolve();
 // turns asked for before the last stop are skipped when their time comes
@@ -178,7 +176,7 @@ async function move(id: number, input: PromptInput) {
 	}
 	const opened = /<think>\s*$/.test(prompt);
 
-	const current = { id, stopping: new InterruptableStoppingCriteria(), thinking: input.think };
+	const current = { id, stopping: new InterruptableStoppingCriteria() };
 	turn = current;
 	let text = '';
 	const stream = (piece: string) => {
@@ -197,7 +195,6 @@ async function move(id: number, input: PromptInput) {
 	// for the move straight away.
 	const reply = splitReply(text, opened);
 	if (input.think && !(reply.closed && reply.answer)) {
-		current.thinking = false;
 		current.stopping = new InterruptableStoppingCriteria();
 		const tagged = opened || text.includes('<think>');
 		stream(`${tagged && !reply.closed ? '\n</think>\n\n' : '\n'}Move:`);
@@ -219,8 +216,6 @@ onmessage = (event: MessageEvent<WorkerRequest>) => {
 				post({ type: 'load-error', message: String(error) });
 			}
 		);
-	} else if (request.type === 'finish') {
-		if (turn?.id === request.id && turn.thinking) turn.stopping.interrupt();
 	} else if (request.type === 'stop') {
 		turn?.stopping.interrupt();
 		turn = undefined;

@@ -1,10 +1,13 @@
 import { Chess, type Color, type Square } from 'chess.js';
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { FlagIcon, TriangleAlertIcon } from 'lucide-react';
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Board } from '~/components/chess/Board';
 import { Picker } from '~/components/chess/Picker';
 import { ACCENT_BUTTON, MoveList, Thread, Pulse, Section, Switch } from '~/components/chess/Rail';
 import { Button } from '~/components/ui/button';
+import { Card } from '~/components/ui/card';
+import { Spinner } from '~/components/ui/spinner';
 import { findMentions, mentionKey, type Mention } from '~/lib/chess/mentions';
 import { FADE_MS, type Highlight } from '~/components/chess/Board';
 import {
@@ -107,7 +110,7 @@ export default function Game() {
 	const [now, setNow] = useState(() => Date.now());
 	// what its thinking points at on the board right now
 	const [mentions, setMentions] = useState<Highlight[]>([]);
-	const { state: opponent, load, ask, finish: moveNow, stop } = useOpponent();
+	const { state: opponent, load, ask, stop } = useOpponent();
 
 	const marks = useRef(new Map<string, { mention: Mention; at: number }>());
 	const scanned = useRef(0);
@@ -327,17 +330,6 @@ export default function Game() {
 					<>
 						<Section label="opponent">
 							<p className="font-medium">{model.name}</p>
-							<Status
-								phase={phase}
-								state={opponent}
-								aiTurn={aiTurn}
-								live={live}
-								now={now}
-								result={result}
-								gpu={device?.webgpu ?? false}
-								onMoveNow={moveNow}
-								onPickAnother={() => reset('setup')}
-							/>
 						</Section>
 						<Thread
 							entries={entries}
@@ -351,6 +343,16 @@ export default function Game() {
 								}
 							}
 							revealThinking={showThinking || phase === 'over'}
+						/>
+						<StatusCard
+							phase={phase}
+							state={opponent}
+							aiTurn={aiTurn}
+							live={live}
+							now={now}
+							result={result}
+							gpu={device?.webgpu ?? false}
+							onPickAnother={() => reset('setup')}
 						/>
 					</>
 				)}
@@ -437,9 +439,9 @@ export default function Game() {
 	);
 }
 
-// One line on what the model is doing right now, in plain words, and only
-// "Thinking" while it really is.
-function Status({
+// What the model is doing right now, on a card pinned under the chat: always
+// there, changing as it goes, and only "Thinking" while it really is.
+function StatusCard({
 	phase,
 	state,
 	aiTurn,
@@ -447,7 +449,6 @@ function Status({
 	now,
 	result,
 	gpu,
-	onMoveNow,
 	onPickAnother
 }: {
 	phase: Phase;
@@ -458,83 +459,80 @@ function Status({
 	result?: string;
 	// where the weights go once downloaded
 	gpu: boolean;
-	onMoveNow: () => void;
 	onPickAnother: () => void;
 }) {
-	if (phase === 'over') return <p className="text-sm text-foreground/70">{result}</p>;
-	if (state.status === 'error') {
-		return (
-			<div className="flex flex-col items-start gap-2 text-sm text-pretty text-foreground/60">
-				<p>
-					Couldn’t load {state.model.name}. It may need more memory or storage than this device has
-					free. A smaller model should work.
-				</p>
-				<Button variant="outline" size="sm" onClick={onPickAnother}>
-					Pick another model
-				</Button>
-			</div>
+	let icon: ReactNode = <Spinner className="text-(--chess-accent)" />;
+	let title: string;
+	let detail: ReactNode = null;
+	let extra: ReactNode = null;
+
+	if (phase === 'over') {
+		icon = <FlagIcon className="size-4 text-muted-foreground" />;
+		title = 'Game over';
+		detail = result;
+	} else if (state.status === 'error') {
+		icon = <TriangleAlertIcon className="size-4 text-destructive" />;
+		title = `Couldn’t load ${state.model.name}`;
+		detail = 'It may need more memory or storage than this device has free.';
+		extra = (
+			<Button variant="outline" size="sm" className="self-start" onClick={onPickAnother}>
+				Pick another model
+			</Button>
 		);
-	}
-	if (state.status === 'loading') {
-		const label = {
+	} else if (state.status === 'loading') {
+		title = {
 			starting: 'Starting up',
 			downloading: `Downloading ${Math.round(state.progress * 100)}%`,
 			preparing: gpu ? 'Loading onto the GPU' : 'Loading into memory',
 			warming: 'Warming up'
 		}[state.stage];
-		return (
-			<div className="flex flex-col gap-2 text-sm text-foreground/60">
-				<Line label={label} note={aiTurn ? undefined : 'your move'} />
-				{state.stage === 'downloading' && (
-					<>
-						<div className="h-1 overflow-hidden rounded-full bg-foreground/10">
-							<div
-								className="h-full rounded-full bg-(--chess-accent) transition-[width] duration-300"
-								style={{ width: `${state.progress * 100}%` }}
-							/>
-						</div>
-						<p className="text-xs text-foreground/40">Only the first time; the browser keeps it.</p>
-					</>
-				)}
-			</div>
-		);
-	}
-	if (aiTurn && live) {
-		const seconds = Math.max(0, Math.floor((now - live.started) / 1000));
-		const label = {
+		detail =
+			state.stage === 'downloading'
+				? 'Only the first time; the browser keeps it.'
+				: aiTurn
+					? undefined
+					: 'Make your move meanwhile.';
+		if (state.stage === 'downloading') {
+			extra = (
+				<div className="h-1 overflow-hidden rounded-full bg-foreground/10">
+					<div
+						className="h-full rounded-full bg-(--chess-accent) transition-[width] duration-300"
+						style={{ width: `${state.progress * 100}%` }}
+					/>
+				</div>
+			);
+		}
+	} else if (aiTurn && live) {
+		const seconds = Math.max(1, Math.floor((now - live.started) / 1000));
+		if (live.stage === 'thinking') icon = <Pulse />;
+		title = {
 			reading: 'Reading the board',
-			thinking: `Thinking ${seconds}s`,
+			thinking: `Thinking · ${seconds}s`,
 			answering: 'Choosing a move'
 		}[live.stage];
-		return (
-			<div className="flex flex-col gap-1 text-sm text-foreground/60">
-				<div className="flex items-center justify-between gap-2">
-					<Line label={label} />
-					{live.stage === 'thinking' && (
-						<Button variant="ghost" size="xs" onClick={onMoveNow}>
-							Move now
-						</Button>
-					)}
-				</div>
-				{live.retry && (
-					<p className="text-xs text-pretty text-foreground/40">
-						Asked again: “{live.retry}” isn’t a legal move.
-					</p>
-				)}
-			</div>
-		);
+		detail = live.retry ? `Asked again: “${live.retry}” isn’t a legal move.` : undefined;
+	} else if (aiTurn) {
+		title = 'Getting ready';
+	} else {
+		icon = <span className="size-2 rounded-full bg-foreground/30" />;
+		title = 'Your move';
+		detail = 'It answers as soon as you play.';
 	}
-	// its turn, between the model being ready and the turn starting
-	if (aiTurn) return <Line label="Getting ready" />;
-	return <p className="text-sm text-foreground/60">Your move</p>;
-}
 
-function Line({ label, note }: { label: string; note?: string }) {
 	return (
-		<p className="flex items-center gap-2 text-sm text-foreground/60">
-			<Pulse />
-			{label}
-			{note && <span className="text-foreground/40">· {note}</span>}
-		</p>
+		<Card
+			size="sm"
+			role="status"
+			className="min-h-18 w-full shrink-0 flex-row items-center gap-3 px-3 py-3"
+		>
+			<span className="flex w-10 shrink-0 justify-center">{icon}</span>
+			<div className="flex min-w-0 flex-1 flex-col gap-1.5">
+				<div className="flex flex-col gap-0.5">
+					<p className="leading-tight font-medium tabular-nums">{title}</p>
+					{detail && <p className="text-xs text-pretty text-muted-foreground">{detail}</p>}
+				</div>
+				{extra}
+			</div>
+		</Card>
 	);
 }
