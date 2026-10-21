@@ -11,7 +11,7 @@ import { Card } from '~/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Spinner } from '~/components/ui/spinner';
 import { findMentions, mentionKey, type Mention } from '~/lib/chess/mentions';
-import { FADE_MS, type Highlight } from '~/components/chess/Board';
+import { FADE_MS, type Highlight, type Promotion } from '~/components/chess/Board';
 import {
 	defaultModel,
 	findCached,
@@ -139,7 +139,7 @@ export default function Game() {
 	}, [phase, chess, model, entries, result]);
 
 	function play(
-		move: string | { from: Square; to: Square; promotion: 'q' },
+		move: string | { from: Square; to: Square; promotion: Promotion },
 		entry: Omit<Entry, 'san'>
 	) {
 		const made = chess.move(move);
@@ -152,10 +152,10 @@ export default function Game() {
 		}
 	}
 
-	function onMove(from: Square, to: Square): boolean {
+	function onMove(from: Square, to: Square, promotion: Promotion = 'q'): boolean {
 		if (phase !== 'playing' || chess.turn() !== YOU) return false;
 		try {
-			play({ from, to, promotion: 'q' }, { by: 'you' });
+			play({ from, to, promotion }, { by: 'you' });
 			return true;
 		} catch {
 			return false;

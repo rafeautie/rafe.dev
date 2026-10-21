@@ -1,5 +1,5 @@
 import type { Chess, Square } from 'chess.js';
-import { useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { useEffect, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import {
 	Chessboard,
 	defaultAlphaNotationStyle,
@@ -7,6 +7,7 @@ import {
 	type ChessboardOptions
 } from 'react-chessboard';
 import type { Mention } from '~/lib/chess/mentions';
+import { cn } from '~/lib/utils';
 
 import { PIECES } from './pieces';
 
@@ -63,9 +64,11 @@ export function Board({
 	lastMove?: { from: Square; to: Square };
 	// what the model is thinking about right now
 	mentions: Highlight[];
-	onMove: (from: Square, to: Square) => boolean;
+	onMove: (from: Square, to: Square, promotion?: Promotion) => boolean;
 }) {
 	const [selected, setSelected] = useState<Square>();
+	// a pawn move to the last rank, waiting on which piece it becomes
+	const [promoting, setPromoting] = useState<{ from: Square; to: Square }>();
 	const wide = useWideEnough();
 	const targets =
 		selected && canMove ? chess.moves({ square: selected, verbose: true }).map((m) => m.to) : [];
@@ -109,11 +112,22 @@ export function Board({
 			: []
 	);
 
+	// Plays the move, or for a pawn reaching the last rank, first asks what it
+	// becomes. Until then the pawn stays where it was.
+	function attempt(from: Square, to: Square) {
+		const promotes = chess
+			.moves({ square: from, verbose: true })
+			.some((move) => move.to === to && move.promotion);
+		if (!promotes) return onMove(from, to);
+		setPromoting({ from, to });
+		return false;
+	}
+
 	function click(square: Square) {
 		if (!canMove) return;
 		if (selected && targets.includes(square)) {
 			setSelected(undefined);
-			onMove(selected, square);
+			attempt(selected, square);
 			return;
 		}
 		const piece = chess.get(square);
@@ -145,14 +159,98 @@ export function Board({
 		onPieceDragCancel: () => setSelected(undefined),
 		onPieceDrop: ({ sourceSquare, targetSquare }) => {
 			setSelected(undefined);
-			return !!targetSquare && onMove(sourceSquare as Square, targetSquare as Square);
+			return !!targetSquare && attempt(sourceSquare as Square, targetSquare as Square);
 		},
 		onSquareClick: ({ square }) => click(square as Square)
 	};
 
 	return (
-		<div className="chess-board text-(--chess-accent)">
+		<div className="chess-board relative text-(--chess-accent)">
 			<Chessboard options={options} />
+			{promoting && (
+				<PromotionPicker
+					square={promoting.to}
+					color={chess.turn()}
+					orientation={orientation}
+					onPick={(piece) => {
+						setPromoting(undefined);
+						onMove(promoting.from, promoting.to, piece);
+					}}
+					onCancel={() => setPromoting(undefined)}
+				/>
+			)}
+		</div>
+	);
+}
+
+export type Promotion = 'q' | 'r' | 'b' | 'n';
+
+const PROMOTIONS: { piece: Promotion; name: string }[] = [
+	{ piece: 'q', name: 'queen' },
+	{ piece: 'n', name: 'knight' },
+	{ piece: 'r', name: 'rook' },
+	{ piece: 'b', name: 'bishop' }
+];
+
+// The pieces a pawn can become, in a column running from the square it's
+// promoting on back toward the middle of the board, over a dimmed board.
+// Clicking off the column, or Escape, takes the move back.
+function PromotionPicker({
+	square,
+	color,
+	orientation,
+	onPick,
+	onCancel
+}: {
+	square: Square;
+	color: 'w' | 'b';
+	orientation: 'white' | 'black';
+	onPick: (piece: Promotion) => void;
+	onCancel: () => void;
+}) {
+	useEffect(() => {
+		const key = (event: KeyboardEvent) => event.key === 'Escape' && onCancel();
+		window.addEventListener('keydown', key);
+		return () => window.removeEventListener('keydown', key);
+	}, [onCancel]);
+
+	const file = square.charCodeAt(0) - 'a'.charCodeAt(0);
+	const column = orientation === 'white' ? file : 7 - file;
+	// the last rank is at the top of the board for the side at the bottom
+	const fromTop = (orientation === 'white') === (color === 'w');
+	return (
+		<div
+			role="dialog"
+			aria-label="Promote the pawn to"
+			className="absolute inset-0 z-10 rounded-lg bg-background/60"
+			onClick={onCancel}
+		>
+			<div
+				className={cn(
+					'absolute flex w-1/8 overflow-hidden rounded-md bg-background shadow-lg ring-1 ring-foreground/10',
+					fromTop ? 'top-0 flex-col' : 'bottom-0 flex-col-reverse'
+				)}
+				style={{ left: `${column * 12.5}%` }}
+			>
+				{PROMOTIONS.map(({ piece, name }, i) => {
+					const Piece = PIECES[`${color}${piece.toUpperCase()}`];
+					return (
+						<button
+							key={piece}
+							type="button"
+							aria-label={`Promote to ${name}`}
+							autoFocus={i === 0}
+							onClick={(event) => {
+								event.stopPropagation();
+								onPick(piece);
+							}}
+							className="aspect-square w-full outline-none hover:bg-(--chess-accent)/15 focus-visible:bg-(--chess-accent)/15"
+						>
+							<Piece />
+						</button>
+					);
+				})}
+			</div>
 		</div>
 	);
 }
