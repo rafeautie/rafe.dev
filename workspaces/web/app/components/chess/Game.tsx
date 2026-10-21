@@ -368,18 +368,20 @@ export default function Game() {
 				) : (
 					model && (
 						<>
-							<div className="flex flex-col gap-3">
-								<Switch
-									label="Think before moving"
-									checked={settings.think}
-									onChange={(think) => update({ think })}
-								/>
-								<Switch
-									label="Show its thinking"
-									checked={showThinking}
-									onChange={(on) => update({ showThinking: on })}
-								/>
-							</div>
+							<Section label="settings">
+								<div className="flex flex-col gap-3">
+									<Switch
+										label="Think before moving"
+										checked={settings.think}
+										onChange={(think) => update({ think })}
+									/>
+									<Switch
+										label="Show its thinking"
+										checked={showThinking}
+										onChange={(on) => update({ showThinking: on })}
+									/>
+								</div>
+							</Section>
 							<Section
 								label="moves"
 								className="xl:min-h-0 xl:flex-1"
