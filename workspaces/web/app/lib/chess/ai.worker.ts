@@ -58,15 +58,18 @@ function post(message: WorkerResponse) {
 	postMessage(message);
 }
 
+const WEIGHTS = /\.onnx(_data(_\d+)?)?$/;
+
 async function load(repo: string, dtype: Dtype, device: 'webgpu' | 'wasm'): Promise<Loaded> {
-	// The model's loader looks up every file's size first and reports progress
-	// over all of them together (`progress_total`), so the bar moves with the
-	// bytes. Per-file progress is only the fallback for when that lookup fails;
-	// on its own it reads 100% as soon as the first small file lands. The
-	// tokenizer's files come before the model's and are tiny, so they don't
-	// count toward the bar.
-	const files = new Map<string, { loaded: number; total: number }>();
-	let overall = false;
+	// The bar counts the weights (the .onnx files and their data), from the
+	// sizes their downloads report as they start. The loader's own overall
+	// figure (`progress_total`) isn't used: it rests on sizes looked up
+	// beforehand, which the browser can't always read, and then the small
+	// files alone look like 100%. The weights are all asked for at once, so
+	// the bar waits until each has a size before it shows anything. Configs
+	// and the tokenizer are tiny and would read as done before the weights
+	// begin, so they don't count.
+	const files = new Map<string, { loaded: number; total?: number }>();
 	let shown = 0;
 	let modelStep = false;
 	let stage: LoadStage | undefined;
@@ -75,11 +78,19 @@ async function load(repo: string, dtype: Dtype, device: 'webgpu' | 'wasm'): Prom
 		stage = next;
 		post({ type: 'stage', stage: next });
 	};
-	const report = (done: number, total: number) => {
-		shown = Math.max(shown, total ? done / total : 0);
+	const report = () => {
+		let done = 0;
+		let total = 0;
+		for (const file of files.values()) {
+			if (file.total === undefined) return;
+			done += file.loaded;
+			total += file.total;
+		}
+		if (!total) return;
+		shown = Math.max(shown, done / total);
 		post({ type: 'progress', progress: shown });
 		// every file is in hand: what's left is loading them onto the device
-		enter(total > 0 && done >= total ? 'preparing' : 'downloading');
+		if (done >= total) enter('preparing');
 	};
 	const progress_callback = (event: {
 		status: string;
@@ -87,22 +98,21 @@ async function load(repo: string, dtype: Dtype, device: 'webgpu' | 'wasm'): Prom
 		loaded?: number;
 		total?: number;
 	}) => {
-		if (!modelStep) {
-			enter('downloading');
+		if (!modelStep || !event.file || !WEIGHTS.test(event.file)) {
+			if (!stage) enter('downloading');
 			return;
 		}
-		if (event.status === 'progress_total') {
-			overall = true;
-			report(event.loaded ?? 0, event.total ?? 0);
-		} else if (event.status === 'progress' && event.file && !overall) {
+		const file = files.get(event.file);
+		if (event.status === 'initiate') {
+			if (!file) files.set(event.file, { loaded: 0 });
+		} else if (event.status === 'progress') {
 			files.set(event.file, { loaded: event.loaded ?? 0, total: event.total ?? 0 });
-			let done = 0;
-			let total = 0;
-			for (const file of files.values()) {
-				done += file.loaded;
-				total += file.total;
-			}
-			report(done, total);
+			report();
+		} else if (event.status === 'done' && file) {
+			// a file read without progress, e.g. from the cache in some browsers
+			const total = Math.max(file.total ?? 0, file.loaded);
+			files.set(event.file, { loaded: total, total });
+			report();
 		}
 	};
 	const tokenizer = await AutoTokenizer.from_pretrained(repo, { progress_callback });
