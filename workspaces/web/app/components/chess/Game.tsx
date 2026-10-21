@@ -13,6 +13,7 @@ import {
 } from '~/components/chess/Rail';
 import { Button } from '~/components/ui/button';
 import { findMentions, mentionKey, type Mention } from '~/lib/chess/mentions';
+import type { Highlight } from '~/components/chess/Board';
 import {
 	defaultModel,
 	findCached,
@@ -44,8 +45,10 @@ type Phase = 'setup' | 'playing' | 'over';
 // the player is always white, the model always black
 const YOU: Color = 'w';
 
-// a board highlight fades this long after the model last mentions it
+// a board highlight stays this long after the model last mentions it, and
+// fades out over the last FADE_MS of that
 const MARK_MS = 2500;
+const FADE_MS = 1000;
 
 // The model's turn as it happens: reading the prompt before its first word,
 // thinking, then writing its move. `retry` is the answer it gave before that
@@ -111,7 +114,7 @@ export default function Game() {
 	const [live, setLive] = useState<Live>();
 	const [now, setNow] = useState(() => Date.now());
 	// what its thinking points at on the board right now
-	const [mentions, setMentions] = useState<Mention[]>([]);
+	const [mentions, setMentions] = useState<Highlight[]>([]);
 	const { state: opponent, load, ask, finish: moveNow, stop } = useOpponent();
 
 	const marks = useRef(new Map<string, { mention: Mention; at: number }>());
@@ -162,8 +165,15 @@ export default function Game() {
 		}
 	}
 
-	function showMarks() {
-		setMentions([...marks.current.values()].map(({ mention }) => mention));
+	// the marks still showing, each as strong as its age allows
+	function showMarks(time = Date.now()) {
+		const shown: Highlight[] = [];
+		for (const [key, { mention, at }] of marks.current) {
+			const left = MARK_MS - (time - at);
+			if (left <= 0) marks.current.delete(key);
+			else shown.push({ ...mention, strength: Math.min(1, left / FADE_MS) });
+		}
+		setMentions(shown);
 	}
 
 	const aiTurn = phase === 'playing' && chess.turn() !== YOU && !chess.isGameOver();
@@ -253,19 +263,19 @@ export default function Game() {
 		if (aiTurn && ready) return takeTurn();
 	}, [aiTurn, ready, fen]);
 
-	// the thinking timer, and fading the board highlights
+	// The thinking timer, and fading the board highlights. It keys on whether
+	// the model is working, not on `live` itself, which changes with every
+	// streamed word and would restart the timer before it ever fired.
+	const working = live !== undefined;
 	useEffect(() => {
-		if (!live) return;
+		if (!working) return;
 		const timer = setInterval(() => {
 			const time = Date.now();
-			for (const [key, { at }] of marks.current) {
-				if (time - at > MARK_MS) marks.current.delete(key);
-			}
-			setMentions([...marks.current.values()].map(({ mention }) => mention));
+			showMarks(time);
 			setNow(time);
-		}, 250);
+		}, 100);
 		return () => clearInterval(timer);
-	}, [live]);
+	}, [working]);
 
 	function reset(next: Phase) {
 		stop();

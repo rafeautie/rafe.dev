@@ -61,11 +61,15 @@ function post(message: WorkerResponse) {
 }
 
 async function load(repo: string, dtype: Dtype, device: 'webgpu' | 'wasm'): Promise<Loaded> {
-	// Several files download at once, so progress is over all of them, and
-	// never goes backwards when a new one starts.
+	// The model's loader looks up every file's size first and reports progress
+	// over all of them together (`progress_total`), so the bar moves with the
+	// bytes. Per-file progress is only the fallback for when that lookup fails;
+	// on its own it reads 100% as soon as the first small file lands. The
+	// tokenizer's files come before the model's and are tiny, so they don't
+	// count toward the bar.
 	const files = new Map<string, { loaded: number; total: number }>();
+	let overall = false;
 	let shown = 0;
-	// the model's own files, as opposed to the tokenizer's, which come first
 	let modelStep = false;
 	let stage: LoadStage | undefined;
 	const enter = (next: LoadStage) => {
@@ -73,24 +77,35 @@ async function load(repo: string, dtype: Dtype, device: 'webgpu' | 'wasm'): Prom
 		stage = next;
 		post({ type: 'stage', stage: next });
 	};
+	const report = (done: number, total: number) => {
+		shown = Math.max(shown, total ? done / total : 0);
+		post({ type: 'progress', progress: shown });
+		// every file is in hand: what's left is loading them onto the device
+		enter(total > 0 && done >= total ? 'preparing' : 'downloading');
+	};
 	const progress_callback = (event: {
 		status: string;
 		file?: string;
 		loaded?: number;
 		total?: number;
 	}) => {
-		if (event.status !== 'progress' || !event.file) return;
-		files.set(event.file, { loaded: event.loaded ?? 0, total: event.total ?? 0 });
-		let done = 0;
-		let total = 0;
-		for (const file of files.values()) {
-			done += file.loaded;
-			total += file.total;
+		if (!modelStep) {
+			enter('downloading');
+			return;
 		}
-		shown = Math.max(shown, total ? done / total : 0);
-		post({ type: 'progress', progress: shown });
-		// every file is in hand: what's left is loading them onto the device
-		enter(modelStep && total > 0 && done >= total ? 'preparing' : 'downloading');
+		if (event.status === 'progress_total') {
+			overall = true;
+			report(event.loaded ?? 0, event.total ?? 0);
+		} else if (event.status === 'progress' && event.file && !overall) {
+			files.set(event.file, { loaded: event.loaded ?? 0, total: event.total ?? 0 });
+			let done = 0;
+			let total = 0;
+			for (const file of files.values()) {
+				done += file.loaded;
+				total += file.total;
+			}
+			report(done, total);
+		}
 	};
 	const tokenizer = await AutoTokenizer.from_pretrained(repo, { progress_callback });
 	modelStep = true;
