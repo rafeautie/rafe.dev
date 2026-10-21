@@ -91,12 +91,10 @@ export function Board({
 				transition: mention.fading ? `box-shadow ${fadeOut}` : undefined
 			});
 		} else if (mention.kind === 'piece') {
-			// a gradient can't be eased, but the color inside it can, as a
-			// registered property (app.css)
+			// the piece's outline takes the accent (pieces.tsx)
 			style(mention.square, {
-				['--chess-glow' as string]: mention.fading ? 'transparent' : squareTint,
-				backgroundImage: 'radial-gradient(circle, var(--chess-glow) 45%, transparent 70%)',
-				transition: mention.fading ? `--chess-glow ${fadeOut}` : undefined
+				['--chess-mark' as string]: mention.fading ? '0%' : '100%',
+				transition: mention.fading ? `--chess-mark ${fadeOut}` : undefined
 			});
 		}
 	}

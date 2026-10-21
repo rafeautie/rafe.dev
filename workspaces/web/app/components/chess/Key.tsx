@@ -30,12 +30,7 @@ const MARKS: { swatch: ReactNode; title: string; detail: string }[] = [
 	},
 	{
 		swatch: (
-			<Swatch
-				style={{
-					...dark,
-					backgroundImage: `radial-gradient(circle, ${squareTint} 45%, transparent 70%)`
-				}}
-			>
+			<Swatch style={{ ...dark, ['--chess-mark' as string]: '100%' }}>
 				<Knight />
 			</Swatch>
 		),
