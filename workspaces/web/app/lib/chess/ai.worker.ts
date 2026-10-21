@@ -26,7 +26,8 @@ export type WorkerRequest =
 			repo: string;
 			dtype: Dtype;
 			device: 'webgpu' | 'wasm';
-			externalData?: boolean;
+			// how many weight files each graph has (models.ts)
+			files: Record<string, number>;
 	  }
 	| { type: 'move'; id: number; input: PromptInput }
 	// drop the turn altogether, as when the game is abandoned
@@ -74,7 +75,7 @@ async function load(
 	repo: string,
 	dtype: Dtype,
 	device: 'webgpu' | 'wasm',
-	externalData?: boolean
+	weightFiles: Record<string, number>
 ): Promise<Loaded> {
 	// The bar counts the weights (the .onnx files and their data), from the
 	// sizes their downloads report as they start. The loader's own overall
@@ -137,7 +138,7 @@ async function load(
 	modelStep = true;
 	const model = await AutoModelForCausalLM.from_pretrained(repo, {
 		dtype,
-		...(externalData && { use_external_data_format: true }),
+		use_external_data_format: weightFiles,
 		device,
 		progress_callback
 	});
@@ -287,7 +288,7 @@ async function move(id: number, input: PromptInput) {
 onmessage = (event: MessageEvent<WorkerRequest>) => {
 	const request = event.data;
 	if (request.type === 'load') {
-		loaded = load(request.repo, request.dtype, request.device, request.externalData);
+		loaded = load(request.repo, request.dtype, request.device, request.files);
 		loaded.then(
 			() => post({ type: 'ready' }),
 			(error) => {

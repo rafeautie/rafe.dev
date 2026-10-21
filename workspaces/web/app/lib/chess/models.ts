@@ -11,6 +11,13 @@ export type Tier = 'light' | 'medium' | 'heavy' | 'large';
 // <think> tags, which looks the same on screen.
 export type Thinking = 'native' | 'prompted';
 
+// A model's files for one precision: each ONNX graph it loads, by name
+// without the precision suffix, and how many .onnx_data files hold its
+// weights. Every model is listed the same way and loaded from this list, not
+// from whatever each repo's own config says about its files. Image-and-text
+// models (Qwen3.5, Gemma 4) only list the parts that read and write text.
+export type Weights = Record<string, number>;
+
 export type ChessModel = {
 	id: string;
 	name: string;
@@ -19,12 +26,20 @@ export type ChessModel = {
 	tier: Tier;
 	thinking: Thinking;
 	// download in GB with 16-bit math on the graphics card (q4f16), and without
-	// it (q4). Phi-4 mini's web build only comes as q4f16.
-	size: { q4f16: number; q4?: number };
-	// The weights sit in a separate .onnx_data file that the repo's own
-	// config forgets to mention, so the loader has to be told to fetch it.
-	externalData?: boolean;
+	// it (q4)
+	size: { q4f16: number; q4: number };
+	weights: { q4f16: Weights; q4: Weights };
 };
+
+// the two layouts the repos use
+const single = (chunks = 1): ChessModel['weights'] => ({
+	q4f16: { model: chunks },
+	q4: { model: chunks }
+});
+const split = (decoder = 1, embed = 1): ChessModel['weights'] => ({
+	q4f16: { decoder_model_merged: decoder, embed_tokens: embed },
+	q4: { decoder_model_merged: decoder, embed_tokens: embed }
+});
 
 export const MODELS: ChessModel[] = [
 	{
@@ -34,25 +49,18 @@ export const MODELS: ChessModel[] = [
 		repo: 'onnx-community/Qwen3.5-0.8B-ONNX',
 		tier: 'light',
 		thinking: 'native',
-		size: { q4f16: 0.58, q4: 0.65 }
-	},
-	{
-		id: 'lfm2.5-1.2b',
-		name: 'LFM2.5 1.2B',
-		maker: 'Liquid AI',
-		repo: 'LiquidAI/LFM2.5-1.2B-Instruct-ONNX',
-		tier: 'light',
-		thinking: 'prompted',
-		size: { q4f16: 0.76, q4: 0.85 }
+		size: { q4f16: 0.58, q4: 0.65 },
+		weights: split()
 	},
 	{
 		id: 'llama3.2-1b',
 		name: 'Llama 3.2 1B',
 		maker: 'Meta',
-		repo: 'onnx-community/Llama-3.2-1B-Instruct',
+		repo: 'onnx-community/Llama-3.2-1B-Instruct-ONNX',
 		tier: 'medium',
 		thinking: 'prompted',
-		size: { q4f16: 1.09, q4: 1.69 }
+		size: { q4f16: 1.09, q4: 1.69 },
+		weights: single()
 	},
 	{
 		id: 'qwen3.5-2b',
@@ -61,7 +69,8 @@ export const MODELS: ChessModel[] = [
 		repo: 'onnx-community/Qwen3.5-2B-ONNX',
 		tier: 'medium',
 		thinking: 'native',
-		size: { q4f16: 1.38, q4: 1.54 }
+		size: { q4f16: 1.38, q4: 1.54 },
+		weights: split()
 	},
 	{
 		id: 'smollm3-3b',
@@ -70,17 +79,18 @@ export const MODELS: ChessModel[] = [
 		repo: 'HuggingFaceTB/SmolLM3-3B-ONNX',
 		tier: 'heavy',
 		thinking: 'native',
-		size: { q4f16: 2.12, q4: 2.84 }
+		size: { q4f16: 2.12, q4: 2.84 },
+		weights: single()
 	},
 	{
 		id: 'llama3.2-3b',
 		name: 'Llama 3.2 3B',
 		maker: 'Meta',
-		repo: 'onnx-community/Llama-3.2-3B-Instruct-onnx-web',
+		repo: 'onnx-community/Llama-3.2-3B-Instruct-ONNX',
 		tier: 'heavy',
 		thinking: 'prompted',
-		size: { q4f16: 2.63, q4: 2.63 },
-		externalData: true
+		size: { q4f16: 2.41, q4: 3.41 },
+		weights: single(2)
 	},
 	{
 		id: 'qwen3.5-4b',
@@ -89,7 +99,8 @@ export const MODELS: ChessModel[] = [
 		repo: 'onnx-community/Qwen3.5-4B-ONNX',
 		tier: 'heavy',
 		thinking: 'native',
-		size: { q4f16: 2.81, q4: 3.1 }
+		size: { q4f16: 2.8, q4: 3.11 },
+		weights: split(2)
 	},
 	{
 		id: 'gemma4-e2b',
@@ -98,16 +109,8 @@ export const MODELS: ChessModel[] = [
 		repo: 'onnx-community/gemma-4-E2B-it-ONNX',
 		tier: 'heavy',
 		thinking: 'prompted',
-		size: { q4f16: 3.11, q4: 3.62 }
-	},
-	{
-		id: 'phi4-mini',
-		name: 'Phi-4 mini',
-		maker: 'Microsoft',
-		repo: 'onnx-community/Phi-4-mini-instruct-web-q4f16',
-		tier: 'heavy',
-		thinking: 'prompted',
-		size: { q4f16: 3.41 }
+		size: { q4f16: 3.11, q4: 3.63 },
+		weights: split()
 	},
 	{
 		id: 'gemma4-e4b',
@@ -116,9 +119,22 @@ export const MODELS: ChessModel[] = [
 		repo: 'onnx-community/gemma-4-E4B-it-ONNX',
 		tier: 'large',
 		thinking: 'prompted',
-		size: { q4f16: 4.9, q4: 5.6 }
+		size: { q4f16: 4.91, q4: 5.62 },
+		// its 4-bit embeddings without 16-bit math come in two files
+		weights: {
+			q4f16: { decoder_model_merged: 2, embed_tokens: 1 },
+			q4: { decoder_model_merged: 2, embed_tokens: 2 }
+		}
 	}
 ];
+
+// What the loader needs to fetch a model's weights: the data file count for
+// each graph, by its full file name
+export function externalData(model: ChessModel, dtype: Dtype): Record<string, number> {
+	return Object.fromEntries(
+		Object.entries(model.weights[dtype]).map(([name, chunks]) => [`${name}_${dtype}.onnx`, chunks])
+	);
+}
 
 export function findModel(id: string | undefined): ChessModel | undefined {
 	return MODELS.find((model) => model.id === id);
@@ -174,7 +190,6 @@ export function fitFor(model: ChessModel, device: DeviceInfo): Fit {
 	// Without WebGPU everything runs on the processor, where only the lightest
 	// models keep a game moving.
 	if (!device.webgpu) return model.tier === 'light' ? 'slow' : 'too-large';
-	if (!dtypeFor(model, device)) return 'too-large';
 	// unknown outside Chrome and Edge; there, judge by the graphics card alone
 	const memory = device.memory ?? 8;
 	switch (model.tier) {
@@ -193,14 +208,12 @@ export function fitFor(model: ChessModel, device: DeviceInfo): Fit {
 
 export type Dtype = 'q4f16' | 'q4';
 
-export function dtypeFor(model: ChessModel, device: DeviceInfo): Dtype | undefined {
-	if (device.webgpu && device.f16) return 'q4f16';
-	return model.size.q4 ? 'q4' : undefined;
+export function dtypeFor(device: DeviceInfo): Dtype {
+	return device.webgpu && device.f16 ? 'q4f16' : 'q4';
 }
 
 export function downloadSize(model: ChessModel, device: DeviceInfo): number {
-	const dtype = dtypeFor(model, device) ?? 'q4f16';
-	return model.size[dtype] ?? model.size.q4f16;
+	return model.size[dtypeFor(device)];
 }
 
 // The model picked when nothing was picked before: the largest that runs well,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LoadStage, WorkerRequest, WorkerResponse } from './ai.worker';
-import { dtypeFor, type ChessModel, type DeviceInfo } from './models';
+import { dtypeFor, externalData, type ChessModel, type DeviceInfo } from './models';
 import type { PromptInput } from './prompt';
 
 // The page's side of lib/chess/ai.worker.ts: loads a model and asks it for
@@ -70,12 +70,13 @@ export function useOpponent() {
 					break;
 			}
 		};
+		const dtype = dtypeFor(device);
 		next.postMessage({
 			type: 'load',
 			repo: model.repo,
-			dtype: dtypeFor(model, device) ?? 'q4f16',
+			dtype,
 			device: device.webgpu ? 'webgpu' : 'wasm',
-			externalData: model.externalData
+			files: externalData(model, dtype)
 		} satisfies WorkerRequest);
 	}, []);
 
