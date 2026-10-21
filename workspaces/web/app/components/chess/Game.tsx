@@ -342,6 +342,7 @@ export default function Game() {
 						</Section>
 						<Thread
 							entries={entries}
+							moves={history}
 							live={
 								live && {
 									text: live.text,

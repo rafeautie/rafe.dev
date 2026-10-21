@@ -7,6 +7,10 @@ import {
 } from '~/components/ai/conversation';
 import { Message, MessageContent } from '~/components/ai/message';
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '~/components/ai/reasoning';
+import type { Move } from 'chess.js';
+import { PIECES } from '~/components/chess/pieces';
+import { Card } from '~/components/ui/card';
+import { describeMove } from '~/lib/chess/describe';
 import type { Entry } from '~/lib/chess/storage';
 import { cn } from '~/lib/utils';
 
@@ -84,16 +88,63 @@ export function Pulse() {
 	);
 }
 
+// The move the model chose, in words: the piece, where it went and from where,
+// and what else it did.
+function MoveCard({ move, random }: { move: Move; random?: boolean }) {
+	const { title, from, notes } = describeMove(move);
+	const Piece = PIECES[`${move.color}${move.piece.toUpperCase()}`];
+	const tags = random ? [...notes, 'Random move'] : notes;
+	return (
+		<Card size="sm" className="w-full max-w-64 flex-row items-center gap-3 px-3 py-2.5">
+			<span className="size-9 shrink-0 rounded-md bg-foreground/5">
+				<Piece />
+			</span>
+			<div className="flex min-w-0 flex-col gap-1">
+				<p className="leading-tight font-medium">{title}</p>
+				<p className="text-xs text-foreground/50">
+					{from ? `${from} · ` : ''}
+					{move.san}
+				</p>
+				{tags.length > 0 && (
+					<div className="flex flex-wrap gap-1 pt-0.5">
+						{tags.map((tag) => (
+							<span
+								key={tag}
+								title={
+									tag === 'Random move'
+										? "Its answers weren't legal moves, so this one was picked at random"
+										: undefined
+								}
+								className={cn(
+									'rounded-full px-2 py-0.5 text-[0.7rem]',
+									tag === 'Random move'
+										? 'border border-foreground/20 text-foreground/50'
+										: 'bg-(--chess-accent)/10 text-(--chess-accent)'
+								)}
+							>
+								{tag}
+							</span>
+						))}
+					</div>
+				)}
+			</div>
+		</Card>
+	);
+}
+
 // The game as a chat with the model: each of your moves, and each of its
 // replies with the thinking behind it, folded away once it's done. Its turn in
 // progress comes last, thinking out loud. Guarded, the thinking stays hidden
 // until the game ends.
 export function Thread({
 	entries,
+	moves,
 	live,
 	revealThinking
 }: {
 	entries: Entry[];
+	// the game's moves in full, alongside the entries
+	moves: Move[];
 	// the model's turn as it happens
 	live?: { text: string; thinking: boolean; seconds: number };
 	revealThinking: boolean;
@@ -139,25 +190,17 @@ export function Thread({
 										/>
 									</Reasoning>
 								))}
-							<MessageContent>
-								<span className="flex items-center gap-1.5 font-medium">
-									{entry.san}
-									{entry.random && (
-										<span
-											title="Random move: its answer wasn't a legal move"
-											className="rounded border border-foreground/20 px-1 text-[0.65rem] font-normal text-foreground/50"
-										>
-											random
-										</span>
-									)}
-								</span>
-							</MessageContent>
+							{moves[i] ? (
+								<MoveCard move={moves[i]} random={entry.random} />
+							) : (
+								<MessageContent className="font-medium">{entry.san}</MessageContent>
+							)}
 						</Message>
 					)
 				)}
 				{live && revealThinking && live.text && (
 					<Message from="assistant">
-						<Reasoning streaming={live.thinking}>
+						<Reasoning>
 							<ReasoningTrigger streaming={live.thinking} seconds={live.seconds} />
 							<ReasoningContent>{live.text}</ReasoningContent>
 						</Reasoning>

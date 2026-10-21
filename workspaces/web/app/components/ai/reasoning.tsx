@@ -1,30 +1,17 @@
-import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { BrainIcon, ChevronDownIcon } from 'lucide-react';
 
 import { cn } from '~/lib/utils';
 
 // After AI Elements' Reasoning: a model's thinking, folded under a "Thought
-// for 7s" line. It opens by itself while the thinking streams in, and folds
-// away once when it's done; after that it's the reader's to open.
+// for 7s" line, or "Thinking…" while it streams in. It starts closed; opening
+// it is the reader's call.
 
-function Reasoning({
-	streaming = false,
-	className,
-	...props
-}: Collapsible.Root.Props & { streaming?: boolean }) {
-	const [open, setOpen] = useState(streaming);
-	const was = useRef(streaming);
-	useEffect(() => {
-		if (streaming && !was.current) setOpen(true);
-		if (!streaming && was.current) setOpen(false);
-		was.current = streaming;
-	}, [streaming]);
+function Reasoning({ className, ...props }: Collapsible.Root.Props) {
 	return (
 		<Collapsible.Root
 			data-slot="reasoning"
-			open={open}
-			onOpenChange={setOpen}
 			className={cn('flex w-full flex-col gap-2', className)}
 			{...props}
 		/>

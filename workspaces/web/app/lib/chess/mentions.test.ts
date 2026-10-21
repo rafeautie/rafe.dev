@@ -53,4 +53,11 @@ describe('findMentions', () => {
 		const chess = new Chess(ITALIAN);
 		expect(findMentions('a knight is worth three pawns; Qz9 is not a move', chess)).toEqual([]);
 	});
+
+	it('outlines a bare empty square rather than marking a piece', () => {
+		const chess = new Chess(ITALIAN);
+		expect(findMentions('The d3 square is weak.', chess)).toEqual([
+			{ kind: 'square', square: 'd3' }
+		]);
+	});
 });

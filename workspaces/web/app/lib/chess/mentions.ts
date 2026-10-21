@@ -76,7 +76,7 @@ export function findMentions(text: string, chess: Chess): Mention[] {
 		// "Nf3" that isn't a legal move is most likely the piece standing there
 		const piece = chess.get(square);
 		const named = /^[NBRQK]/.test(written) ? written[0].toLowerCase() : undefined;
-		add(piece?.type === named ? { kind: 'piece', square } : { kind: 'square', square });
+		add(named && piece?.type === named ? { kind: 'piece', square } : { kind: 'square', square });
 	}
 
 	return [...found.values()];
