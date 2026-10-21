@@ -21,6 +21,9 @@ export type ChessModel = {
 	// download in GB with 16-bit math on the graphics card (q4f16), and without
 	// it (q4). Phi-4 mini's web build only comes as q4f16.
 	size: { q4f16: number; q4?: number };
+	// The weights sit in a separate .onnx_data file that the repo's own
+	// config forgets to mention, so the loader has to be told to fetch it.
+	externalData?: boolean;
 };
 
 export const MODELS: ChessModel[] = [
@@ -76,7 +79,8 @@ export const MODELS: ChessModel[] = [
 		repo: 'onnx-community/Llama-3.2-3B-Instruct-onnx-web',
 		tier: 'heavy',
 		thinking: 'prompted',
-		size: { q4f16: 2.63, q4: 2.63 }
+		size: { q4f16: 2.63, q4: 2.63 },
+		externalData: true
 	},
 	{
 		id: 'qwen3.5-4b',

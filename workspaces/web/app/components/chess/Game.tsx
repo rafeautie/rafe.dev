@@ -511,9 +511,16 @@ function StatusCard({
 		title = `Couldn’t load ${state.model.name}`;
 		detail = 'It may need more memory or storage than this device has free.';
 		extra = (
-			<Button variant="outline" size="sm" className="self-start" onClick={onPickAnother}>
-				Pick another model
-			</Button>
+			<>
+				{/* what actually went wrong, for whoever wants to look */}
+				<details className="text-xs text-muted-foreground">
+					<summary className="cursor-pointer select-none hover:text-foreground">Details</summary>
+					<p className="mt-1 break-words select-text">{state.message}</p>
+				</details>
+				<Button variant="outline" size="sm" className="self-start" onClick={onPickAnother}>
+					Pick another model
+				</Button>
+			</>
 		);
 	} else if (state.status === 'loading') {
 		title = {

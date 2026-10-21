@@ -21,7 +21,13 @@ import { buildMessages, HISTORY_PLIES, splitReply, type PromptInput } from './pr
 // (lib/chess/use-opponent.ts).
 
 export type WorkerRequest =
-	| { type: 'load'; repo: string; dtype: Dtype; device: 'webgpu' | 'wasm' }
+	| {
+			type: 'load';
+			repo: string;
+			dtype: Dtype;
+			device: 'webgpu' | 'wasm';
+			externalData?: boolean;
+	  }
 	| { type: 'move'; id: number; input: PromptInput }
 	// drop the turn altogether, as when the game is abandoned
 	| { type: 'stop' };
@@ -64,7 +70,12 @@ function post(message: WorkerResponse) {
 
 const WEIGHTS = /\.onnx(_data(_\d+)?)?$/;
 
-async function load(repo: string, dtype: Dtype, device: 'webgpu' | 'wasm'): Promise<Loaded> {
+async function load(
+	repo: string,
+	dtype: Dtype,
+	device: 'webgpu' | 'wasm',
+	externalData?: boolean
+): Promise<Loaded> {
 	// The bar counts the weights (the .onnx files and their data), from the
 	// sizes their downloads report as they start. The loader's own overall
 	// figure (`progress_total`) isn't used: it rests on sizes looked up
@@ -123,6 +134,7 @@ async function load(repo: string, dtype: Dtype, device: 'webgpu' | 'wasm'): Prom
 	modelStep = true;
 	const model = await AutoModelForCausalLM.from_pretrained(repo, {
 		dtype,
+		...(externalData && { use_external_data_format: true }),
 		device,
 		progress_callback
 	});
@@ -272,7 +284,7 @@ async function move(id: number, input: PromptInput) {
 onmessage = (event: MessageEvent<WorkerRequest>) => {
 	const request = event.data;
 	if (request.type === 'load') {
-		loaded = load(request.repo, request.dtype, request.device);
+		loaded = load(request.repo, request.dtype, request.device, request.externalData);
 		loaded.then(
 			() => post({ type: 'ready' }),
 			(error) => {

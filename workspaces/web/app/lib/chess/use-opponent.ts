@@ -74,7 +74,8 @@ export function useOpponent() {
 			type: 'load',
 			repo: model.repo,
 			dtype: dtypeFor(model, device) ?? 'q4f16',
-			device: device.webgpu ? 'webgpu' : 'wasm'
+			device: device.webgpu ? 'webgpu' : 'wasm',
+			externalData: model.externalData
 		} satisfies WorkerRequest);
 	}, []);
 
