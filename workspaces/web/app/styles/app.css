@@ -337,18 +337,11 @@
 	}
 }
 
-/* The /chess board (components/chess/Board.tsx): two quiet grays, the coordinates' ink, and one mark
-   for what the model is thinking about, all following the theme. */
+/* The /chess board (components/chess/Board.tsx): white and black squares in
+   both themes, and one mid gray mark for the last move and for what the model
+   is thinking about, which reads on either square. */
 .chess-board {
-	--chess-light: oklch(0.97 0 0);
-	--chess-dark: oklch(0.87 0 0);
-	--chess-ink: oklch(0.55 0 0);
-	--chess-mark: oklch(0.3 0 0);
-
-	.dark & {
-		--chess-light: oklch(0.62 0 0);
-		--chess-dark: oklch(0.5 0 0);
-		--chess-ink: oklch(0.85 0 0);
-		--chess-mark: oklch(0.97 0 0);
-	}
+	--chess-light: #fff;
+	--chess-dark: #000;
+	--chess-mark: oklch(0.6 0 0);
 }
