@@ -152,7 +152,7 @@ async function generate(
 	max_new_tokens: number,
 	sample: boolean,
 	stopping: InterruptableStoppingCriteria,
-	onText: (text: string) => void
+	onText?: (text: string) => void
 ) {
 	const stopping_criteria = new StoppingCriteriaList();
 	stopping_criteria.push(stopping);
@@ -168,11 +168,13 @@ async function generate(
 		temperature: 0.6,
 		top_p: 0.95,
 		stopping_criteria,
-		streamer: new TextStreamer(tokenizer, {
-			skip_prompt: true,
-			skip_special_tokens: true,
-			callback_function: onText
-		})
+		streamer:
+			onText &&
+			new TextStreamer(tokenizer, {
+				skip_prompt: true,
+				skip_special_tokens: true,
+				callback_function: onText
+			})
 		// the types don't know about return_dict_in_generate's shape
 	} as never)) as unknown as Run;
 }
@@ -237,11 +239,20 @@ async function move(id: number, input: PromptInput) {
 			stream(nudge);
 			// the answer has its own limit, in words, not time
 			clearTimeout(timer);
-			const next = cat([run.sequences, ids(tokenizer, nudge)], 1);
-			// the model's memory is updated in place, so it's the same one
+			// The model's memory is updated in place as it goes. It takes the
+			// nudge a token at a time: given several at once, image-and-text
+			// models (Qwen3.5) try to look for an image they never loaded. Each
+			// step's own next token is thrown away.
+			const extra = ids(tokenizer, nudge);
+			const count = extra.dims[1];
+			for (let k = 0; k < count; k++) {
+				const next = k ? cat([run.sequences, extra.slice(null, [0, k])], 1) : run.sequences;
+				await generate(ready, next, run.past_key_values, 1, false, current.stopping);
+				if (turn !== current) return;
+			}
 			run = await generate(
 				ready,
-				next,
+				cat([run.sequences, extra], 1),
 				run.past_key_values,
 				ANSWER_TOKENS,
 				false,

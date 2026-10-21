@@ -224,10 +224,13 @@ export default function Game() {
 				const input = promptInput(chess, think, current, missed.at(-1));
 				const before = thoughts.join('\n\n');
 				setLive({ text: before, started, stage: 'reading', retry: missed.at(-1) });
+				// what it has thought so far, kept if the turn fails partway
+				let partial = '';
 				try {
-					const reply = await ask(input, (partial) => {
+					const reply = await ask(input, (sofar) => {
 						if (cancelled) return;
-						const { thinking, answer, closed } = splitReply(partial.text, partial.opened);
+						const { thinking, answer, closed } = splitReply(sofar.text, sofar.opened);
+						partial = thinking;
 						const writing = !think || closed || answer !== '';
 						notice(
 							before && thinking ? `${before}\n\n${thinking}` : before || thinking,
@@ -242,6 +245,7 @@ export default function Game() {
 					missed.push(candidate ?? 'nothing');
 				} catch (error) {
 					if (cancelled) return;
+					if (partial) thoughts.push(partial);
 					missed.push(`an error: ${error instanceof Error ? error.message : error}`);
 					break;
 				}
