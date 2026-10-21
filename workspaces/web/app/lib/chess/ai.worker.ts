@@ -1,9 +1,13 @@
 import {
 	AutoModelForCausalLM,
 	AutoTokenizer,
+	cat,
 	InterruptableStoppingCriteria,
+	ones_like,
 	StoppingCriteriaList,
 	TextStreamer,
+	type DynamicCache,
+	type Tensor,
 	type PreTrainedModel,
 	type PreTrainedTokenizer
 } from '@huggingface/transformers';
@@ -137,19 +141,26 @@ async function load(repo: string, dtype: Dtype, device: 'webgpu' | 'wasm'): Prom
 	return { model, tokenizer, context };
 }
 
+// What a run of the model leaves: every token so far, and the model's memory
+// of having read them, so a follow-up run only has to read what's new.
+type Run = { sequences: Tensor; past_key_values: DynamicCache };
+
 async function generate(
 	{ model, tokenizer }: Loaded,
-	prompt: string,
+	input_ids: Tensor,
+	past_key_values: DynamicCache | undefined,
 	max_new_tokens: number,
 	sample: boolean,
 	stopping: InterruptableStoppingCriteria,
 	onText: (text: string) => void
 ) {
-	const inputs = tokenizer(prompt, { add_special_tokens: false });
 	const stopping_criteria = new StoppingCriteriaList();
 	stopping_criteria.push(stopping);
-	await model.generate({
-		...inputs,
+	return (await model.generate({
+		input_ids,
+		attention_mask: ones_like(input_ids),
+		past_key_values,
+		return_dict_in_generate: true,
 		max_new_tokens,
 		do_sample: sample,
 		// thinking models are tuned to reason at 0.6; a little randomness
@@ -162,8 +173,12 @@ async function generate(
 			skip_special_tokens: true,
 			callback_function: onText
 		})
-	});
+		// the types don't know about return_dict_in_generate's shape
+	} as never)) as unknown as Run;
 }
+
+const ids = (tokenizer: PreTrainedTokenizer, text: string) =>
+	tokenizer(text, { add_special_tokens: false }).input_ids as Tensor;
 
 async function move(id: number, input: PromptInput) {
 	const ready = await loaded!;
@@ -189,27 +204,55 @@ async function move(id: number, input: PromptInput) {
 	const current = { id, stopping: new InterruptableStoppingCriteria() };
 	turn = current;
 	let text = '';
+	// The thinking's clock starts at its first word. Some models take a long
+	// while to read the prompt (Qwen3.5 reads it a word at a time in the
+	// browser), and that shouldn't count against the time it gets to think.
+	let timer: ReturnType<typeof setTimeout> | undefined;
 	const stream = (piece: string) => {
 		text += piece;
+		if (input.think && !timer) timer = setTimeout(() => current.stopping.interrupt(), THINK_MS);
 		if (turn === current) post({ type: 'stream', id, text, opened });
 	};
-	const timer = input.think ? setTimeout(() => current.stopping.interrupt(), THINK_MS) : undefined;
+	let run: Run | undefined;
 	try {
-		await generate(ready, prompt, budget, true, current.stopping, stream);
+		run = await generate(
+			ready,
+			ids(tokenizer, prompt),
+			undefined,
+			budget,
+			true,
+			current.stopping,
+			stream
+		);
+		if (turn !== current) return;
+
+		// Out of time or words while still thinking: close the thinking and ask
+		// for the move straight away, carrying on from where it stopped rather
+		// than reading the whole prompt again.
+		const reply = splitReply(text, opened);
+		if (input.think && !(reply.closed && reply.answer)) {
+			current.stopping = new InterruptableStoppingCriteria();
+			const tagged = opened || text.includes('<think>');
+			const nudge = `${tagged && !reply.closed ? '\n</think>\n\n' : '\n'}Move:`;
+			stream(nudge);
+			// the answer has its own limit, in words, not time
+			clearTimeout(timer);
+			const next = cat([run.sequences, ids(tokenizer, nudge)], 1);
+			// the model's memory is updated in place, so it's the same one
+			run = await generate(
+				ready,
+				next,
+				run.past_key_values,
+				ANSWER_TOKENS,
+				false,
+				current.stopping,
+				stream
+			);
+			if (turn !== current) return;
+		}
 	} finally {
 		clearTimeout(timer);
-	}
-	if (turn !== current) return;
-
-	// Out of time or words while still thinking: close the thinking and ask
-	// for the move straight away.
-	const reply = splitReply(text, opened);
-	if (input.think && !(reply.closed && reply.answer)) {
-		current.stopping = new InterruptableStoppingCriteria();
-		const tagged = opened || text.includes('<think>');
-		stream(`${tagged && !reply.closed ? '\n</think>\n\n' : '\n'}Move:`);
-		await generate(ready, prompt + text, ANSWER_TOKENS, false, current.stopping, stream);
-		if (turn !== current) return;
+		await run?.past_key_values.dispose();
 	}
 	turn = undefined;
 	post({ type: 'done', id, text, opened });
