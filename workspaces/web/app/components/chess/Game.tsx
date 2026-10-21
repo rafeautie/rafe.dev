@@ -523,9 +523,11 @@ function StatusCard({
 			</>
 		);
 	} else if (state.status === 'loading') {
+		// one number for both the words and the bar, so they never disagree
+		const percent = Math.floor(state.progress * 100);
 		title = {
 			starting: 'Starting up',
-			downloading: `Downloading ${Math.round(state.progress * 100)}%`,
+			downloading: `Downloading ${percent}%`,
 			preparing: gpu ? 'Loading onto the GPU' : 'Loading into memory',
 			warming: 'Warming up'
 		}[state.stage];
@@ -539,8 +541,8 @@ function StatusCard({
 			extra = (
 				<div className="h-1 overflow-hidden rounded-full bg-foreground/10">
 					<div
-						className="h-full rounded-full bg-(--chess-accent) transition-[width] duration-300"
-						style={{ width: `${state.progress * 100}%` }}
+						className="h-full rounded-full bg-(--chess-accent)"
+						style={{ width: `${percent}%` }}
 					/>
 				</div>
 			);

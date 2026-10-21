@@ -102,8 +102,11 @@ async function load(
 			total += file.total;
 		}
 		if (!total) return;
-		shown = Math.max(shown, done / total);
-		post({ type: 'progress', progress: shown });
+		const next = Math.max(shown, done / total);
+		// only when the whole percent shown on the page changes
+		if (Math.floor(next * 100) > Math.floor(shown * 100))
+			post({ type: 'progress', progress: next });
+		shown = next;
 		// every file is in hand: what's left is loading them onto the device
 		if (done >= total) enter('preparing');
 	};
