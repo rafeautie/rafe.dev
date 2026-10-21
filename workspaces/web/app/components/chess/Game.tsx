@@ -344,7 +344,6 @@ export default function Game() {
 									seconds: (now - live.started) / 1000
 								}
 							}
-							revealThinking={showThinking || phase === 'over'}
 						/>
 						<StatusCard
 							phase={phase}

@@ -249,19 +249,18 @@ function Thinking({
 
 // The game as a chat with the model: each of your moves, and each of its
 // replies with the thinking behind it, folded away. Its turn in progress comes
-// last. Guarded, the thinking stays hidden until the game ends.
+// last. Its thinking is always here to read; "Show its thinking" only governs
+// the marks on the board.
 export function Thread({
 	entries,
 	moves,
-	live,
-	revealThinking
+	live
 }: {
 	entries: Entry[];
 	// the game's moves in full, alongside the entries
 	moves: Move[];
 	// the model's turn as it happens
 	live?: { text: string; thinking: boolean; seconds: number };
-	revealThinking: boolean;
 }) {
 	return (
 		<MessageScrollerProvider autoScroll defaultScrollPosition="end">
@@ -298,24 +297,13 @@ export function Thread({
 								) : (
 									<Message>
 										<MessageContent>
-											{(entry.thinking || entry.missed?.length) &&
-												(revealThinking ? (
-													<Thinking
-														text={entry.thinking}
-														missed={entry.missed}
-														seconds={entry.seconds}
-													/>
-												) : (
-													<Trace>
-														<TraceLine status="pending">
-															<TraceIcon>
-																<BrainIcon />
-															</TraceIcon>
-															<TraceTitle>Thought {secondsOf(entry.seconds)}</TraceTitle>
-															<TraceDescription>shown when the game ends</TraceDescription>
-														</TraceLine>
-													</Trace>
-												))}
+											{(entry.thinking || entry.missed?.length) && (
+												<Thinking
+													text={entry.thinking}
+													missed={entry.missed}
+													seconds={entry.seconds}
+												/>
+											)}
 											{moves[i] ? (
 												<MoveCards move={moves[i]} random={entry.random} />
 											) : (
@@ -326,7 +314,7 @@ export function Thread({
 								)}
 							</MessageScrollerItem>
 						))}
-						{live && revealThinking && live.text && (
+						{live && live.text && (
 							<MessageScrollerItem messageId="live">
 								<Message>
 									<MessageContent>
