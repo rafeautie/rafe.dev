@@ -44,7 +44,7 @@ function useWideEnough() {
 		() => true
 	);
 }
-const targetDot = 'radial-gradient(circle, var(--chess-accent) 16%, transparent 18%)';
+export const targetDot = 'radial-gradient(circle, var(--chess-accent) 8%, transparent 10%)';
 
 export function Board({
 	chess,

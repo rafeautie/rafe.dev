@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { squareTint } from './Board';
+import { squareTint, targetDot } from './Board';
 import { PIECES } from './pieces';
 
 // What the marks on the board mean, for the key beside "Show its thinking":
@@ -74,7 +74,7 @@ const YOURS: { swatch: ReactNode; title: string }[] = [
 			<Swatch
 				style={{
 					...dark,
-					backgroundImage: 'radial-gradient(circle, var(--chess-accent) 16%, transparent 18%)'
+					backgroundImage: targetDot
 				}}
 			/>
 		),
