@@ -2,10 +2,11 @@ import type { Chess, Square } from 'chess.js';
 import { useState, type CSSProperties } from 'react';
 import { Chessboard, type ChessboardOptions } from 'react-chessboard';
 import type { Mention } from '~/lib/chess/mentions';
+import { PIECES } from './pieces';
 
 // The board, drawn by react-chessboard from chess.js's position. Its colors
 // come from --chess-* in styles/app.css, which follow the light and dark
-// themes. Moves are made by dragging or by clicking a piece and then a square.
+// themes, and its pieces from ./pieces. Moves are made by dragging or by clicking a piece and then a square.
 
 // SVG arrows can't read CSS variables, so this one gray has to read on both
 // the light and dark boards.
@@ -76,6 +77,7 @@ export function Board({
 	const options: ChessboardOptions = {
 		id: 'chess',
 		position: fen,
+		pieces: PIECES,
 		boardOrientation: orientation,
 		allowDragging: canMove,
 		allowDrawingArrows: false,
