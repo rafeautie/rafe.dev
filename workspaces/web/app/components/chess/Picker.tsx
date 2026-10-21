@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Button } from '~/components/ui/button';
 import { ScrollArea } from '~/components/ui/scroll-area';
+import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group';
 import {
 	downloadSize,
 	FIT_LABELS,
@@ -15,10 +16,7 @@ import { ACCENT_BUTTON } from '~/components/chess/Rail';
 // Choosing an opponent: the models that should run on this device, each with
 // its download size and how well it should run. The player always has white.
 
-// A search looks through every model, the ones too large for this device too.
-function matching(words: string[]) {
-	return MODELS.filter((m) => words.every((w) => `${m.name} ${m.maker}`.toLowerCase().includes(w)));
-}
+type Sort = 'size' | 'name';
 
 export function Picker({
 	device,
@@ -35,22 +33,15 @@ export function Picker({
 	onStart: () => void;
 }) {
 	const [showAll, setShowAll] = useState(false);
-	const [query, setQuery] = useState('');
+	const [sort, setSort] = useState<Sort>('size');
 	const hidden = MODELS.filter((m) => fitFor(m, device) === 'too-large');
-	const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-	const shown = words.length
-		? matching(words)
-		: showAll
-			? MODELS
-			: MODELS.filter((m) => !hidden.includes(m) || m === model);
-
-	// When the search hides the chosen model, the first match takes its place,
-	// so the Play button never names a model that isn't in view.
-	function search(value: string) {
-		setQuery(value);
-		const found = matching(value.toLowerCase().split(/\s+/).filter(Boolean));
-		if (found.length && !found.includes(model)) onModel(found[0]);
-	}
+	const shown = (showAll ? MODELS : MODELS.filter((m) => !hidden.includes(m) || m === model))
+		.slice()
+		.sort((a, b) =>
+			sort === 'name'
+				? a.name.localeCompare(b.name, undefined, { numeric: true })
+				: downloadSize(a, device) - downloadSize(b, device)
+		);
 
 	return (
 		<div className="flex flex-col gap-6 xl:min-h-0 xl:flex-1">
@@ -59,19 +50,27 @@ export function Picker({
 				aria-labelledby="opponent-label"
 				className="flex flex-col gap-2 xl:min-h-0 xl:flex-1"
 			>
-				<p id="opponent-label" className="mb-2 text-sm text-foreground/50">
-					opponent
-				</p>
-				<input
-					id="model-search"
-					type="search"
-					value={query}
-					onChange={(event) => search(event.target.value)}
-					placeholder="Search models"
-					aria-label="Search models"
-					autoComplete="off"
-					className="mr-3 mb-1 h-8 rounded-md border border-foreground/10 bg-transparent px-2.5 text-sm outline-none placeholder:text-foreground/40 focus-visible:border-(--chess-accent) focus-visible:ring-2 focus-visible:ring-(--chess-accent)/25"
-				/>
+				<div className="mb-2 flex items-center justify-between gap-3 pr-3">
+					<p id="opponent-label" className="text-sm text-foreground/50">
+						opponent
+					</p>
+					<ToggleGroup
+						aria-label="Sort models"
+						value={[sort]}
+						// clicking the chosen one again would choose neither
+						onValueChange={(value) => value[0] && setSort(value[0] as Sort)}
+						spacing={0}
+						variant="outline"
+						size="sm"
+					>
+						<ToggleGroupItem value="size" className="px-2.5 text-xs">
+							Size
+						</ToggleGroupItem>
+						<ToggleGroupItem value="name" className="px-2.5 text-xs">
+							A–Z
+						</ToggleGroupItem>
+					</ToggleGroup>
+				</div>
 				{!device.webgpu && (
 					<p className="mb-1 text-sm text-pretty text-foreground/60">
 						This browser has no WebGPU, so the model runs on the processor and only the lightest are
@@ -84,9 +83,6 @@ export function Picker({
 					viewportClassName="max-h-[min(24rem,50dvh)] xl:max-h-none"
 				>
 					<div className="flex flex-col gap-2 pr-3">
-						{shown.length === 0 && (
-							<p className="py-2 text-sm text-foreground/50">No model matches “{query}”.</p>
-						)}
 						{shown.map((m) => {
 							const fit = fitFor(m, device);
 							return (
@@ -126,7 +122,7 @@ export function Picker({
 						})}
 					</div>
 				</ScrollArea>
-				{hidden.length > 0 && !words.length && (
+				{hidden.length > 0 && (
 					<button
 						type="button"
 						onClick={() => setShowAll(!showAll)}
