@@ -413,12 +413,7 @@ export default function Game() {
 									)
 								}
 							>
-								<MoveList entries={entries} revealThinking={showThinking || phase === 'over'} />
-								{!showThinking && phase === 'playing' && entries.some((e) => e.by === 'ai') && (
-									<p className="text-xs text-foreground/40">
-										Its thinking for every move is shown when the game ends.
-									</p>
-								)}
+								<MoveList entries={entries} />
 							</Section>
 						</>
 					)

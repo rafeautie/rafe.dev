@@ -93,19 +93,8 @@ export function LiveThinking({ text }: { text: string }) {
 	);
 }
 
-function seconds(entry: Entry) {
-	return entry.seconds === undefined ? '' : ` for ${Math.max(1, Math.round(entry.seconds))}s`;
-}
-
-// The game so far, two moves to a row, with the model's thinking kept on each
-// of its moves. Guarded, the thinking stays hidden until the game ends.
-export function MoveList({
-	entries,
-	revealThinking
-}: {
-	entries: Entry[];
-	revealThinking: boolean;
-}) {
+// The game so far, two moves to a row.
+export function MoveList({ entries }: { entries: Entry[] }) {
 	const end = useRef<HTMLLIElement>(null);
 	useEffect(() => {
 		end.current?.scrollIntoView({ block: 'nearest' });
@@ -119,43 +108,25 @@ export function MoveList({
 	return (
 		<ol className="flex max-h-72 flex-col gap-1 overflow-y-auto text-sm tabular-nums xl:max-h-none xl:min-h-0 xl:flex-1">
 			{rows.map((row, i) => (
-				<li key={i} ref={i === rows.length - 1 ? end : undefined} className="flex flex-col gap-1">
-					<div className="grid grid-cols-[2rem_1fr_1fr] gap-2">
-						<span className="text-foreground/40">{i + 1}.</span>
-						{row.map((entry, j) => (
-							<span key={j} className="flex items-center gap-1.5">
-								{entry.san}
-								{entry.random && (
-									<span
-										title="Random move: its answer wasn't a legal move"
-										className="rounded border border-foreground/20 px-1 text-[0.65rem] text-foreground/50"
-									>
-										random
-									</span>
-								)}
-							</span>
-						))}
-					</div>
-					{revealThinking &&
-						row.map(
-							(entry, j) =>
-								entry.by === 'ai' &&
-								(entry.thinking || entry.missed?.length) && (
-									<details key={j} className="group ml-8 text-xs text-foreground/50">
-										<summary className="cursor-pointer list-none hover:text-foreground/80">
-											{entry.san}: thought{seconds(entry)}
-										</summary>
-										<div className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap">
-											{entry.thinking}
-											{entry.missed?.map((answer, k) => (
-												<p key={k} className="mt-1 italic">
-													Answered “{answer}”, which isn’t a legal move.
-												</p>
-											))}
-										</div>
-									</details>
-								)
-						)}
+				<li
+					key={i}
+					ref={i === rows.length - 1 ? end : undefined}
+					className="grid grid-cols-[2rem_1fr_1fr] gap-2"
+				>
+					<span className="text-foreground/40">{i + 1}.</span>
+					{row.map((entry, j) => (
+						<span key={j} className="flex items-center gap-1.5">
+							{entry.san}
+							{entry.random && (
+								<span
+									title="Random move: its answer wasn't a legal move"
+									className="rounded border border-foreground/20 px-1 text-[0.65rem] text-foreground/50"
+								>
+									random
+								</span>
+							)}
+						</span>
+					))}
 				</li>
 			))}
 		</ol>
