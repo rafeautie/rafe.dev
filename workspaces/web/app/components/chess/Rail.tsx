@@ -1,12 +1,26 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { BrainIcon } from 'lucide-react';
+import { Badge } from '~/components/ui/badge';
+import { Bubble, BubbleContent } from '~/components/ui/bubble';
+import { Message, MessageContent } from '~/components/ui/message';
 import {
-	Conversation,
-	ConversationContent,
-	ConversationEmpty,
-	ConversationScrollButton
-} from '~/components/ai/conversation';
-import { Message, MessageContent } from '~/components/ai/message';
-import { Reasoning, ReasoningContent, ReasoningTrigger } from '~/components/ai/reasoning';
+	MessageScroller,
+	MessageScrollerButton,
+	MessageScrollerContent,
+	MessageScrollerItem,
+	MessageScrollerProvider,
+	MessageScrollerViewport
+} from '~/components/ui/message-scroller';
+import {
+	Trace,
+	TraceCollapsible,
+	TraceCollapsibleContent,
+	TraceCollapsibleTrigger,
+	TraceDescription,
+	TraceIcon,
+	TraceLine,
+	TraceTitle
+} from '~/components/ui/trace';
 import type { Move } from 'chess.js';
 import { PIECES } from '~/components/chess/pieces';
 import { Card } from '~/components/ui/card';
@@ -101,30 +115,32 @@ function MoveCard({ move, random }: { move: Move; random?: boolean }) {
 			</span>
 			<div className="flex min-w-0 flex-col gap-1">
 				<p className="leading-tight font-medium">{title}</p>
-				<p className="text-xs text-foreground/50">
+				<p className="text-xs text-muted-foreground">
 					{from ? `${from} · ` : ''}
 					{move.san}
 				</p>
 				{tags.length > 0 && (
 					<div className="flex flex-wrap gap-1 pt-0.5">
-						{tags.map((tag) => (
-							<span
-								key={tag}
-								title={
-									tag === 'Random move'
-										? "Its answers weren't legal moves, so this one was picked at random"
-										: undefined
-								}
-								className={cn(
-									'rounded-full px-2 py-0.5 text-[0.7rem]',
-									tag === 'Random move'
-										? 'border border-foreground/20 text-foreground/50'
-										: 'bg-(--chess-accent)/10 text-(--chess-accent)'
-								)}
-							>
-								{tag}
-							</span>
-						))}
+						{tags.map((tag) =>
+							tag === 'Random move' ? (
+								<Badge
+									key={tag}
+									variant="outline"
+									title="Its answers weren't legal moves, so this one was picked at random"
+									className="text-muted-foreground"
+								>
+									{tag}
+								</Badge>
+							) : (
+								<Badge
+									key={tag}
+									variant="secondary"
+									className="bg-(--chess-accent)/10 text-(--chess-accent)"
+								>
+									{tag}
+								</Badge>
+							)
+						)}
 					</div>
 				)}
 			</div>
@@ -132,10 +148,49 @@ function MoveCard({ move, random }: { move: Move; random?: boolean }) {
 	);
 }
 
+// How long the model thought, in whole seconds
+const secondsOf = (seconds?: number) => `${Math.max(1, Math.round(seconds ?? 0))}s`;
+
+// The model's thinking for one move, folded under a "Thought 5s" line
+function Thinking({
+	text,
+	missed,
+	seconds,
+	running = false
+}: {
+	text?: string;
+	missed?: string[];
+	seconds?: number;
+	running?: boolean;
+}) {
+	return (
+		<Trace>
+			<TraceCollapsible>
+				<TraceCollapsibleTrigger>
+					<TraceLine status={running ? 'running' : undefined}>
+						<TraceIcon>
+							<BrainIcon />
+						</TraceIcon>
+						<TraceTitle>{running ? 'Thinking' : 'Thought'}</TraceTitle>
+						<TraceDescription>{secondsOf(seconds)}</TraceDescription>
+					</TraceLine>
+				</TraceCollapsibleTrigger>
+				<TraceCollapsibleContent className="text-sm whitespace-pre-wrap">
+					{text || '…'}
+					{missed?.map((answer, k) => (
+						<p key={k} className="mt-1 italic">
+							Answered “{answer}”, which isn’t a legal move.
+						</p>
+					))}
+				</TraceCollapsibleContent>
+			</TraceCollapsible>
+		</Trace>
+	);
+}
+
 // The game as a chat with the model: each of your moves, and each of its
-// replies with the thinking behind it, folded away once it's done. Its turn in
-// progress comes last, thinking out loud. Guarded, the thinking stays hidden
-// until the game ends.
+// replies with the thinking behind it, folded away. Its turn in progress comes
+// last. Guarded, the thinking stays hidden until the game ends.
 export function Thread({
 	entries,
 	moves,
@@ -150,65 +205,74 @@ export function Thread({
 	revealThinking: boolean;
 }) {
 	return (
-		<Conversation className="max-h-96 min-h-24 xl:max-h-none xl:min-h-0 xl:flex-1">
-			<ConversationContent className="pr-1 pb-2">
-				{entries.length === 0 && !live && (
-					<ConversationEmpty>
-						Your move. Its replies and thinking will show up here.
-					</ConversationEmpty>
-				)}
-				{entries.map((entry, i) =>
-					entry.by === 'you' ? (
-						<Message key={i} from="user">
-							<MessageContent>
-								<span>
-									<span className="text-foreground/40">{Math.floor(i / 2) + 1}. </span>
-									{entry.san}
-								</span>
-							</MessageContent>
-						</Message>
-					) : (
-						<Message key={i} from="assistant">
-							{(entry.thinking || entry.missed?.length) &&
-								(revealThinking ? (
-									<Reasoning>
-										<ReasoningTrigger seconds={entry.seconds} />
-										<ReasoningContent>
-											{entry.thinking}
-											{entry.missed?.map((answer, k) => (
-												<p key={k} className="mt-1 italic">
-													Answered “{answer}”, which isn’t a legal move.
-												</p>
-											))}
-										</ReasoningContent>
-									</Reasoning>
+		<MessageScrollerProvider autoScroll defaultScrollPosition="end">
+			<MessageScroller className="max-h-96 min-h-24 xl:max-h-none xl:flex-1">
+				<MessageScrollerViewport>
+					<MessageScrollerContent className="gap-4 pr-1 pb-2">
+						{entries.length === 0 && !live && (
+							<p className="text-sm text-muted-foreground">
+								Your move. Its replies and thinking will show up here.
+							</p>
+						)}
+						{entries.map((entry, i) => (
+							// p-px: room for the card's outline, which the item would clip
+							<MessageScrollerItem key={i} messageId={String(i)} className="p-px">
+								{entry.by === 'you' ? (
+									<Message align="end">
+										<MessageContent>
+											<Bubble variant="muted" align="end">
+												<BubbleContent className="py-1.5">
+													<span className="text-muted-foreground">{Math.floor(i / 2) + 1}. </span>
+													{entry.san}
+												</BubbleContent>
+											</Bubble>
+										</MessageContent>
+									</Message>
 								) : (
-									<Reasoning>
-										<ReasoningTrigger
-											disabled
-											label={`Thought for ${Math.max(1, Math.round(entry.seconds ?? 0))}s · shown when the game ends`}
-										/>
-									</Reasoning>
-								))}
-							{moves[i] ? (
-								<MoveCard move={moves[i]} random={entry.random} />
-							) : (
-								<MessageContent className="font-medium">{entry.san}</MessageContent>
-							)}
-						</Message>
-					)
-				)}
-				{live && revealThinking && live.text && (
-					<Message from="assistant">
-						<Reasoning>
-							<ReasoningTrigger streaming={live.thinking} seconds={live.seconds} />
-							<ReasoningContent>{live.text}</ReasoningContent>
-						</Reasoning>
-					</Message>
-				)}
-			</ConversationContent>
-			<ConversationScrollButton />
-		</Conversation>
+									<Message>
+										<MessageContent>
+											{(entry.thinking || entry.missed?.length) &&
+												(revealThinking ? (
+													<Thinking
+														text={entry.thinking}
+														missed={entry.missed}
+														seconds={entry.seconds}
+													/>
+												) : (
+													<Trace>
+														<TraceLine status="pending">
+															<TraceIcon>
+																<BrainIcon />
+															</TraceIcon>
+															<TraceTitle>Thought {secondsOf(entry.seconds)}</TraceTitle>
+															<TraceDescription>shown when the game ends</TraceDescription>
+														</TraceLine>
+													</Trace>
+												))}
+											{moves[i] ? (
+												<MoveCard move={moves[i]} random={entry.random} />
+											) : (
+												<p className="font-medium">{entry.san}</p>
+											)}
+										</MessageContent>
+									</Message>
+								)}
+							</MessageScrollerItem>
+						))}
+						{live && revealThinking && live.text && (
+							<MessageScrollerItem messageId="live">
+								<Message>
+									<MessageContent>
+										<Thinking text={live.text} seconds={live.seconds} running={live.thinking} />
+									</MessageContent>
+								</Message>
+							</MessageScrollerItem>
+						)}
+					</MessageScrollerContent>
+				</MessageScrollerViewport>
+				<MessageScrollerButton />
+			</MessageScroller>
+		</MessageScrollerProvider>
 	);
 }
 
