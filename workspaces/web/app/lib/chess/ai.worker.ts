@@ -26,6 +26,7 @@ import {
 	type TagRule
 } from './constrain';
 import type { Dtype } from './models';
+import type { Speed } from './storage';
 import { buildMessages, findMove, HISTORY_PLIES, splitReply, type PromptInput } from './prompt';
 
 // The /chess opponent: a small language model running in the player's browser,
@@ -59,7 +60,7 @@ export type WorkerResponse =
 	| { type: 'load-error'; message: string }
 	// the reply so far; `opened` when the template began it inside <think>
 	| { type: 'stream'; id: number; text: string; opened: boolean }
-	| { type: 'done'; id: number; text: string; opened: boolean }
+	| { type: 'done'; id: number; text: string; opened: boolean; speed?: Speed }
 	| { type: 'error'; id: number; message: string };
 
 // Small models can think in circles, so thinking gets a budget of time and
@@ -334,14 +335,18 @@ async function move(id: number, input: PromptInput) {
 	// while to read the prompt (Qwen3.5 reads it a word at a time in the
 	// browser), and that shouldn't count against the time it gets to think.
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	const begun = performance.now();
+	let firstAt: number | undefined;
 	const stream = (piece: string) => {
+		firstAt ??= performance.now();
 		text += piece;
 		if (input.think && !timer) timer = setTimeout(() => current.stopping.interrupt(), THINK_MS);
 		if (turn === current) post({ type: 'stream', id, text, opened });
 	};
 	let run: Run | undefined;
+	const prompt_ids = ids(tokenizer, prompt);
+	let speed: Speed | undefined;
 	try {
-		const prompt_ids = ids(tokenizer, prompt);
 		run = await generate(ready, prompt_ids, undefined, budget, true, current.stopping, stream, {
 			stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)],
 			processors:
@@ -404,12 +409,20 @@ async function move(id: number, input: PromptInput) {
 			);
 			if (turn !== current) return;
 		}
+		const ended = performance.now();
+		if (firstAt !== undefined)
+			speed = {
+				prompt: prompt_ids.dims[1],
+				reading: (firstAt - begun) / 1000,
+				written: run.sequences.dims[1] - prompt_ids.dims[1],
+				writing: (ended - firstAt) / 1000
+			};
 	} finally {
 		clearTimeout(timer);
 		await run?.past_key_values.dispose();
 	}
 	turn = undefined;
-	post({ type: 'done', id, text, opened });
+	post({ type: 'done', id, text, opened, speed });
 }
 
 onmessage = (event: MessageEvent<WorkerRequest>) => {

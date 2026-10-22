@@ -22,7 +22,13 @@ export type Entry = {
 	random?: boolean;
 	// what it answered instead, when it missed
 	missed?: string[];
+	// how fast the model went (Speed)
+	speed?: Speed;
 };
+
+// How fast the model read its prompt and wrote its reply, in tokens and
+// seconds: the reading is what keeps the player waiting before the first word.
+export type Speed = { prompt: number; reading: number; written: number; writing: number };
 
 // The player is always white and the model always black.
 export type SavedGame = {

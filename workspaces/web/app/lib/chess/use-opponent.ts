@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LoadStage, WorkerRequest, WorkerResponse } from './ai.worker';
 import { dtypeFor, externalData, type ChessModel, type DeviceInfo } from './models';
 import type { PromptInput } from './prompt';
+import type { Speed } from './storage';
 
 // The page's side of lib/chess/ai.worker.ts: loads a model and asks it for
 // replies, streaming them back as they are written.
@@ -13,7 +14,7 @@ export type OpponentState =
 	| { status: 'ready'; model: ChessModel }
 	| { status: 'error'; model: ChessModel; message: string };
 
-export type Reply = { text: string; opened: boolean };
+export type Reply = { text: string; opened: boolean; speed?: Speed };
 
 type Pending = {
 	resolve: (reply: Reply) => void;

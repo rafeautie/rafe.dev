@@ -31,7 +31,7 @@ import type { Move } from 'chess.js';
 import { PIECES } from '~/components/chess/pieces';
 import { Card } from '~/components/ui/card';
 import { describeMove } from '~/lib/chess/describe';
-import type { Entry } from '~/lib/chess/storage';
+import type { Entry, Speed } from '~/lib/chess/storage';
 import { cn } from '~/lib/utils';
 
 // The pieces of the rail beside the board on /chess.
@@ -215,11 +215,13 @@ function Thinking({
 	text,
 	missed,
 	seconds,
+	speed,
 	running = false
 }: {
 	text?: string;
 	missed?: string[];
 	seconds?: number;
+	speed?: Speed;
 	running?: boolean;
 }) {
 	return (
@@ -243,6 +245,15 @@ function Thinking({
 								: `Answered “${answer}”, which isn’t a legal move.`}
 						</p>
 					))}
+					{speed && (
+						<p className="mt-2 text-xs text-foreground/50 tabular-nums">
+							Read {speed.prompt} tokens in {speed.reading.toFixed(1)}s (
+							{((speed.reading / speed.prompt) * 1000).toFixed(0)} ms each) · wrote {speed.written}{' '}
+							in {speed.writing.toFixed(1)}s (
+							{(speed.written / Math.max(speed.writing, 0.01)).toFixed(1)}
+							/s)
+						</p>
+					)}
 				</TraceCollapsibleContent>
 			</TraceCollapsible>
 		</Trace>
@@ -304,6 +315,7 @@ export function Thread({
 													text={entry.thinking}
 													missed={entry.missed}
 													seconds={entry.seconds}
+													speed={entry.speed}
 												/>
 											)}
 											{moves[i] ? (

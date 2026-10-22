@@ -35,6 +35,7 @@ import {
 	saveSettings,
 	type Entry,
 	type SavedGame,
+	type Speed,
 	type Settings
 } from '~/lib/chess/storage';
 import { useOpponent } from '~/lib/chess/use-opponent';
@@ -240,6 +241,7 @@ export default function Game() {
 			showMarks();
 		};
 
+		let speed: Speed | undefined;
 		const finish = (san: string, random = false) => {
 			if (cancelled) return;
 			marks.current.clear();
@@ -250,7 +252,8 @@ export default function Game() {
 				thinking: thoughts.join('\n\n') || undefined,
 				seconds: (Date.now() - started) / 1000,
 				random: random || undefined,
-				missed: missed.length ? missed : undefined
+				missed: missed.length ? missed : undefined,
+				speed
 			});
 		};
 
@@ -275,6 +278,7 @@ export default function Game() {
 					if (cancelled) return;
 					const { thinking, answer } = splitReply(reply.text, reply.opened);
 					if (thinking) thoughts.push(thinking);
+					speed = reply.speed;
 					const { move, candidate } = findMove(answer || reply.text, input.legal);
 					if (move) return finish(move);
 					missed.push(candidate ?? 'nothing');
