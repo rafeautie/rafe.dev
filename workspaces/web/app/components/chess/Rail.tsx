@@ -307,7 +307,7 @@ export function MoveList({
 							onPreview(preview === i ? undefined : i);
 						}}
 						className={cn(
-							'grid cursor-default grid-cols-[2rem_1fr_1fr] gap-2 rounded-md px-2 py-1 ring-1 ring-transparent transition-[background-color,box-shadow] duration-200 outline-none',
+							'grid cursor-default grid-cols-[2rem_1fr_1fr] gap-2 rounded-md px-2 py-1 ring-1 ring-transparent transition-[background-color,box-shadow] duration-200 outline-none ring-inset',
 							// on at once, off gently
 							(pointed ?? preview) === i && 'bg-foreground/5 ring-foreground/10 duration-0'
 						)}
