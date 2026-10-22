@@ -4,15 +4,20 @@ import { PhotoPicture } from '~/components/PhotoPicture';
 import { absoluteUrl, getPhoto, PHOTOS, type Photo } from '~/photos';
 import { POSTS } from '~/writing';
 
-// The hero is fitted inside a mat on the right 3/5 of the padded page from sm
-// up, and the full padded width above the list below it, so these are upper
-// bounds.
-const HERO_SIZES = '(min-width: 640px) calc(60vw - 140px), calc(100vw - 88px)';
+// The hero is fitted inside a mat, so these are upper bounds. From md up the
+// mat is the right 3/5 of the page less its padding and the gap,
+// (100vw - 180px) * 3/5, less its own 40px inset either side; below md it spans
+// the page less 24px padding and a 20px inset either side.
+const HERO_SIZES = '(min-width: 768px) calc(60vw - 188px), calc(100vw - 88px)';
 
 // One row per section. The note is a quiet line about what is there now, so
 // it should come from the section's own data where there is any.
 const SECTIONS = [
-	{ href: '/photography', name: 'photography', note: `${PHOTOS.length} photos` },
+	{
+		href: '/photography',
+		name: 'photography',
+		note: `${PHOTOS.length} ${PHOTOS.length === 1 ? 'photo' : 'photos'}`
+	},
 	{ href: '/development', name: 'development', note: 'apps and experiments' },
 	{ href: '/writing', name: 'writing', note: POSTS[0] && `latest: ${POSTS[0].title}` }
 ];
@@ -23,9 +28,11 @@ const MONTH_FORMAT = new Intl.DateTimeFormat('en-US', {
 	timeZone: 'UTC'
 });
 
-// "yosemite, jan 2026", or as much of it as the photo has
+// "yosemite, jan 2026", or as much of it as the photo has. photos.json is
+// edited by hand, so a date that does not parse is left out rather than thrown.
 function photoCredit(photo: Photo) {
-	const month = photo.date && MONTH_FORMAT.format(new Date(photo.date));
+	const date = new Date(photo.date);
+	const month = photo.date && !Number.isNaN(date.getTime()) && MONTH_FORMAT.format(date);
 	return [photo.location, month].filter(Boolean).join(', ').toLowerCase();
 }
 
@@ -91,38 +98,38 @@ function HomePage() {
 	const credit = photoCredit(photo);
 
 	return (
-		<div className="grid min-h-dvh w-full grid-rows-[46dvh_1fr] gap-7 p-6 text-black sm:h-dvh sm:min-h-140 sm:grid-cols-[minmax(300px,2fr)_3fr] sm:grid-rows-1 sm:gap-15 sm:p-15">
-			<nav className="flex flex-col gap-8 sm:justify-between">
-				<p className="text-lg font-medium">rafe autie</p>
-				<ul className="flex flex-col gap-4 sm:gap-5.5">
-					{SECTIONS.map((section) => (
-						<li key={section.href}>
-							<Link
-								href={section.href}
-								className="text-[1.375rem] font-medium tracking-tight sm:text-[1.625rem]"
-							>
-								{section.name}
-							</Link>
-							{section.note && (
-								<p className="mt-0.5 text-sm font-medium text-muted-foreground">{section.note}</p>
-							)}
-						</li>
-					))}
-				</ul>
-				<p className="text-[0.8125rem] font-medium text-muted-foreground">{credit}</p>
-			</nav>
+		<div className="grid min-h-dvh w-full grid-rows-[46dvh_1fr] gap-7 p-6 text-foreground md:h-dvh md:min-h-140 md:grid-cols-[2fr_3fr] md:grid-rows-1 md:gap-15 md:p-15">
+			<div className="flex flex-col gap-8 md:justify-between">
+				<h1 className="text-lg font-medium">rafe autie</h1>
+				<nav>
+					<ul className="flex flex-col gap-4 md:gap-5.5">
+						{SECTIONS.map((section) => (
+							<li key={section.href}>
+								<Link
+									href={section.href}
+									className="text-[1.375rem] font-medium tracking-tight md:text-[1.625rem]"
+								>
+									{section.name}
+								</Link>
+								{section.note && (
+									<p className="mt-0.5 text-sm font-medium text-muted-foreground">{section.note}</p>
+								)}
+							</li>
+						))}
+					</ul>
+				</nav>
+				{credit && <p className="text-[0.8125rem] font-medium text-muted-foreground">{credit}</p>}
+			</div>
 			{/* A fixed mat, so the frame stays put when a refresh swaps a wide
 			    photo for a tall one. The photo is absolutely placed so the cell,
 			    not the photo, sets the row's size, and is fitted whole, never
 			    cropped. */}
-			<div className="relative order-first min-h-0 bg-muted sm:order-last">
-				<div className="absolute inset-5 sm:inset-10">
+			<div className="relative order-first min-h-0 bg-muted md:order-last">
+				<div className="absolute inset-5 md:inset-10">
 					<PhotoPicture
 						picture={photo.picture}
 						sizes={HERO_SIZES}
-						// Decorative: the photo rotates per request, and the credit beside
-						// the list says where it was taken.
-						alt=""
+						alt={photo.alt}
 						fetchPriority="high"
 						decoding="async"
 						className="h-full w-full object-contain"
