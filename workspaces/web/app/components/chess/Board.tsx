@@ -156,8 +156,9 @@ export function Board({
 		lightSquareNotationStyle: { color: coordinate },
 		darkSquareNotationStyle: { color: coordinate },
 		showNotation: wide,
-		alphaNotationStyle: { ...defaultAlphaNotationStyle, fontSize: '12px' },
-		numericNotationStyle: { ...defaultNumericNotationStyle, fontSize: '12px' },
+		// a little in from the square's edge
+		alphaNotationStyle: { ...defaultAlphaNotationStyle, fontSize: '12px', bottom: 4, right: 6 },
+		numericNotationStyle: { ...defaultNumericNotationStyle, fontSize: '12px', top: 5, left: 6 },
 		dropSquareStyle: { boxShadow: 'inset 0 0 0 3px var(--chess-accent)' },
 		animationDurationInMs: 200,
 		canDragPiece: ({ piece }) => canMove && piece.pieceType[0] === chess.turn(),
