@@ -167,6 +167,16 @@ function NoteCard({
 	);
 }
 
+// Its thinking as plain text: without the move it gives at the end, and with
+// moves it wrote as math in games from before ($\text{f5}$) as just the move
+function plain(text: string) {
+	return text
+		.replace(/\s*move\s*:[^\n]*$/i, '')
+		.replace(/\$\\text\{([^}]*)\}\$/g, '$1')
+		.replace(/\$([^$\n]*)\$/g, '$1')
+		.trim();
+}
+
 // One turn of the model's: what it's doing (or did), its thinking as it
 // writes it, and once it has moved, what its move did.
 export function Generation({
@@ -188,12 +198,7 @@ export function Generation({
 		<div className="flex flex-col gap-4 xl:min-h-0 xl:flex-1">
 			{status}
 			<div className="no-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-				{text && (
-					<p className="text-sm whitespace-pre-wrap text-foreground/70">
-						{/* the move it gives at the end shows in the cards below */}
-						{text.replace(/\s*move\s*:[^\n]*$/i, '').trim()}
-					</p>
-				)}
+				{text && <p className="text-sm whitespace-pre-wrap text-foreground/70">{plain(text)}</p>}
 				{missed?.map((answer, k) => (
 					<p key={k} className="text-sm text-foreground/60 italic">
 						{answer.startsWith('an error: ')

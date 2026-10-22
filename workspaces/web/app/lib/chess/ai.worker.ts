@@ -255,11 +255,12 @@ class MoveOnly extends LogitsProcessor {
 }
 
 // What the model may never write: anything that isn't plain English text,
-// like other scripts, chess symbols, emoji, tabs, markdown and HTML, which
-// small models drift into, and blank lines, so its thinking stays one
-// paragraph. Letters with accents, curly quotes and the ellipsis are fine.
+// like other scripts, chess symbols, emoji, tabs, markdown, HTML and math
+// ($\text{f5}$), which small models drift into, and blank lines, so its
+// thinking stays one paragraph. Letters with accents, curly quotes and the
+// ellipsis are fine.
 const PLAIN =
-	/^[\x20-\x25\x27-\x29\x2B-\x3B\x3D\x3F-\x7E\u00C0-\u024F\u2018\u2019\u201C\u201D\u2026\n]*$/;
+	/^[\x20-\x23\x25\x27-\x29\x2B-\x3B\x3D\x3F-\x5B\x5D\x61-\x7A\u00C0-\u024F\u2018\u2019\u201C\u201D\u2026\n]*$/;
 
 const foreignOf = new WeakMap<PreTrainedTokenizer, number[]>();
 
@@ -285,13 +286,26 @@ function written(text: string, move: string) {
 	return new RegExp(`(?<![\\w-])${bare}[+#]?(?![\\w-])`).test(text);
 }
 
+// Three moves in a row with commas between: small models start reciting the
+// legal moves back, which is slow and says nothing, so the list ends there
+const SAN = String.raw`(?:O-O(?:-O)?|[NBRQK]?[a-h]?[1-8]?x?[a-h][1-8](?:=?[NBRQ])?)[+#]?`;
+const LISTING = new RegExp(`${SAN},\\s*${SAN},\\s*${SAN}$`);
+
 class Plain extends LogitsProcessor {
-	constructor(private foreign: number[]) {
+	constructor(
+		private tokenizer: PreTrainedTokenizer,
+		private start: number,
+		private foreign: number[],
+		private commas: number[]
+	) {
 		super();
 	}
-	_call(_input_ids: bigint[][], logits: Tensor) {
+	_call(input_ids: bigint[][], logits: Tensor) {
 		const scores = logits.data as Float32Array;
 		for (const token of this.foreign) scores[token] = -Infinity;
+		const recent = input_ids[0].slice(Math.max(this.start, input_ids[0].length - 16));
+		if (recent.length && LISTING.test(this.tokenizer.decode(recent.map(Number))))
+			for (const token of this.commas) scores[token] = -Infinity;
 		return logits;
 	}
 }
@@ -395,7 +409,17 @@ async function move(id: number, input: PromptInput) {
 			// It thinks freely until it gets to "Move:", then may only write a
 			// move that doesn't simply lose: one it named, if it named any
 			run = await generate(ready, prompt_ids, undefined, budget, true, current.stopping, stream, {
-				processors: [new Plain(foreignWords(tokenizer, end))],
+				processors: [
+					new Plain(
+						tokenizer,
+						prompt_ids.dims[1],
+						foreignWords(tokenizer, end),
+						[',', ' ,'].flatMap((comma) => {
+							const tokens = ids(tokenizer, comma).data;
+							return tokens.length === 1 ? [Number(tokens[0])] : [];
+						})
+					)
+				],
 				stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)]
 			});
 			if (turn !== current) return;

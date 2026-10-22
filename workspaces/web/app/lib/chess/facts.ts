@@ -79,7 +79,19 @@ export function safeMoves(chess: Chess): string[] {
 			)
 			.map((move) => move.san)
 	);
-	const forwards = safe.filter((move) => !backwards.has(move));
+	// and a rook or the king wandering before the knights and bishops are out
+	// (castling aside) wastes a move
+	const undeveloped = chess
+		.board()
+		.flat()
+		.some(
+			(piece) =>
+				piece?.color === chess.turn() && 'nb'.includes(piece.type) && piece.square[1] === home
+		);
+	const forwards = safe.filter((move) => {
+		if (backwards.has(move)) return false;
+		return !(undeveloped && /^[RK][a-h1-8]*x?[a-h][1-8]/.test(move) && !move.includes('x'));
+	});
 	return forwards.length ? forwards : safe;
 }
 
