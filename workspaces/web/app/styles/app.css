@@ -348,6 +348,13 @@
 	initial-value: 0%;
 }
 
+/* a piece that comes onto the board fades in (components/chess/Board.tsx) */
+@keyframes chess-piece-in {
+	from {
+		opacity: 0;
+	}
+}
+
 /* the model's arrows ease out as they fade (components/chess/Board.tsx) */
 /* the arrows' own layer, not the pieces, which are SVGs too */
 .chess-board svg:has(> marker) :is(path, polygon) {

@@ -1,9 +1,11 @@
 import { Chess, type Square } from 'chess.js';
-import { useEffect, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import {
 	Chessboard,
 	defaultAlphaNotationStyle,
 	defaultNumericNotationStyle,
+	fenStringToPositionObject,
+	getPositionUpdates,
 	type ChessboardOptions
 } from 'react-chessboard';
 import type { Mention } from '~/lib/chess/mentions';
@@ -62,6 +64,52 @@ function kingMark(mated: boolean, king: 'w' | 'b', orientation: 'white' | 'black
 }
 
 export const targetDot = 'radial-gradient(circle, var(--chess-accent) 8%, transparent 10%)';
+
+const BOARD_ID = 'chess';
+const SLIDE_MS = 200;
+
+// The board slides the pieces that move from one position to the next, but
+// one that comes or goes (taken, or back again as you step through the moves)
+// would just blink. This fades them: a piece that goes fades out while the
+// others slide, and one that comes fades in once they've landed. Rules on
+// their squares, for as long as it takes.
+function usePieceFades(fen: string, orientation: 'white' | 'black') {
+	const last = useRef(fen);
+	const [fades, setFades] = useState<{ out: string; in: string }>({ out: '', in: '' });
+	useEffect(() => {
+		const before = fenStringToPositionObject(last.current, 8, 8);
+		const after = fenStringToPositionObject(fen, 8, 8);
+		last.current = fen;
+		const slides = getPositionUpdates(before, after, 8, orientation);
+		const landed = new Set(Object.values(slides));
+		const rule = (square: string, piece: string, style: string) =>
+			`#${BOARD_ID}-square-${square} [data-piece="${piece}"] { ${style} }`;
+		const out = Object.entries(before)
+			.filter(
+				([square, { pieceType }]) => after[square]?.pieceType !== pieceType && !slides[square]
+			)
+			.map(([square, { pieceType }]) =>
+				rule(square, pieceType, `opacity: 0; transition: opacity ${SLIDE_MS}ms ease-out;`)
+			);
+		const into = Object.entries(after)
+			.filter(
+				([square, { pieceType }]) => before[square]?.pieceType !== pieceType && !landed.has(square)
+			)
+			.map(([square, { pieceType }]) =>
+				rule(square, pieceType, `animation: chess-piece-in ${SLIDE_MS}ms ease-out both;`)
+			);
+		setFades({ out: out.join('\n'), in: into.join('\n') });
+		// the ones going are gone once the slide ends, and the ones coming have
+		// faded in a moment after
+		const gone = setTimeout(() => setFades((now) => ({ ...now, out: '' })), SLIDE_MS + 50);
+		const come = setTimeout(() => setFades((now) => ({ ...now, in: '' })), SLIDE_MS * 3);
+		return () => {
+			clearTimeout(gone);
+			clearTimeout(come);
+		};
+	}, [fen, orientation]);
+	return [fades.out, fades.in].filter(Boolean).join('\n');
+}
 
 export function Board({
 	chess,
@@ -163,8 +211,10 @@ export function Board({
 		setSelected(piece && piece.color === chess.turn() && square !== selected ? square : undefined);
 	}
 
+	const fades = usePieceFades(fen, orientation);
+
 	const options: ChessboardOptions = {
-		id: 'chess',
+		id: BOARD_ID,
 		position: fen,
 		pieces: PIECES,
 		boardOrientation: orientation,
@@ -182,7 +232,7 @@ export function Board({
 		alphaNotationStyle: { ...defaultAlphaNotationStyle, fontSize: '12px', bottom: 4, right: 6 },
 		numericNotationStyle: { ...defaultNumericNotationStyle, fontSize: '12px', top: 5, left: 6 },
 		dropSquareStyle: { boxShadow: 'inset 0 0 0 3px var(--chess-accent)' },
-		animationDurationInMs: 200,
+		animationDurationInMs: SLIDE_MS,
 		canDragPiece: ({ piece }) => canMove && piece.pieceType[0] === chess.turn(),
 		// show where a piece can go while it's dragged, as when it's clicked
 		onPieceDrag: ({ square }) => setSelected((square as Square | null) ?? undefined),
@@ -196,6 +246,7 @@ export function Board({
 
 	return (
 		<div className="chess-board relative text-(--chess-accent)">
+			{fades && <style>{fades}</style>}
 			<Chessboard options={options} />
 			{promoting && (
 				<PromotionPicker
