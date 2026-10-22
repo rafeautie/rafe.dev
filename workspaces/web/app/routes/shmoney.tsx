@@ -421,7 +421,7 @@ function ShmoneyPage() {
 				</header>
 
 				<section className="pt-20 sm:pt-28">
-					<Logo className="rise size-14 rounded-2xl" />
+					<Logo className="rise size-14" />
 					<h1 className="rise mt-8 text-4xl font-semibold tracking-tight text-balance [--delay:80ms] sm:text-5xl">
 						Your money, on your machine.
 					</h1>
