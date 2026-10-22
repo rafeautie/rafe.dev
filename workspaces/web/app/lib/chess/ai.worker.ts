@@ -237,7 +237,10 @@ class AtMove extends StoppingCriteria {
 	}
 	_call(input_ids: (number | bigint)[][]) {
 		return input_ids.map((ids) => {
-			const tail = this.tokenizer.decode(ids.slice(-6).map(Number));
+			// only what the model has written; the tokenizer won't read nothing
+			const written = ids.slice(Math.max(this.start, ids.length - 6));
+			if (!written.length) return false;
+			const tail = this.tokenizer.decode(written.map(Number));
 			if (!/move\**\s*:\s*\**\s*$/i.test(tail)) return false;
 			const text = this.tokenizer.decode(ids.slice(this.start).map(Number), {
 				skip_special_tokens: true
@@ -275,11 +278,10 @@ class TagMoves extends LogitsProcessor {
 		super();
 	}
 	_call(input_ids: bigint[][], logits: Tensor) {
-		const ids = input_ids[0];
-		const tail = this.loaded.tokenizer.decode(
-			ids.slice(Math.max(this.start, ids.length - 10)).map(Number)
-		);
-		const written = openTag(tail, this.rule);
+		// the last few tokens the model has written, none on its first step
+		const recent = input_ids[0].slice(Math.max(this.start, input_ids[0].length - 10));
+		if (!recent.length) return logits;
+		const written = openTag(this.loaded.tokenizer.decode(recent.map(Number)), this.rule);
 		if (written === undefined) return logits;
 		const size = logits.dims.at(-1)!;
 		const { tokenizer } = this.loaded;

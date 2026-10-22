@@ -238,7 +238,9 @@ function Thinking({
 					{text || '…'}
 					{missed?.map((answer, k) => (
 						<p key={k} className="mt-1 italic">
-							Answered “{answer}”, which isn’t a legal move.
+							{answer.startsWith('an error: ')
+								? `Its reply failed: ${answer.slice('an error: '.length)}`
+								: `Answered “${answer}”, which isn’t a legal move.`}
 						</p>
 					))}
 				</TraceCollapsibleContent>
@@ -357,7 +359,7 @@ export function MoveList({ entries }: { entries: Entry[] }) {
 							{entry.san}
 							{entry.random && (
 								<span
-									title="Random move: its answer wasn't a legal move"
+									title="Random move: it didn't give a legal move"
 									className="rounded border border-foreground/20 px-1 text-[0.65rem] text-foreground/50"
 								>
 									random
