@@ -1,6 +1,6 @@
 // The opponents on /chess: small language models from Hugging Face that run in
-// the player's browser with Transformers.js (lib/chess/ai.worker.ts). Two
-// families, Qwen and Gemma, each from lightest to heaviest. Download sizes are the text-only 4-bit files as listed
+// the player's browser with Transformers.js (lib/chess/ai.worker.ts). Google's
+// Gemma 4, in its two sizes made for phones and laptops. Download sizes are the text-only 4-bit files as listed
 // on each repo (October 2026); the vision and audio parts are never fetched.
 
 export type Tier = 'light' | 'medium' | 'heavy' | 'large';
@@ -13,8 +13,8 @@ export type Thinking = 'native' | 'prompted';
 // A model's files for one precision: each ONNX graph it loads, by name
 // without the precision suffix, and how many .onnx_data files hold its
 // weights. Every model is listed the same way and loaded from this list, not
-// from whatever each repo's own config says about its files. Image-and-text
-// models (Qwen3.5, Gemma 4) only list the parts that read and write text.
+// from whatever each repo's own config says about its files. Gemma 4 can also
+// see and hear, but these lists only name the parts that read and write text.
 export type Weights = Record<string, number>;
 
 export type ChessModel = {
@@ -39,39 +39,6 @@ const split = (decoder = 1, embed = 1): ChessModel['weights'] => ({
 });
 
 export const MODELS: ChessModel[] = [
-	{
-		id: 'qwen3.5-0.8b',
-		name: 'Qwen3.5 0.8B',
-		family: 'Qwen3.5',
-		maker: 'Alibaba',
-		repo: 'onnx-community/Qwen3.5-0.8B-ONNX',
-		tier: 'light',
-		thinking: 'native',
-		size: { q4f16: 0.58, q4: 0.65 },
-		weights: split()
-	},
-	{
-		id: 'qwen3.5-2b',
-		name: 'Qwen3.5 2B',
-		family: 'Qwen3.5',
-		maker: 'Alibaba',
-		repo: 'onnx-community/Qwen3.5-2B-ONNX',
-		tier: 'medium',
-		thinking: 'native',
-		size: { q4f16: 1.38, q4: 1.54 },
-		weights: split()
-	},
-	{
-		id: 'qwen3.5-4b',
-		name: 'Qwen3.5 4B',
-		family: 'Qwen3.5',
-		maker: 'Alibaba',
-		repo: 'onnx-community/Qwen3.5-4B-ONNX',
-		tier: 'heavy',
-		thinking: 'native',
-		size: { q4f16: 2.8, q4: 3.11 },
-		weights: split(2)
-	},
 	{
 		id: 'gemma4-e2b',
 		name: 'Gemma 4 E2B',

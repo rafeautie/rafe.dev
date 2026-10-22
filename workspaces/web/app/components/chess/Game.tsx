@@ -618,8 +618,7 @@ function StatusCard({
 		detail = live.retry
 			? `Asked again: “${live.retry}” isn’t a legal move.`
 			: live.stage === 'reading' && seconds >= 10
-				? // Qwen3.5 can take most of a minute to read the prompt
-					`Still reading after ${seconds}s. Some models are slow to start in the browser.`
+				? `Still reading after ${seconds}s. Some models are slow to start in the browser.`
 				: undefined;
 	} else if (aiTurn) {
 		title = 'Getting ready';

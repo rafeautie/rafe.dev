@@ -76,8 +76,6 @@ type Loaded = {
 	model: PreTrainedModel;
 	tokenizer: PreTrainedTokenizer;
 	context: number;
-	// reads the prompt a token at a time (readPrompt)
-	stepwise: boolean;
 	// the text of every token, worked out the first time a tag needs it
 	vocab?: string[];
 };
@@ -174,13 +172,12 @@ async function load(
 		do_sample: false
 	});
 	const config = model.config as {
-		model_type?: string;
 		max_position_embeddings?: number;
 		text_config?: { max_position_embeddings?: number };
 	};
 	const context =
 		config.max_position_embeddings ?? config.text_config?.max_position_embeddings ?? 4096;
-	return { model, tokenizer, context, stepwise: config.model_type === 'qwen3_5' };
+	return { model, tokenizer, context };
 }
 
 // What a run of the model leaves: every token so far, and the model's memory
@@ -228,37 +225,6 @@ async function generate(
 
 const ids = (tokenizer: PreTrainedTokenizer, text: string) =>
 	tokenizer(text, { add_special_tokens: false }).input_ids as Tensor;
-
-// Qwen3.5 reads a whole prompt at once in the browser at about 130 ms a token,
-// but takes a single token in about 40 ms, and its memory comes out the same.
-// So it is fed the prompt a token at a time, all but the last, and the real
-// run reads that last one and carries on. Each step's own next token is thrown
-// away. Returns undefined when the model reads prompts quickly as it is, or
-// when the turn was dropped part way.
-async function readPrompt(
-	ready: Loaded,
-	prompt_ids: Tensor,
-	stopping: InterruptableStoppingCriteria,
-	current: () => boolean
-): Promise<Run | undefined> {
-	const length = prompt_ids.dims[1];
-	if (!ready.stepwise || length < 2) return undefined;
-	let run = await generate(ready, prompt_ids.slice(null, [0, 1]), undefined, 1, false, stopping);
-	for (let k = 2; k < length; k++) {
-		if (!current()) break;
-		run = await generate(
-			ready,
-			prompt_ids.slice(null, [0, k]),
-			run.past_key_values,
-			1,
-			false,
-			stopping
-		);
-	}
-	if (current()) return run;
-	await run.past_key_values.dispose();
-	return undefined;
-}
 
 // Stops the model just as it starts to write its move ("Move:"), outside its
 // thinking, so the move itself can be held to the legal ones (MoveOnly).
@@ -365,9 +331,8 @@ async function move(id: number, input: PromptInput) {
 	const current = { id, stopping: new InterruptableStoppingCriteria() };
 	turn = current;
 	let text = '';
-	// The thinking's clock starts at its first word. Some models take a long
-	// while to read the prompt (Qwen3.5 reads it a word at a time in the
-	// browser), and that shouldn't count against the time it gets to think.
+	// The thinking's clock starts at its first word: reading the prompt can
+	// take a while, and that shouldn't count against the time it gets to think.
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const begun = performance.now();
 	let firstAt: number | undefined;
@@ -381,25 +346,13 @@ async function move(id: number, input: PromptInput) {
 	const prompt_ids = ids(tokenizer, prompt);
 	let speed: Speed | undefined;
 	try {
-		const read = await readPrompt(ready, prompt_ids, current.stopping, () => turn === current);
-		if (turn !== current) return;
-		run = read;
-		run = await generate(
-			ready,
-			prompt_ids,
-			read?.past_key_values,
-			budget,
-			true,
-			current.stopping,
-			stream,
-			{
-				stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)],
-				processors:
-					input.think && input.taggable
-						? [new TagMoves(ready, tagRule(input.taggable), prompt_ids.dims[1])]
-						: []
-			}
-		);
+		run = await generate(ready, prompt_ids, undefined, budget, true, current.stopping, stream, {
+			stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)],
+			processors:
+				input.think && input.taggable
+					? [new TagMoves(ready, tagRule(input.taggable), prompt_ids.dims[1])]
+					: []
+		});
 		if (turn !== current) return;
 
 		// The model is about to write its move, or it has stopped without
@@ -425,7 +378,7 @@ async function move(id: number, input: PromptInput) {
 				clearTimeout(timer);
 				// The model's memory is updated in place as it goes. It takes the
 				// nudge a token at a time: given several at once, image-and-text
-				// models (Qwen3.5) try to look for an image they never loaded. Each
+				// models (Gemma 4) try to look for an image they never loaded. Each
 				// step's own next token is thrown away.
 				const extra = ids(tokenizer, nudge);
 				const count = extra.dims[1];
