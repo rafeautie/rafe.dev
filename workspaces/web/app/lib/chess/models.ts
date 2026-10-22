@@ -80,6 +80,10 @@ export type DeviceInfo = {
 	maxBuffer: number;
 	// device memory in GB: Chrome and Edge only, and capped at 8
 	memory?: number;
+	// a phone or tablet, whose browser gives a tab far less memory than the
+	// device has: too little to load even the smaller model, whose weights are
+	// all held in memory at once while they load
+	phone?: boolean;
 };
 
 export const NO_GPU: DeviceInfo = { webgpu: false, f16: false, maxBuffer: 0 };
@@ -91,19 +95,32 @@ type GPUAdapterLike = {
 type NavigatorGPU = Navigator & {
 	gpu?: { requestAdapter(): Promise<GPUAdapterLike | null> };
 	deviceMemory?: number;
+	userAgentData?: { mobile: boolean };
 };
+
+// Chrome says so outright; elsewhere, the user agent. iPads ask for the
+// desktop site, so a touch screen on a Mac counts too.
+function isPhone(nav: NavigatorGPU): boolean {
+	if (nav.userAgentData) return nav.userAgentData.mobile;
+	return (
+		/Android|iPhone|iPad|iPod|Mobile/i.test(nav.userAgent) ||
+		(/Macintosh/.test(nav.userAgent) && nav.maxTouchPoints > 1)
+	);
+}
 
 export async function readDevice(): Promise<DeviceInfo> {
 	const nav = navigator as NavigatorGPU;
 	const memory = nav.deviceMemory;
+	const phone = isPhone(nav);
 	const adapter = await nav.gpu?.requestAdapter().catch(() => null);
-	if (!adapter) return { ...NO_GPU, memory };
+	if (!adapter) return { ...NO_GPU, memory, phone };
 	const { maxBufferSize, maxStorageBufferBindingSize } = adapter.limits;
 	return {
 		webgpu: true,
 		f16: adapter.features.has('shader-f16'),
 		maxBuffer: Math.min(maxBufferSize, maxStorageBufferBindingSize) / 2 ** 30,
-		memory
+		memory,
+		phone
 	};
 }
 
@@ -118,6 +135,7 @@ export const FIT_LABELS: Record<Fit, string> = {
 // An estimate, not a promise: the browser only hints at what the machine has,
 // so a model marked too large can still be picked from "show all".
 export function fitFor(model: ChessModel, device: DeviceInfo): Fit {
+	if (device.phone) return 'too-large';
 	// Without WebGPU everything runs on the processor, where only the lightest
 	// models keep a game moving.
 	if (!device.webgpu) return model.tier === 'light' ? 'slow' : 'too-large';

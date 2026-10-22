@@ -38,6 +38,7 @@ import {
 } from '~/lib/chess/models';
 import { drawBoard, findMove, splitReply, type PromptInput } from '~/lib/chess/prompt';
 import {
+	lastLoading,
 	loadGame,
 	loadSettings,
 	saveGame,
@@ -151,7 +152,7 @@ export default function Game() {
 	const [mentions, setMentions] = useState<Highlight[]>([]);
 	// the row of the move list being pointed at, shown on the board and rail
 	const [preview, setPreview] = useState<number>();
-	const { state: opponent, load, ask, stop } = useOpponent();
+	const { state: opponent, load, fail, ask, stop } = useOpponent();
 
 	const marks = useRef(new Map<string, { mention: Mention; at: number; threat?: boolean }>());
 
@@ -161,9 +162,17 @@ export default function Game() {
 		void readDevice().then((info) => {
 			setDevice(info);
 			setModel((chosen) => chosen ?? defaultModel(info));
-			if (saved && !saved.result) load(saved.opponent, info);
+			if (!saved || saved.result) return;
+			// the page went down while loading this model last time, most likely
+			// out of memory, so loading it again would only do the same
+			if (lastLoading() === saved.opponent.id)
+				fail(
+					saved.opponent,
+					'The page closed while this model was loading last time, most likely because the device ran out of memory.'
+				);
+			else load(saved.opponent, info);
 		});
-	}, [saved, load]);
+	}, [saved, load, fail]);
 
 	useEffect(() => {
 		saveSettings({ ...settings, model: model?.id });
@@ -460,43 +469,39 @@ export default function Game() {
 						Viewing move {preview + 1}
 					</p>
 				)}
-				{/* On a phone the rail is under the board, so what the model is doing,
-				    or which move you're looking back at, sits over it */}
-				{phase !== 'setup' && (
+				{/* On a phone the rail is under the board, so which move you're
+				    looking back at sits over it */}
+				{phase !== 'setup' && preview !== undefined && (
 					<div className="mb-2 xl:hidden">
-						{preview !== undefined ? (
-							<div className="flex h-9 items-center gap-1 text-sm">
-								<Button
-									variant="ghost"
-									size="icon-sm"
-									aria-label="Previous move"
-									disabled={preview === 0}
-									onClick={() => setPreview(preview - 1)}
-								>
-									<ChevronLeftIcon />
-								</Button>
-								<p className="min-w-16 text-center font-medium tabular-nums">Move {preview + 1}</p>
-								<Button
-									variant="ghost"
-									size="icon-sm"
-									aria-label="Next move"
-									disabled={preview >= rows - 1}
-									onClick={() => setPreview(preview + 1)}
-								>
-									<ChevronRightIcon />
-								</Button>
-								<Button
-									variant="outline"
-									size="sm"
-									className="ml-auto"
-									onClick={() => setPreview(undefined)}
-								>
-									Back to game
-								</Button>
-							</div>
-						) : (
-							<StatusCard {...statusOf} compact />
-						)}
+						<div className="flex h-9 items-center gap-1 text-sm">
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								aria-label="Previous move"
+								disabled={preview === 0}
+								onClick={() => setPreview(preview - 1)}
+							>
+								<ChevronLeftIcon />
+							</Button>
+							<p className="min-w-16 text-center font-medium tabular-nums">Move {preview + 1}</p>
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								aria-label="Next move"
+								disabled={preview >= rows - 1}
+								onClick={() => setPreview(preview + 1)}
+							>
+								<ChevronRightIcon />
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className="ml-auto"
+								onClick={() => setPreview(undefined)}
+							>
+								Back to game
+							</Button>
+						</div>
 					</div>
 				)}
 				<Board
@@ -625,8 +630,7 @@ function StatusCard({
 	result,
 	moves,
 	gpu,
-	onPickAnother,
-	compact = false
+	onPickAnother
 }: {
 	phase: Phase;
 	state: ReturnType<typeof useOpponent>['state'];
@@ -639,7 +643,6 @@ function StatusCard({
 	// where the weights go once downloaded
 	gpu: boolean;
 	onPickAnother: () => void;
-	compact?: boolean;
 }) {
 	let icon: ReactNode = <Spinner className="text-(--chess-accent)" />;
 	let title: string;
@@ -724,25 +727,11 @@ function StatusCard({
 		detail = 'It answers as soon as you play.';
 	}
 
-	// on a phone, one line over the board, where it's in view while you play
-	if (compact)
-		return (
-			<div role="status" className="flex h-9 min-w-0 items-center gap-2.5 text-sm">
-				<span className="flex w-4 shrink-0 justify-center">{icon}</span>
-				<p className="shrink-0 font-medium tabular-nums">{title}</p>
-				{typeof detail === 'string' && <p className="truncate text-muted-foreground">{detail}</p>}
-			</div>
-		);
-
 	return (
 		<Card
 			size="sm"
 			role="status"
-			className={cn(
-				'min-h-18 w-full shrink-0 flex-row items-center gap-3 px-3 py-3',
-				// the line over the board says it on a phone, unless there's more
-				!extra && 'max-xl:hidden'
-			)}
+			className="min-h-18 w-full shrink-0 flex-row items-center gap-3 px-3 py-3"
 		>
 			<span className="flex w-10 shrink-0 justify-center">{icon}</span>
 			<div className="flex min-w-0 flex-1 flex-col gap-1.5">
