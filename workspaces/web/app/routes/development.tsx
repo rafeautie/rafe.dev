@@ -156,8 +156,8 @@ function ProjectCard({ project }: { project: Project }) {
 						srcSet={project.preview.srcSet}
 						sizes={PREVIEW_SIZES}
 						alt={project.preview.alt}
-						width={2560}
-						height={1600}
+						width={2000}
+						height={1250}
 						loading="lazy"
 						decoding="async"
 						className={cn('w-full rounded-lg border border-black/10 shadow-sm', PREVIEW_CLASS)}
