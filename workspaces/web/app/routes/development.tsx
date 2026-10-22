@@ -1,17 +1,22 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { ArrowRightIcon, ArrowUpRightIcon } from 'lucide-react';
+import { ArrowRightIcon, ArrowUpRightIcon, ChessKnightIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
+import { cn } from '~/lib/utils';
 import { Logo } from '~/components/shmoney/Logo';
 import { Screenshot, type ScreenName } from '~/components/shmoney/Screenshot';
+import chessPreviewSet from '~/assets/chess/preview.png?w=640;960;1280;1920&format=webp&as=srcset';
+import chessPreview from '~/assets/chess/preview.png?w=1280&format=webp';
 
 const GITHUB_PROFILE_URL = 'https://github.com/rafeautie';
 
 // The screenshot takes the right 3/5 of a max-w-4xl card and bleeds 20% past
 // its column; below md it spans the card.
 const PREVIEW_SIZES = '(min-width: 768px) 660px, 120vw';
+const PREVIEW_CLASS =
+	'absolute top-0 left-6 w-[120%] max-w-none rounded-none rounded-tl-lg border-r-0 border-b-0 shadow-lg transition-transform duration-500 ease-out motion-safe:group-hover:-translate-y-1.5 md:top-8 md:left-0';
 
 export const Route = createFileRoute('/development')({
 	head: () => ({
@@ -33,7 +38,8 @@ type Project = {
 	language: string;
 	topics: string[];
 	icon: ReactNode;
-	preview: { name: ScreenName; alt: string };
+	// a shmoney screenshot by name, or any image
+	preview: { alt: string } & ({ screen: ScreenName } | { src: string; srcSet: string });
 };
 
 const projects: Project[] = [
@@ -45,8 +51,22 @@ const projects: Project[] = [
 		topics: ['local-first', 'self-hosted', 'personal-finance', 'local-llm'],
 		icon: <Logo className="size-10 rounded-xl" />,
 		preview: {
-			name: 'transactions',
+			screen: 'transactions',
 			alt: 'shmoney transactions view with net worth, search and filters, and a categorized transaction list'
+		}
+	},
+	{
+		name: 'chess',
+		description:
+			'play chess against a small AI model running entirely in your browser, and watch it think',
+		url: '/chess',
+		language: 'TypeScript',
+		topics: ['local-llm', 'webgpu', 'chess', 'transformers-js'],
+		icon: <ChessIcon />,
+		preview: {
+			src: chessPreview,
+			srcSet: chessPreviewSet,
+			alt: 'A game of chess in progress against Gemma 4 E2B, with its thinking beside the board and the move list on the right'
 		}
 	}
 ];
@@ -122,14 +142,37 @@ function ProjectCard({ project }: { project: Project }) {
 			{/* Positioned out of flow so the text sets the card's height, and wider
 			    than its column so the app reads as continuing past the card's edge. */}
 			<div className="relative h-56 sm:h-72 md:col-span-3 md:h-auto">
-				<Screenshot
-					name={project.preview.name}
-					alt={project.preview.alt}
-					sizes={PREVIEW_SIZES}
-					eager
-					className="absolute top-0 left-6 w-[120%] max-w-none rounded-none rounded-tl-lg border-r-0 border-b-0 shadow-lg transition-transform duration-500 ease-out motion-safe:group-hover:-translate-y-1.5 md:top-8 md:left-0"
-				/>
+				{'screen' in project.preview ? (
+					<Screenshot
+						name={project.preview.screen}
+						alt={project.preview.alt}
+						sizes={PREVIEW_SIZES}
+						eager
+						className={PREVIEW_CLASS}
+					/>
+				) : (
+					<img
+						src={project.preview.src}
+						srcSet={project.preview.srcSet}
+						sizes={PREVIEW_SIZES}
+						alt={project.preview.alt}
+						width={2000}
+						height={1250}
+						loading="lazy"
+						decoding="async"
+						className={cn('w-full rounded-lg border border-black/10 shadow-sm', PREVIEW_CLASS)}
+					/>
+				)}
 			</div>
 		</Link>
+	);
+}
+
+// A knight in a rounded tile, the same size as shmoney's logo beside it
+function ChessIcon() {
+	return (
+		<span className="flex size-10 items-center justify-center rounded-xl border border-black/10 bg-white text-black">
+			<ChessKnightIcon className="size-5" strokeWidth={1.75} />
+		</span>
 	);
 }

@@ -1,2 +1,8 @@
 packages:
   - workspaces/*
+# Transformers.js imports onnxruntime-common without listing it, which pnpm's
+# strict layout won't resolve in a production build. Match onnxruntime-web's.
+packageExtensions:
+  '@huggingface/transformers@4':
+    dependencies:
+      onnxruntime-common: 1.31.0-dev.20260911-2a43ec07e

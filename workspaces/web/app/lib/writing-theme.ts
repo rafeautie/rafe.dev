@@ -1,15 +1,16 @@
 import { useLayoutEffect, useSyncExternalStore } from 'react';
 
-// Dark mode for /writing only. The reader's choice is kept in localStorage;
-// until they make one, the OS setting decides. The theme is the `dark` class
-// on <html>, so the page background and the shadcn tokens follow it.
+// Dark mode for /writing and /chess. The reader's choice is kept in
+// localStorage, one choice for both; until they make one, the OS setting
+// decides. The theme is the `dark` class on <html>, so the page background and
+// the shadcn tokens follow it.
 const STORAGE_KEY = 'writing-theme';
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
 
 // Inlined into <head> so the class is set before the first paint and a dark
 // reader never sees the page flash white. Kept in step with wantsDark below.
-export const THEME_SCRIPT = `(function(){try{var p=location.pathname;if(p!=='/writing'&&p.indexOf('/writing/')!==0)return;var t=localStorage.getItem('${STORAGE_KEY}');if(t==='dark'||(t!=='light'&&matchMedia('${DARK_QUERY}').matches))document.documentElement.classList.add('dark')}catch(e){}})()`;
+export const THEME_SCRIPT = `(function(){try{var p=location.pathname;if(p!=='/writing'&&p.indexOf('/writing/')!==0&&p!=='/chess')return;var t=localStorage.getItem('${STORAGE_KEY}');if(t==='dark'||(t!=='light'&&matchMedia('${DARK_QUERY}').matches))document.documentElement.classList.add('dark')}catch(e){}})()`;
 
 function wantsDark(): boolean {
 	let saved: string | null = null;
