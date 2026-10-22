@@ -18,6 +18,8 @@ export type Highlight = Mention & { fading: boolean };
 
 export const FADE_MS = 1000;
 const fadeOut = `${FADE_MS}ms ease-out`;
+// as in app.css, where the arrows fade in
+const fadeIn = '250ms ease-out';
 const accent = 'var(--chess-accent)';
 
 // The board, drawn by react-chessboard from chess.js's position. Its colors
@@ -84,17 +86,18 @@ export function Board({
 	if (selected && canMove) style(selected, { backgroundColor: squareTint });
 	for (const square of targets) style(square, { backgroundImage: targetDot });
 	for (const mention of mentions) {
-		// the transition is only set while fading, so a new mark appears at once
+		// a new mark eases in quickly, and a fading one eases out slowly
+		const ease = mention.fading ? fadeOut : fadeIn;
 		if (mention.kind === 'square') {
 			style(mention.square, {
 				boxShadow: `inset 0 0 0 3px ${mention.fading ? 'transparent' : accent}`,
-				transition: mention.fading ? `box-shadow ${fadeOut}` : undefined
+				transition: `box-shadow ${ease}`
 			});
 		} else if (mention.kind === 'piece') {
 			// the piece's outline takes the accent (pieces.tsx)
 			style(mention.square, {
 				['--chess-mark' as string]: mention.fading ? '0%' : '100%',
-				transition: mention.fading ? `--chess-mark ${fadeOut}` : undefined
+				transition: `--chess-mark ${ease}`
 			});
 		}
 	}

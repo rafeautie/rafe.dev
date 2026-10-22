@@ -349,10 +349,17 @@
 }
 
 /* the model's arrows ease out as they fade (components/chess/Board.tsx) */
-.chess-board svg :is(path, polygon) {
+/* the arrows' own layer, not the pieces, which are SVGs too */
+.chess-board svg:has(> marker) :is(path, polygon) {
 	transition:
 		stroke 1s ease-out,
-		fill 1s ease-out;
+		fill 1s ease-out,
+		opacity 250ms ease-out;
+
+	/* and a new one fades in, like the other marks (Board.tsx) */
+	@starting-style {
+		opacity: 0;
+	}
 }
 
 :root {
