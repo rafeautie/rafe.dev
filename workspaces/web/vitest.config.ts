@@ -1,13 +1,15 @@
 import { cloudflareTest } from '@cloudflare/vitest-pool-workers';
 import { defineConfig } from 'vitest/config';
 import path from 'path';
+import { markdown } from './plugins/markdown';
 
 export default defineConfig({
 	test: {
 		projects: [
-			// App code runs in workerd, as it does in production.
+			// App code runs in workerd, as it does in production. Markdown is
+			// compiled as in the build, for the story's chapters.
 			{
-				plugins: [cloudflareTest({ wrangler: { configPath: './wrangler.jsonc' } })],
+				plugins: [cloudflareTest({ wrangler: { configPath: './wrangler.jsonc' } }), markdown()],
 				resolve: {
 					alias: {
 						'~/': path.resolve('./app') + '/'

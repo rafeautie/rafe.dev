@@ -3,7 +3,8 @@
 	"name": "rafe-dev",
 	"compatibility_date": "2026-01-31",
 	"compatibility_flags": ["nodejs_compat"],
-	"main": "@tanstack/react-start/server-entry",
+	// app/server.ts adds the story's daily job to TanStack Start's handler.
+	"main": "./app/server.ts",
 	// Served at rafe.dev only.
 	"workers_dev": false,
 	"preview_urls": false,
@@ -21,6 +22,35 @@
 			"persist": true,
 			"head_sampling_rate": 1
 		}
+	},
+	// The story's nudges and the daily job's status. Left without an id, so the
+	// first deploy creates it; app/story/server/db.ts creates the tables.
+	"d1_databases": [{ "binding": "STORY_DB" }],
+	// A fast shield in front of the nudge box: 3 tries a minute per visitor.
+	// Cloudflare counts over 10 or 60 seconds only, so the one nudge per chapter
+	// rule lives in D1.
+	"ratelimits": [
+		{ "name": "NUDGE_LIMITER", "namespace_id": "1001", "simple": { "limit": 3, "period": 60 } }
+	],
+	// Noon Pacific is 19:00 UTC in summer and 20:00 UTC in winter. The job wakes
+	// at both and skips the one that is not noon. "crons": [] pauses the story.
+	"triggers": { "crons": ["0 19 * * *", "0 20 * * *"] },
+	"vars": {
+		// Turnstile's always-pass test key until the real widget exists.
+		"TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+		"STORY_REPO": "rafeautie/rafe.dev",
+		"STORY_BRANCH": "main"
+	},
+	// Set with `wrangler secret put` or in the dashboard. A deploy stops if one
+	// is missing, rather than the story breaking at noon.
+	"secrets": {
+		"required": [
+			"ANTHROPIC_API_KEY",
+			"GITHUB_TOKEN",
+			"TURNSTILE_SECRET_KEY",
+			"NUDGE_HASH_KEY",
+			"STORY_ADMIN_TOKEN"
+		]
 	},
 	// The TheRaceGame Durable Object was removed with the games feature. v1
 	// created the class (still live in production); v2 deletes the class and

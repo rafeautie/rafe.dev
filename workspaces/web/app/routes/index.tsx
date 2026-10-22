@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { Link } from '~/components/Link';
 import { PhotoPicture } from '~/components/PhotoPicture';
 import { absoluteUrl, getPhoto, PHOTOS, type Photo } from '~/photos';
+import { CHAPTERS } from '~/story';
 import { POSTS } from '~/writing';
 
 // The hero is fitted inside a mat, so these are upper bounds. From md up the
@@ -19,7 +20,12 @@ const SECTIONS = [
 		note: `${PHOTOS.length} ${PHOTOS.length === 1 ? 'photo' : 'photos'}`
 	},
 	{ href: '/development', name: 'development', note: 'apps and experiments' },
-	{ href: '/writing', name: 'writing', note: POSTS[0] && `latest: ${POSTS[0].title}` }
+	{ href: '/writing', name: 'writing', note: POSTS[0] && `latest: ${POSTS[0].title}` },
+	{
+		href: '/story',
+		name: 'story',
+		note: `chapter ${CHAPTERS.length}: ${CHAPTERS.at(-1)!.title.toLowerCase()}`
+	}
 ];
 
 const MONTH_FORMAT = new Intl.DateTimeFormat('en-US', {
