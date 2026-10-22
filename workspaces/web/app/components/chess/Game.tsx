@@ -17,7 +17,6 @@ import { Button } from '~/components/ui/button';
 import { Card } from '~/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Spinner } from '~/components/ui/spinner';
-import { demoGame } from '~/lib/chess/demos';
 import { findFacts, safeMoves } from '~/lib/chess/facts';
 import { findConsidered, mentionKey, type Mention } from '~/lib/chess/mentions';
 import { FADE_MS, type Highlight, type Promotion } from '~/components/chess/Board';
@@ -25,7 +24,6 @@ import {
 	defaultModel,
 	findCached,
 	findModel,
-	MODELS,
 	readDevice,
 	type ChessModel,
 	type DeviceInfo
@@ -112,28 +110,8 @@ function outcome(chess: Chess, model: ChessModel): string | undefined {
 	return undefined;
 }
 
-// The game left from last time, if its model is still on the list. Or while
-// developing, a finished game for seeing how it ends (?demo=win, loss or
-// draw), which isn't saved over it.
-function restoreGame(
-	chess: Chess
-): (SavedGame & { opponent: ChessModel; demo?: boolean }) | undefined {
-	const demo = import.meta.env.DEV
-		? demoGame(new URLSearchParams(location.search).get('demo'))
-		: undefined;
-	if (demo) {
-		const opponent = findModel(loadSettings().model) ?? MODELS[0];
-		chess.loadPgn(demo.chess.pgn());
-		const { entries } = demo;
-		return {
-			pgn: chess.pgn(),
-			model: opponent.id,
-			entries,
-			opponent,
-			demo: true,
-			result: outcome(chess, opponent)
-		};
-	}
+// The game left from last time, if its model is still on the list
+function restoreGame(chess: Chess): (SavedGame & { opponent: ChessModel }) | undefined {
 	const game = loadGame();
 	const opponent = findModel(game?.model);
 	if (!game || !opponent) return undefined;
@@ -154,7 +132,6 @@ export default function Game() {
 	const [entries, setEntries] = useState<Entry[]>(saved?.entries ?? []);
 	const [phase, setPhase] = useState<Phase>(saved ? (saved.result ? 'over' : 'playing') : 'setup');
 	const [result, setResult] = useState(saved?.result);
-	const [demo, setDemo] = useState(saved?.demo ?? false);
 	const [settings, setSettings] = useState(loadSettings);
 	const [model, setModel] = useState(() => saved?.opponent ?? findModel(settings.model));
 	const [device, setDevice] = useState<DeviceInfo>();
@@ -185,11 +162,11 @@ export default function Game() {
 	}, [settings, model]);
 
 	useEffect(() => {
-		if (!model || demo) return;
+		if (!model) return;
 		saveGame(
 			phase === 'setup' ? undefined : { pgn: chess.pgn(), model: model.id, entries, result }
 		);
-	}, [phase, chess, model, entries, result, demo]);
+	}, [phase, chess, model, entries, result]);
 
 	function play(
 		move: string | { from: Square; to: Square; promotion: Promotion },
@@ -337,7 +314,6 @@ export default function Game() {
 		setLive(undefined);
 		setMentions([]);
 		setPreview(undefined);
-		setDemo(false);
 		setPhase(next);
 	}
 
