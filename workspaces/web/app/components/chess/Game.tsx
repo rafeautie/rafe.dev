@@ -1,5 +1,13 @@
 import { Chess, type Color, type Move, type Square } from 'chess.js';
-import { FlagIcon, HandshakeIcon, InfoIcon, TriangleAlertIcon, TrophyIcon } from 'lucide-react';
+import {
+	ChevronLeftIcon,
+	ChevronRightIcon,
+	FlagIcon,
+	HandshakeIcon,
+	InfoIcon,
+	TriangleAlertIcon,
+	TrophyIcon
+} from 'lucide-react';
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Board } from '~/components/chess/Board';
@@ -391,19 +399,19 @@ export default function Game() {
 			: lastAi >= 0
 				? { entry: entries[lastAi], move: history[lastAi] }
 				: undefined;
-	const status = (
-		<StatusCard
-			phase={phase}
-			state={opponent}
-			aiTurn={aiTurn}
-			live={live}
-			now={now}
-			result={result}
-			moves={Math.ceil(history.length / 2)}
-			gpu={device?.webgpu ?? false}
-			onPickAnother={() => reset('setup')}
-		/>
-	);
+	const statusOf = {
+		phase,
+		state: opponent,
+		aiTurn,
+		live,
+		now,
+		result,
+		moves: Math.ceil(history.length / 2),
+		gpu: device?.webgpu ?? false,
+		onPickAnother: () => reset('setup')
+	};
+	const status = <StatusCard {...statusOf} />;
+	const rows = Math.ceil(entries.length / 2);
 
 	return (
 		<div className="chess grid gap-8 xl:grid-cols-[minmax(20rem,1fr)_auto_minmax(20rem,1fr)] xl:items-start">
@@ -437,7 +445,56 @@ export default function Game() {
 					</>
 				)}
 			</section>
-			<div className="order-1 mx-auto w-full max-w-[min(40rem,calc(100dvh-7.75rem))] xl:order-2 xl:w-(--chess-board) xl:max-w-none">
+			<div
+				id="chess-play"
+				className="relative order-1 mx-auto w-full max-w-[min(40rem,calc(100dvh-7.75rem))] scroll-mt-4 xl:order-2 xl:w-(--chess-board) xl:max-w-none"
+			>
+				{/* Beside the rails, a tag at the top of the board says when it's
+				    showing an earlier move rather than the game */}
+				{preview !== undefined && (
+					<p className="pointer-events-none absolute top-2 left-1/2 z-10 -translate-x-1/2 animate-in rounded-full bg-background/90 px-3 py-1 text-xs font-medium shadow-sm ring-1 ring-foreground/10 fade-in max-xl:hidden">
+						Viewing move {preview + 1}
+					</p>
+				)}
+				{/* On a phone the rail is under the board, so what the model is doing,
+				    or which move you're looking back at, sits over it */}
+				{phase !== 'setup' && (
+					<div className="mb-2 xl:hidden">
+						{preview !== undefined ? (
+							<div className="flex h-9 items-center gap-1 text-sm">
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									aria-label="Previous move"
+									disabled={preview === 0}
+									onClick={() => setPreview(preview - 1)}
+								>
+									<ChevronLeftIcon />
+								</Button>
+								<p className="min-w-16 text-center font-medium tabular-nums">Move {preview + 1}</p>
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									aria-label="Next move"
+									disabled={preview >= rows - 1}
+									onClick={() => setPreview(preview + 1)}
+								>
+									<ChevronRightIcon />
+								</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									className="ml-auto"
+									onClick={() => setPreview(undefined)}
+								>
+									Back to game
+								</Button>
+							</div>
+						) : (
+							<StatusCard {...statusOf} compact />
+						)}
+					</div>
+				)}
 				<Board
 					chess={chess}
 					orientation="white"
@@ -534,7 +591,16 @@ export default function Game() {
 									)
 								}
 							>
-								<MoveList entries={entries} preview={preview} onPreview={setPreview} />
+								<MoveList
+									entries={entries}
+									preview={preview}
+									onPreview={setPreview}
+									onTap={() =>
+										document
+											.getElementById('chess-play')
+											?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+									}
+								/>
 							</Section>
 						</>
 					)
@@ -555,7 +621,8 @@ function StatusCard({
 	result,
 	moves,
 	gpu,
-	onPickAnother
+	onPickAnother,
+	compact = false
 }: {
 	phase: Phase;
 	state: ReturnType<typeof useOpponent>['state'];
@@ -568,6 +635,7 @@ function StatusCard({
 	// where the weights go once downloaded
 	gpu: boolean;
 	onPickAnother: () => void;
+	compact?: boolean;
 }) {
 	let icon: ReactNode = <Spinner className="text-(--chess-accent)" />;
 	let title: string;
@@ -652,11 +720,25 @@ function StatusCard({
 		detail = 'It answers as soon as you play.';
 	}
 
+	// on a phone, one line over the board, where it's in view while you play
+	if (compact)
+		return (
+			<div role="status" className="flex h-9 min-w-0 items-center gap-2.5 text-sm">
+				<span className="flex w-4 shrink-0 justify-center">{icon}</span>
+				<p className="shrink-0 font-medium tabular-nums">{title}</p>
+				{typeof detail === 'string' && <p className="truncate text-muted-foreground">{detail}</p>}
+			</div>
+		);
+
 	return (
 		<Card
 			size="sm"
 			role="status"
-			className="min-h-18 w-full shrink-0 flex-row items-center gap-3 px-3 py-3"
+			className={cn(
+				'min-h-18 w-full shrink-0 flex-row items-center gap-3 px-3 py-3',
+				// the line over the board says it on a phone, unless there's more
+				!extra && 'max-xl:hidden'
+			)}
 		>
 			<span className="flex w-10 shrink-0 justify-center">{icon}</span>
 			<div className="flex min-w-0 flex-1 flex-col gap-1.5">

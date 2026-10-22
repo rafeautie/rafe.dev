@@ -217,10 +217,28 @@ export function Generation({
 	move?: Move;
 	random?: boolean;
 }) {
+	// As it writes, the newest words stay in view, unless you've scrolled up
+	// to read back; scrolling down to the end again picks it back up
+	const scroller = useRef<HTMLDivElement>(null);
+	const pinned = useRef(true);
+	useEffect(() => {
+		const el = scroller.current;
+		if (el && pinned.current) el.scrollTop = el.scrollHeight;
+	}, [text, move]);
+
 	return (
 		<div className="flex flex-col gap-4 xl:min-h-0 xl:flex-1">
 			{status}
-			<div className="-mx-1 no-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 py-px">
+			{/* on a phone the page doesn't grow with it: it scrolls in its own
+			    few lines, under the board */}
+			<div
+				ref={scroller}
+				onScroll={(event) => {
+					const el = event.currentTarget;
+					pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+				}}
+				className="-mx-1 no-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 py-px max-xl:max-h-48"
+			>
 				{text && <p className="text-sm whitespace-pre-wrap text-foreground/70">{plain(text)}</p>}
 				{missed?.map((answer, k) => (
 					<p key={k} className="text-sm text-foreground/60 italic">
@@ -253,11 +271,14 @@ const PREVIEW_DELAY_MS = 300;
 export function MoveList({
 	entries,
 	preview,
-	onPreview
+	onPreview,
+	onTap
 }: {
 	entries: Entry[];
 	preview?: number;
 	onPreview: (row?: number) => void;
+	// a row tapped on a touch screen, where there's no pointing first
+	onTap?: () => void;
 }) {
 	const end = useRef<HTMLLIElement>(null);
 	useEffect(() => {
@@ -287,7 +308,9 @@ export function MoveList({
 		// as the pointer leaves the rows themselves
 		<div className="-mx-2 max-h-72 overflow-y-auto xl:max-h-none xl:min-h-0 xl:flex-1">
 			<ol
-				onMouseLeave={() => point(undefined)}
+				// pointing only: a tap is a click, and the page scrolling after it
+				// would count as leaving
+				onPointerLeave={(event) => event.pointerType !== 'touch' && point(undefined)}
 				className="flex flex-col gap-0.5 text-sm tabular-nums"
 			>
 				{rows.map((row, i) => (
@@ -296,18 +319,19 @@ export function MoveList({
 						ref={i === rows.length - 1 ? end : undefined}
 						tabIndex={0}
 						aria-current={preview === i ? 'true' : undefined}
-						onMouseEnter={() => point(i)}
+						onPointerEnter={(event) => event.pointerType !== 'touch' && point(i)}
 						onFocus={() => {
 							setPointed(i);
 							onPreview(i);
 						}}
 						onBlur={() => point(undefined)}
-						onClick={() => {
+						onClick={(event) => {
 							clearTimeout(timer.current);
-							onPreview(preview === i ? undefined : i);
+							onPreview(i);
+							if ((event.nativeEvent as PointerEvent).pointerType === 'touch') onTap?.();
 						}}
 						className={cn(
-							'grid cursor-default grid-cols-[2rem_1fr_1fr] gap-2 rounded-md px-2 py-1 ring-1 ring-transparent transition-[background-color,box-shadow] duration-200 outline-none ring-inset',
+							'grid cursor-default grid-cols-[2rem_1fr_1fr] gap-2 rounded-md px-2 py-1 ring-1 ring-transparent transition-[background-color,box-shadow] duration-200 outline-none ring-inset max-xl:py-2',
 							// on at once, off gently
 							(pointed ?? preview) === i && 'bg-foreground/5 ring-foreground/10 duration-0'
 						)}
