@@ -49,7 +49,7 @@ const projects: Project[] = [
 		url: '/shmoney',
 		language: 'TypeScript',
 		topics: ['local-first', 'self-hosted', 'personal-finance', 'local-llm'],
-		icon: <Logo className="size-10 rounded-xl" />,
+		icon: <Logo className="size-10 rounded-xl" fade={false} />,
 		preview: {
 			screen: 'transactions',
 			alt: 'shmoney transactions view with net worth, search and filters, and a categorized transaction list'
