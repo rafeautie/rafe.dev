@@ -105,11 +105,23 @@ function HomePage() {
 					<ul className="flex flex-col gap-4 md:gap-5.5">
 						{SECTIONS.map((section) => (
 							<li key={section.href}>
+								{/* A browser draws a blur only in whole device pixels, so animating
+								    blur(0) to blur(1px) jumps in one step. Fading a blurred copy in
+								    over the sharp text animates only opacity, which is smooth. */}
 								<Link
+									plain
 									href={section.href}
-									className="text-[1.375rem] font-medium tracking-tight md:text-[1.625rem]"
+									className="group relative inline-block text-[1.375rem] font-medium tracking-tight transition-[scale] duration-400 ease-out hover:scale-101 md:text-[1.625rem]"
 								>
-									{section.name}
+									<span className="transition-opacity duration-400 ease-out group-hover:opacity-0">
+										{section.name}
+									</span>
+									<span
+										aria-hidden
+										className="absolute inset-0 opacity-0 blur-[1px] transition-opacity duration-400 ease-out select-none group-hover:opacity-100"
+									>
+										{section.name}
+									</span>
 								</Link>
 								{section.note && (
 									<p className="mt-0.5 text-sm font-medium text-muted-foreground">{section.note}</p>
