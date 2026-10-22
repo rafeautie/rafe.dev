@@ -440,7 +440,11 @@ export default function Game() {
 								random={turnShown.entry.random}
 							/>
 						) : (
-							<Generation status={status} text={shown ? undefined : live?.text} />
+							<Generation
+								status={status}
+								text={shown ? undefined : live?.text}
+								streaming={!shown}
+							/>
 						)}
 					</>
 				)}

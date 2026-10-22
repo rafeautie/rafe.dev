@@ -3,6 +3,7 @@ import { DicesIcon } from 'lucide-react';
 import type { Move } from 'chess.js';
 import { PIECES } from '~/components/chess/pieces';
 import { Card } from '~/components/ui/card';
+import { ScrollArea } from '~/components/ui/scroll-area';
 import { describeMove } from '~/lib/chess/describe';
 import type { Entry, Speed } from '~/lib/chess/storage';
 import { cn } from '~/lib/utils';
@@ -208,9 +209,12 @@ export function Generation({
 	missed,
 	speed,
 	move,
-	random
+	random,
+	streaming = false
 }: {
 	status: ReactNode;
+	// whether it's still writing this, rather than a turn already done
+	streaming?: boolean;
 	text?: string;
 	missed?: string[];
 	speed?: Speed;
@@ -218,47 +222,62 @@ export function Generation({
 	random?: boolean;
 }) {
 	// As it writes, the newest words stay in view, unless you've scrolled up
-	// to read back; scrolling down to the end again picks it back up
-	const scroller = useRef<HTMLDivElement>(null);
+	// to read back; scrolling down to the end again picks it back up. A turn
+	// already done reads from the top.
+	const area = useRef<HTMLDivElement>(null);
 	const pinned = useRef(true);
+	const viewport = () =>
+		area.current?.querySelector<HTMLElement>('[data-slot=scroll-area-viewport]') ?? null;
 	useEffect(() => {
-		const el = scroller.current;
-		if (el && pinned.current) el.scrollTop = el.scrollHeight;
-	}, [text, move]);
+		const el = viewport();
+		if (!el) return;
+		const follow = () => {
+			pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+		};
+		el.addEventListener('scroll', follow);
+		return () => el.removeEventListener('scroll', follow);
+	}, []);
+	useEffect(() => {
+		const el = viewport();
+		if (!el) return;
+		if (!streaming) el.scrollTop = 0;
+		else if (pinned.current) el.scrollTop = el.scrollHeight;
+	}, [text, move, streaming]);
 
 	return (
 		<div className="flex flex-col gap-4 xl:min-h-0 xl:flex-1">
 			{status}
-			{/* on a phone the page doesn't grow with it: it scrolls in its own
-			    few lines, under the board */}
-			<div
-				ref={scroller}
-				onScroll={(event) => {
-					const el = event.currentTarget;
-					pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-				}}
-				className="-mx-1 no-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 py-px max-xl:max-h-48"
+			{/* On a phone the page doesn't grow with it: it scrolls in its own few
+			    lines, under the board. Either way the ends fade where there's
+			    more, and there's no scrollbar beside it. */}
+			<ScrollArea
+				ref={area}
+				fade
+				className="-mx-1 flex min-h-0 flex-col xl:flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden"
+				viewportClassName="h-auto min-h-0 flex-1 max-xl:max-h-48"
 			>
-				{text && <p className="text-sm whitespace-pre-wrap text-foreground/70">{plain(text)}</p>}
-				{missed?.map((answer, k) => (
-					<p key={k} className="text-sm text-foreground/60 italic">
-						{answer.startsWith('an error: ')
-							? `Its reply failed: ${answer.slice('an error: '.length)}`
-							: `Answered “${answer}”, which isn’t a legal move.`}
-					</p>
-				))}
-				{move && (
-					<div className="flex flex-col gap-2">
-						<MoveCards move={move} random={random} />
-						{speed && (
-							<p className="text-xs text-foreground/40 tabular-nums">
-								Read {speed.prompt} tokens in {speed.reading.toFixed(1)}s · wrote {speed.written} in{' '}
-								{speed.writing.toFixed(1)}s
-							</p>
-						)}
-					</div>
-				)}
-			</div>
+				<div className="flex flex-col gap-4 px-1 py-px">
+					{text && <p className="text-sm whitespace-pre-wrap text-foreground/70">{plain(text)}</p>}
+					{missed?.map((answer, k) => (
+						<p key={k} className="text-sm text-foreground/60 italic">
+							{answer.startsWith('an error: ')
+								? `Its reply failed: ${answer.slice('an error: '.length)}`
+								: `Answered “${answer}”, which isn’t a legal move.`}
+						</p>
+					))}
+					{move && (
+						<div className="flex flex-col gap-2">
+							<MoveCards move={move} random={random} />
+							{speed && (
+								<p className="text-xs text-foreground/40 tabular-nums">
+									Read {speed.prompt} tokens in {speed.reading.toFixed(1)}s · wrote {speed.written}{' '}
+									in {speed.writing.toFixed(1)}s
+								</p>
+							)}
+						</div>
+					)}
+				</div>
+			</ScrollArea>
 		</div>
 	);
 }
@@ -304,9 +323,14 @@ export function MoveList({
 	for (let i = 0; i < entries.length; i += 2) rows.push(entries.slice(i, i + 2));
 
 	return (
-		// the list scrolls in the space it's given, but the preview ends as soon
-		// as the pointer leaves the rows themselves
-		<div className="-mx-2 max-h-72 overflow-y-auto xl:max-h-none xl:min-h-0 xl:flex-1">
+		// the list scrolls in the space it's given, its ends fading like the
+		// thinking's, but the preview ends as soon as the pointer leaves the rows
+		// themselves
+		<ScrollArea
+			fade
+			className="-mx-2 flex min-h-0 flex-col xl:flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden"
+			viewportClassName="h-auto min-h-0 flex-1 max-xl:max-h-72"
+		>
 			<ol
 				// pointing only: a tap is a click, and the page scrolling after it
 				// would count as leaving
@@ -353,6 +377,6 @@ export function MoveList({
 					</li>
 				))}
 			</ol>
-		</div>
+		</ScrollArea>
 	);
 }
