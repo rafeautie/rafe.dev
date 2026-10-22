@@ -12,7 +12,7 @@ const HERO_SIZES = '(min-width: 640px) calc(60vw - 60px), calc(100vw - 48px)';
 // it should come from the section's own data where there is any.
 const SECTIONS = [
 	{ href: '/photography', name: 'photography', note: `${PHOTOS.length} photos` },
-	{ href: '/development', name: 'development', note: 'shmoney, a private-first finance app' },
+	{ href: '/development', name: 'development', note: 'apps and experiments' },
 	{ href: '/writing', name: 'writing', note: POSTS[0] && `latest: ${POSTS[0].title}` }
 ];
 
@@ -91,7 +91,7 @@ function HomePage() {
 
 	return (
 		<div className="grid min-h-dvh w-full grid-rows-[46dvh_1fr] gap-7 p-6 text-black sm:h-dvh sm:min-h-140 sm:grid-cols-[minmax(300px,2fr)_3fr] sm:grid-rows-1 sm:gap-15 sm:p-15">
-			<nav className="rise flex flex-col gap-8 sm:justify-between">
+			<nav className="flex flex-col gap-8 sm:justify-between">
 				<p className="text-lg font-medium">rafe autie</p>
 				<ul className="flex flex-col gap-4 sm:gap-5.5">
 					{SECTIONS.map((section) => (
