@@ -4,9 +4,10 @@ import { PhotoPicture } from '~/components/PhotoPicture';
 import { absoluteUrl, getPhoto, PHOTOS, type Photo } from '~/photos';
 import { POSTS } from '~/writing';
 
-// The hero is fitted inside the right 3/5 of the padded page from sm up, and
-// the full padded width above the list below it, so these are upper bounds.
-const HERO_SIZES = '(min-width: 640px) calc(60vw - 60px), calc(100vw - 48px)';
+// The hero is fitted inside a mat on the right 3/5 of the padded page from sm
+// up, and the full padded width above the list below it, so these are upper
+// bounds.
+const HERO_SIZES = '(min-width: 640px) calc(60vw - 140px), calc(100vw - 88px)';
 
 // One row per section. The note is a quiet line about what is there now, so
 // it should come from the section's own data where there is any.
@@ -110,19 +111,23 @@ function HomePage() {
 				</ul>
 				<p className="text-[0.8125rem] font-medium text-muted-foreground">{credit}</p>
 			</nav>
-			{/* Absolutely placed so the cell, not the photo, sets the row's size;
-			    the photo is then fitted whole inside it, never cropped. */}
-			<div className="relative order-first min-h-0 sm:order-last">
-				<PhotoPicture
-					picture={photo.picture}
-					sizes={HERO_SIZES}
-					// Decorative: the photo rotates per request, and the credit beside
-					// the list says where it was taken.
-					alt=""
-					fetchPriority="high"
-					decoding="async"
-					className="absolute inset-0 h-full w-full object-contain"
-				/>
+			{/* A fixed mat, so the frame stays put when a refresh swaps a wide
+			    photo for a tall one. The photo is absolutely placed so the cell,
+			    not the photo, sets the row's size, and is fitted whole, never
+			    cropped. */}
+			<div className="relative order-first min-h-0 bg-muted sm:order-last">
+				<div className="absolute inset-5 sm:inset-10">
+					<PhotoPicture
+						picture={photo.picture}
+						sizes={HERO_SIZES}
+						// Decorative: the photo rotates per request, and the credit beside
+						// the list says where it was taken.
+						alt=""
+						fetchPriority="high"
+						decoding="async"
+						className="h-full w-full object-contain"
+					/>
+				</div>
 			</div>
 		</div>
 	);
