@@ -34,7 +34,7 @@ function MoneyBagIcon({ className }: { className?: string }) {
 	);
 }
 
-export function Logo({ className }: { className?: string }) {
+export function Logo({ className, fade = true }: { className?: string; fade?: boolean }) {
 	return (
 		<div
 			className={cn(
@@ -44,7 +44,7 @@ export function Logo({ className }: { className?: string }) {
 		>
 			<ClientOnly>
 				<Suspense>
-					<LogoGradient />
+					<LogoGradient fade={fade} />
 				</Suspense>
 			</ClientOnly>
 			<MoneyBagIcon className="relative h-1/2 w-1/2" />

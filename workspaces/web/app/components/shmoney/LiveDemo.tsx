@@ -265,9 +265,9 @@ export function LiveDemo({ screen, alt }: { screen: ScreenName; alt: string }) {
 							className="absolute -right-2 -bottom-2 grid size-8 cursor-pointer place-items-center rounded-full border border-black/10 bg-white/85 text-black/60 shadow-md backdrop-blur-sm transition-colors hover:bg-white hover:text-black"
 						>
 							{expanded ? (
-								<Minimize2Icon className="size-4" />
+								<Minimize2Icon className="size-4 rotate-90" />
 							) : (
-								<Maximize2Icon className="size-4" />
+								<Maximize2Icon className="size-4 rotate-90" />
 							)}
 						</button>
 					)}

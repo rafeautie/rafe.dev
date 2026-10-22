@@ -4,8 +4,9 @@ import { cn } from '~/lib/utils';
 
 // Mirrors the Logo gradient in the shmoney app (src/renderer/src/components/logo.tsx).
 // Keep the ShaderGradient props in sync with that file.
-export default function LogoGradient() {
-	const [ready, setReady] = useState(false);
+// fade eases the gradient in on mount; without it the gradient shows at once.
+export default function LogoGradient({ fade = true }: { fade?: boolean }) {
+	const [ready, setReady] = useState(!fade);
 	useEffect(() => {
 		const frame = requestAnimationFrame(() => setReady(true));
 		return () => cancelAnimationFrame(frame);
@@ -13,7 +14,8 @@ export default function LogoGradient() {
 	return (
 		<div
 			className={cn(
-				'absolute inset-0 transition-[opacity,filter] duration-[1200ms] ease-in-out',
+				'absolute inset-0',
+				fade && 'transition-[opacity,filter] duration-[1200ms] ease-in-out',
 				ready ? 'opacity-100 blur-none' : 'opacity-0 blur-sm'
 			)}
 		>
