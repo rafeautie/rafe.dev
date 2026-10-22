@@ -3,9 +3,8 @@ import { Chess, type Color, type Move, type PieceSymbol, type Square } from 'che
 // Facts about the position that a small model can't work out for itself, for
 // the prompt (prompt.ts): what each notable move takes and whether it checks,
 // which of the model's pieces are under attack, and any mate it faces. And
-// two lists for the worker: the moves that don't simply lose (safeMoves),
-// which are all the model may consider, and the opponent's real threats
-// (findDangers), which are all it may name as one. A small model reads a
+// for the worker, the moves that don't simply lose (safeMoves), which are all
+// the model may finally play. A small model reads a
 // warning like "Qg5 can be taken" as a suggestion, so losing moves are kept
 // from it rather than pointed out. Checked one move deep, by counting
 // attackers and defenders, so pins and longer exchanges slip by.
@@ -106,21 +105,6 @@ function losing(chess: Chess): Set<string> {
 	}
 	lastLosing = { fen, losers };
 	return losers;
-}
-
-// The opponent's moves worth naming as a threat, the worst first: mates, then
-// captures that win material, then checks
-export function findDangers(chess: Chess): string[] {
-	const side = chess.turn();
-	const theirs = opponentMoves(chess);
-	const mates = theirs.filter((move) => move.san.endsWith('#'));
-	const wins = theirs.filter((move) => {
-		if (!move.captured) return false;
-		const defended = chess.attackers(move.to, side).length > 0;
-		return !defended || VALUE[move.captured] > VALUE[move.piece];
-	});
-	const checks = theirs.filter((move) => move.san.endsWith('+'));
-	return [...new Set([...mates, ...wins, ...checks].map((move) => move.san))];
 }
 
 // What the other side could play if it were its turn

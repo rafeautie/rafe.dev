@@ -201,7 +201,12 @@ export function Generation({
 		<div className="flex flex-col gap-4 xl:min-h-0 xl:flex-1">
 			{status}
 			<div className="no-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-				{text && <p className="text-sm whitespace-pre-wrap text-foreground/70">{text.trim()}</p>}
+				{text && (
+					<p className="text-sm whitespace-pre-wrap text-foreground/70">
+						{/* the move it gives at the end shows in the cards below */}
+						{text.replace(/\s*move\s*:[^\n]*$/i, '').trim()}
+					</p>
+				)}
 				{missed?.map((answer, k) => (
 					<p key={k} className="text-sm text-foreground/60 italic">
 						{answer.startsWith('an error: ')

@@ -39,7 +39,7 @@ describe('buildMessages', () => {
 		expect(message.content).not.toContain('FEN');
 		expect(message.content).toContain('Moves so far: 1. e4 e5');
 		expect(message.content).toContain('Nf3');
-		expect(message.content).toContain('"Considering:"');
+		expect(message.content).toContain('First think it through');
 	});
 
 	it('adds facts on their own lines after the list', () => {
@@ -55,9 +55,9 @@ describe('buildMessages', () => {
 		);
 	});
 
-	it('only asks it to consider its moves when thinking is on', () => {
+	it('only asks it to think when thinking is on', () => {
 		const [message] = buildMessages(input(new Chess(), { think: false }));
-		expect(message.content).not.toContain('Considering');
+		expect(message.content).not.toContain('think it through');
 		expect(message.content).toContain('Give your move');
 	});
 

@@ -1,11 +1,10 @@
 import type { Chess, Square } from 'chess.js';
 import { opponentMoves } from './facts';
-import { CONSIDERING } from './prompt';
 
-// What the model points at on the board while it considers its move: the
-// candidates it lists and the threat it sees (prompt.ts, CONSIDERING), each
-// shown once its line is written out, with its own words on why. The worker
-// holds every move to a legal one, but they're checked again here.
+// What the model points at on the board while it thinks: the moves it names,
+// each shown once it's written out. A move of its own is one it's weighing; a
+// move its opponent could play is a threat it sees. Only legal moves count,
+// so nonsense never gets an arrow.
 
 export type Mention =
 	| { kind: 'square'; square: Square }
@@ -21,33 +20,50 @@ export function mentionKey(mention: Mention): string {
 export type Considered = {
 	mention: Extract<Mention, { kind: 'arrow' }>;
 	san: string;
-	note: string;
 	// the opponent's move, not one of its own
 	threat: boolean;
 };
 
-const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const LINE = new RegExp(
-	`^(${escape(CONSIDERING.bullet)}|${escape(CONSIDERING.threat)})\\s*(\\S+)${escape(CONSIDERING.dash)}(.+)\\n`,
-	'gm'
-);
+// a move in standard notation, once something comes after it (so one still
+// being written isn't read early)
+const SAN = /(?<![\w-])(O-O-O|O-O|[NBRQK]?[a-h]?[1-8]?x?[a-h][1-8](?:=?[NBRQ])?)[+#]?(?=[^\w-])/g;
 
-// The finished lines of a reply so far. `chess` is the position the model is
-// considering, with it to move.
+// Small models often recite the legal moves back ("Nc6, Na6, Qe7, …"). A run
+// of three or more moves with nothing but commas and "or" / "and" between them
+// is a list, not a thought, so none of it is marked.
+const LIST_GAP = /^[\s,;/]*(?:(?:or|and)\s+)?$/i;
+const LIST_LENGTH = 3;
+
+// `chess` is the position the model is thinking about, with it to move.
 export function findConsidered(text: string, chess: Chess): Considered[] {
 	const ours = chess.moves({ verbose: true });
 	const theirs = opponentMoves(chess);
-	const found: Considered[] = [];
-	for (const [, kind, san, note] of text.matchAll(LINE)) {
-		const threat = kind === CONSIDERING.threat;
-		const move = (threat ? theirs : ours).find((m) => m.san === san);
-		if (move)
-			found.push({
-				mention: { kind: 'arrow', from: move.from, to: move.to },
-				san,
-				note: note.trim(),
-				threat
-			});
+	const matches = [...text.matchAll(SAN)];
+	const listed = new Set<RegExpExecArray>();
+	for (let i = 0; i < matches.length; ) {
+		let j = i;
+		while (
+			j + 1 < matches.length &&
+			LIST_GAP.test(text.slice(matches[j].index + matches[j][0].length, matches[j + 1].index))
+		)
+			j++;
+		if (j - i + 1 >= LIST_LENGTH) for (let k = i; k <= j; k++) listed.add(matches[k]);
+		i = j + 1;
 	}
-	return found;
+
+	const found = new Map<string, Considered>();
+	const bare = (san: string) => san.replace(/[+#=]/g, '');
+	for (const match of matches) {
+		if (listed.has(match)) continue;
+		const written = bare(match[1]);
+		const own = ours.find((move) => bare(move.san) === written);
+		const move = own ?? theirs.find((m) => bare(m.san) === written);
+		if (!move || found.has(move.san)) continue;
+		found.set(move.san, {
+			mention: { kind: 'arrow', from: move.from, to: move.to },
+			san: move.san,
+			threat: !own
+		});
+	}
+	return [...found.values()];
 }

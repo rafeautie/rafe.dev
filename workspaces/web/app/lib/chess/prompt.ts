@@ -16,12 +16,9 @@ export type PromptInput = {
 	legal: LegalMove[];
 	// notes on the legal moves and the pieces under attack (findFacts)
 	facts?: Facts;
-	// the moves it may consider: the legal ones that don't simply lose
+	// the moves it may finally play: the legal ones that don't simply lose
 	// (facts.ts, safeMoves)
 	candidates?: string[];
-	// the opponent's real threats, the worst first, for the threat it names
-	// (facts.ts, findDangers)
-	dangers?: string[];
 	think: boolean;
 	// the previous answer, when it wasn't a legal move
 	retry?: string;
@@ -44,25 +41,6 @@ export function drawBoard(rows: ({ type: string; color: 'w' | 'b' } | null)[][])
 	);
 	return [...lines, '  a b c d e f g h'].join('\n');
 }
-
-// Instead of thinking freely, the model fills in this shape, which the worker
-// writes out around it and holds to legal moves (ai.worker.ts):
-//
-//   Considering:
-//   - Nf6 — develops and hits e4
-//   - e5 — takes the centre
-//   - c5 — keeps it symmetrical
-//   Threat: Qa4 — pins the knight
-//   Move: Nf6
-//
-// Each line shows on the board as it's written (mentions.ts, findConsidered).
-export const CONSIDERING = {
-	heading: 'Considering:\n',
-	bullet: '- ',
-	dash: ' — ',
-	threat: 'Threat: ',
-	candidates: 3
-};
 
 export function buildMessages(input: PromptInput, historyPlies = HISTORY_PLIES): ChatMessage[] {
 	const recent = formatHistory(input.history, historyPlies);
@@ -95,10 +73,7 @@ export function buildMessages(input: PromptInput, historyPlies = HISTORY_PLIES):
 	}
 	if (input.think) {
 		lines.push(
-			`Start with "Considering:" and your ${CONSIDERING.candidates} best candidate moves, one per line as "- <move> — <why, in English, 6 words or fewer>".` +
-				(input.dangers?.length
-					? ` Then "Threat: <your opponent's most dangerous move> — <why, 6 words or fewer>".`
-					: '')
+			'First think it through in one short paragraph of plain English: what your opponent threatens, and two or three moves you could play and why. Write moves as they are in the list.'
 		);
 	}
 	lines.push(

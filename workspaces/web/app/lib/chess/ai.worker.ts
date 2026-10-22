@@ -17,14 +17,7 @@ import {
 import { allowed, follow, moveTrie, restrict, type MoveTrie } from './constrain';
 import type { Dtype } from './models';
 import type { Speed } from './storage';
-import {
-	buildMessages,
-	CONSIDERING,
-	findMove,
-	HISTORY_PLIES,
-	splitReply,
-	type PromptInput
-} from './prompt';
+import { buildMessages, findMove, HISTORY_PLIES, splitReply, type PromptInput } from './prompt';
 
 // The /chess opponent: a small language model running in the player's browser,
 // in a worker so the board never freezes while it thinks. The weights come
@@ -60,16 +53,8 @@ export type WorkerResponse =
 	| { type: 'done'; id: number; text: string; opened: boolean; speed?: Speed }
 	| { type: 'error'; id: number; message: string };
 
-// the dash before each reason, which the reason's first word puts the space
-// after
-const DASH = CONSIDERING.dash.trimEnd();
-// each reason, a few words
-const REASON_TOKENS = 14;
-// and at least this many letters of it before it may end
-const REASON_MIN = 12;
-// room for the whole considered reply (CONSIDERING): its lines, reasons and
-// the words written around them
-const CONSIDER_TOKENS = 160;
+// room to think it through in a short paragraph, and give its move
+const THINK_TOKENS = 300;
 // room to write the move the first time round, and a few words around it
 const ANSWER_TOKENS = 24;
 // the longest move, a token or so at a time, with room to spare
@@ -269,83 +254,39 @@ class MoveOnly extends LogitsProcessor {
 	}
 }
 
-// The tokens a reason may not use yet: the line break and the end of the
-// reply before it has said anything, anything but a word to start it (small
-// models copy the move numbers, and the frame leaves it the space),
-// and at any point blank lines, more dashes and anything that isn't plain
-// English text: other scripts, chess symbols, emoji, tabs and HTML, which
-// small models drift into.
-type ReasonWords = { breaks: number[]; never: number[]; first: number[] };
-
-// letters with accents, curly quotes and the ellipsis are fine
+// What the model may never write: anything that isn't plain English text,
+// like other scripts, chess symbols, emoji, tabs, markdown and HTML, which
+// small models drift into, and blank lines, so its thinking stays one
+// paragraph. Letters with accents, curly quotes and the ellipsis are fine.
 const PLAIN =
-	/^[\x20-\x25\x27-\x29\x2B-\x3B\x3D\x3F-\x7E\u00C0-\u024F\u2018\u2019\u201C\u201D\u2026]*$/;
+	/^[\x20-\x25\x27-\x29\x2B-\x3B\x3D\x3F-\x7E\u00C0-\u024F\u2018\u2019\u201C\u201D\u2026\n]*$/;
 
-const wordsOf = new WeakMap<PreTrainedTokenizer, ReasonWords>();
+const foreignOf = new WeakMap<PreTrainedTokenizer, number[]>();
 
-function reasonWords(tokenizer: PreTrainedTokenizer, end: number[]): ReasonWords {
-	const known = wordsOf.get(tokenizer);
+function foreignWords(tokenizer: PreTrainedTokenizer, end: number[]): number[] {
+	const known = foreignOf.get(tokenizer);
 	if (known) return known;
-	const one = (text: string) => {
-		const tokens = ids(tokenizer, text).data;
-		return tokens.length === 1 ? [Number(tokens[0])] : [];
-	};
-	const breaks = [...one('\n'), ...end];
-	const allowed = new Set(breaks);
-	const never = ['\n\n', '\n\n\n', ' \n\n'].flatMap(one);
-	const first: number[] = [];
+	const keep = new Set(end);
+	const foreign: number[] = [];
 	// Gemma spells a space as ▁ and anything it has no token for byte by byte
 	for (const [token, id] of tokenizer.get_vocab()) {
-		if (allowed.has(id)) continue;
+		if (keep.has(id)) continue;
 		const text = token.replaceAll('\u2581', ' ');
-		if (/^<0x[0-9A-F]{2}>$/.test(token) || !PLAIN.test(text)) never.push(id);
-		// the dash is written without its space, so the reason starts with a
-		// word and its own one space, as Gemma spells words
-		else if (!/^ [A-Za-z]/.test(text)) first.push(id);
+		if (/^<0x[0-9A-F]{2}>$/.test(token) || !PLAIN.test(text) || text.includes('\n\n'))
+			foreign.push(id);
 	}
-	const words = { breaks, never, first };
-	wordsOf.set(tokenizer, words);
-	return words;
+	foreignOf.set(tokenizer, foreign);
+	return foreign;
 }
 
-class Reason extends LogitsProcessor {
-	constructor(
-		private tokenizer: PreTrainedTokenizer,
-		private start: number,
-		private words: ReasonWords
-	) {
+class Plain extends LogitsProcessor {
+	constructor(private foreign: number[]) {
 		super();
 	}
-	_call(input_ids: bigint[][], logits: Tensor) {
-		const written = input_ids[0].slice(this.start);
-		const said = written.length ? this.tokenizer.decode(written.map(Number)).trim() : '';
+	_call(_input_ids: bigint[][], logits: Tensor) {
 		const scores = logits.data as Float32Array;
-		const block = (tokens: number[]) => {
-			for (const token of tokens) scores[token] = -Infinity;
-		};
-		block(this.words.never);
-		if (said.length < REASON_MIN) block(this.words.breaks);
-		if (!said) block(this.words.first);
+		for (const token of this.foreign) scores[token] = -Infinity;
 		return logits;
-	}
-}
-
-// Stops the model at the end of a line, or, once it has said enough, at the
-// end of a phrase
-class LineEnd extends StoppingCriteria {
-	constructor(
-		private tokenizer: PreTrainedTokenizer,
-		private start: number
-	) {
-		super();
-	}
-	_call(input_ids: (number | bigint)[][]) {
-		return input_ids.map((ids) => {
-			const written = ids.slice(this.start);
-			if (!written.length) return false;
-			const said = this.tokenizer.decode(written.map(Number));
-			return said.includes('\n') || (said.trim().length >= REASON_MIN && /[.,;]$/.test(said));
-		});
 	}
 }
 
@@ -367,7 +308,7 @@ class MoveWritten extends StoppingCriteria {
 async function move(id: number, input: PromptInput) {
 	const ready = await loaded!;
 	const { tokenizer, context } = ready;
-	const budget = input.think ? CONSIDER_TOKENS : ANSWER_TOKENS;
+	const budget = input.think ? THINK_TOKENS : ANSWER_TOKENS;
 
 	// The prompt is about the same size every turn; if a model's window is
 	// still too small for it plus the reply, older moves go first.
@@ -383,8 +324,6 @@ async function move(id: number, input: PromptInput) {
 		plies = Math.max(0, plies - 6);
 	}
 	const opened = /<think>\s*$/.test(prompt);
-	// When considering, the reply starts with the shape already begun
-	const begin = input.think ? CONSIDERING.heading + CONSIDERING.bullet : '';
 
 	const current = { id, stopping: new InterruptableStoppingCriteria() };
 	turn = current;
@@ -401,7 +340,7 @@ async function move(id: number, input: PromptInput) {
 		show(piece);
 	};
 	let run: Run | undefined;
-	const prompt_ids = ids(tokenizer, prompt + begin);
+	const prompt_ids = ids(tokenizer, prompt);
 	const eos = ready.model.generation_config?.eos_token_id ?? [];
 	const end = (Array.isArray(eos) ? eos : [eos]).map(Number);
 	let speed: Speed | undefined;
@@ -441,87 +380,27 @@ async function move(id: number, input: PromptInput) {
 		);
 		return { run: next, move: follow(trie, tokens)?.move };
 	};
-	// Lets the model write freely to the end of the line, a few words at
-	// least. One cut off at the limit gets an ellipsis.
-	const words = reasonWords(tokenizer, end);
-	const reason = async (from: Run) => {
-		const start = from.sequences.dims[1];
-		const next = await generate(
-			ready,
-			from.sequences,
-			from.past_key_values,
-			REASON_TOKENS,
-			true,
-			current.stopping,
-			stream,
-			{
-				processors: [new Reason(tokenizer, start, words)],
-				stops: [new LineEnd(tokenizer, start)]
-			}
-		);
-		if (turn !== current || /[\n.,;]$/.test(text)) return next;
-		return write(next, '…');
-	};
 	// a line it has written ends at a line break; one cut short doesn't yet
 	const newline = () => (text.endsWith('\n') ? '' : '\n');
 
 	try {
-		if (input.think) {
-			// Its candidates, each a different legal move with its reason,
-			// then the threat it sees, then its choice among the candidates
-			show(begin);
-			const legal = input.candidates ?? input.legal.map((move) => move.san);
-			const chosen: string[] = [];
-			const count = Math.min(CONSIDERING.candidates, legal.length);
-			for (let n = 0; n < count; n++) {
-				if (run) run = await write(run, newline() + CONSIDERING.bullet);
-				if (turn !== current || (n && !run)) return;
-				const picked = await pick(
-					run,
-					legal.filter((move) => !chosen.includes(move))
-				);
-				if (turn !== current || !picked.move) return;
-				chosen.push(picked.move);
-				run = await write(picked.run, DASH);
-				if (!run) return;
-				run = await reason(run);
-				if (turn !== current) return;
-			}
-			if (input.dangers?.length) {
-				run = await write(run!, newline() + CONSIDERING.threat);
-				if (!run) return;
-				const picked = await pick(run, input.dangers);
-				if (turn !== current) return;
-				run = await write(picked.run, DASH);
-				if (!run) return;
-				run = await reason(run);
-				if (turn !== current) return;
-			}
-			run = await write(run!, `${newline()}Move: `);
+		// It writes freely (thinking first, when it's asked to) until it gets
+		// to "Move:", then may only write a move that doesn't simply lose
+		run = await generate(ready, prompt_ids, undefined, budget, true, current.stopping, stream, {
+			processors: [new Plain(foreignWords(tokenizer, end))],
+			stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)]
+		});
+		if (turn !== current) return;
+		const moves = input.candidates ?? input.legal.map((move) => move.san);
+		const reply = splitReply(text, opened);
+		const atMove = reply.closed && /move\**\s*:\s*\**\s*$/i.test(reply.answer);
+		// without thinking, a reply that's just a good move is its answer
+		const named = input.think ? undefined : findMove(text, input.legal).move;
+		if (!named || !moves.includes(named)) {
+			if (!atMove) run = await write(run, `${newline()}Move:`);
 			if (!run) return;
-			run = (await pick(run, chosen)).run;
+			run = (await pick(run, moves, true)).run;
 			if (turn !== current) return;
-		} else {
-			run = await generate(ready, prompt_ids, undefined, budget, true, current.stopping, stream, {
-				stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)]
-			});
-			if (turn !== current) return;
-			// Unless it named a legal move, ask for one: write "Move:" for it
-			// and let it write only a legal move.
-			const reply = splitReply(text, opened);
-			const atMove = reply.closed && /move\**\s*:\s*\**\s*$/i.test(reply.answer);
-			if (atMove || !findMove(text, input.legal).move) {
-				if (!atMove) run = await write(run, '\nMove:');
-				if (!run) return;
-				run = (
-					await pick(
-						run,
-						input.legal.map((move) => move.san),
-						true
-					)
-				).run;
-				if (turn !== current) return;
-			}
 		}
 		const ended = performance.now();
 		if (firstAt !== undefined)

@@ -1,6 +1,6 @@
 import { Chess } from 'chess.js';
 import { describe, expect, it } from 'vitest';
-import { findDangers, findFacts, safeMoves } from './facts';
+import { findFacts, safeMoves } from './facts';
 
 function after(...moves: string[]) {
 	const chess = new Chess();
@@ -46,18 +46,5 @@ describe('safeMoves', () => {
 		expect(safe).not.toContain('Nf6');
 		expect(safe).toContain('g6');
 		expect(safe).toContain('Qe7');
-	});
-});
-
-describe('findDangers', () => {
-	it('puts a mate first, then captures that win material', () => {
-		const dangers = findDangers(after('e4', 'e5', 'Qh5', 'Nc6', 'Bc4'));
-		expect(dangers[0]).toBe('Qxf7#');
-		expect(dangers).toContain('Qxe5+');
-		expect(findFacts(after('e4', 'e5', 'Qh5', 'Nc6', 'Bc4')).mates).toEqual(['Qxf7#']);
-	});
-
-	it('names nothing when nothing is threatened', () => {
-		expect(findDangers(new Chess())).toEqual([]);
 	});
 });

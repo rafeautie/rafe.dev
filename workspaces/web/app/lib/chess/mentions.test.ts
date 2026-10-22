@@ -11,35 +11,23 @@ function after(...moves: string[]) {
 describe('findConsidered', () => {
 	const chess = after('e4', 'e5', 'Nf3');
 
-	it('reads each finished line, with its words on why', () => {
-		const text = [
-			'Considering:',
-			'- Nc6 — guards the e5 pawn',
-			'- d6 — also guards it',
-			'Threat: Nxe5 — wins a pawn',
-			'Move: Nc6'
-		].join('\n');
-		expect(findConsidered(text, chess).map(({ san, note, threat }) => [san, note, threat])).toEqual(
-			[
-				['Nc6', 'guards the e5 pawn', false],
-				['d6', 'also guards it', false],
-				['Nxe5', 'wins a pawn', true]
-			]
-		);
-		expect(findConsidered(text, chess)[2].mention).toEqual({ kind: 'arrow', from: 'f3', to: 'e5' });
+	it('reads the moves it names, its own and its opponent’s', () => {
+		const text =
+			'White threatens Nxe5, winning a pawn. Nc6 guards it and develops; d6 does too but is passive.\n';
+		expect(findConsidered(text, chess).map(({ san, threat }) => [san, threat])).toEqual([
+			['Nxe5', true],
+			['Nc6', false],
+			['d6', false]
+		]);
+		expect(findConsidered(text, chess)[0].mention).toEqual({ kind: 'arrow', from: 'f3', to: 'e5' });
 	});
 
-	it('waits for a line to end, and skips moves that are not legal', () => {
-		expect(findConsidered('Considering:\n- Nc6 — guards', chess)).toEqual([]);
-		expect(findConsidered('Considering:\n- Qz9 — nonsense\n', chess)).toEqual([]);
-		// a white move offered as one of black's own
-		expect(findConsidered('Considering:\n- Nxe5 — wins\n', chess)).toEqual([]);
+	it('waits for a move to be written out, and skips ones that are not legal', () => {
+		expect(findConsidered('I like Nc6', chess)).toEqual([]);
+		expect(findConsidered('Maybe Qz9 or Ke3 here.', chess)).toEqual([]);
 	});
-});
 
-describe('threats', () => {
-	it('reads a threat for the side not to move', () => {
-		const [threat] = findConsidered('Threat: Bc4 — eyes f7\n', after('e4'));
-		expect(threat?.san).toBe('Bc4');
+	it('skips a recited list of moves', () => {
+		expect(findConsidered('My moves are Nc6, Nf6, d6 or a6. ', chess)).toEqual([]);
 	});
 });
