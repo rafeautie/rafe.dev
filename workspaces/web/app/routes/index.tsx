@@ -4,8 +4,8 @@ import { PhotoPicture } from '~/components/PhotoPicture';
 import { absoluteUrl, getPhoto, PHOTOS, type Photo } from '~/photos';
 import { POSTS } from '~/writing';
 
-// The hero fills the right 3/5 of the padded page from sm up, and the full
-// padded width above the list below it.
+// The hero is fitted inside the right 3/5 of the padded page from sm up, and
+// the full padded width above the list below it, so these are upper bounds.
 const HERO_SIZES = '(min-width: 640px) calc(60vw - 60px), calc(100vw - 48px)';
 
 // One row per section. The note is a quiet line about what is there now, so
@@ -110,8 +110,8 @@ function HomePage() {
 				</ul>
 				<p className="text-[0.8125rem] font-medium text-muted-foreground">{credit}</p>
 			</nav>
-			{/* Absolutely placed so the photo fills its cell whatever its aspect
-			    ratio, rather than sizing the row to itself. */}
+			{/* Absolutely placed so the cell, not the photo, sets the row's size;
+			    the photo is then fitted whole inside it, never cropped. */}
 			<div className="relative order-first min-h-0 sm:order-last">
 				<PhotoPicture
 					picture={photo.picture}
@@ -121,7 +121,7 @@ function HomePage() {
 					alt=""
 					fetchPriority="high"
 					decoding="async"
-					className="absolute inset-0 h-full w-full object-cover"
+					className="absolute inset-0 h-full w-full object-contain"
 				/>
 			</div>
 		</div>
