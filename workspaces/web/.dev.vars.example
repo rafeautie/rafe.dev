@@ -1,0 +1,8 @@
+# Copy to .dev.vars for `pnpm dev`. Turnstile's test secret always passes.
+ANTHROPIC_API_KEY=
+GITHUB_TOKEN=
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+NUDGE_HASH_KEY=local-only
+STORY_ADMIN_TOKEN=local-only
+# Point the daily job at a throwaway branch so a local run never touches main.
+STORY_BRANCH=story-test

@@ -15,7 +15,9 @@ import { parse as parseYaml } from 'yaml';
 // Compiles Markdown with YAML frontmatter at build time, so a page ships HTML
 // and never a parser or highlighter. `post.md?meta` exports the frontmatter as
 // `meta`; `post.md` exports the rendered body as `html`. They are separate
-// modules so listing posts does not pull in every post's body.
+// modules so listing posts does not pull in every post's body. The story's
+// chapters carry fields of their own, so `chapter.md?frontmatter` exports the
+// frontmatter as parsed, for the caller to check. `?raw` is left to Vite.
 //
 // Relative images become asset imports and get their intrinsic width and
 // height, so they hold their space while loading. Rasters are re-encoded to a
@@ -68,14 +70,17 @@ export function markdown(): Plugin {
 		enforce: 'pre',
 		async transform(source, id) {
 			const [file, query = ''] = id.split('?');
-			if (!file.endsWith('.md')) return;
+			const params = new URLSearchParams(query);
+			if (!file.endsWith('.md') || params.has('raw')) return;
 
 			const dir = path.dirname(file);
 			const { frontmatter, body } = splitFrontmatter(source, file);
 			const assets = new Assets();
 			const watch = (asset: string) => this.addWatchFile(path.resolve(dir, asset));
 
-			if (new URLSearchParams(query).has('meta')) {
+			if (params.has('frontmatter')) return assets.module('frontmatter', frontmatter);
+
+			if (params.has('meta')) {
 				const meta = await readMeta(frontmatter, file, assets, watch);
 				return assets.module('meta', meta);
 			}

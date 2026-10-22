@@ -15,8 +15,14 @@ import { Route as PhotographyRouteImport } from './routes/photography'
 import { Route as DevelopmentRouteImport } from './routes/development'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WritingIndexRouteImport } from './routes/writing/index'
+import { Route as StoryIndexRouteImport } from './routes/story/index'
 import { Route as WritingFeedDotxmlRouteImport } from './routes/writing/feed[.]xml'
 import { Route as WritingSlugRouteImport } from './routes/writing/$slug'
+import { Route as StoryFeedDotxmlRouteImport } from './routes/story/feed[.]xml'
+import { Route as StoryChapterRouteImport } from './routes/story/$chapter'
+import { Route as ApiStoryStatusRouteImport } from './routes/api/story/status'
+import { Route as ApiStoryRunRouteImport } from './routes/api/story/run'
+import { Route as ApiStoryNudgeRouteImport } from './routes/api/story/nudge'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -48,6 +54,11 @@ const WritingIndexRoute = WritingIndexRouteImport.update({
   path: '/writing/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StoryIndexRoute = StoryIndexRouteImport.update({
+  id: '/story/',
+  path: '/story/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WritingFeedDotxmlRoute = WritingFeedDotxmlRouteImport.update({
   id: '/writing/feed.xml',
   path: '/writing/feed.xml',
@@ -58,6 +69,31 @@ const WritingSlugRoute = WritingSlugRouteImport.update({
   path: '/writing/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StoryFeedDotxmlRoute = StoryFeedDotxmlRouteImport.update({
+  id: '/story/feed.xml',
+  path: '/story/feed.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StoryChapterRoute = StoryChapterRouteImport.update({
+  id: '/story/$chapter',
+  path: '/story/$chapter',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiStoryStatusRoute = ApiStoryStatusRouteImport.update({
+  id: '/api/story/status',
+  path: '/api/story/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiStoryRunRoute = ApiStoryRunRouteImport.update({
+  id: '/api/story/run',
+  path: '/api/story/run',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiStoryNudgeRoute = ApiStoryNudgeRouteImport.update({
+  id: '/api/story/nudge',
+  path: '/api/story/nudge',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -65,9 +101,15 @@ export interface FileRoutesByFullPath {
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/story/$chapter': typeof StoryChapterRoute
+  '/story/feed.xml': typeof StoryFeedDotxmlRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
+  '/story/': typeof StoryIndexRoute
   '/writing/': typeof WritingIndexRoute
+  '/api/story/nudge': typeof ApiStoryNudgeRoute
+  '/api/story/run': typeof ApiStoryRunRoute
+  '/api/story/status': typeof ApiStoryStatusRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -75,9 +117,15 @@ export interface FileRoutesByTo {
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/story/$chapter': typeof StoryChapterRoute
+  '/story/feed.xml': typeof StoryFeedDotxmlRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
+  '/story': typeof StoryIndexRoute
   '/writing': typeof WritingIndexRoute
+  '/api/story/nudge': typeof ApiStoryNudgeRoute
+  '/api/story/run': typeof ApiStoryRunRoute
+  '/api/story/status': typeof ApiStoryStatusRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -86,9 +134,15 @@ export interface FileRoutesById {
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/story/$chapter': typeof StoryChapterRoute
+  '/story/feed.xml': typeof StoryFeedDotxmlRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
+  '/story/': typeof StoryIndexRoute
   '/writing/': typeof WritingIndexRoute
+  '/api/story/nudge': typeof ApiStoryNudgeRoute
+  '/api/story/run': typeof ApiStoryRunRoute
+  '/api/story/status': typeof ApiStoryStatusRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -98,9 +152,15 @@ export interface FileRouteTypes {
     | '/photography'
     | '/shmoney'
     | '/sitemap.xml'
+    | '/story/$chapter'
+    | '/story/feed.xml'
     | '/writing/$slug'
     | '/writing/feed.xml'
+    | '/story/'
     | '/writing/'
+    | '/api/story/nudge'
+    | '/api/story/run'
+    | '/api/story/status'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -108,9 +168,15 @@ export interface FileRouteTypes {
     | '/photography'
     | '/shmoney'
     | '/sitemap.xml'
+    | '/story/$chapter'
+    | '/story/feed.xml'
     | '/writing/$slug'
     | '/writing/feed.xml'
+    | '/story'
     | '/writing'
+    | '/api/story/nudge'
+    | '/api/story/run'
+    | '/api/story/status'
   id:
     | '__root__'
     | '/'
@@ -118,9 +184,15 @@ export interface FileRouteTypes {
     | '/photography'
     | '/shmoney'
     | '/sitemap.xml'
+    | '/story/$chapter'
+    | '/story/feed.xml'
     | '/writing/$slug'
     | '/writing/feed.xml'
+    | '/story/'
     | '/writing/'
+    | '/api/story/nudge'
+    | '/api/story/run'
+    | '/api/story/status'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -129,9 +201,15 @@ export interface RootRouteChildren {
   PhotographyRoute: typeof PhotographyRoute
   ShmoneyRoute: typeof ShmoneyRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  StoryChapterRoute: typeof StoryChapterRoute
+  StoryFeedDotxmlRoute: typeof StoryFeedDotxmlRoute
   WritingSlugRoute: typeof WritingSlugRoute
   WritingFeedDotxmlRoute: typeof WritingFeedDotxmlRoute
+  StoryIndexRoute: typeof StoryIndexRoute
   WritingIndexRoute: typeof WritingIndexRoute
+  ApiStoryNudgeRoute: typeof ApiStoryNudgeRoute
+  ApiStoryRunRoute: typeof ApiStoryRunRoute
+  ApiStoryStatusRoute: typeof ApiStoryStatusRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -178,6 +256,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WritingIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/story/': {
+      id: '/story/'
+      path: '/story'
+      fullPath: '/story/'
+      preLoaderRoute: typeof StoryIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/writing/feed.xml': {
       id: '/writing/feed.xml'
       path: '/writing/feed.xml'
@@ -192,6 +277,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WritingSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/story/feed.xml': {
+      id: '/story/feed.xml'
+      path: '/story/feed.xml'
+      fullPath: '/story/feed.xml'
+      preLoaderRoute: typeof StoryFeedDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/story/$chapter': {
+      id: '/story/$chapter'
+      path: '/story/$chapter'
+      fullPath: '/story/$chapter'
+      preLoaderRoute: typeof StoryChapterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/story/status': {
+      id: '/api/story/status'
+      path: '/api/story/status'
+      fullPath: '/api/story/status'
+      preLoaderRoute: typeof ApiStoryStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/story/run': {
+      id: '/api/story/run'
+      path: '/api/story/run'
+      fullPath: '/api/story/run'
+      preLoaderRoute: typeof ApiStoryRunRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/story/nudge': {
+      id: '/api/story/nudge'
+      path: '/api/story/nudge'
+      fullPath: '/api/story/nudge'
+      preLoaderRoute: typeof ApiStoryNudgeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -201,9 +321,15 @@ const rootRouteChildren: RootRouteChildren = {
   PhotographyRoute: PhotographyRoute,
   ShmoneyRoute: ShmoneyRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  StoryChapterRoute: StoryChapterRoute,
+  StoryFeedDotxmlRoute: StoryFeedDotxmlRoute,
   WritingSlugRoute: WritingSlugRoute,
   WritingFeedDotxmlRoute: WritingFeedDotxmlRoute,
+  StoryIndexRoute: StoryIndexRoute,
   WritingIndexRoute: WritingIndexRoute,
+  ApiStoryNudgeRoute: ApiStoryNudgeRoute,
+  ApiStoryRunRoute: ApiStoryRunRoute,
+  ApiStoryStatusRoute: ApiStoryStatusRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
