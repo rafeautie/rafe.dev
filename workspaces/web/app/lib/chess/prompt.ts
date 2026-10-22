@@ -73,7 +73,7 @@ export function buildMessages(input: PromptInput, historyPlies = HISTORY_PLIES):
 	}
 	if (input.think) {
 		lines.push(
-			'First think it through in one short paragraph of plain English: what your opponent threatens, and two or three moves you could play and why. Write moves as they are in the list.'
+			'First think it through in one short paragraph of plain English: what your opponent threatens, then name two or three specific moves from the list, written exactly as in the list, and say what each one does.'
 		);
 	}
 	lines.push(

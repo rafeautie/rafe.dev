@@ -17,7 +17,7 @@ import {
 import { allowed, follow, moveTrie, restrict, type MoveTrie } from './constrain';
 import type { Dtype } from './models';
 import type { Speed } from './storage';
-import { buildMessages, findMove, HISTORY_PLIES, splitReply, type PromptInput } from './prompt';
+import { buildMessages, HISTORY_PLIES, splitReply, type PromptInput } from './prompt';
 
 // The /chess opponent: a small language model running in the player's browser,
 // in a worker so the board never freezes while it thinks. The weights come
@@ -279,6 +279,12 @@ function foreignWords(tokenizer: PreTrainedTokenizer, end: number[]): number[] {
 	return foreign;
 }
 
+// Whether `move` is written in `text` as a word of its own, check marks or not
+function written(text: string, move: string) {
+	const bare = move.replace(/[+#]/g, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	return new RegExp(`(?<![\\w-])${bare}[+#]?(?![\\w-])`).test(text);
+}
+
 class Plain extends LogitsProcessor {
 	constructor(private foreign: number[]) {
 		super();
@@ -340,7 +346,7 @@ async function move(id: number, input: PromptInput) {
 		show(piece);
 	};
 	let run: Run | undefined;
-	const prompt_ids = ids(tokenizer, prompt);
+	const prompt_ids = ids(tokenizer, input.think ? prompt : `${prompt}Move:`);
 	const eos = ready.model.generation_config?.eos_token_id ?? [];
 	const end = (Array.isArray(eos) ? eos : [eos]).map(Number);
 	let speed: Speed | undefined;
@@ -384,24 +390,28 @@ async function move(id: number, input: PromptInput) {
 	const newline = () => (text.endsWith('\n') ? '' : '\n');
 
 	try {
-		// It writes freely (thinking first, when it's asked to) until it gets
-		// to "Move:", then may only write a move that doesn't simply lose
-		run = await generate(ready, prompt_ids, undefined, budget, true, current.stopping, stream, {
-			processors: [new Plain(foreignWords(tokenizer, end))],
-			stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)]
-		});
-		if (turn !== current) return;
 		const moves = input.candidates ?? input.legal.map((move) => move.san);
-		const reply = splitReply(text, opened);
-		const atMove = reply.closed && /move\**\s*:\s*\**\s*$/i.test(reply.answer);
-		// without thinking, a reply that's just a good move is its answer
-		const named = input.think ? undefined : findMove(text, input.legal).move;
-		if (!named || !moves.includes(named)) {
+		if (input.think) {
+			// It thinks freely until it gets to "Move:", then may only write a
+			// move that doesn't simply lose: one it named, if it named any
+			run = await generate(ready, prompt_ids, undefined, budget, true, current.stopping, stream, {
+				processors: [new Plain(foreignWords(tokenizer, end))],
+				stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)]
+			});
+			if (turn !== current) return;
+			const reply = splitReply(text, opened);
+			const atMove = reply.closed && /move\**\s*:\s*\**\s*$/i.test(reply.answer);
+			const named = moves.filter((move) => written(reply.thinking, move));
 			if (!atMove) run = await write(run, `${newline()}Move:`);
 			if (!run) return;
-			run = (await pick(run, moves, true)).run;
-			if (turn !== current) return;
+			run = (await pick(run, named.length ? named : moves, true)).run;
+		} else {
+			// Without thinking, its reply starts at "Move:", so it's only a move
+			show('Move:');
+			firstAt = performance.now();
+			run = (await pick(undefined, moves, true)).run;
 		}
+		if (turn !== current) return;
 		const ended = performance.now();
 		if (firstAt !== undefined)
 			speed = {
