@@ -1,5 +1,5 @@
 import { Chess, type Color, type Move, type Square } from 'chess.js';
-import { FlagIcon, InfoIcon, TriangleAlertIcon } from 'lucide-react';
+import { FlagIcon, HandshakeIcon, InfoIcon, TriangleAlertIcon, TrophyIcon } from 'lucide-react';
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Board } from '~/components/chess/Board';
@@ -17,6 +17,7 @@ import { Button } from '~/components/ui/button';
 import { Card } from '~/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Spinner } from '~/components/ui/spinner';
+import { demoGame } from '~/lib/chess/demos';
 import { findFacts, safeMoves } from '~/lib/chess/facts';
 import { findConsidered, mentionKey, type Mention } from '~/lib/chess/mentions';
 import { FADE_MS, type Highlight, type Promotion } from '~/components/chess/Board';
@@ -24,6 +25,7 @@ import {
 	defaultModel,
 	findCached,
 	findModel,
+	MODELS,
 	readDevice,
 	type ChessModel,
 	type DeviceInfo
@@ -104,14 +106,34 @@ function outcome(chess: Chess, model: ChessModel): string | undefined {
 		return chess.turn() === YOU ? `${model.name} wins by checkmate` : 'You win by checkmate';
 	}
 	if (chess.isStalemate()) return 'Draw by stalemate';
-	if (chess.isInsufficientMaterial()) return 'Draw: not enough pieces left to mate';
+	if (chess.isInsufficientMaterial()) return 'Draw, as neither side can mate';
 	if (chess.isThreefoldRepetition()) return 'Draw by threefold repetition';
 	if (chess.isDrawByFiftyMoves()) return 'Draw by the fifty-move rule';
 	return undefined;
 }
 
-// The game left from last time, if its model is still on the list
-function restoreGame(chess: Chess): (SavedGame & { opponent: ChessModel }) | undefined {
+// The game left from last time, if its model is still on the list. Or while
+// developing, a finished game for seeing how it ends (?demo=win, loss or
+// draw), which isn't saved over it.
+function restoreGame(
+	chess: Chess
+): (SavedGame & { opponent: ChessModel; demo?: boolean }) | undefined {
+	const demo = import.meta.env.DEV
+		? demoGame(new URLSearchParams(location.search).get('demo'))
+		: undefined;
+	if (demo) {
+		const opponent = findModel(loadSettings().model) ?? MODELS[0];
+		chess.loadPgn(demo.chess.pgn());
+		const { entries } = demo;
+		return {
+			pgn: chess.pgn(),
+			model: opponent.id,
+			entries,
+			opponent,
+			demo: true,
+			result: outcome(chess, opponent)
+		};
+	}
 	const game = loadGame();
 	const opponent = findModel(game?.model);
 	if (!game || !opponent) return undefined;
@@ -132,6 +154,7 @@ export default function Game() {
 	const [entries, setEntries] = useState<Entry[]>(saved?.entries ?? []);
 	const [phase, setPhase] = useState<Phase>(saved ? (saved.result ? 'over' : 'playing') : 'setup');
 	const [result, setResult] = useState(saved?.result);
+	const [demo, setDemo] = useState(saved?.demo ?? false);
 	const [settings, setSettings] = useState(loadSettings);
 	const [model, setModel] = useState(() => saved?.opponent ?? findModel(settings.model));
 	const [device, setDevice] = useState<DeviceInfo>();
@@ -162,11 +185,11 @@ export default function Game() {
 	}, [settings, model]);
 
 	useEffect(() => {
-		if (!model) return;
+		if (!model || demo) return;
 		saveGame(
 			phase === 'setup' ? undefined : { pgn: chess.pgn(), model: model.id, entries, result }
 		);
-	}, [phase, chess, model, entries, result]);
+	}, [phase, chess, model, entries, result, demo]);
 
 	function play(
 		move: string | { from: Square; to: Square; promotion: Promotion },
@@ -314,6 +337,7 @@ export default function Game() {
 		setLive(undefined);
 		setMentions([]);
 		setPreview(undefined);
+		setDemo(false);
 		setPhase(next);
 	}
 
@@ -330,7 +354,7 @@ export default function Game() {
 		stop();
 		setLive(undefined);
 		setMentions([]);
-		setResult(`You resigned; ${model.name} wins`);
+		setResult('You resigned');
 		setPhase('over');
 	}
 
@@ -399,6 +423,7 @@ export default function Game() {
 			live={live}
 			now={now}
 			result={result}
+			moves={Math.ceil(history.length / 2)}
 			gpu={device?.webgpu ?? false}
 			onPickAnother={() => reset('setup')}
 		/>
@@ -552,6 +577,7 @@ function StatusCard({
 	live,
 	now,
 	result,
+	moves,
 	gpu,
 	onPickAnother
 }: {
@@ -561,6 +587,8 @@ function StatusCard({
 	live?: Live;
 	now: number;
 	result?: string;
+	// how many moves the game ran, each side's together
+	moves: number;
 	// where the weights go once downloaded
 	gpu: boolean;
 	onPickAnother: () => void;
@@ -571,9 +599,21 @@ function StatusCard({
 	let extra: ReactNode = null;
 
 	if (phase === 'over') {
-		icon = <FlagIcon className="size-4 text-muted-foreground" />;
-		title = 'Game over';
-		detail = result;
+		// the result reads "You win …", "Draw …" or else the model won (or you
+		// resigned): outcome() and resign()
+		const won = result?.startsWith('You win');
+		const drawn = result?.startsWith('Draw');
+		icon = won ? (
+			<TrophyIcon className="size-4 text-(--chess-accent)" />
+		) : drawn ? (
+			<HandshakeIcon className="size-4 text-muted-foreground" />
+		) : (
+			<FlagIcon className="size-4 text-muted-foreground" />
+		);
+		title = won ? 'You won' : drawn ? 'A draw' : 'You lost';
+		// how, without saying again who won: "By checkmate, after 4 moves."
+		const how = result?.replace(/^(You win|Draw),? /, '') ?? '';
+		detail = `${how.charAt(0).toUpperCase()}${how.slice(1)}, after ${moves} ${moves === 1 ? 'move' : 'moves'}.`;
 	} else if (state.status === 'error') {
 		icon = <TriangleAlertIcon className="size-4 text-destructive" />;
 		title = `Couldn’t load ${state.model.name}`;

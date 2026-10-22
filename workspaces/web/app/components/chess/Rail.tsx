@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { DicesIcon } from 'lucide-react';
 import type { Move } from 'chess.js';
 import { PIECES } from '~/components/chess/pieces';
@@ -222,6 +222,8 @@ export function Generation({
 	);
 }
 
+const PREVIEW_DELAY_MS = 300;
+
 // The game so far, two moves to a row. Pointing at a row (or focusing it, or
 // tapping it) previews it: the board shows the position after it, and the
 // rail the model's turn in it.
@@ -239,6 +241,19 @@ export function MoveList({
 		end.current?.scrollIntoView({ block: 'nearest' });
 	}, [entries.length]);
 
+	// The row lights up as soon as it's pointed at, but the board waits a
+	// moment, so passing over the list on the way somewhere doesn't flick
+	// through old positions. Once it's showing one, the next row is instant.
+	const [pointed, setPointed] = useState<number>();
+	const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+	useEffect(() => () => clearTimeout(timer.current), []);
+	const point = (row?: number) => {
+		clearTimeout(timer.current);
+		setPointed(row);
+		if (row === undefined || preview !== undefined) onPreview(row);
+		else timer.current = setTimeout(() => onPreview(row), PREVIEW_DELAY_MS);
+	};
+
 	if (!entries.length) return <p className="text-sm text-foreground/40">No moves yet.</p>;
 
 	const rows: Entry[][] = [];
@@ -249,7 +264,7 @@ export function MoveList({
 		// as the pointer leaves the rows themselves
 		<div className="-mx-2 max-h-72 overflow-y-auto xl:max-h-none xl:min-h-0 xl:flex-1">
 			<ol
-				onMouseLeave={() => onPreview(undefined)}
+				onMouseLeave={() => point(undefined)}
 				className="flex flex-col gap-0.5 text-sm tabular-nums"
 			>
 				{rows.map((row, i) => (
@@ -258,13 +273,20 @@ export function MoveList({
 						ref={i === rows.length - 1 ? end : undefined}
 						tabIndex={0}
 						aria-current={preview === i ? 'true' : undefined}
-						onMouseEnter={() => onPreview(i)}
-						onFocus={() => onPreview(i)}
-						onBlur={() => onPreview(undefined)}
-						onClick={() => onPreview(preview === i ? undefined : i)}
+						onMouseEnter={() => point(i)}
+						onFocus={() => {
+							setPointed(i);
+							onPreview(i);
+						}}
+						onBlur={() => point(undefined)}
+						onClick={() => {
+							clearTimeout(timer.current);
+							onPreview(preview === i ? undefined : i);
+						}}
 						className={cn(
 							'grid cursor-default grid-cols-[2rem_1fr_1fr] gap-2 rounded-md px-2 py-1 ring-1 ring-transparent transition-[background-color,box-shadow] duration-200 outline-none',
-							preview === i && 'bg-foreground/5 ring-foreground/10'
+							// on at once, off gently
+							(pointed ?? preview) === i && 'bg-foreground/5 ring-foreground/10 duration-0'
 						)}
 					>
 						<span className="text-foreground/40">{i + 1}.</span>
