@@ -317,9 +317,41 @@ export default function Game() {
 		setPhase('over');
 	}
 
+	// The game with its tags filled in: who played, where, when, and how it
+	// ended ("*" while it's still going). The saved game keeps the bare moves.
+	function pgnToShare() {
+		const copy = new Chess();
+		copy.loadPgn(chess.pgn());
+		const now = new Date();
+		const date = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+			.map((part) => String(part).padStart(2, '0'))
+			.join('.');
+		const outcome = chess.isCheckmate()
+			? chess.turn() === 'w'
+				? '0-1'
+				: '1-0'
+			: chess.isGameOver()
+				? '1/2-1/2'
+				: phase === 'over'
+					? // you resigned, and you play white
+						'0-1'
+					: '*';
+		const tags: [string, string][] = [
+			['Event', 'Casual game'],
+			['Site', 'rafe.dev/chess'],
+			['Date', date],
+			['Round', '-'],
+			['White', 'You'],
+			['Black', model?.name ?? '?'],
+			['Result', outcome]
+		];
+		for (const [key, value] of tags) copy.setHeader(key, value);
+		return copy.pgn();
+	}
+
 	async function copyPgn() {
 		try {
-			await navigator.clipboard.writeText(chess.pgn());
+			await navigator.clipboard.writeText(pgnToShare());
 			toast('Game copied as PGN');
 		} catch {
 			toast('Couldn’t copy the game');
