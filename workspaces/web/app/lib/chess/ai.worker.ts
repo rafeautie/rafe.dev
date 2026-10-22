@@ -38,10 +38,31 @@ export type WorkerRequest =
 	// drop the turn altogether, as when the game is abandoned
 	| { type: 'stop' };
 
-// What loading is doing: fetching the weights (from the network, or the
-// browser's cache), putting them on the GPU or in memory, then one tiny run so
-// the first real move isn't the one that pays for compiling everything.
-export type LoadStage = 'downloading' | 'preparing' | 'warming';
+// What loading is doing: fetching the weights from the network, or reading
+// them from the browser's cache when they were downloaded before, putting them
+// on the GPU or in memory, then one tiny run so the first real move isn't the
+// one that pays for compiling everything.
+export type LoadStage = 'downloading' | 'reading' | 'preparing' | 'warming';
+
+// Whether the browser holds every weight file already, so loading reads them
+// from its cache rather than downloading them. Transformers.js keeps them in
+// this Cache Storage bucket, under their Hugging Face URLs; a download that
+// was cut short leaves some out.
+async function allCached(repo: string, weightFiles: Record<string, number>): Promise<boolean> {
+	try {
+		const cache = await caches.open('transformers-cache');
+		const urls = (await cache.keys()).map((request) => request.url);
+		const names = Object.entries(weightFiles).flatMap(([file, chunks]) => [
+			file,
+			...Array.from({ length: chunks }, (_, i) => `${file}_data${i ? `_${i}` : ''}`)
+		]);
+		return names.every((name) =>
+			urls.some((url) => url.includes(`/${repo}/`) && url.endsWith(`/onnx/${name}`))
+		);
+	} catch {
+		return false;
+	}
+}
 
 export type WorkerResponse =
 	| { type: 'stage'; stage: LoadStage }
@@ -94,6 +115,7 @@ async function load(
 	// the bar waits until each has a size before it shows anything. Configs
 	// and the tokenizer are tiny and would read as done before the weights
 	// begin, so they don't count.
+	const fetching: LoadStage = (await allCached(repo, weightFiles)) ? 'reading' : 'downloading';
 	const files = new Map<string, { loaded: number; total?: number }>();
 	let shown = 0;
 	let modelStep = false;
@@ -127,7 +149,7 @@ async function load(
 		total?: number;
 	}) => {
 		if (!modelStep || !event.file || !WEIGHTS.test(event.file)) {
-			if (!stage) enter('downloading');
+			if (!stage) enter(fetching);
 			return;
 		}
 		const file = files.get(event.file);
