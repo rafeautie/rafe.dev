@@ -73,16 +73,6 @@ function promptInput(chess: Chess, think: boolean, model: ChessModel, retry?: st
 	};
 }
 
-// A sentence of the model's thinking, short and plain enough for a caption
-function tidy(sentence: string) {
-	const plain = sentence
-		.replace(/[*_`#]+/g, '')
-		.replace(/^\s*(?:[-•]|\d+\.)\s+/, '')
-		.replace(/\s+/g, ' ')
-		.trim();
-	return plain.length > 140 ? `${plain.slice(0, 139).trimEnd()}…` : plain;
-}
-
 function outcome(chess: Chess, model: ChessModel): string | undefined {
 	if (chess.isCheckmate()) {
 		return chess.turn() === YOU ? `${model.name} wins by checkmate` : 'You win by checkmate';
@@ -127,7 +117,7 @@ export default function Game() {
 	const [mentions, setMentions] = useState<Highlight[]>([]);
 	const { state: opponent, load, ask, stop } = useOpponent();
 
-	const marks = useRef(new Map<string, { mention: Mention; at: number; note: string }>());
+	const marks = useRef(new Map<string, { mention: Mention; at: number }>());
 	const scanned = useRef(0);
 
 	// What this device can run, and the model for a game left from last time
@@ -178,10 +168,10 @@ export default function Game() {
 	// the marks still showing, each as strong as its age allows
 	function showMarks(time = Date.now()) {
 		const shown: Highlight[] = [];
-		for (const [key, { mention, at, note }] of marks.current) {
+		for (const [key, { mention, at }] of marks.current) {
 			const left = MARK_MS - (time - at);
 			if (left <= 0) marks.current.delete(key);
-			else shown.push({ ...mention, fading: left <= FADE_MS, note });
+			else shown.push({ ...mention, fading: left <= FADE_MS });
 		}
 		setMentions(shown);
 	}
@@ -207,20 +197,18 @@ export default function Game() {
 			setLive({ text, started, stage, retry: missed.at(-1) });
 			if (!showThinking) return;
 			// Only up to the last finished sentence, so "my knight" isn't read
-			// before " on g8" arrives and a list of moves is read whole. Each
-			// mark keeps the sentence it came from, to show beside it.
+			// before " on g8" arrives and a list of moves is read whole, with a
+			// little overlap for a move split across two streamed pieces.
 			const end = Math.max(...[...'.;:!?\n'].map((mark) => text.lastIndexOf(mark))) + 1;
 			if (end <= scanned.current) return;
-			const sentences = text.slice(scanned.current, end).split(/(?<=[.!?\n])\s+/);
+			const found = findMentions(text.slice(Math.max(0, scanned.current - 12), end), chess);
 			scanned.current = end;
 			const at = Date.now();
-			for (const sentence of sentences) {
-				for (const mention of findMentions(sentence, chess)) {
-					const key = mentionKey(mention);
-					// a mark mentioned again moves to the front
-					marks.current.delete(key);
-					marks.current.set(key, { mention, at, note: tidy(sentence) });
-				}
+			for (const mention of found) {
+				const key = mentionKey(mention);
+				// a mark mentioned again moves to the front
+				marks.current.delete(key);
+				marks.current.set(key, { mention, at });
 			}
 			// Only the latest few stay; older ones start fading at once.
 			const fadeNow = at - (MARK_MS - FADE_MS);

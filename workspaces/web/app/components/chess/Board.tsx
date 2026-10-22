@@ -14,11 +14,7 @@ import { PIECES } from './pieces';
 // A mention on the board, and whether it's on its way out. A fading mark is
 // drawn clear, and the browser eases it there over FADE_MS, so the fade is one
 // smooth transition rather than a step on every tick.
-export type Highlight = Mention & {
-	fading: boolean;
-	// the sentence of the model's thinking it came from
-	note?: string;
-};
+export type Highlight = Mention & { fading: boolean };
 
 export const FADE_MS = 1000;
 const fadeOut = `${FADE_MS}ms ease-out`;
@@ -172,7 +168,6 @@ export function Board({
 	return (
 		<div className="chess-board relative text-(--chess-accent)">
 			<Chessboard options={options} />
-			<Caption mentions={mentions} orientation={orientation} />
 			{promoting && (
 				<PromotionPicker
 					square={promoting.to}
@@ -257,44 +252,6 @@ function PromotionPicker({
 					);
 				})}
 			</div>
-		</div>
-	);
-}
-
-// The sentence behind the newest mark, beside its square: above it on the
-// lower half of the board and below it on the upper half, reaching in from
-// whichever side has more room. It fades with the mark.
-function Caption({
-	mentions,
-	orientation
-}: {
-	mentions: Highlight[];
-	orientation: 'white' | 'black';
-}) {
-	const latest = mentions.at(-1);
-	if (!latest?.note) return null;
-	const square = latest.kind === 'arrow' ? latest.to : latest.square;
-	const file = square.charCodeAt(0) - 'a'.charCodeAt(0);
-	const rank = Number(square[1]) - 1;
-	const column = orientation === 'white' ? file : 7 - file;
-	const row = orientation === 'white' ? 7 - rank : rank;
-	const below = row < 4;
-	const left = column < 4;
-	return (
-		<div
-			key={latest.note}
-			aria-hidden
-			className={cn(
-				'pointer-events-none absolute z-[1] w-max max-w-[min(18rem,60%)] rounded-md bg-popover/95 px-2.5 py-1.5 text-xs leading-snug text-popover-foreground shadow-md ring-1 ring-foreground/10 transition-opacity duration-250 starting:opacity-0',
-				latest.fading && 'opacity-0 duration-1000'
-			)}
-			style={{
-				...(below ? { top: `${(row + 1) * 12.5}%` } : { bottom: `${(8 - row) * 12.5}%` }),
-				...(left ? { left: `${column * 12.5}%` } : { right: `${(7 - column) * 12.5}%` }),
-				margin: '0.25rem'
-			}}
-		>
-			{latest.note}
 		</div>
 	);
 }
