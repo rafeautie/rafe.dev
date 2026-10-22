@@ -694,16 +694,19 @@ function StatusCard({
 		title = {
 			starting: 'Starting up',
 			downloading: `Downloading ${percent}%`,
+			reading: `Loading from the browser ${percent}%`,
 			preparing: gpu ? 'Loading onto the GPU' : 'Loading into memory',
 			warming: 'Warming up'
 		}[state.stage];
 		detail =
 			state.stage === 'downloading'
 				? 'Only the first time; the browser keeps it.'
-				: aiTurn
-					? undefined
-					: 'Make your move meanwhile.';
-		if (state.stage === 'downloading') {
+				: state.stage === 'reading'
+					? 'Downloaded before, so nothing to fetch.'
+					: aiTurn
+						? undefined
+						: 'Make your move meanwhile.';
+		if (state.stage === 'downloading' || state.stage === 'reading') {
 			extra = (
 				<div className="h-1 overflow-hidden rounded-full bg-foreground/10">
 					<div
@@ -752,7 +755,9 @@ function StatusCard({
 						</Button>
 					)}
 				</div>
-				{state.status === 'loading' && state.stage === 'downloading' && extra}
+				{state.status === 'loading' &&
+					(state.stage === 'downloading' || state.stage === 'reading') &&
+					extra}
 			</div>
 		);
 
