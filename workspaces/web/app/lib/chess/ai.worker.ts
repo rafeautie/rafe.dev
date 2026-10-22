@@ -267,14 +267,16 @@ class MoveOnly extends LogitsProcessor {
 }
 
 // The tokens a reason may not use yet: the line break and the end of the
-// reply before it has said anything, numbers, dashes or bare spaces to start
-// it (small models copy the move numbers), and at any point blank lines and
-// anything that isn't plain English text: other scripts, chess symbols, emoji
-// and tabs, which small models drift into.
+// reply before it has said anything, numbers, dashes or a space to start it
+// (small models copy the move numbers, and the frame has written the space),
+// and at any point blank lines, more dashes and anything that isn't plain
+// English text: other scripts, chess symbols, emoji, tabs and HTML, which
+// small models drift into.
 type ReasonWords = { breaks: number[]; never: number[]; first: number[] };
 
-// letters with accents, dashes, curly quotes and the ellipsis are fine
-const PLAIN = /^[\x20-\x7E\u00C0-\u024F\u2013\u2014\u2018\u2019\u201C\u201D\u2026]*$/;
+// letters with accents, curly quotes and the ellipsis are fine
+const PLAIN =
+	/^[\x20-\x25\x27-\x29\x2B-\x3B\x3D\x3F-\x7E\u00C0-\u024F\u2018\u2019\u201C\u201D\u2026]*$/;
 
 const wordsOf = new WeakMap<PreTrainedTokenizer, ReasonWords>();
 
@@ -294,7 +296,7 @@ function reasonWords(tokenizer: PreTrainedTokenizer, end: number[]): ReasonWords
 		if (allowed.has(id)) continue;
 		const text = token.replaceAll('\u2581', ' ');
 		if (/^<0x[0-9A-F]{2}>$/.test(token) || !PLAIN.test(text)) never.push(id);
-		else if (!text.trim()) first.push(id);
+		else if (/^\s/.test(text)) first.push(id);
 	}
 	const words = { breaks, never, first };
 	wordsOf.set(tokenizer, words);

@@ -94,6 +94,9 @@ function previewOf(row: number | undefined, history: Move[], entries: Entry[]) {
 				({ mention, threat }) => ({ ...mention, fading: false, threat })
 			)
 		: [];
+	// what it weighed points from where the pieces stood before its move, so
+	// with its thinking the board shows that position, after your move
+	if (marks.length && ai) return { fen: ai.move.before, last: history[ply - 1], ai, marks };
 	return { fen: history[lastPly].after, last: history[lastPly], ai, marks };
 }
 

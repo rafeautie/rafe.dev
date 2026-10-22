@@ -63,7 +63,18 @@ export function safeMoves(chess: Chess): string[] {
 	const losers = losing(chess);
 	const legal = chess.moves();
 	const safe = legal.filter((move) => !losers.has(move));
-	return safe.length ? safe : legal;
+	if (!safe.length) return legal;
+	// a knight or bishop going back home undoes its development, and small
+	// models like to shuffle them there and out again
+	const home = chess.turn() === 'w' ? '1' : '8';
+	const backwards = new Set(
+		chess
+			.moves({ verbose: true })
+			.filter((move) => 'nb'.includes(move.piece) && move.to[1] === home && !move.captured)
+			.map((move) => move.san)
+	);
+	const forwards = safe.filter((move) => !backwards.has(move));
+	return forwards.length ? forwards : safe;
 }
 
 // It's the slow part, a tenth of a second or so, and the facts and the worker

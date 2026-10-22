@@ -207,7 +207,7 @@ function readLines(text: string): Line[] {
 					reason
 						.join(CONSIDERING.dash.trim())
 						.trim()
-						.replace(/[.,;]$/, '') || undefined
+						.replace(/[\s.,;—–-]+$/, '') || undefined
 			});
 		} else lines.push({ kind: 'text', text: line });
 	}
@@ -319,41 +319,45 @@ export function MoveList({
 	for (let i = 0; i < entries.length; i += 2) rows.push(entries.slice(i, i + 2));
 
 	return (
-		<ol
-			onMouseLeave={() => onPreview(undefined)}
-			className="-mx-2 flex max-h-72 flex-col gap-0.5 overflow-y-auto text-sm tabular-nums xl:max-h-none xl:min-h-0 xl:flex-1"
-		>
-			{rows.map((row, i) => (
-				<li
-					key={i}
-					ref={i === rows.length - 1 ? end : undefined}
-					tabIndex={0}
-					aria-current={preview === i ? 'true' : undefined}
-					onMouseEnter={() => onPreview(i)}
-					onFocus={() => onPreview(i)}
-					onBlur={() => onPreview(undefined)}
-					onClick={() => onPreview(preview === i ? undefined : i)}
-					className={cn(
-						'grid cursor-default grid-cols-[2rem_1fr_1fr] gap-2 rounded-md px-2 py-1 ring-1 ring-transparent transition-[background-color,box-shadow] duration-200 outline-none',
-						preview === i && 'bg-foreground/5 ring-foreground/10'
-					)}
-				>
-					<span className="text-foreground/40">{i + 1}.</span>
-					{row.map((entry, j) => (
-						<span key={j} className="flex items-center gap-1.5">
-							{entry.san}
-							{entry.random && (
-								<span
-									title="Random move: it didn't give a legal move"
-									className="rounded border border-foreground/20 px-1 text-[0.65rem] text-foreground/50"
-								>
-									random
-								</span>
-							)}
-						</span>
-					))}
-				</li>
-			))}
-		</ol>
+		// the list scrolls in the space it's given, but the preview ends as soon
+		// as the pointer leaves the rows themselves
+		<div className="-mx-2 max-h-72 overflow-y-auto xl:max-h-none xl:min-h-0 xl:flex-1">
+			<ol
+				onMouseLeave={() => onPreview(undefined)}
+				className="flex flex-col gap-0.5 text-sm tabular-nums"
+			>
+				{rows.map((row, i) => (
+					<li
+						key={i}
+						ref={i === rows.length - 1 ? end : undefined}
+						tabIndex={0}
+						aria-current={preview === i ? 'true' : undefined}
+						onMouseEnter={() => onPreview(i)}
+						onFocus={() => onPreview(i)}
+						onBlur={() => onPreview(undefined)}
+						onClick={() => onPreview(preview === i ? undefined : i)}
+						className={cn(
+							'grid cursor-default grid-cols-[2rem_1fr_1fr] gap-2 rounded-md px-2 py-1 ring-1 ring-transparent transition-[background-color,box-shadow] duration-200 outline-none',
+							preview === i && 'bg-foreground/5 ring-foreground/10'
+						)}
+					>
+						<span className="text-foreground/40">{i + 1}.</span>
+						{row.map((entry, j) => (
+							<span key={j} className="flex items-center gap-1.5">
+								{entry.san}
+								{entry.random && (
+									<span
+										title="Random move: it didn't give a legal move"
+										className="rounded border border-foreground/20 px-1 text-[0.65rem] text-foreground/50"
+									>
+										random
+									</span>
+								)}
+							</span>
+						))}
+					</li>
+				))}
+			</ol>
+		</div>
 	);
 }
