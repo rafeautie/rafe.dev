@@ -469,39 +469,44 @@ export default function Game() {
 						Viewing move {preview + 1}
 					</p>
 				)}
-				{/* On a phone the rail is under the board, so which move you're
-				    looking back at sits over it */}
-				{phase !== 'setup' && preview !== undefined && (
+				{/* On a phone the rail is under the board, so what the model is doing,
+				    or which move you're looking back at, sits over it; the status
+				    card in the rail is left out there */}
+				{phase !== 'setup' && (
 					<div className="mb-2 xl:hidden">
-						<div className="flex h-9 items-center gap-1 text-sm">
-							<Button
-								variant="ghost"
-								size="icon-sm"
-								aria-label="Previous move"
-								disabled={preview === 0}
-								onClick={() => setPreview(preview - 1)}
-							>
-								<ChevronLeftIcon />
-							</Button>
-							<p className="min-w-16 text-center font-medium tabular-nums">Move {preview + 1}</p>
-							<Button
-								variant="ghost"
-								size="icon-sm"
-								aria-label="Next move"
-								disabled={preview >= rows - 1}
-								onClick={() => setPreview(preview + 1)}
-							>
-								<ChevronRightIcon />
-							</Button>
-							<Button
-								variant="outline"
-								size="sm"
-								className="ml-auto"
-								onClick={() => setPreview(undefined)}
-							>
-								Back to game
-							</Button>
-						</div>
+						{preview !== undefined ? (
+							<div className="flex h-9 items-center gap-1 text-sm">
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									aria-label="Previous move"
+									disabled={preview === 0}
+									onClick={() => setPreview(preview - 1)}
+								>
+									<ChevronLeftIcon />
+								</Button>
+								<p className="min-w-16 text-center font-medium tabular-nums">Move {preview + 1}</p>
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									aria-label="Next move"
+									disabled={preview >= rows - 1}
+									onClick={() => setPreview(preview + 1)}
+								>
+									<ChevronRightIcon />
+								</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									className="ml-auto"
+									onClick={() => setPreview(undefined)}
+								>
+									Back to game
+								</Button>
+							</div>
+						) : (
+							<StatusCard {...statusOf} compact />
+						)}
 					</div>
 				)}
 				<Board
@@ -630,7 +635,8 @@ function StatusCard({
 	result,
 	moves,
 	gpu,
-	onPickAnother
+	onPickAnother,
+	compact = false
 }: {
 	phase: Phase;
 	state: ReturnType<typeof useOpponent>['state'];
@@ -643,6 +649,7 @@ function StatusCard({
 	// where the weights go once downloaded
 	gpu: boolean;
 	onPickAnother: () => void;
+	compact?: boolean;
 }) {
 	let icon: ReactNode = <Spinner className="text-(--chess-accent)" />;
 	let title: string;
@@ -727,11 +734,33 @@ function StatusCard({
 		detail = 'It answers as soon as you play.';
 	}
 
+	// on a phone, one line over the board, where it's in view while you play:
+	// the bar under it while downloading, and a way out if loading failed
+	if (compact)
+		return (
+			<div role="status" className="flex flex-col gap-1">
+				<div className="flex h-9 min-w-0 items-center gap-2.5 text-sm">
+					<span className="flex w-4 shrink-0 justify-center">{icon}</span>
+					{/* a failed load has a button instead of a reason, to fit the line */}
+					<p className="min-w-0 truncate font-medium tabular-nums">{title}</p>
+					{typeof detail === 'string' && state.status !== 'error' && (
+						<p className="min-w-0 flex-1 truncate text-muted-foreground">{detail}</p>
+					)}
+					{state.status === 'error' && phase !== 'over' && (
+						<Button variant="outline" size="sm" className="ml-auto" onClick={onPickAnother}>
+							Pick another
+						</Button>
+					)}
+				</div>
+				{state.status === 'loading' && state.stage === 'downloading' && extra}
+			</div>
+		);
+
 	return (
 		<Card
 			size="sm"
 			role="status"
-			className="min-h-18 w-full shrink-0 flex-row items-center gap-3 px-3 py-3"
+			className="min-h-18 w-full shrink-0 flex-row items-center gap-3 px-3 py-3 max-xl:hidden"
 		>
 			<span className="flex w-10 shrink-0 justify-center">{icon}</span>
 			<div className="flex min-w-0 flex-1 flex-col gap-1.5">
