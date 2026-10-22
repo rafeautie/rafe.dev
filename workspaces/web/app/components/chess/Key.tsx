@@ -61,7 +61,7 @@ function King({ color }: { color: string }) {
 const KINGS: { swatch: ReactNode; title: string }[] = [
 	{ swatch: <King color="var(--chess-check)" />, title: 'Check' },
 	{ swatch: <King color="var(--chess-mated-it)" />, title: 'Checkmate: you won' },
-	{ swatch: <King color="var(--chess-mated-you)" />, title: 'Checkmate: it won' }
+	{ swatch: <King color="var(--chess-mated-you)" />, title: 'Checkmate: you lost' }
 ];
 
 const YOURS: { swatch: ReactNode; title: string }[] = [
