@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allowed, follow, moveTrie, restrict } from './constrain';
+import { allowed, follow, moveTrie, openTag, restrict, tagRule, tagTokens } from './constrain';
 
 // one token per character
 const encode = (text: string) => [...text].map((char) => char.charCodeAt(0));
@@ -34,5 +34,25 @@ describe('restrict', () => {
 		const scores = new Float32Array([1, 2, 3, 4]);
 		restrict(scores, [1, 3]);
 		expect([...scores]).toEqual([-Infinity, 2, -Infinity, 4]);
+	});
+});
+
+describe('tags', () => {
+	const rule = tagRule(['Nf3', 'Nxe5', 'e4']);
+	const vocab = ['N', 'f', '3', ':', 'xe5', ': wins', 'e4', ' the', '[', 'Q'];
+
+	it('only constrains a tag still spelling its move', () => {
+		expect(openTag('I like [', rule)).toBe('');
+		expect(openTag('I like [N', rule)).toBe('N');
+		expect(openTag('I like [Nf3:', rule)).toBeUndefined();
+		expect(openTag('[Nf3: develops] then', rule)).toBeUndefined();
+		expect(openTag('I like [Qh5', rule)).toBeUndefined();
+	});
+
+	it('allows the tokens that carry on a move, and the colon after it', () => {
+		const pick = (written: string) => tagTokens(written, rule, vocab).map((t) => vocab[t]);
+		expect(pick('').sort()).toEqual(['N', 'e4'].sort());
+		expect(pick('N').sort()).toEqual(['f', 'xe5'].sort());
+		expect(pick('Nxe5').sort()).toEqual([':', ': wins'].sort());
 	});
 });

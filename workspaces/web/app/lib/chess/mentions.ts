@@ -1,4 +1,4 @@
-import type { Chess, Color, PieceSymbol, Square } from 'chess.js';
+import { Chess, type Color, type PieceSymbol, type Square } from 'chess.js';
 
 // What the model's thinking points at on the board, read from the text as it
 // streams in: squares ("e4"), pieces ("my knight on f3", "your queen") and
@@ -130,4 +130,37 @@ function squaresOf(chess: Chess, type: PieceSymbol, color: Color): Square[] {
 		.flat()
 		.filter((piece) => piece?.type === type && piece.color === color)
 		.map((piece) => piece!.square);
+}
+
+// The marks the model places on purpose while thinking, as it's asked to
+// (prompt.ts): "[Nxe5: wins a pawn]", a move of its own or one its opponent
+// threatens, with a few words on why. Only moves that are legal for one side
+// or the other count.
+export type Tag = { mention: Extract<Mention, { kind: 'arrow' }>; san: string; note: string };
+
+const TAG = /\[\s*([^\]:\n]{1,12}?)\s*:\s*([^\]\n]{1,80}?)\s*\]/g;
+
+export function findTags(text: string, chess: Chess): Tag[] {
+	const moves = [...chess.moves({ verbose: true }), ...opponentMoves(chess)];
+	const tags: Tag[] = [];
+	for (const [, written, note] of text.matchAll(TAG)) {
+		const bare = written.replace(/[+#!?]+$/, '');
+		const move = moves.find((m) => m.san.replace(/[+#]/g, '') === bare);
+		if (move)
+			tags.push({ mention: { kind: 'arrow', from: move.from, to: move.to }, san: move.san, note });
+	}
+	return tags;
+}
+
+// What the other side could play if it were its turn: the threats
+export function opponentMoves(chess: Chess) {
+	const fields = chess.fen().split(' ');
+	fields[1] = fields[1] === 'w' ? 'b' : 'w';
+	fields[3] = '-';
+	try {
+		return new Chess(fields.join(' ')).moves({ verbose: true });
+	} catch {
+		// the side to move is in check, so the other can't be asked to move
+		return [];
+	}
 }

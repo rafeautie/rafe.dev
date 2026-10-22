@@ -1,6 +1,6 @@
 import { Chess } from 'chess.js';
 import { describe, expect, it } from 'vitest';
-import { findMentions } from './mentions';
+import { findMentions, findTags } from './mentions';
 
 // 1. e4 e5 2. Nf3 Nc6 3. Bc4, black to move
 const ITALIAN = 'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3';
@@ -75,5 +75,24 @@ describe('findMentions', () => {
 		expect(findMentions('The d3 square is weak.', chess)).toEqual([
 			{ kind: 'square', square: 'd3' }
 		]);
+	});
+});
+
+describe('findTags', () => {
+	it('reads tagged moves for either side, with the words on why', () => {
+		const chess = new Chess();
+		chess.move('e4');
+		chess.move('e5');
+		chess.move('Nf3');
+		const tags = findTags('[Nc6: guards e5] but [Nxe5: wins a pawn] and [Qz9: nonsense]', chess);
+		expect(tags.map(({ san, note }) => [san, note])).toEqual([
+			['Nc6', 'guards e5'],
+			['Nxe5', 'wins a pawn']
+		]);
+		expect(tags[1].mention).toEqual({ kind: 'arrow', from: 'f3', to: 'e5' });
+	});
+
+	it('leaves an open tag for later', () => {
+		expect(findTags('[Nf3: develops', new Chess())).toEqual([]);
 	});
 });

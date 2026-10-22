@@ -11,7 +11,13 @@ import { Card } from '~/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Spinner } from '~/components/ui/spinner';
 import { findFacts } from '~/lib/chess/facts';
-import { findMentions, mentionKey, type Mention } from '~/lib/chess/mentions';
+import {
+	findMentions,
+	findTags,
+	mentionKey,
+	opponentMoves,
+	type Mention
+} from '~/lib/chess/mentions';
 import { FADE_MS, type Highlight, type Promotion } from '~/components/chess/Board';
 import {
 	defaultModel,
@@ -67,6 +73,9 @@ function promptInput(chess: Chess, think: boolean, model: ChessModel, retry?: st
 		history: chess.history(),
 		legal: chess.moves({ verbose: true }).map((move) => ({ san: move.san, uci: move.lan })),
 		facts: findFacts(chess),
+		taggable: think
+			? [...chess.moves(), ...opponentMoves(chess).map((move) => move.san)]
+			: undefined,
 		think,
 		thinking: model.thinking,
 		retry
@@ -117,8 +126,10 @@ export default function Game() {
 	const [mentions, setMentions] = useState<Highlight[]>([]);
 	const { state: opponent, load, ask, stop } = useOpponent();
 
-	const marks = useRef(new Map<string, { mention: Mention; at: number }>());
+	const marks = useRef(new Map<string, { mention: Mention; at: number; note?: string }>());
 	const scanned = useRef(0);
+	// whether the model has started tagging moves this turn
+	const tagging = useRef(false);
 
 	// What this device can run, and the model for a game left from last time
 	useEffect(() => {
@@ -168,10 +179,10 @@ export default function Game() {
 	// the marks still showing, each as strong as its age allows
 	function showMarks(time = Date.now()) {
 		const shown: Highlight[] = [];
-		for (const [key, { mention, at }] of marks.current) {
+		for (const [key, { mention, at, note }] of marks.current) {
 			const left = MARK_MS - (time - at);
 			if (left <= 0) marks.current.delete(key);
-			else shown.push({ ...mention, fading: left <= FADE_MS });
+			else shown.push({ ...mention, fading: left <= FADE_MS, note });
 		}
 		setMentions(shown);
 	}
@@ -192,6 +203,7 @@ export default function Game() {
 		const missed: string[] = [];
 		marks.current.clear();
 		scanned.current = 0;
+		tagging.current = false;
 
 		const notice = (text: string, stage: Live['stage']) => {
 			setLive({ text, started, stage, retry: missed.at(-1) });
@@ -199,16 +211,26 @@ export default function Game() {
 			// Only up to the last finished sentence, so "my knight" isn't read
 			// before " on g8" arrives and a list of moves is read whole, with a
 			// little overlap for a move split across two streamed pieces.
-			const end = Math.max(...[...'.;:!?\n'].map((mark) => text.lastIndexOf(mark))) + 1;
+			// A tag ("[Nxe5: wins a pawn]") is read only once it's closed.
+			let end = Math.max(...[...'.;:!?\n'].map((mark) => text.lastIndexOf(mark))) + 1;
+			const open = text.lastIndexOf('[', end);
+			if (open >= 0 && !text.slice(open, end).includes(']')) end = open;
 			if (end <= scanned.current) return;
-			const found = findMentions(text.slice(Math.max(0, scanned.current - 12), end), chess);
+			const chunk = text.slice(Math.max(0, scanned.current - 12), end);
 			scanned.current = end;
 			const at = Date.now();
-			for (const mention of found) {
+			// Once the model tags moves itself, only its tags are shown: they're
+			// what it means to point at, with its own few words on why.
+			const tags = findTags(chunk, chess);
+			if (tags.length) tagging.current = true;
+			const found = tagging.current
+				? tags
+				: findMentions(chunk, chess).map((mention) => ({ mention, note: undefined }));
+			for (const { mention, note } of found) {
 				const key = mentionKey(mention);
 				// a mark mentioned again moves to the front
 				marks.current.delete(key);
-				marks.current.set(key, { mention, at });
+				marks.current.set(key, { mention, at, note });
 			}
 			// Only the latest few stay; older ones start fading at once.
 			const fadeNow = at - (MARK_MS - FADE_MS);

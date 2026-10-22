@@ -17,6 +17,9 @@ export type PromptInput = {
 	legal: LegalMove[];
 	// notes on the legal moves and the pieces under attack (findFacts)
 	facts?: Facts;
+	// the moves the thinking may tag (TAG_LINE): both sides', in standard
+	// notation
+	taggable?: string[];
 	think: boolean;
 	thinking: Thinking;
 	// the previous answer, when it wasn't a legal move
@@ -40,6 +43,10 @@ export function drawBoard(rows: ({ type: string; color: 'w' | 'b' } | null)[][])
 	);
 	return [...lines, '  a b c d e f g h'].join('\n');
 }
+
+// How the model points at the board while it thinks (mentions.ts, findTags)
+export const TAG_LINE =
+	"While thinking, tag each move you weigh, yours or your opponent's, like [Nxe5: wins a pawn].";
 
 export function buildMessages(input: PromptInput, historyPlies = HISTORY_PLIES): ChatMessage[] {
 	const recent = formatHistory(input.history, historyPlies);
@@ -72,6 +79,7 @@ export function buildMessages(input: PromptInput, historyPlies = HISTORY_PLIES):
 			'First think it through briefly inside <think></think> tags: what your opponent threatens and what each candidate move does.'
 		);
 	}
+	if (input.think) lines.push(TAG_LINE);
 	lines.push(
 		'Then give your move on the last line as "Move: <move>", using one move from the list exactly as written.'
 	);

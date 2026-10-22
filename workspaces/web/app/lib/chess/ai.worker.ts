@@ -14,7 +14,17 @@ import {
 	type PreTrainedModel,
 	type PreTrainedTokenizer
 } from '@huggingface/transformers';
-import { allowed, follow, moveTrie, restrict, type MoveTrie } from './constrain';
+import {
+	allowed,
+	follow,
+	moveTrie,
+	openTag,
+	restrict,
+	tagRule,
+	tagTokens,
+	type MoveTrie,
+	type TagRule
+} from './constrain';
 import type { Dtype } from './models';
 import { buildMessages, findMove, HISTORY_PLIES, splitReply, type PromptInput } from './prompt';
 
@@ -61,7 +71,13 @@ const ANSWER_TOKENS = 24;
 // the longest move, a token or so at a time, with room to spare
 const MOVE_TOKENS = 12;
 
-type Loaded = { model: PreTrainedModel; tokenizer: PreTrainedTokenizer; context: number };
+type Loaded = {
+	model: PreTrainedModel;
+	tokenizer: PreTrainedTokenizer;
+	context: number;
+	// the text of every token, worked out the first time a tag needs it
+	vocab?: string[];
+};
 
 let loaded: Promise<Loaded> | undefined;
 let turn: { id: number; stopping: InterruptableStoppingCriteria } | undefined;
@@ -248,6 +264,31 @@ class MoveOnly extends LogitsProcessor {
 	}
 }
 
+// Holds each tag in the thinking ("[Nxe5: wins a pawn]") to a real move, up
+// to its colon. Everything else in the thinking is left alone.
+class TagMoves extends LogitsProcessor {
+	constructor(
+		private loaded: Loaded,
+		private rule: TagRule,
+		private start: number
+	) {
+		super();
+	}
+	_call(input_ids: bigint[][], logits: Tensor) {
+		const ids = input_ids[0];
+		const tail = this.loaded.tokenizer.decode(
+			ids.slice(Math.max(this.start, ids.length - 10)).map(Number)
+		);
+		const written = openTag(tail, this.rule);
+		if (written === undefined) return logits;
+		const size = logits.dims.at(-1)!;
+		const { tokenizer } = this.loaded;
+		this.loaded.vocab ??= Array.from({ length: size }, (_, token) => tokenizer.decode([token]));
+		restrict(logits.data as Float32Array, tagTokens(written, this.rule, this.loaded.vocab));
+		return logits;
+	}
+}
+
 class MoveWritten extends StoppingCriteria {
 	constructor(
 		private trie: MoveTrie,
@@ -300,7 +341,11 @@ async function move(id: number, input: PromptInput) {
 	try {
 		const prompt_ids = ids(tokenizer, prompt);
 		run = await generate(ready, prompt_ids, undefined, budget, true, current.stopping, stream, {
-			stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)]
+			stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)],
+			processors:
+				input.think && input.taggable
+					? [new TagMoves(ready, tagRule(input.taggable), prompt_ids.dims[1])]
+					: []
 		});
 		if (turn !== current) return;
 
