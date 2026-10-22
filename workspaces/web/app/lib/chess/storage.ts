@@ -95,3 +95,25 @@ export function loadGame(): SavedGame | undefined {
 export function saveGame(game: SavedGame | undefined) {
 	write(GAME_KEY, game);
 }
+
+// The model being loaded, set while it loads. A load that runs a phone's tab
+// out of memory takes the page down with it, so this is still set when the
+// page comes back, and the page doesn't start the same load again.
+const LOADING_KEY = 'chess-loading';
+
+export function markLoading(model: string | undefined) {
+	try {
+		if (model) localStorage.setItem(LOADING_KEY, model);
+		else localStorage.removeItem(LOADING_KEY);
+	} catch {
+		// nothing to guard with, then
+	}
+}
+
+export function lastLoading(): string | undefined {
+	try {
+		return localStorage.getItem(LOADING_KEY) ?? undefined;
+	} catch {
+		return undefined;
+	}
+}

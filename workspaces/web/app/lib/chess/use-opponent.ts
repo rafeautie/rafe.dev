@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LoadStage, WorkerRequest, WorkerResponse } from './ai.worker';
 import { dtypeFor, externalData, type ChessModel, type DeviceInfo } from './models';
 import type { PromptInput } from './prompt';
-import type { Speed } from './storage';
+import { markLoading, type Speed } from './storage';
 
 // The page's side of lib/chess/ai.worker.ts: loads a model and asks it for
 // replies, streaming them back as they are written.
@@ -40,6 +40,7 @@ export function useOpponent() {
 		let stage: LoadStage | 'starting' = 'starting';
 		let progress = 0;
 		setState({ status: 'loading', model, stage, progress });
+		markLoading(model.id);
 
 		next.onmessage = (event: MessageEvent<WorkerResponse>) => {
 			const message = event.data;
@@ -53,9 +54,11 @@ export function useOpponent() {
 					setState({ status: 'loading', model, stage, progress });
 					break;
 				case 'ready':
+					markLoading(undefined);
 					setState({ status: 'ready', model });
 					break;
 				case 'load-error':
+					markLoading(undefined);
 					setState({ status: 'error', model, message: message.message });
 					break;
 				case 'stream':
@@ -81,6 +84,12 @@ export function useOpponent() {
 		} satisfies WorkerRequest);
 	}, []);
 
+	// A load that can't be tried, shown as one that failed
+	const fail = useCallback((model: ChessModel, message: string) => {
+		markLoading(undefined);
+		setState({ status: 'error', model, message });
+	}, []);
+
 	// Resolves with the whole reply; `onStream` sees it grow.
 	const ask = useCallback(
 		(input: PromptInput, onStream: (reply: Reply) => void) =>
@@ -98,7 +107,15 @@ export function useOpponent() {
 		send({ type: 'stop' });
 	}, []);
 
-	useEffect(() => () => worker.current?.terminate(), []);
+	// Leaving the page mid-load isn't a crash: the next visit can load again
+	useEffect(() => {
+		const leave = () => markLoading(undefined);
+		window.addEventListener('pagehide', leave);
+		return () => {
+			window.removeEventListener('pagehide', leave);
+			worker.current?.terminate();
+		};
+	}, []);
 
-	return { state, load, ask, stop };
+	return { state, load, fail, ask, stop };
 }

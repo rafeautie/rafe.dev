@@ -31,8 +31,9 @@ export function Picker({
 	onStart: () => void;
 }) {
 	const [showAll, setShowAll] = useState(false);
-	const hidden = MODELS.filter((m) => fitFor(m, device) === 'too-large');
-	const shown = showAll ? MODELS : MODELS.filter((m) => !hidden.includes(m) || m === model);
+	// the chosen model stays in view even when it's too large
+	const hidden = MODELS.filter((m) => fitFor(m, device) === 'too-large' && m !== model);
+	const shown = showAll ? MODELS : MODELS.filter((m) => !hidden.includes(m));
 	const families = [...new Set(shown.map((m) => m.family))].map((family) => ({
 		family,
 		models: shown
@@ -50,11 +51,18 @@ export function Picker({
 				<p id="opponent-label" className="mb-2 text-sm text-foreground/50">
 					opponent
 				</p>
-				{!device.webgpu && (
+				{device.phone ? (
 					<p className="mb-1 text-sm text-pretty text-foreground/60">
-						This browser has no WebGPU, so the model runs on the processor and only the lightest are
-						offered.
+						These models are too big for a phone: loading one needs a few GB of memory at once, more
+						than a phone browser gives a page, so it usually crashes. Try it on a computer.
 					</p>
+				) : (
+					!device.webgpu && (
+						<p className="mb-1 text-sm text-pretty text-foreground/60">
+							This browser has no WebGPU, so the model runs on the processor and only the lightest
+							are offered.
+						</p>
+					)
 				)}
 				<ScrollArea
 					fade
