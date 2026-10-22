@@ -377,8 +377,8 @@
 	--chess-accent: var(--color-blue-500);
 
 	.dark & {
-		--chess-light: oklch(0.42 0 0);
-		--chess-dark: oklch(0.32 0 0);
+		--chess-light: oklch(0.34 0 0);
+		--chess-dark: oklch(0.25 0 0);
 		--chess-ink: oklch(0.9 0 0);
 	}
 }
