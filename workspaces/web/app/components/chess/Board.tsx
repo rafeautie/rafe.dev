@@ -1,4 +1,4 @@
-import type { Chess, Square } from 'chess.js';
+import { Chess, type Square } from 'chess.js';
 import { useEffect, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import {
 	Chessboard,
@@ -88,6 +88,15 @@ export function Board({
 	if (lastMove) {
 		style(lastMove.from, { backgroundColor: squareTint });
 		style(lastMove.to, { backgroundColor: squareTint });
+	}
+	// A king in check, or mated, gets a red ring inside its square
+	const position = new Chess(fen);
+	if (position.inCheck()) {
+		const king = position
+			.board()
+			.flat()
+			.find((piece) => piece?.type === 'k' && piece.color === position.turn());
+		if (king) style(king.square, { boxShadow: 'inset 0 0 0 3px var(--chess-threat)' });
 	}
 	if (selected && canMove) style(selected, { backgroundColor: squareTint });
 	for (const square of targets) style(square, { backgroundImage: targetDot });

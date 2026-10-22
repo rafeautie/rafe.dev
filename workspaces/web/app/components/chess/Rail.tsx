@@ -106,9 +106,7 @@ function MoveCards({ move, random }: { move: Move; random?: boolean }) {
 							piece={`${note.kind === 'promotion' ? move.color : other}${note.piece!.toUpperCase()}`}
 						/>
 					}
-					tone={
-						note.kind === 'capture' ? 'highlight' : note.kind === 'promotion' ? undefined : 'accent'
-					}
+					highlight
 				>
 					{note.text}
 				</NoteCard>
@@ -138,16 +136,15 @@ function PieceTile({ piece, small = false }: { piece: string; small?: boolean })
 	);
 }
 
-// `accent` colors the words (check, checkmate); `highlight` colors the whole
-// card (a capture)
+// What its move did, in the accent; the random-move note stays quiet
 function NoteCard({
 	icon,
-	tone,
+	highlight = false,
 	title,
 	children
 }: {
 	icon: ReactNode;
-	tone?: 'accent' | 'highlight';
+	highlight?: boolean;
 	title?: string;
 	children: ReactNode;
 }) {
@@ -157,8 +154,7 @@ function NoteCard({
 			title={title}
 			className={cn(
 				'h-10 w-full flex-row items-center gap-3 px-3 py-0',
-				tone && 'text-(--chess-accent)',
-				tone === 'highlight' && 'bg-(--chess-accent)/5 ring-(--chess-accent)/40'
+				highlight && 'bg-(--chess-accent)/5 text-(--chess-accent) ring-(--chess-accent)/40'
 			)}
 		>
 			<span className="flex shrink-0 justify-center">{icon}</span>
