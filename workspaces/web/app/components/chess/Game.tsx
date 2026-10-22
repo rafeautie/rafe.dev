@@ -423,7 +423,7 @@ export default function Game() {
 	const rows = Math.ceil(entries.length / 2);
 
 	return (
-		<div className="chess grid gap-8 xl:grid-cols-[minmax(20rem,1fr)_auto_minmax(20rem,1fr)] xl:items-start">
+		<div className="chess grid grid-cols-1 gap-8 xl:grid-cols-[minmax(20rem,1fr)_auto_minmax(20rem,1fr)] xl:items-start">
 			{/* Beside the board on wide screens, both columns are as tall as the board
 			    and no taller: the opponent on the left, with its thinking, and the game
 			    on the right, its last button level with the board's foot. On a phone
@@ -741,7 +741,9 @@ function StatusCard({
 	// the bar under it while downloading, and a way out if loading failed
 	if (compact)
 		return (
-			<div role="status" className="flex flex-col gap-1">
+			// the bar lies along the line's foot rather than under it, so the board
+			// doesn't shift when it comes and goes
+			<div role="status" className="relative">
 				<div className="flex h-9 min-w-0 items-center gap-2.5 text-sm">
 					<span className="flex w-4 shrink-0 justify-center">{icon}</span>
 					{/* a failed load has a button instead of a reason, to fit the line */}
@@ -756,8 +758,9 @@ function StatusCard({
 					)}
 				</div>
 				{state.status === 'loading' &&
-					(state.stage === 'downloading' || state.stage === 'reading') &&
-					extra}
+					(state.stage === 'downloading' || state.stage === 'reading') && (
+						<div className="absolute inset-x-0 bottom-0">{extra}</div>
+					)}
 			</div>
 		);
 
