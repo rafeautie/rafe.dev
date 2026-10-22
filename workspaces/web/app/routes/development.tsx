@@ -54,7 +54,7 @@ const projects: Project[] = [
 function DevelopmentPage() {
 	return (
 		<div className="flex flex-col items-center gap-10 p-8 text-base text-black sm:gap-12">
-			<div className="rise flex w-full max-w-4xl items-center justify-between gap-4">
+			<div className="flex w-full max-w-4xl items-center justify-between gap-4">
 				<SlashNav className="text-xl font-medium">
 					<Link href="/">rafe</Link>
 					development
@@ -69,11 +69,11 @@ function DevelopmentPage() {
 					GitHub
 				</Link>
 			</div>
-			<p className="rise w-full max-w-4xl text-lg text-pretty text-black/80 [--delay:80ms] sm:text-xl">
+			<p className="w-full max-w-4xl text-lg text-pretty text-black/80 sm:text-xl">
 				I love building beautiful user experiences and impactful software, interfaces that feel as
 				intentional as they are useful, backed by code that holds up.
 			</p>
-			<section className="rise flex w-full max-w-4xl flex-col gap-4 [--delay:160ms]">
+			<section className="flex w-full max-w-4xl flex-col gap-4">
 				<h2 className="flex items-center gap-3 text-sm text-black/50">
 					projects
 					<span className="h-px flex-1 bg-black/10" />
