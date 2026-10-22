@@ -7,16 +7,14 @@ import { SlashNav } from '~/components/SlashNav';
 import { cn } from '~/lib/utils';
 import { Logo } from '~/components/shmoney/Logo';
 import { Screenshot, type ScreenName } from '~/components/shmoney/Screenshot';
-import chessBoardSet from '~/assets/chess/board.png?w=480;720;960;1440&format=webp&as=srcset';
-import chessBoard from '~/assets/chess/board.png?w=960&format=webp';
+import chessPreviewSet from '~/assets/chess/preview.png?w=640;960;1280;1920&format=webp&as=srcset';
+import chessPreview from '~/assets/chess/preview.png?w=1280&format=webp';
 
 const GITHUB_PROFILE_URL = 'https://github.com/rafeautie';
 
 // The screenshot takes the right 3/5 of a max-w-4xl card and bleeds 20% past
 // its column; below md it spans the card.
 const PREVIEW_SIZES = '(min-width: 768px) 660px, 120vw';
-// a square image, at most the card's height less its padding
-const SQUARE_SIZES = '(min-width: 768px) 400px, 260px';
 const PREVIEW_CLASS =
 	'absolute top-0 left-6 w-[120%] max-w-none rounded-none rounded-tl-lg border-r-0 border-b-0 shadow-lg transition-transform duration-500 ease-out motion-safe:group-hover:-translate-y-1.5 md:top-8 md:left-0';
 
@@ -40,7 +38,7 @@ type Project = {
 	language: string;
 	topics: string[];
 	icon: ReactNode;
-	// a shmoney screenshot by name, or a square image, shown whole
+	// a shmoney screenshot by name, or any image
 	preview: { alt: string } & ({ screen: ScreenName } | { src: string; srcSet: string });
 };
 
@@ -66,8 +64,8 @@ const projects: Project[] = [
 		topics: ['local-llm', 'webgpu', 'chess', 'transformers-js'],
 		icon: <ChessIcon />,
 		preview: {
-			src: chessBoard,
-			srcSet: chessBoardSet,
+			src: chessPreview,
+			srcSet: chessPreviewSet,
 			alt: 'A chess board partway through a game, both sides castled with a few pieces traded'
 		}
 	}
@@ -141,15 +139,9 @@ function ProjectCard({ project }: { project: Project }) {
 					))}
 				</ul>
 			</div>
-			{/* Positioned out of flow so the text sets the card's height. A
-			    screenshot is wider than its column, so the app reads as continuing
-			    past the card's edge; a square image sits whole inside it. */}
-			<div
-				className={cn(
-					'relative md:col-span-3 md:h-auto',
-					'screen' in project.preview ? 'h-56 sm:h-72' : 'h-72 sm:h-80'
-				)}
-			>
+			{/* Positioned out of flow so the text sets the card's height, and wider
+			    than its column so the app reads as continuing past the card's edge. */}
+			<div className="relative h-56 sm:h-72 md:col-span-3 md:h-auto">
 				{'screen' in project.preview ? (
 					<Screenshot
 						name={project.preview.screen}
@@ -159,19 +151,17 @@ function ProjectCard({ project }: { project: Project }) {
 						className={PREVIEW_CLASS}
 					/>
 				) : (
-					<div className="absolute inset-x-6 top-0 bottom-6 flex items-center justify-center md:inset-y-8 md:right-8 md:left-0">
-						<img
-							src={project.preview.src}
-							srcSet={project.preview.srcSet}
-							sizes={SQUARE_SIZES}
-							alt={project.preview.alt}
-							width={2190}
-							height={2190}
-							loading="lazy"
-							decoding="async"
-							className="aspect-square h-full w-auto max-w-full rounded-lg border border-black/10 object-contain shadow-sm transition-transform duration-500 ease-out motion-safe:group-hover:-translate-y-1.5"
-						/>
-					</div>
+					<img
+						src={project.preview.src}
+						srcSet={project.preview.srcSet}
+						sizes={PREVIEW_SIZES}
+						alt={project.preview.alt}
+						width={2560}
+						height={1600}
+						loading="lazy"
+						decoding="async"
+						className={cn('w-full rounded-lg border border-black/10 shadow-sm', PREVIEW_CLASS)}
+					/>
 				)}
 			</div>
 		</Link>
