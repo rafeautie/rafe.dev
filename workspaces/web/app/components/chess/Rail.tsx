@@ -299,9 +299,12 @@ export function MoveList({
 	// a row tapped on a touch screen, where there's no pointing first
 	onTap?: () => void;
 }) {
-	const end = useRef<HTMLLIElement>(null);
+	// a new move scrolls the list to its end, but only the list: scrolling it
+	// into view would move the page too, down to the list on a phone
+	const area = useRef<HTMLDivElement>(null);
 	useEffect(() => {
-		end.current?.scrollIntoView({ block: 'nearest' });
+		const el = area.current?.querySelector<HTMLElement>('[data-slot=scroll-area-viewport]');
+		if (el) el.scrollTop = el.scrollHeight;
 	}, [entries.length]);
 
 	// The row lights up as soon as it's pointed at, but the board waits a
@@ -327,6 +330,7 @@ export function MoveList({
 		// thinking's, but the preview ends as soon as the pointer leaves the rows
 		// themselves
 		<ScrollArea
+			ref={area}
 			fade
 			className="-mx-2 flex min-h-0 flex-col xl:flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden"
 			viewportClassName="h-auto min-h-0 flex-1 max-xl:max-h-72"
@@ -340,7 +344,6 @@ export function MoveList({
 				{rows.map((row, i) => (
 					<li
 						key={i}
-						ref={i === rows.length - 1 ? end : undefined}
 						tabIndex={0}
 						aria-current={preview === i ? 'true' : undefined}
 						onPointerEnter={(event) => event.pointerType !== 'touch' && point(i)}
