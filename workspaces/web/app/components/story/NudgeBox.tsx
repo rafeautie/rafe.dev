@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react';
+import { CheckIcon } from 'lucide-react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { NUDGE_MAX } from '~/story/nudges';
 import type { StoryStatus } from '~/story/server/nudge';
 import { Turnstile } from './Turnstile';
@@ -15,6 +16,29 @@ function readSent(): Sent | null {
 	} catch {
 		return null;
 	}
+}
+
+// A quiet card: a faint fill and hairline ring, as the contents dialog.
+function Card({
+	title,
+	count,
+	children
+}: {
+	title: ReactNode;
+	count: number;
+	children: ReactNode;
+}) {
+	return (
+		<section className="mt-12 rounded-2xl bg-foreground/[0.025] p-5 ring-1 ring-foreground/10 sm:p-6">
+			<div className="flex items-baseline justify-between gap-4">
+				<h2 className="font-medium">{title}</h2>
+				<p className="shrink-0 text-sm text-foreground/50 tabular-nums">
+					{count} {count === 1 ? 'nudge' : 'nudges'} so far
+				</p>
+			</div>
+			{children}
+		</section>
+	);
 }
 
 export function NudgeBox({
@@ -35,21 +59,32 @@ export function NudgeBox({
 	if (status.nudged) {
 		const quote = sent?.chapter === status.nudged ? sent.text : null;
 		return (
-			<div className="mt-10 border-t border-foreground/10 pt-8">
-				<p className="font-medium">Thanks. Your nudge goes into Chapter {status.nudged}.</p>
+			<Card
+				count={status.count}
+				title={
+					<span className="inline-flex items-center gap-2">
+						<CheckIcon className="size-4" />
+						Your nudge goes into Chapter {status.nudged}
+					</span>
+				}
+			>
 				{quote && (
-					<p className="mt-3 border-l-2 border-foreground/15 pl-4 text-foreground/70">{quote}</p>
+					<p className="mt-4 rounded-xl bg-background px-4 py-3 text-foreground/80 ring-1 ring-foreground/10">
+						{quote}
+					</p>
 				)}
-				<p className="mt-3 text-sm text-foreground/50">
-					You can send another once Chapter {status.nudged} is out.
+				<p className="mt-4 text-sm text-foreground/50">
+					Thanks. You can send another once Chapter {status.nudged} is out.
 				</p>
-			</div>
+			</Card>
 		);
 	}
 
-	async function submit(event: FormEvent) {
-		event.preventDefault();
-		if (!text.trim() || !token || sending) return;
+	const ready = text.trim().length > 0 && token !== null && !sending;
+
+	async function submit(event?: FormEvent) {
+		event?.preventDefault();
+		if (!ready) return;
 		setSending(true);
 		setError(null);
 		try {
@@ -82,36 +117,44 @@ export function NudgeBox({
 	}
 
 	return (
-		<form onSubmit={submit} className="mt-10 border-t border-foreground/10 pt-8">
-			<label htmlFor="nudge" className="font-medium">
-				Nudge what happens in Chapter {status.target}
-			</label>
+		<Card count={status.count} title={<label htmlFor="nudge">Nudge Chapter {status.target}</label>}>
 			<p className="mt-1 text-sm text-foreground/50">
-				One short wish. Popular ones sway the story; no one steers it.
+				One short wish for what happens next. Popular ones sway the story; no one steers it.
 			</p>
-			<div className="mt-5 flex items-end gap-4">
-				<input
-					id="nudge"
-					value={text}
-					onChange={(event) => setText(event.target.value)}
-					maxLength={NUDGE_MAX}
-					autoComplete="off"
-					placeholder="Ellis should answer the signal"
-					className="min-w-0 flex-1 border-0 border-b border-foreground/20 bg-transparent px-0 py-2 placeholder:text-foreground/30 focus:border-foreground focus:ring-0"
-				/>
-				<button
-					type="submit"
-					disabled={!text.trim() || !token || sending}
-					className="cursor-pointer pb-2 font-medium transition-opacity disabled:cursor-default disabled:opacity-40"
-				>
-					{sending ? 'Sending' : 'Send'}
-				</button>
-			</div>
-			<p className="mt-2 text-right text-xs text-foreground/40 tabular-nums">
-				{text.length}/{NUDGE_MAX}
-			</p>
-			{error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
-			<Turnstile siteKey={status.siteKey} onToken={setToken} resetKey={resetKey} />
-		</form>
+			<form onSubmit={submit} className="mt-5">
+				<div className="rounded-xl bg-background ring-1 ring-foreground/10 transition-shadow focus-within:ring-foreground/30">
+					<textarea
+						id="nudge"
+						value={text}
+						onChange={(event) => setText(event.target.value)}
+						onKeyDown={(event) => {
+							// Enter sends, as in a chat box; Shift+Enter is still a new line
+							if (event.key === 'Enter' && !event.shiftKey) {
+								event.preventDefault();
+								submit();
+							}
+						}}
+						maxLength={NUDGE_MAX}
+						rows={3}
+						placeholder="Ellis should answer the signal"
+						className="block w-full resize-none border-0 bg-transparent px-4 pt-3 pb-1 placeholder:text-foreground/30 focus:ring-0"
+					/>
+					<div className="flex items-center justify-between gap-4 px-4 pb-3">
+						<span className="text-xs text-foreground/40 tabular-nums">
+							{text.length}/{NUDGE_MAX}
+						</span>
+						<button
+							type="submit"
+							disabled={!ready}
+							className="cursor-pointer rounded-full bg-foreground px-4 py-1.5 text-sm font-medium text-background transition-opacity disabled:cursor-default disabled:opacity-30"
+						>
+							{sending ? 'Sending' : 'Send'}
+						</button>
+					</div>
+				</div>
+				{error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+				<Turnstile siteKey={status.siteKey} onToken={setToken} resetKey={resetKey} />
+			</form>
+		</Card>
 	);
 }

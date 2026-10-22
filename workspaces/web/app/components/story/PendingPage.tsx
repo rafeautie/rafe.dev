@@ -82,16 +82,10 @@ export function PendingPage() {
 			)}
 
 			{status && !arrived && (
-				<>
-					<NudgeBox
-						status={status}
-						onSent={({ chapter: nudged, count }) => setStatus({ ...status, nudged, count })}
-					/>
-					<p className="mt-6 text-sm text-foreground/50">
-						{status.count} {status.count === 1 ? 'nudge' : 'nudges'} so far for Chapter{' '}
-						{status.target}
-					</p>
-				</>
+				<NudgeBox
+					status={status}
+					onSent={({ chapter: nudged, count }) => setStatus({ ...status, nudged, count })}
+				/>
 			)}
 		</section>
 	);

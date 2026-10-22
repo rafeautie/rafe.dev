@@ -77,5 +77,5 @@ export function Turnstile({
 		}
 	}, [resetKey]);
 
-	return <div ref={element} className="mt-3" />;
+	return <div ref={element} />;
 }
