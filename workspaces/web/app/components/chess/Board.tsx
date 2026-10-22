@@ -1,4 +1,4 @@
-import { Chess, type Square } from 'chess.js';
+import type { Chess, Square } from 'chess.js';
 import { useEffect, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import {
 	Chessboard,
@@ -53,8 +53,6 @@ function useWideEnough() {
 		() => true
 	);
 }
-const checkGlow =
-	'radial-gradient(circle, var(--chess-threat) 0%, color-mix(in oklab, var(--chess-threat) 60%, transparent) 40%, transparent 72%)';
 export const targetDot = 'radial-gradient(circle, var(--chess-accent) 8%, transparent 10%)';
 
 export function Board({
@@ -90,15 +88,6 @@ export function Board({
 	if (lastMove) {
 		style(lastMove.from, { backgroundColor: squareTint });
 		style(lastMove.to, { backgroundColor: squareTint });
-	}
-	// a king in check glows red, and stays so once mated
-	const position = new Chess(fen);
-	if (position.inCheck()) {
-		const king = position
-			.board()
-			.flat()
-			.find((piece) => piece?.type === 'k' && piece.color === position.turn());
-		if (king) style(king.square, { backgroundImage: checkGlow });
 	}
 	if (selected && canMove) style(selected, { backgroundColor: squareTint });
 	for (const square of targets) style(square, { backgroundImage: targetDot });
