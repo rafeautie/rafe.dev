@@ -265,8 +265,8 @@ export function Thread({
 	return (
 		<MessageScrollerProvider autoScroll defaultScrollPosition="end">
 			<MessageScroller className="max-h-96 min-h-24 xl:max-h-none xl:flex-1">
-				<MessageScrollerViewport>
-					<MessageScrollerContent className="gap-4 pr-1 pb-2">
+				<MessageScrollerViewport className="no-scrollbar! [scrollbar-gutter:auto]!">
+					<MessageScrollerContent className="gap-4 pb-2">
 						{entries.length === 0 && !live && (
 							<Empty className="flex-1">
 								<EmptyHeader>
