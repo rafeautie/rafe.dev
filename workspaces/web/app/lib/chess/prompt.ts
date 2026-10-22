@@ -1,3 +1,4 @@
+import type { Facts } from './facts';
 import type { Thinking } from './models';
 
 // What the model is told each turn, and how its move is read back out of the
@@ -14,6 +15,8 @@ export type PromptInput = {
 	// every move of the game so far, in standard notation
 	history: string[];
 	legal: LegalMove[];
+	// notes on the legal moves and the pieces under attack (findFacts)
+	facts?: Facts;
 	think: boolean;
 	thinking: Thinking;
 	// the previous answer, when it wasn't a legal move
@@ -49,7 +52,16 @@ export function buildMessages(input: PromptInput, historyPlies = HISTORY_PLIES):
 	if (recent) {
 		lines.push(`Moves so far${recent.trimmed ? ' (the latest ones)' : ''}: ${recent.text}`);
 	}
-	lines.push(`Your legal moves: ${input.legal.map((move) => move.san).join(', ')}`, '');
+	lines.push(`Your legal moves: ${input.legal.map((move) => move.san).join(', ')}`);
+	// On their own lines, after the bare list, so the list stays one plain run
+	// of moves
+	if (input.facts?.notes.length) {
+		lines.push('About some of them:', ...input.facts.notes.map((note) => `- ${note}`));
+	}
+	if (input.facts?.threats.length) {
+		lines.push(`Under attack: ${input.facts.threats.join('; ')}`);
+	}
+	lines.push('');
 	if (input.retry) {
 		lines.push(
 			`Your last answer, "${input.retry}", was not one of your legal moves. Choose from the list.`

@@ -1,5 +1,6 @@
 import { Chess } from 'chess.js';
 import { describe, expect, it } from 'vitest';
+import { findFacts } from './facts';
 import {
 	buildMessages,
 	drawBoard,
@@ -21,6 +22,7 @@ function input(chess: Chess, overrides: Partial<PromptInput> = {}): PromptInput 
 		board: drawBoard(chess.board()),
 		history: chess.history(),
 		legal: legalMoves(chess),
+		facts: findFacts(chess),
 		think: true,
 		thinking: 'prompted',
 		...overrides
@@ -39,6 +41,15 @@ describe('buildMessages', () => {
 		expect(message.content).toContain('Moves so far: 1. e4 e5');
 		expect(message.content).toContain('Nf3');
 		expect(message.content).toContain('<think>');
+	});
+
+	it('adds facts on their own lines after the list', () => {
+		const chess = new Chess();
+		const facts = { notes: ['exd5: takes a pawn'], threats: ['pawn on e4 (by the pawn on d5)'] };
+		const [message] = buildMessages(input(chess, { facts }));
+		expect(message.content).toMatch(
+			/Your legal moves: [^\n]*\nAbout some of them:\n- exd5: takes a pawn\nUnder attack: pawn on e4/
+		);
 	});
 
 	it('only asks for tags when the model has no thinking mode of its own', () => {
@@ -68,8 +79,9 @@ describe('buildMessages', () => {
 			const [message] = buildMessages(input(chess, { history }));
 			longest = Math.max(longest, message.content.length);
 		}
-		// the board, 20 moves and a few dozen legal moves
-		expect(longest).toBeLessThan(2000);
+		// the board, 20 moves, a few dozen legal moves and notes on the risky
+		// ones (random games leave a lot more hanging than real ones)
+		expect(longest).toBeLessThan(3000);
 		// 400 positions take a few seconds, more on a busy machine
 	}, 20_000);
 

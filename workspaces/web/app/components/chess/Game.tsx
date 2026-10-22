@@ -10,6 +10,7 @@ import { Button } from '~/components/ui/button';
 import { Card } from '~/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Spinner } from '~/components/ui/spinner';
+import { findFacts } from '~/lib/chess/facts';
 import { findMentions, mentionKey, type Mention } from '~/lib/chess/mentions';
 import { FADE_MS, type Highlight, type Promotion } from '~/components/chess/Board';
 import {
@@ -65,6 +66,7 @@ function promptInput(chess: Chess, think: boolean, model: ChessModel, retry?: st
 		board: drawBoard(chess.board()),
 		history: chess.history(),
 		legal: chess.moves({ verbose: true }).map((move) => ({ san: move.san, uci: move.lan })),
+		facts: findFacts(chess),
 		think,
 		thinking: model.thinking,
 		retry
