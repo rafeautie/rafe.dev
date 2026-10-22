@@ -197,7 +197,7 @@ export function Generation({
 	return (
 		<div className="flex flex-col gap-4 xl:min-h-0 xl:flex-1">
 			{status}
-			<div className="no-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+			<div className="-mx-1 no-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 py-px">
 				{text && <p className="text-sm whitespace-pre-wrap text-foreground/70">{plain(text)}</p>}
 				{missed?.map((answer, k) => (
 					<p key={k} className="text-sm text-foreground/60 italic">
