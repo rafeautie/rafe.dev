@@ -380,7 +380,7 @@
 	/* a king in check, and one mated: by you (green) or by the model (red) */
 	--chess-check: oklch(0.6 0.22 300);
 	--chess-mated-you: var(--chess-threat);
-	--chess-mated-it: oklch(0.65 0.17 150);
+	--chess-mated-it: oklch(0.75 0.22 145);
 
 	.dark & {
 		--chess-light: oklch(0.28 0 0);
