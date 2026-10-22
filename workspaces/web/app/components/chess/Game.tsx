@@ -426,7 +426,6 @@ export default function Game() {
 							<Generation
 								status={status}
 								text={turnShown.entry.thinking}
-								chosen={turnShown.entry.san}
 								missed={turnShown.entry.missed}
 								speed={turnShown.entry.speed}
 								move={turnShown.move}

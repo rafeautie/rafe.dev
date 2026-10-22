@@ -60,6 +60,9 @@ export type WorkerResponse =
 	| { type: 'done'; id: number; text: string; opened: boolean; speed?: Speed }
 	| { type: 'error'; id: number; message: string };
 
+// the dash before each reason, which the reason's first word puts the space
+// after
+const DASH = CONSIDERING.dash.trimEnd();
 // each reason, a few words
 const REASON_TOKENS = 14;
 // and at least this many letters of it before it may end
@@ -267,8 +270,8 @@ class MoveOnly extends LogitsProcessor {
 }
 
 // The tokens a reason may not use yet: the line break and the end of the
-// reply before it has said anything, numbers, dashes or a space to start it
-// (small models copy the move numbers, and the frame has written the space),
+// reply before it has said anything, anything but a word to start it (small
+// models copy the move numbers, and the frame leaves it the space),
 // and at any point blank lines, more dashes and anything that isn't plain
 // English text: other scripts, chess symbols, emoji, tabs and HTML, which
 // small models drift into.
@@ -290,13 +293,15 @@ function reasonWords(tokenizer: PreTrainedTokenizer, end: number[]): ReasonWords
 	const breaks = [...one('\n'), ...end];
 	const allowed = new Set(breaks);
 	const never = ['\n\n', '\n\n\n', ' \n\n'].flatMap(one);
-	const first = [...'0123456789.-'].flatMap((c) => [c, ` ${c}`]).flatMap(one);
+	const first: number[] = [];
 	// Gemma spells a space as ▁ and anything it has no token for byte by byte
 	for (const [token, id] of tokenizer.get_vocab()) {
 		if (allowed.has(id)) continue;
 		const text = token.replaceAll('\u2581', ' ');
 		if (/^<0x[0-9A-F]{2}>$/.test(token) || !PLAIN.test(text)) never.push(id);
-		else if (/^\s/.test(text)) first.push(id);
+		// the dash is written without its space, so the reason starts with a
+		// word and its own one space, as Gemma spells words
+		else if (!/^ [A-Za-z]/.test(text)) first.push(id);
 	}
 	const words = { breaks, never, first };
 	wordsOf.set(tokenizer, words);
@@ -477,7 +482,7 @@ async function move(id: number, input: PromptInput) {
 				);
 				if (turn !== current || !picked.move) return;
 				chosen.push(picked.move);
-				run = await write(picked.run, CONSIDERING.dash);
+				run = await write(picked.run, DASH);
 				if (!run) return;
 				run = await reason(run);
 				if (turn !== current) return;
@@ -487,7 +492,7 @@ async function move(id: number, input: PromptInput) {
 				if (!run) return;
 				const picked = await pick(run, input.dangers);
 				if (turn !== current) return;
-				run = await write(picked.run, CONSIDERING.dash);
+				run = await write(picked.run, DASH);
 				if (!run) return;
 				run = await reason(run);
 				if (turn !== current) return;

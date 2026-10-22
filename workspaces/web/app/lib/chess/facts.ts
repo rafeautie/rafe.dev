@@ -67,10 +67,17 @@ export function safeMoves(chess: Chess): string[] {
 	// a knight or bishop going back home undoes its development, and small
 	// models like to shuffle them there and out again
 	const home = chess.turn() === 'w' ? '1' : '8';
+	// and so does taking back its own last move
+	const previous = chess.history({ verbose: true }).at(-2);
 	const backwards = new Set(
 		chess
 			.moves({ verbose: true })
-			.filter((move) => 'nb'.includes(move.piece) && move.to[1] === home && !move.captured)
+			.filter(
+				(move) =>
+					!move.captured &&
+					(('nb'.includes(move.piece) && move.to[1] === home) ||
+						(move.from === previous?.to && move.to === previous.from))
+			)
 			.map((move) => move.san)
 	);
 	const forwards = safe.filter((move) => !backwards.has(move));

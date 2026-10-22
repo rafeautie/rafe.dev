@@ -4,7 +4,6 @@ import type { Move } from 'chess.js';
 import { PIECES } from '~/components/chess/pieces';
 import { Card } from '~/components/ui/card';
 import { describeMove } from '~/lib/chess/describe';
-import { CONSIDERING } from '~/lib/chess/prompt';
 import type { Entry, Speed } from '~/lib/chess/storage';
 import { cn } from '~/lib/utils';
 
@@ -181,45 +180,11 @@ function NoteCard({
 	);
 }
 
-// What the model wrote while considering its move (prompt.ts, CONSIDERING),
-// read line by line as it streams: its candidates, the threat it sees, and
-// anything else, like the free thinking of games from before.
-type Line =
-	| { kind: 'candidate' | 'threat'; san: string; reason?: string }
-	| { kind: 'text'; text: string };
-
-function readLines(text: string): Line[] {
-	const lines: Line[] = [];
-	for (const raw of text.split('\n')) {
-		const line = raw.trim();
-		// the move it played shows in the cards below instead
-		if (!line || line === CONSIDERING.heading.trim() || /^move\s*:/i.test(line)) continue;
-		const threat = line.startsWith(CONSIDERING.threat.trim());
-		const bullet = line.startsWith(CONSIDERING.bullet.trim());
-		if (threat || bullet) {
-			const rest = line.slice((threat ? CONSIDERING.threat : CONSIDERING.bullet).trim().length);
-			const [san, ...reason] = rest.split(CONSIDERING.dash.trim());
-			lines.push({
-				kind: threat ? 'threat' : 'candidate',
-				san: san.trim(),
-				// a reason may stop at the end of a phrase (ai.worker.ts, LineEnd)
-				reason:
-					reason
-						.join(CONSIDERING.dash.trim())
-						.trim()
-						.replace(/[\s.,;—–-]+$/, '') || undefined
-			});
-		} else lines.push({ kind: 'text', text: line });
-	}
-	return lines;
-}
-
-// One turn of the model's: what it's doing (or did), the moves it weighed as
-// they come, and once it has moved, the cards for its move at the foot.
+// One turn of the model's: what it's doing (or did), its thinking as it
+// writes it, and once it has moved, the cards for its move at the foot.
 export function Generation({
 	status,
 	text,
-	chosen,
 	missed,
 	speed,
 	move,
@@ -227,52 +192,16 @@ export function Generation({
 }: {
 	status: ReactNode;
 	text?: string;
-	// the move it played, once it has
-	chosen?: string;
 	missed?: string[];
 	speed?: Speed;
 	move?: Move;
 	random?: boolean;
 }) {
-	const lines = readLines(text ?? '');
 	return (
 		<div className="flex flex-col gap-4 xl:min-h-0 xl:flex-1">
 			{status}
 			<div className="no-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-				{lines.length > 0 && (
-					<ul className="flex flex-col gap-2 text-sm">
-						{lines.map((line, k) =>
-							line.kind === 'text' ? (
-								<li key={k} className="text-foreground/70">
-									{line.text}
-								</li>
-							) : (
-								<li
-									key={k}
-									className={cn(
-										'grid animate-in grid-cols-[3.5rem_1fr] gap-2 transition-colors duration-300 fade-in',
-										line.kind === 'threat' && 'text-(--chess-threat)',
-										chosen && line.kind === 'candidate' && line.san !== chosen && 'opacity-60'
-									)}
-								>
-									<span className="font-medium tabular-nums">
-										{line.kind === 'threat' ? <span className="sr-only">Threat: </span> : null}
-										{line.san}
-									</span>
-									<span
-										className={cn(
-											line.kind === 'threat' ? 'opacity-80' : 'text-foreground/70',
-											chosen === line.san && line.kind === 'candidate' && 'text-foreground'
-										)}
-									>
-										{line.kind === 'threat' && <span className="mr-1 font-medium">threat ·</span>}
-										{line.reason ?? '…'}
-									</span>
-								</li>
-							)
-						)}
-					</ul>
-				)}
+				{text && <p className="text-sm whitespace-pre-wrap text-foreground/70">{text.trim()}</p>}
 				{missed?.map((answer, k) => (
 					<p key={k} className="text-sm text-foreground/60 italic">
 						{answer.startsWith('an error: ')
