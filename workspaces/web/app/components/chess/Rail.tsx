@@ -232,7 +232,7 @@ function Thinking({
 						<TraceIcon>
 							<BrainIcon />
 						</TraceIcon>
-						<TraceTitle>{running ? 'Thinking' : 'Thought'}</TraceTitle>
+						<TraceTitle>{running ? 'Considering' : 'Considered'}</TraceTitle>
 						<TraceDescription>{secondsOf(seconds)}</TraceDescription>
 					</TraceLine>
 				</TraceCollapsibleTrigger>

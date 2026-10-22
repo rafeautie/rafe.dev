@@ -24,7 +24,6 @@ function input(chess: Chess, overrides: Partial<PromptInput> = {}): PromptInput 
 		legal: legalMoves(chess),
 		facts: findFacts(chess),
 		think: true,
-		thinking: 'prompted',
 		...overrides
 	};
 }
@@ -40,7 +39,7 @@ describe('buildMessages', () => {
 		expect(message.content).not.toContain('FEN');
 		expect(message.content).toContain('Moves so far: 1. e4 e5');
 		expect(message.content).toContain('Nf3');
-		expect(message.content).toContain('<think>');
+		expect(message.content).toContain('"Considering:"');
 	});
 
 	it('adds facts on their own lines after the list', () => {
@@ -52,10 +51,10 @@ describe('buildMessages', () => {
 		);
 	});
 
-	it('only asks for tags when the model has no thinking mode of its own', () => {
-		const chess = new Chess();
-		expect(buildMessages(input(chess, { thinking: 'native' }))[0].content).not.toContain('<think>');
-		expect(buildMessages(input(chess, { think: false }))[0].content).not.toContain('<think>');
+	it('only asks it to consider its moves when thinking is on', () => {
+		const [message] = buildMessages(input(new Chess(), { think: false }));
+		expect(message.content).not.toContain('Considering');
+		expect(message.content).toContain('Give your move');
 	});
 
 	it('names an answer that was not legal', () => {

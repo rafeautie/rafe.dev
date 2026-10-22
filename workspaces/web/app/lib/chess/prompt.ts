@@ -1,5 +1,4 @@
 import type { Facts } from './facts';
-import type { Thinking } from './models';
 
 // What the model is told each turn, and how its move is read back out of the
 // reply. Every turn starts fresh: the model never sees earlier replies or its
@@ -17,11 +16,10 @@ export type PromptInput = {
 	legal: LegalMove[];
 	// notes on the legal moves and the pieces under attack (findFacts)
 	facts?: Facts;
-	// the moves the thinking may tag (TAG_LINE): both sides', in standard
-	// notation
-	taggable?: string[];
+	// what the opponent could play if it were its turn, for the threat it
+	// names while considering (CONSIDERING)
+	opponent?: string[];
 	think: boolean;
-	thinking: Thinking;
 	// the previous answer, when it wasn't a legal move
 	retry?: string;
 };
@@ -44,9 +42,24 @@ export function drawBoard(rows: ({ type: string; color: 'w' | 'b' } | null)[][])
 	return [...lines, '  a b c d e f g h'].join('\n');
 }
 
-// How the model points at the board while it thinks (mentions.ts, findTags)
-export const TAG_LINE =
-	"While thinking, tag each move you weigh, yours or your opponent's, like [Nxe5: wins a pawn].";
+// Instead of thinking freely, the model fills in this shape, which the worker
+// writes out around it and holds to legal moves (ai.worker.ts):
+//
+//   Considering:
+//   - Nf6 — develops and hits e4
+//   - e5 — takes the centre
+//   - c5 — keeps it symmetrical
+//   Threat: Qa4 — pins the knight
+//   Move: Nf6
+//
+// Each line shows on the board as it's written (mentions.ts, findConsidered).
+export const CONSIDERING = {
+	heading: 'Considering:\n',
+	bullet: '- ',
+	dash: ' — ',
+	threat: 'Threat: ',
+	candidates: 3
+};
 
 export function buildMessages(input: PromptInput, historyPlies = HISTORY_PLIES): ChatMessage[] {
 	const recent = formatHistory(input.history, historyPlies);
@@ -74,14 +87,13 @@ export function buildMessages(input: PromptInput, historyPlies = HISTORY_PLIES):
 			`Your last answer, "${input.retry}", was not one of your legal moves. Choose from the list.`
 		);
 	}
-	if (input.think && input.thinking === 'prompted') {
+	if (input.think) {
 		lines.push(
-			'First think it through briefly inside <think></think> tags: what your opponent threatens and what each candidate move does.'
+			`Start with "Considering:" and your ${CONSIDERING.candidates} best candidate moves, one per line as "- <move> — <a few words on why>". Then "Threat: <your opponent's most dangerous move> — <why>".`
 		);
 	}
-	if (input.think) lines.push(TAG_LINE);
 	lines.push(
-		'Then give your move on the last line as "Move: <move>", using one move from the list exactly as written.'
+		`${input.think ? 'Then' : 'Give'} your move on the last line as "Move: <move>", using one move from the list exactly as written.`
 	);
 	return [{ role: 'user', content: lines.join('\n') }];
 }

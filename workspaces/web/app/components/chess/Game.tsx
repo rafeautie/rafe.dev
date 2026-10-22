@@ -11,13 +11,7 @@ import { Card } from '~/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Spinner } from '~/components/ui/spinner';
 import { findFacts } from '~/lib/chess/facts';
-import {
-	findMentions,
-	findTags,
-	mentionKey,
-	opponentMoves,
-	type Mention
-} from '~/lib/chess/mentions';
+import { findConsidered, mentionKey, opponentMoves, type Mention } from '~/lib/chess/mentions';
 import { FADE_MS, type Highlight, type Promotion } from '~/components/chess/Board';
 import {
 	defaultModel,
@@ -51,11 +45,9 @@ type Phase = 'setup' | 'playing' | 'over';
 // the player is always white, the model always black
 const YOU: Color = 'w';
 
-// a board highlight stays this long after the model last mentions it, and
-// fades out over the last FADE_MS of that
+// a board highlight stays this long after the model last writes, and fades
+// out over the last FADE_MS of that
 const MARK_MS = 2500;
-// and no more than this many show at once
-const MAX_MARKS = 3;
 
 // The model's turn as it happens: reading the prompt before its first word,
 // thinking, then writing its move. `retry` is the answer it gave before that
@@ -67,18 +59,15 @@ type Live = {
 	retry?: string;
 };
 
-function promptInput(chess: Chess, think: boolean, model: ChessModel, retry?: string): PromptInput {
+function promptInput(chess: Chess, think: boolean, retry?: string): PromptInput {
 	return {
 		color: chess.turn() === 'w' ? 'white' : 'black',
 		board: drawBoard(chess.board()),
 		history: chess.history(),
 		legal: chess.moves({ verbose: true }).map((move) => ({ san: move.san, uci: move.lan })),
 		facts: findFacts(chess),
-		taggable: think
-			? [...chess.moves(), ...opponentMoves(chess).map((move) => move.san)]
-			: undefined,
+		opponent: think ? opponentMoves(chess).map((move) => move.san) : undefined,
 		think,
-		thinking: model.thinking,
 		retry
 	};
 }
@@ -127,10 +116,9 @@ export default function Game() {
 	const [mentions, setMentions] = useState<Highlight[]>([]);
 	const { state: opponent, load, ask, stop } = useOpponent();
 
-	const marks = useRef(new Map<string, { mention: Mention; at: number; note?: string }>());
-	const scanned = useRef(0);
-	// whether the model has started tagging moves this turn
-	const tagging = useRef(false);
+	const marks = useRef(
+		new Map<string, { mention: Mention; at: number; note?: string; threat?: boolean }>()
+	);
 
 	// What this device can run, and the model for a game left from last time
 	useEffect(() => {
@@ -180,10 +168,10 @@ export default function Game() {
 	// the marks still showing, each as strong as its age allows
 	function showMarks(time = Date.now()) {
 		const shown: Highlight[] = [];
-		for (const [key, { mention, at, note }] of marks.current) {
+		for (const [key, { mention, at, note, threat }] of marks.current) {
 			const left = MARK_MS - (time - at);
 			if (left <= 0) marks.current.delete(key);
-			else shown.push({ ...mention, fading: left <= FADE_MS, note });
+			else shown.push({ ...mention, fading: left <= FADE_MS, note, threat });
 		}
 		setMentions(shown);
 	}
@@ -196,48 +184,21 @@ export default function Game() {
 	// Returns what cancels it.
 	const takeTurn = useEffectEvent(() => {
 		if (!model) return;
-		const current = model;
 		const { think, showThinking } = settings;
 		let cancelled = false;
 		const started = Date.now();
 		const thoughts: string[] = [];
 		const missed: string[] = [];
 		marks.current.clear();
-		scanned.current = 0;
-		tagging.current = false;
 
 		const notice = (text: string, stage: Live['stage']) => {
 			setLive({ text, started, stage, retry: missed.at(-1) });
 			if (!showThinking) return;
-			// Only up to the last finished sentence, so "my knight" isn't read
-			// before " on g8" arrives and a list of moves is read whole, with a
-			// little overlap for a move split across two streamed pieces.
-			// A tag ("[Nxe5: wins a pawn]") is read only once it's closed.
-			let end = Math.max(...[...'.;:!?\n'].map((mark) => text.lastIndexOf(mark))) + 1;
-			const open = text.lastIndexOf('[', end);
-			if (open >= 0 && !text.slice(open, end).includes(']')) end = open;
-			if (end <= scanned.current) return;
-			const chunk = text.slice(Math.max(0, scanned.current - 12), end);
-			scanned.current = end;
+			// Each candidate and the threat, once its line is written, stays
+			// until the move is played.
 			const at = Date.now();
-			// Once the model tags moves itself, only its tags are shown: they're
-			// what it means to point at, with its own few words on why.
-			const tags = findTags(chunk, chess);
-			if (tags.length) tagging.current = true;
-			const found = tagging.current
-				? tags
-				: findMentions(chunk, chess).map((mention) => ({ mention, note: undefined }));
-			for (const { mention, note } of found) {
-				const key = mentionKey(mention);
-				// a mark mentioned again moves to the front
-				marks.current.delete(key);
-				marks.current.set(key, { mention, at, note });
-			}
-			// Only the latest few stay; older ones start fading at once.
-			const fadeNow = at - (MARK_MS - FADE_MS);
-			[...marks.current.values()]
-				.slice(0, -MAX_MARKS)
-				.forEach((mark) => (mark.at = Math.min(mark.at, fadeNow)));
+			for (const { mention, note, threat } of findConsidered(text, chess))
+				marks.current.set(mentionKey(mention), { mention, at, note, threat });
 			showMarks();
 		};
 
@@ -259,7 +220,7 @@ export default function Game() {
 
 		void (async () => {
 			for (let attempt = 0; attempt < 2; attempt++) {
-				const input = promptInput(chess, think, current, missed.at(-1));
+				const input = promptInput(chess, think, missed.at(-1));
 				const before = thoughts.join('\n\n');
 				setLive({ text: before, started, stage: 'reading', retry: missed.at(-1) });
 				// what it has thought so far, kept if the turn fails partway
@@ -612,7 +573,7 @@ function StatusCard({
 		if (live.stage === 'thinking') icon = <Pulse />;
 		title = {
 			reading: 'Reading the board',
-			thinking: `Thinking · ${seconds}s`,
+			thinking: `Considering · ${seconds}s`,
 			answering: 'Choosing a move'
 		}[live.stage];
 		detail = live.retry

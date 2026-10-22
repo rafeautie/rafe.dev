@@ -1,10 +1,9 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { squareTint, targetDot } from './Board';
-import { PIECES } from './pieces';
+import { squareTint, targetDot, THREAT } from './Board';
 
 // What the marks on the board mean, for the key beside "Show its thinking":
 // each one drawn small, the way the board draws it, beside a line on what it
-// is. The first three come from the model's thinking; the last two are yours.
+// is. The first two come from the model's considering; the last two are yours.
 
 const light: CSSProperties = { backgroundColor: 'var(--chess-light)' };
 const dark: CSSProperties = { backgroundColor: 'var(--chess-dark)' };
@@ -17,37 +16,25 @@ function Swatch({ style, children }: { style: CSSProperties; children?: ReactNod
 	);
 }
 
-function Knight() {
-	const Piece = PIECES.bN;
-	return <Piece />;
-}
+const Arrow = ({ color }: { color: string }) => (
+	<Swatch style={light}>
+		<svg viewBox="0 0 32 32" className="size-full text-(--chess-accent)" aria-hidden>
+			<path d="M6 26 L22 10" stroke={color} strokeWidth="4" opacity="0.65" />
+			<polygon points="27,5 15,9 23,17" fill={color} opacity="0.65" />
+		</svg>
+	</Swatch>
+);
 
 const MARKS: { swatch: ReactNode; title: string; detail: string }[] = [
 	{
-		swatch: <Swatch style={{ ...light, boxShadow: 'inset 0 0 0 3px var(--chess-accent)' }} />,
-		title: 'A square it mentions',
-		detail: '“e4”, “the d5 square”'
+		swatch: <Arrow color="currentColor" />,
+		title: 'A move it’s considering',
+		detail: 'its three best, as it lists them'
 	},
 	{
-		swatch: (
-			<Swatch style={{ ...dark, ['--chess-mark' as string]: '100%' }}>
-				<Knight />
-			</Swatch>
-		),
-		title: 'A piece it mentions',
-		detail: '“my knight on f6”, “your queen”'
-	},
-	{
-		swatch: (
-			<Swatch style={light}>
-				<svg viewBox="0 0 32 32" className="size-full text-(--chess-accent)" aria-hidden>
-					<path d="M6 26 L22 10" stroke="currentColor" strokeWidth="4" opacity="0.65" />
-					<polygon points="27,5 15,9 23,17" fill="currentColor" opacity="0.65" />
-				</svg>
-			</Swatch>
-		),
-		title: 'A move it’s weighing',
-		detail: '“Bxf7”, “knight to g5”, if it’s legal'
+		swatch: <Arrow color={THREAT} />,
+		title: 'The threat it sees',
+		detail: 'the move it fears most from you'
 	}
 ];
 

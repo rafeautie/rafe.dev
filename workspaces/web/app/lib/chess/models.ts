@@ -5,11 +5,6 @@
 
 export type Tier = 'light' | 'medium' | 'heavy' | 'large';
 
-// How a model thinks before it moves. 'native' models have a thinking mode
-// their chat template switches on; 'prompted' ones are asked to reason inside
-// <think> tags, which looks the same on screen.
-export type Thinking = 'native' | 'prompted';
-
 // A model's files for one precision: each ONNX graph it loads, by name
 // without the precision suffix, and how many .onnx_data files hold its
 // weights. Every model is listed the same way and loaded from this list, not
@@ -25,7 +20,6 @@ export type ChessModel = {
 	maker: string;
 	repo: string;
 	tier: Tier;
-	thinking: Thinking;
 	// download in GB with 16-bit math on the graphics card (q4f16), and without
 	// it (q4)
 	size: { q4f16: number; q4: number };
@@ -46,7 +40,6 @@ export const MODELS: ChessModel[] = [
 		maker: 'Google',
 		repo: 'onnx-community/gemma-4-E2B-it-ONNX',
 		tier: 'heavy',
-		thinking: 'prompted',
 		size: { q4f16: 3.11, q4: 3.63 },
 		weights: split()
 	},
@@ -57,7 +50,6 @@ export const MODELS: ChessModel[] = [
 		maker: 'Google',
 		repo: 'onnx-community/gemma-4-E4B-it-ONNX',
 		tier: 'large',
-		thinking: 'prompted',
 		size: { q4f16: 4.91, q4: 5.62 },
 		// its 4-bit embeddings without 16-bit math come in two files
 		weights: {

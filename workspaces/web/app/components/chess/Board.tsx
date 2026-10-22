@@ -16,8 +16,10 @@ import { PIECES } from './pieces';
 // smooth transition rather than a step on every tick.
 export type Highlight = Mention & {
 	fading: boolean;
-	// the model's own few words on it, when it tagged the move itself
+	// the model's own few words on it
 	note?: string;
+	// a move the opponent threatens, drawn in its own colour
+	threat?: boolean;
 };
 
 export const FADE_MS = 1000;
@@ -33,6 +35,8 @@ const accent = 'var(--chess-accent)';
 
 // The arrows are SVG, drawn in the board's text color, which is the accent.
 const ARROW = 'currentColor';
+// a threat's arrow: a warm red that reads on both themes' squares
+export const THREAT = 'oklch(0.63 0.2 25)';
 
 export const squareTint = 'color-mix(in oklab, var(--chess-accent) 30%, transparent)';
 // The coordinates, quiet on both squares. On a phone's small board they would
@@ -111,7 +115,7 @@ export function Board({
 					{
 						startSquare: mention.from,
 						endSquare: mention.to,
-						color: mention.fading ? 'transparent' : ARROW
+						color: mention.fading ? 'transparent' : mention.threat ? THREAT : ARROW
 					}
 				]
 			: []
@@ -261,7 +265,7 @@ function PromotionPicker({
 	);
 }
 
-// The model's words on the move it tagged last, by the square the arrow points
+// The model's words on the move it wrote last, by the square its arrow points
 // to: above it on the lower half of the board and below it on the upper half,
 // reaching in from whichever side has more room. It fades with the arrow.
 function Caption({

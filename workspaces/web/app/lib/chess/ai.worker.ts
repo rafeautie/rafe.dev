@@ -14,20 +14,17 @@ import {
 	type PreTrainedModel,
 	type PreTrainedTokenizer
 } from '@huggingface/transformers';
-import {
-	allowed,
-	follow,
-	moveTrie,
-	openTag,
-	restrict,
-	tagRule,
-	tagTokens,
-	type MoveTrie,
-	type TagRule
-} from './constrain';
+import { allowed, follow, moveTrie, restrict, type MoveTrie } from './constrain';
 import type { Dtype } from './models';
 import type { Speed } from './storage';
-import { buildMessages, findMove, HISTORY_PLIES, splitReply, type PromptInput } from './prompt';
+import {
+	buildMessages,
+	CONSIDERING,
+	findMove,
+	HISTORY_PLIES,
+	splitReply,
+	type PromptInput
+} from './prompt';
 
 // The /chess opponent: a small language model running in the player's browser,
 // in a worker so the board never freezes while it thinks. The weights come
@@ -63,10 +60,11 @@ export type WorkerResponse =
 	| { type: 'done'; id: number; text: string; opened: boolean; speed?: Speed }
 	| { type: 'error'; id: number; message: string };
 
-// Small models can think in circles, so thinking gets a budget of time and
-// words. When it runs out the thinking is closed and the move asked for.
-const THINK_MS = 30_000;
-const THINK_TOKENS = 768;
+// each reason, a short line
+const REASON_TOKENS = 16;
+// room for the whole considered reply (CONSIDERING): its lines, reasons and
+// the words written around them
+const CONSIDER_TOKENS = 160;
 // room to write the move the first time round, and a few words around it
 const ANSWER_TOKENS = 24;
 // the longest move, a token or so at a time, with room to spare
@@ -76,8 +74,6 @@ type Loaded = {
 	model: PreTrainedModel;
 	tokenizer: PreTrainedTokenizer;
 	context: number;
-	// the text of every token, worked out the first time a tag needs it
-	vocab?: string[];
 };
 
 let loaded: Promise<Loaded> | undefined;
@@ -268,27 +264,19 @@ class MoveOnly extends LogitsProcessor {
 	}
 }
 
-// Holds each tag in the thinking ("[Nxe5: wins a pawn]") to a real move, up
-// to its colon. Everything else in the thinking is left alone.
-class TagMoves extends LogitsProcessor {
+// Stops the model at the end of a line
+class LineEnd extends StoppingCriteria {
 	constructor(
-		private loaded: Loaded,
-		private rule: TagRule,
+		private tokenizer: PreTrainedTokenizer,
 		private start: number
 	) {
 		super();
 	}
-	_call(input_ids: bigint[][], logits: Tensor) {
-		// the last few tokens the model has written, none on its first step
-		const recent = input_ids[0].slice(Math.max(this.start, input_ids[0].length - 10));
-		if (!recent.length) return logits;
-		const written = openTag(this.loaded.tokenizer.decode(recent.map(Number)), this.rule);
-		if (written === undefined) return logits;
-		const size = logits.dims.at(-1)!;
-		const { tokenizer } = this.loaded;
-		this.loaded.vocab ??= Array.from({ length: size }, (_, token) => tokenizer.decode([token]));
-		restrict(logits.data as Float32Array, tagTokens(written, this.rule, this.loaded.vocab));
-		return logits;
+	_call(input_ids: (number | bigint)[][]) {
+		return input_ids.map((ids) => {
+			const written = ids.slice(this.start);
+			return written.length > 0 && this.tokenizer.decode(written.map(Number)).includes('\n');
+		});
 	}
 }
 
@@ -310,103 +298,153 @@ class MoveWritten extends StoppingCriteria {
 async function move(id: number, input: PromptInput) {
 	const ready = await loaded!;
 	const { tokenizer, context } = ready;
-	const native = input.think && input.thinking === 'native';
-	const budget = (input.think ? THINK_TOKENS : 0) + ANSWER_TOKENS;
+	const budget = input.think ? CONSIDER_TOKENS : ANSWER_TOKENS;
 
 	// The prompt is about the same size every turn; if a model's window is
-	// still too small for it plus the thinking, older moves go first.
+	// still too small for it plus the reply, older moves go first.
 	let plies = HISTORY_PLIES;
 	let prompt: string;
 	for (;;) {
 		// enable_thinking goes through to the chat template, which the types
-		// don't know about
-		const options = { tokenize: false, add_generation_prompt: true, enable_thinking: native };
+		// don't know about; the model considers its moves in the open instead
+		const options = { tokenize: false, add_generation_prompt: true, enable_thinking: false };
 		prompt = tokenizer.apply_chat_template(buildMessages(input, plies), options) as string;
 		const length = tokenizer.encode(prompt, { add_special_tokens: false }).length;
 		if (length + budget <= context || plies === 0) break;
 		plies = Math.max(0, plies - 6);
 	}
 	const opened = /<think>\s*$/.test(prompt);
+	// When considering, the reply starts with the shape already begun
+	const begin = input.think ? CONSIDERING.heading + CONSIDERING.bullet : '';
 
 	const current = { id, stopping: new InterruptableStoppingCriteria() };
 	turn = current;
 	let text = '';
-	// The thinking's clock starts at its first word: reading the prompt can
-	// take a while, and that shouldn't count against the time it gets to think.
-	let timer: ReturnType<typeof setTimeout> | undefined;
+	const show = (piece: string) => {
+		text += piece;
+		if (turn === current) post({ type: 'stream', id, text, opened });
+	};
+	// what the model writes itself, as against what's written for it
 	const begun = performance.now();
 	let firstAt: number | undefined;
 	const stream = (piece: string) => {
 		firstAt ??= performance.now();
-		text += piece;
-		if (input.think && !timer) timer = setTimeout(() => current.stopping.interrupt(), THINK_MS);
-		if (turn === current) post({ type: 'stream', id, text, opened });
+		show(piece);
 	};
 	let run: Run | undefined;
-	const prompt_ids = ids(tokenizer, prompt);
+	const prompt_ids = ids(tokenizer, prompt + begin);
+	const eos = ready.model.generation_config?.eos_token_id ?? [];
+	const end = (Array.isArray(eos) ? eos : [eos]).map(Number);
 	let speed: Speed | undefined;
-	try {
-		run = await generate(ready, prompt_ids, undefined, budget, true, current.stopping, stream, {
-			stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)],
-			processors:
-				input.think && input.taggable
-					? [new TagMoves(ready, tagRule(input.taggable), prompt_ids.dims[1])]
-					: []
-		});
-		if (turn !== current) return;
 
-		// The model is about to write its move, or it has stopped without
-		// naming a legal one, or it ran out of time or words while thinking.
-		// Unless it already named one, ask for it: close the thinking if need
-		// be, write "Move:" for it, and let it write only a legal move, carrying
-		// on from where it stopped rather than reading the whole prompt again.
-		const reply = splitReply(text, opened);
-		const atMove = reply.closed && /move\**\s*:\s*\**\s*$/i.test(reply.answer);
-		const legal = input.legal.map((move) => move.san);
-		const named =
-			!atMove &&
-			((reply.closed && findMove(reply.answer, input.legal).move) ||
-				(!(input.think && !reply.closed) && findMove(text, input.legal).move));
-		if (!named) {
-			current.stopping = new InterruptableStoppingCriteria();
-			clearTimeout(timer);
-			if (!atMove) {
-				const tagged = opened || text.includes('<think>');
-				const nudge = `${tagged && !reply.closed ? '\n</think>\n\n' : '\n'}Move:`;
-				stream(nudge);
-				// the move has its own limit, in words, not time
-				clearTimeout(timer);
-				// The model's memory is updated in place as it goes. It takes the
-				// nudge a token at a time: given several at once, image-and-text
-				// models (Gemma 4) try to look for an image they never loaded. Each
-				// step's own next token is thrown away.
-				const extra = ids(tokenizer, nudge);
-				const count = extra.dims[1];
-				for (let k = 0; k < count; k++) {
-					const next = k ? cat([run.sequences, extra.slice(null, [0, k])], 1) : run.sequences;
-					await generate(ready, next, run.past_key_values, 1, false, current.stopping);
-					if (turn !== current) return;
-				}
-				run = { ...run, sequences: cat([run.sequences, extra], 1) };
+	// Writes `words` into the reply for the model. The model's memory is
+	// updated in place as it goes, and it takes them a token at a time: given
+	// several at once, image-and-text models (Gemma 4) look for an image they
+	// never loaded. Each step's own next token is thrown away.
+	const write = async (from: Run, words: string): Promise<Run | undefined> => {
+		show(words);
+		const extra = ids(tokenizer, words);
+		for (let k = 0; k < extra.dims[1]; k++) {
+			const next = k ? cat([from.sequences, extra.slice(null, [0, k])], 1) : from.sequences;
+			await generate(ready, next, from.past_key_values, 1, false, current.stopping);
+			if (turn !== current) return undefined;
+		}
+		return { ...from, sequences: cat([from.sequences, extra], 1) };
+	};
+	// Lets the model write one of `moves` and nothing else, carrying on from
+	// `from` (or from the prompt), and says which
+	const pick = async (from: Run | undefined, moves: string[]) => {
+		const trie = moveTrie(moves, (move) => [...ids(tokenizer, move).data].map(Number));
+		const sequences = from?.sequences ?? prompt_ids;
+		const start = sequences.dims[1];
+		const next = await generate(
+			ready,
+			sequences,
+			from?.past_key_values,
+			MOVE_TOKENS,
+			false,
+			current.stopping,
+			stream,
+			{ processors: [new MoveOnly(trie, start, end)], stops: [new MoveWritten(trie, start)] }
+		);
+		const tokens = [...next.sequences.slice(null, [start, next.sequences.dims[1]]).data].map(
+			Number
+		);
+		return { run: next, move: follow(trie, tokens)?.move };
+	};
+	// Lets the model write freely to the end of the line
+	const reason = async (from: Run) =>
+		generate(
+			ready,
+			from.sequences,
+			from.past_key_values,
+			REASON_TOKENS,
+			true,
+			current.stopping,
+			stream,
+			{
+				stops: [new LineEnd(tokenizer, from.sequences.dims[1])]
 			}
-			const trie = moveTrie(legal, (move) => [...ids(tokenizer, move).data].map(Number));
-			const start = run.sequences.dims[1];
-			const eos = ready.model.generation_config?.eos_token_id ?? [];
-			const end = (Array.isArray(eos) ? eos : [eos]).map(Number);
-			run = await generate(
-				ready,
-				run.sequences,
-				run.past_key_values,
-				MOVE_TOKENS,
-				false,
-				current.stopping,
-				stream,
-				{
-					processors: [new MoveOnly(trie, start, end)],
-					stops: [new MoveWritten(trie, start)]
-				}
-			);
+		);
+	// a line it has written ends at a line break; one cut short doesn't yet
+	const newline = () => (text.endsWith('\n') ? '' : '\n');
+
+	try {
+		if (input.think) {
+			// Its candidates, each a different legal move with its reason,
+			// then the threat it sees, then its choice among the candidates
+			show(begin);
+			const legal = input.legal.map((move) => move.san);
+			const chosen: string[] = [];
+			const count = Math.min(CONSIDERING.candidates, legal.length);
+			for (let n = 0; n < count; n++) {
+				if (run) run = await write(run, newline() + CONSIDERING.bullet);
+				if (turn !== current || (n && !run)) return;
+				const picked = await pick(
+					run,
+					legal.filter((move) => !chosen.includes(move))
+				);
+				if (turn !== current || !picked.move) return;
+				chosen.push(picked.move);
+				run = await write(picked.run, CONSIDERING.dash);
+				if (!run) return;
+				run = await reason(run);
+				if (turn !== current) return;
+			}
+			if (input.opponent?.length) {
+				run = await write(run!, newline() + CONSIDERING.threat);
+				if (!run) return;
+				const picked = await pick(run, input.opponent);
+				if (turn !== current) return;
+				run = await write(picked.run, CONSIDERING.dash);
+				if (!run) return;
+				run = await reason(run);
+				if (turn !== current) return;
+			}
+			run = await write(run!, `${newline()}Move: `);
+			if (!run) return;
+			run = (await pick(run, chosen)).run;
 			if (turn !== current) return;
+		} else {
+			run = await generate(ready, prompt_ids, undefined, budget, true, current.stopping, stream, {
+				stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)]
+			});
+			if (turn !== current) return;
+			// Unless it named a legal move, ask for one: write "Move:" for it
+			// and let it write only a legal move.
+			const reply = splitReply(text, opened);
+			const atMove = reply.closed && /move\**\s*:\s*\**\s*$/i.test(reply.answer);
+			if (atMove || !findMove(text, input.legal).move) {
+				if (!atMove) run = await write(run, '\nMove:');
+				if (!run) return;
+				run = (
+					await pick(
+						run,
+						input.legal.map((move) => move.san)
+					)
+				).run;
+				if (turn !== current) return;
+			}
 		}
 		const ended = performance.now();
 		if (firstAt !== undefined)
@@ -417,7 +455,6 @@ async function move(id: number, input: PromptInput) {
 				writing: (ended - firstAt) / 1000
 			};
 	} finally {
-		clearTimeout(timer);
 		await run?.past_key_values.dispose();
 	}
 	turn = undefined;
