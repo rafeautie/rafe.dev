@@ -1,7 +1,6 @@
 // The opponents on /chess: small language models from Hugging Face that run in
-// the player's browser with Transformers.js (lib/chess/ai.worker.ts). The
-// newest small model from each maker that has a browser-ready ONNX build, from
-// lightest to heaviest. Download sizes are the text-only 4-bit files as listed
+// the player's browser with Transformers.js (lib/chess/ai.worker.ts). Two
+// families, Qwen and Gemma, each from lightest to heaviest. Download sizes are the text-only 4-bit files as listed
 // on each repo (October 2026); the vision and audio parts are never fetched.
 
 export type Tier = 'light' | 'medium' | 'heavy' | 'large';
@@ -21,6 +20,8 @@ export type Weights = Record<string, number>;
 export type ChessModel = {
 	id: string;
 	name: string;
+	// the family it's listed under in the picker
+	family: string;
 	maker: string;
 	repo: string;
 	tier: Tier;
@@ -31,11 +32,7 @@ export type ChessModel = {
 	weights: { q4f16: Weights; q4: Weights };
 };
 
-// the two layouts the repos use
-const single = (chunks = 1): ChessModel['weights'] => ({
-	q4f16: { model: chunks },
-	q4: { model: chunks }
-});
+// the layout the repos use: the text model, and its word embeddings apart
 const split = (decoder = 1, embed = 1): ChessModel['weights'] => ({
 	q4f16: { decoder_model_merged: decoder, embed_tokens: embed },
 	q4: { decoder_model_merged: decoder, embed_tokens: embed }
@@ -45,6 +42,7 @@ export const MODELS: ChessModel[] = [
 	{
 		id: 'qwen3.5-0.8b',
 		name: 'Qwen3.5 0.8B',
+		family: 'Qwen3.5',
 		maker: 'Alibaba',
 		repo: 'onnx-community/Qwen3.5-0.8B-ONNX',
 		tier: 'light',
@@ -53,18 +51,9 @@ export const MODELS: ChessModel[] = [
 		weights: split()
 	},
 	{
-		id: 'llama3.2-1b',
-		name: 'Llama 3.2 1B',
-		maker: 'Meta',
-		repo: 'onnx-community/Llama-3.2-1B-Instruct-ONNX',
-		tier: 'medium',
-		thinking: 'prompted',
-		size: { q4f16: 1.09, q4: 1.69 },
-		weights: single()
-	},
-	{
 		id: 'qwen3.5-2b',
 		name: 'Qwen3.5 2B',
+		family: 'Qwen3.5',
 		maker: 'Alibaba',
 		repo: 'onnx-community/Qwen3.5-2B-ONNX',
 		tier: 'medium',
@@ -73,28 +62,9 @@ export const MODELS: ChessModel[] = [
 		weights: split()
 	},
 	{
-		id: 'smollm3-3b',
-		name: 'SmolLM3 3B',
-		maker: 'Hugging Face',
-		repo: 'HuggingFaceTB/SmolLM3-3B-ONNX',
-		tier: 'heavy',
-		thinking: 'native',
-		size: { q4f16: 2.12, q4: 2.84 },
-		weights: single()
-	},
-	{
-		id: 'llama3.2-3b',
-		name: 'Llama 3.2 3B',
-		maker: 'Meta',
-		repo: 'onnx-community/Llama-3.2-3B-Instruct-ONNX',
-		tier: 'heavy',
-		thinking: 'prompted',
-		size: { q4f16: 2.41, q4: 3.41 },
-		weights: single(2)
-	},
-	{
 		id: 'qwen3.5-4b',
 		name: 'Qwen3.5 4B',
+		family: 'Qwen3.5',
 		maker: 'Alibaba',
 		repo: 'onnx-community/Qwen3.5-4B-ONNX',
 		tier: 'heavy',
@@ -105,6 +75,7 @@ export const MODELS: ChessModel[] = [
 	{
 		id: 'gemma4-e2b',
 		name: 'Gemma 4 E2B',
+		family: 'Gemma 4',
 		maker: 'Google',
 		repo: 'onnx-community/gemma-4-E2B-it-ONNX',
 		tier: 'heavy',
@@ -115,6 +86,7 @@ export const MODELS: ChessModel[] = [
 	{
 		id: 'gemma4-e4b',
 		name: 'Gemma 4 E4B',
+		family: 'Gemma 4',
 		maker: 'Google',
 		repo: 'onnx-community/gemma-4-E4B-it-ONNX',
 		tier: 'large',
