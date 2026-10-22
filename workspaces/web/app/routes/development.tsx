@@ -66,7 +66,7 @@ const projects: Project[] = [
 		preview: {
 			src: chessPreview,
 			srcSet: chessPreviewSet,
-			alt: 'A chess board partway through a game, both sides castled with a few pieces traded'
+			alt: 'A game of chess in progress against Gemma 4 E2B, with its thinking beside the board and the move list on the right'
 		}
 	}
 ];
