@@ -3,7 +3,10 @@ import {
 	AutoTokenizer,
 	cat,
 	InterruptableStoppingCriteria,
+	LogitsProcessor,
+	LogitsProcessorList,
 	ones_like,
+	StoppingCriteria,
 	StoppingCriteriaList,
 	TextStreamer,
 	type DynamicCache,
@@ -11,8 +14,9 @@ import {
 	type PreTrainedModel,
 	type PreTrainedTokenizer
 } from '@huggingface/transformers';
+import { allowed, follow, moveTrie, restrict, type MoveTrie } from './constrain';
 import type { Dtype } from './models';
-import { buildMessages, HISTORY_PLIES, splitReply, type PromptInput } from './prompt';
+import { buildMessages, findMove, HISTORY_PLIES, splitReply, type PromptInput } from './prompt';
 
 // The /chess opponent: a small language model running in the player's browser,
 // in a worker so the board never freezes while it thinks. The weights come
@@ -52,8 +56,10 @@ export type WorkerResponse =
 // words. When it runs out the thinking is closed and the move asked for.
 const THINK_MS = 30_000;
 const THINK_TOKENS = 768;
-// the move itself, and a few words around it
+// room to write the move the first time round, and a few words around it
 const ANSWER_TOKENS = 24;
+// the longest move, a token or so at a time, with room to spare
+const MOVE_TOKENS = 12;
 
 type Loaded = { model: PreTrainedModel; tokenizer: PreTrainedTokenizer; context: number };
 
@@ -168,10 +174,14 @@ async function generate(
 	max_new_tokens: number,
 	sample: boolean,
 	stopping: InterruptableStoppingCriteria,
-	onText?: (text: string) => void
+	onText?: (text: string) => void,
+	more: { stops?: StoppingCriteria[]; processors?: LogitsProcessor[] } = {}
 ) {
 	const stopping_criteria = new StoppingCriteriaList();
 	stopping_criteria.push(stopping);
+	stopping_criteria.extend(more.stops ?? []);
+	const logits_processor = new LogitsProcessorList();
+	logits_processor.extend(more.processors ?? []);
 	return (await model.generate({
 		input_ids,
 		attention_mask: ones_like(input_ids),
@@ -184,6 +194,7 @@ async function generate(
 		temperature: 0.6,
 		top_p: 0.95,
 		stopping_criteria,
+		logits_processor,
 		streamer:
 			onText &&
 			new TextStreamer(tokenizer, {
@@ -197,6 +208,60 @@ async function generate(
 
 const ids = (tokenizer: PreTrainedTokenizer, text: string) =>
 	tokenizer(text, { add_special_tokens: false }).input_ids as Tensor;
+
+// Stops the model just as it starts to write its move ("Move:"), outside its
+// thinking, so the move itself can be held to the legal ones (MoveOnly).
+class AtMove extends StoppingCriteria {
+	constructor(
+		private tokenizer: PreTrainedTokenizer,
+		private start: number,
+		private opened: boolean
+	) {
+		super();
+	}
+	_call(input_ids: (number | bigint)[][]) {
+		return input_ids.map((ids) => {
+			const tail = this.tokenizer.decode(ids.slice(-6).map(Number));
+			if (!/move\**\s*:\s*\**\s*$/i.test(tail)) return false;
+			const text = this.tokenizer.decode(ids.slice(this.start).map(Number), {
+				skip_special_tokens: true
+			});
+			const tagged = this.opened || text.includes('<think>');
+			return !tagged || splitReply(text, this.opened).closed;
+		});
+	}
+}
+
+// Lets the model write only a legal move, and stops it once one is written
+class MoveOnly extends LogitsProcessor {
+	constructor(
+		private trie: MoveTrie,
+		private start: number,
+		private end: number[]
+	) {
+		super();
+	}
+	_call(input_ids: bigint[][], logits: Tensor) {
+		const node = follow(this.trie, input_ids[0].slice(this.start).map(Number));
+		if (node) restrict(logits.data as Float32Array, allowed(node, this.end));
+		return logits;
+	}
+}
+
+class MoveWritten extends StoppingCriteria {
+	constructor(
+		private trie: MoveTrie,
+		private start: number
+	) {
+		super();
+	}
+	_call(input_ids: (number | bigint)[][]) {
+		return input_ids.map((ids) => {
+			const node = follow(this.trie, ids.slice(this.start).map(Number));
+			return !node || (node.move !== undefined && node.next.size === 0);
+		});
+	}
+}
 
 async function move(id: number, input: PromptInput) {
 	const ready = await loaded!;
@@ -233,47 +298,62 @@ async function move(id: number, input: PromptInput) {
 	};
 	let run: Run | undefined;
 	try {
-		run = await generate(
-			ready,
-			ids(tokenizer, prompt),
-			undefined,
-			budget,
-			true,
-			current.stopping,
-			stream
-		);
+		const prompt_ids = ids(tokenizer, prompt);
+		run = await generate(ready, prompt_ids, undefined, budget, true, current.stopping, stream, {
+			stops: [new AtMove(tokenizer, prompt_ids.dims[1], opened)]
+		});
 		if (turn !== current) return;
 
-		// Out of time or words while still thinking: close the thinking and ask
-		// for the move straight away, carrying on from where it stopped rather
-		// than reading the whole prompt again.
+		// The model is about to write its move, or it has stopped without
+		// naming a legal one, or it ran out of time or words while thinking.
+		// Unless it already named one, ask for it: close the thinking if need
+		// be, write "Move:" for it, and let it write only a legal move, carrying
+		// on from where it stopped rather than reading the whole prompt again.
 		const reply = splitReply(text, opened);
-		if (input.think && !(reply.closed && reply.answer)) {
+		const atMove = reply.closed && /move\**\s*:\s*\**\s*$/i.test(reply.answer);
+		const legal = input.legal.map((move) => move.san);
+		const named =
+			!atMove &&
+			((reply.closed && findMove(reply.answer, input.legal).move) ||
+				(!(input.think && !reply.closed) && findMove(text, input.legal).move));
+		if (!named) {
 			current.stopping = new InterruptableStoppingCriteria();
-			const tagged = opened || text.includes('<think>');
-			const nudge = `${tagged && !reply.closed ? '\n</think>\n\n' : '\n'}Move:`;
-			stream(nudge);
-			// the answer has its own limit, in words, not time
 			clearTimeout(timer);
-			// The model's memory is updated in place as it goes. It takes the
-			// nudge a token at a time: given several at once, image-and-text
-			// models (Qwen3.5) try to look for an image they never loaded. Each
-			// step's own next token is thrown away.
-			const extra = ids(tokenizer, nudge);
-			const count = extra.dims[1];
-			for (let k = 0; k < count; k++) {
-				const next = k ? cat([run.sequences, extra.slice(null, [0, k])], 1) : run.sequences;
-				await generate(ready, next, run.past_key_values, 1, false, current.stopping);
-				if (turn !== current) return;
+			if (!atMove) {
+				const tagged = opened || text.includes('<think>');
+				const nudge = `${tagged && !reply.closed ? '\n</think>\n\n' : '\n'}Move:`;
+				stream(nudge);
+				// the move has its own limit, in words, not time
+				clearTimeout(timer);
+				// The model's memory is updated in place as it goes. It takes the
+				// nudge a token at a time: given several at once, image-and-text
+				// models (Qwen3.5) try to look for an image they never loaded. Each
+				// step's own next token is thrown away.
+				const extra = ids(tokenizer, nudge);
+				const count = extra.dims[1];
+				for (let k = 0; k < count; k++) {
+					const next = k ? cat([run.sequences, extra.slice(null, [0, k])], 1) : run.sequences;
+					await generate(ready, next, run.past_key_values, 1, false, current.stopping);
+					if (turn !== current) return;
+				}
+				run = { ...run, sequences: cat([run.sequences, extra], 1) };
 			}
+			const trie = moveTrie(legal, (move) => [...ids(tokenizer, move).data].map(Number));
+			const start = run.sequences.dims[1];
+			const eos = ready.model.generation_config?.eos_token_id ?? [];
+			const end = (Array.isArray(eos) ? eos : [eos]).map(Number);
 			run = await generate(
 				ready,
-				cat([run.sequences, extra], 1),
+				run.sequences,
 				run.past_key_values,
-				ANSWER_TOKENS,
+				MOVE_TOKENS,
 				false,
 				current.stopping,
-				stream
+				stream,
+				{
+					processors: [new MoveOnly(trie, start, end)],
+					stops: [new MoveWritten(trie, start)]
+				}
 			);
 			if (turn !== current) return;
 		}
