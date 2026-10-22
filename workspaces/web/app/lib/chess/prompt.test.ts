@@ -44,7 +44,11 @@ describe('buildMessages', () => {
 
 	it('adds facts on their own lines after the list', () => {
 		const chess = new Chess();
-		const facts = { notes: ['exd5: takes a pawn'], threats: ['pawn on e4 (by the pawn on d5)'] };
+		const facts = {
+			notes: ['exd5: takes a pawn'],
+			threats: ['pawn on e4 (by the pawn on d5)'],
+			mates: []
+		};
 		const [message] = buildMessages(input(chess, { facts }));
 		expect(message.content).toMatch(
 			/Your legal moves: [^\n]*\nAbout some of them:\n- exd5: takes a pawn\nUnder attack: pawn on e4/
@@ -63,13 +67,13 @@ describe('buildMessages', () => {
 	});
 
 	it('stays the same size however long the game runs', () => {
-		// a 200-move game of random legal moves, restarted whenever it ends
+		// a 100-move game of random legal moves, restarted whenever it ends
 		const chess = new Chess();
 		let seed = 7;
 		const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 		const history: string[] = [];
 		let longest = 0;
-		for (let ply = 0; ply < 400; ply++) {
+		for (let ply = 0; ply < 200; ply++) {
 			if (chess.isGameOver()) chess.reset();
 			const moves = chess.moves();
 			const san = moves[Math.floor(random() * moves.length)];
@@ -81,8 +85,8 @@ describe('buildMessages', () => {
 		// the board, 20 moves, a few dozen legal moves and notes on the risky
 		// ones (random games leave a lot more hanging than real ones)
 		expect(longest).toBeLessThan(3000);
-		// 400 positions take a few seconds, more on a busy machine
-	}, 20_000);
+		// 200 positions, each with its facts worked out, take several seconds, more on a busy machine
+	}, 60_000);
 
 	it('numbers a window that starts on black’s move', () => {
 		const history = ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5'];

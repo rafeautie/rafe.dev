@@ -1,4 +1,5 @@
-import { Chess, type Square } from 'chess.js';
+import type { Chess, Square } from 'chess.js';
+import { opponentMoves } from './facts';
 import { CONSIDERING } from './prompt';
 
 // What the model points at on the board while it considers its move: the
@@ -49,17 +50,4 @@ export function findConsidered(text: string, chess: Chess): Considered[] {
 			});
 	}
 	return found;
-}
-
-// What the other side could play if it were its turn: the threats
-export function opponentMoves(chess: Chess) {
-	const fields = chess.fen().split(' ');
-	fields[1] = fields[1] === 'w' ? 'b' : 'w';
-	fields[3] = '-';
-	try {
-		return new Chess(fields.join(' ')).moves({ verbose: true });
-	} catch {
-		// the side to move is in check, so the other can't be asked to move
-		return [];
-	}
 }

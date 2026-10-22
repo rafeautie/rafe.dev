@@ -61,7 +61,9 @@ export type WorkerResponse =
 	| { type: 'error'; id: number; message: string };
 
 // each reason, a short line
-const REASON_TOKENS = 16;
+const REASON_TOKENS = 24;
+// and at least this many letters of it before it may end
+const REASON_MIN = 12;
 // room for the whole considered reply (CONSIDERING): its lines, reasons and
 // the words written around them
 const CONSIDER_TOKENS = 160;
@@ -264,6 +266,45 @@ class MoveOnly extends LogitsProcessor {
 	}
 }
 
+// The tokens a reason may not use yet: the line break and the end of the
+// reply before it has said anything, numbers to start it (small models copy
+// the move numbers), and blank lines at any point. Only the ones the tokenizer
+// spells as a single token, which are the ones the model uses.
+type ReasonWords = { breaks: number[]; blank: number[]; numbers: number[] };
+
+function reasonWords(tokenizer: PreTrainedTokenizer, end: number[]): ReasonWords {
+	const one = (text: string) => {
+		const tokens = ids(tokenizer, text).data;
+		return tokens.length === 1 ? [Number(tokens[0])] : [];
+	};
+	const digits = [...'0123456789'].flatMap((d) => [d, ` ${d}`, `${d}.`, ` ${d}.`]);
+	return {
+		breaks: [...one('\n'), ...end],
+		blank: ['\n\n', '\n\n\n', ' \n\n'].flatMap(one),
+		numbers: [...digits, '.', ' .', '-', ' -'].flatMap(one)
+	};
+}
+
+class Reason extends LogitsProcessor {
+	constructor(
+		private tokenizer: PreTrainedTokenizer,
+		private start: number,
+		private words: ReasonWords
+	) {
+		super();
+	}
+	_call(input_ids: bigint[][], logits: Tensor) {
+		const written = input_ids[0].slice(this.start);
+		const said = written.length ? this.tokenizer.decode(written.map(Number)).trim() : '';
+		const block = [...this.words.blank];
+		if (said.length < REASON_MIN) block.push(...this.words.breaks);
+		if (!said) block.push(...this.words.numbers);
+		const scores = logits.data as Float32Array;
+		for (const token of block) scores[token] = -Infinity;
+		return logits;
+	}
+}
+
 // Stops the model at the end of a line
 class LineEnd extends StoppingCriteria {
 	constructor(
@@ -353,8 +394,8 @@ async function move(id: number, input: PromptInput) {
 	};
 	// Lets the model write one of `moves` and nothing else, carrying on from
 	// `from` (or from the prompt), and says which
-	const pick = async (from: Run | undefined, moves: string[]) => {
-		const trie = moveTrie(moves, (move) => [...ids(tokenizer, move).data].map(Number));
+	const pick = async (from: Run | undefined, moves: string[], spaced = false) => {
+		const trie = moveTrie(moves, (move) => [...ids(tokenizer, move).data].map(Number), spaced);
 		const sequences = from?.sequences ?? prompt_ids;
 		const start = sequences.dims[1];
 		const next = await generate(
@@ -372,9 +413,12 @@ async function move(id: number, input: PromptInput) {
 		);
 		return { run: next, move: follow(trie, tokens)?.move };
 	};
-	// Lets the model write freely to the end of the line
-	const reason = async (from: Run) =>
-		generate(
+	// Lets the model write freely to the end of the line, a few words at
+	// least. One cut off at the limit gets an ellipsis.
+	const words = reasonWords(tokenizer, end);
+	const reason = async (from: Run) => {
+		const start = from.sequences.dims[1];
+		const next = await generate(
 			ready,
 			from.sequences,
 			from.past_key_values,
@@ -383,9 +427,13 @@ async function move(id: number, input: PromptInput) {
 			current.stopping,
 			stream,
 			{
-				stops: [new LineEnd(tokenizer, from.sequences.dims[1])]
+				processors: [new Reason(tokenizer, start, words)],
+				stops: [new LineEnd(tokenizer, start)]
 			}
 		);
+		if (turn !== current || text.endsWith('\n')) return next;
+		return write(next, '…');
+	};
 	// a line it has written ends at a line break; one cut short doesn't yet
 	const newline = () => (text.endsWith('\n') ? '' : '\n');
 
@@ -394,7 +442,7 @@ async function move(id: number, input: PromptInput) {
 			// Its candidates, each a different legal move with its reason,
 			// then the threat it sees, then its choice among the candidates
 			show(begin);
-			const legal = input.legal.map((move) => move.san);
+			const legal = input.candidates ?? input.legal.map((move) => move.san);
 			const chosen: string[] = [];
 			const count = Math.min(CONSIDERING.candidates, legal.length);
 			for (let n = 0; n < count; n++) {
@@ -411,10 +459,10 @@ async function move(id: number, input: PromptInput) {
 				run = await reason(run);
 				if (turn !== current) return;
 			}
-			if (input.opponent?.length) {
+			if (input.dangers?.length) {
 				run = await write(run!, newline() + CONSIDERING.threat);
 				if (!run) return;
-				const picked = await pick(run, input.opponent);
+				const picked = await pick(run, input.dangers);
 				if (turn !== current) return;
 				run = await write(picked.run, CONSIDERING.dash);
 				if (!run) return;
@@ -440,7 +488,8 @@ async function move(id: number, input: PromptInput) {
 				run = (
 					await pick(
 						run,
-						input.legal.map((move) => move.san)
+						input.legal.map((move) => move.san),
+						true
 					)
 				).run;
 				if (turn !== current) return;

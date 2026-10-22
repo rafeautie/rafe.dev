@@ -6,10 +6,15 @@
 
 export type MoveTrie = { next: Map<number, MoveTrie>; move?: string };
 
-export function moveTrie(moves: string[], encode: (text: string) => number[]): MoveTrie {
+export function moveTrie(
+	moves: string[],
+	encode: (text: string) => number[],
+	// whether it may also come with a space in front, when none was written
+	spaced = true
+): MoveTrie {
 	const root: MoveTrie = { next: new Map() };
 	for (const move of moves) {
-		for (const spelling of [` ${move}`, move]) {
+		for (const spelling of spaced ? [` ${move}`, move] : [move]) {
 			let node = root;
 			for (const token of encode(spelling)) {
 				let child = node.next.get(token);

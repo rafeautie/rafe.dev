@@ -10,8 +10,8 @@ import { Button } from '~/components/ui/button';
 import { Card } from '~/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Spinner } from '~/components/ui/spinner';
-import { findFacts } from '~/lib/chess/facts';
-import { findConsidered, mentionKey, opponentMoves, type Mention } from '~/lib/chess/mentions';
+import { findDangers, findFacts, safeMoves } from '~/lib/chess/facts';
+import { findConsidered, mentionKey, type Mention } from '~/lib/chess/mentions';
 import { FADE_MS, type Highlight, type Promotion } from '~/components/chess/Board';
 import {
 	defaultModel,
@@ -66,7 +66,8 @@ function promptInput(chess: Chess, think: boolean, retry?: string): PromptInput 
 		history: chess.history(),
 		legal: chess.moves({ verbose: true }).map((move) => ({ san: move.san, uci: move.lan })),
 		facts: findFacts(chess),
-		opponent: think ? opponentMoves(chess).map((move) => move.san) : undefined,
+		candidates: think ? safeMoves(chess) : undefined,
+		dangers: think ? findDangers(chess) : undefined,
 		think,
 		retry
 	};

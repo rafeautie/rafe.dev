@@ -16,9 +16,12 @@ export type PromptInput = {
 	legal: LegalMove[];
 	// notes on the legal moves and the pieces under attack (findFacts)
 	facts?: Facts;
-	// what the opponent could play if it were its turn, for the threat it
-	// names while considering (CONSIDERING)
-	opponent?: string[];
+	// the moves it may consider: the legal ones that don't simply lose
+	// (facts.ts, safeMoves)
+	candidates?: string[];
+	// the opponent's real threats, the worst first, for the threat it names
+	// (facts.ts, findDangers)
+	dangers?: string[];
 	think: boolean;
 	// the previous answer, when it wasn't a legal move
 	retry?: string;
@@ -81,6 +84,9 @@ export function buildMessages(input: PromptInput, historyPlies = HISTORY_PLIES):
 	if (input.facts?.threats.length) {
 		lines.push(`Under attack: ${input.facts.threats.join('; ')}`);
 	}
+	if (input.facts?.mates.length) {
+		lines.push(`Your opponent threatens mate with ${input.facts.mates.join(' or ')}.`);
+	}
 	lines.push('');
 	if (input.retry) {
 		lines.push(
@@ -89,7 +95,10 @@ export function buildMessages(input: PromptInput, historyPlies = HISTORY_PLIES):
 	}
 	if (input.think) {
 		lines.push(
-			`Start with "Considering:" and your ${CONSIDERING.candidates} best candidate moves, one per line as "- <move> — <a few words on why>". Then "Threat: <your opponent's most dangerous move> — <why>".`
+			`Start with "Considering:" and your ${CONSIDERING.candidates} best candidate moves, one per line as "- <move> — <a few words on why>".` +
+				(input.dangers?.length
+					? ` Then "Threat: <your opponent's most dangerous move> — <why>".`
+					: '')
 		);
 	}
 	lines.push(
