@@ -202,7 +202,12 @@ function readLines(text: string): Line[] {
 			lines.push({
 				kind: threat ? 'threat' : 'candidate',
 				san: san.trim(),
-				reason: reason.join(CONSIDERING.dash.trim()).trim() || undefined
+				// a reason may stop at the end of a phrase (ai.worker.ts, LineEnd)
+				reason:
+					reason
+						.join(CONSIDERING.dash.trim())
+						.trim()
+						.replace(/[.,;]$/, '') || undefined
 			});
 		} else lines.push({ kind: 'text', text: line });
 	}

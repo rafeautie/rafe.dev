@@ -95,9 +95,9 @@ export function buildMessages(input: PromptInput, historyPlies = HISTORY_PLIES):
 	}
 	if (input.think) {
 		lines.push(
-			`Start with "Considering:" and your ${CONSIDERING.candidates} best candidate moves, one per line as "- <move> — <a few words on why>".` +
+			`Start with "Considering:" and your ${CONSIDERING.candidates} best candidate moves, one per line as "- <move> — <why, in English, 6 words or fewer>".` +
 				(input.dangers?.length
-					? ` Then "Threat: <your opponent's most dangerous move> — <why>".`
+					? ` Then "Threat: <your opponent's most dangerous move> — <why, 6 words or fewer>".`
 					: '')
 		);
 	}

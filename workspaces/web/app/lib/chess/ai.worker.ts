@@ -60,8 +60,8 @@ export type WorkerResponse =
 	| { type: 'done'; id: number; text: string; opened: boolean; speed?: Speed }
 	| { type: 'error'; id: number; message: string };
 
-// each reason, a short line
-const REASON_TOKENS = 24;
+// each reason, a few words
+const REASON_TOKENS = 14;
 // and at least this many letters of it before it may end
 const REASON_MIN = 12;
 // room for the whole considered reply (CONSIDERING): its lines, reasons and
@@ -267,22 +267,38 @@ class MoveOnly extends LogitsProcessor {
 }
 
 // The tokens a reason may not use yet: the line break and the end of the
-// reply before it has said anything, numbers to start it (small models copy
-// the move numbers), and blank lines at any point. Only the ones the tokenizer
-// spells as a single token, which are the ones the model uses.
-type ReasonWords = { breaks: number[]; blank: number[]; numbers: number[] };
+// reply before it has said anything, numbers, dashes or bare spaces to start
+// it (small models copy the move numbers), and at any point blank lines and
+// anything that isn't plain English text: other scripts, chess symbols, emoji
+// and tabs, which small models drift into.
+type ReasonWords = { breaks: number[]; never: number[]; first: number[] };
+
+// letters with accents, dashes, curly quotes and the ellipsis are fine
+const PLAIN = /^[\x20-\x7E\u00C0-\u024F\u2013\u2014\u2018\u2019\u201C\u201D\u2026]*$/;
+
+const wordsOf = new WeakMap<PreTrainedTokenizer, ReasonWords>();
 
 function reasonWords(tokenizer: PreTrainedTokenizer, end: number[]): ReasonWords {
+	const known = wordsOf.get(tokenizer);
+	if (known) return known;
 	const one = (text: string) => {
 		const tokens = ids(tokenizer, text).data;
 		return tokens.length === 1 ? [Number(tokens[0])] : [];
 	};
-	const digits = [...'0123456789'].flatMap((d) => [d, ` ${d}`, `${d}.`, ` ${d}.`]);
-	return {
-		breaks: [...one('\n'), ...end],
-		blank: ['\n\n', '\n\n\n', ' \n\n'].flatMap(one),
-		numbers: [...digits, '.', ' .', '-', ' -'].flatMap(one)
-	};
+	const breaks = [...one('\n'), ...end];
+	const allowed = new Set(breaks);
+	const never = ['\n\n', '\n\n\n', ' \n\n'].flatMap(one);
+	const first = [...'0123456789.-'].flatMap((c) => [c, ` ${c}`]).flatMap(one);
+	// Gemma spells a space as ▁ and anything it has no token for byte by byte
+	for (const [token, id] of tokenizer.get_vocab()) {
+		if (allowed.has(id)) continue;
+		const text = token.replaceAll('\u2581', ' ');
+		if (/^<0x[0-9A-F]{2}>$/.test(token) || !PLAIN.test(text)) never.push(id);
+		else if (!text.trim()) first.push(id);
+	}
+	const words = { breaks, never, first };
+	wordsOf.set(tokenizer, words);
+	return words;
 }
 
 class Reason extends LogitsProcessor {
@@ -296,16 +312,19 @@ class Reason extends LogitsProcessor {
 	_call(input_ids: bigint[][], logits: Tensor) {
 		const written = input_ids[0].slice(this.start);
 		const said = written.length ? this.tokenizer.decode(written.map(Number)).trim() : '';
-		const block = [...this.words.blank];
-		if (said.length < REASON_MIN) block.push(...this.words.breaks);
-		if (!said) block.push(...this.words.numbers);
 		const scores = logits.data as Float32Array;
-		for (const token of block) scores[token] = -Infinity;
+		const block = (tokens: number[]) => {
+			for (const token of tokens) scores[token] = -Infinity;
+		};
+		block(this.words.never);
+		if (said.length < REASON_MIN) block(this.words.breaks);
+		if (!said) block(this.words.first);
 		return logits;
 	}
 }
 
-// Stops the model at the end of a line
+// Stops the model at the end of a line, or, once it has said enough, at the
+// end of a phrase
 class LineEnd extends StoppingCriteria {
 	constructor(
 		private tokenizer: PreTrainedTokenizer,
@@ -316,7 +335,9 @@ class LineEnd extends StoppingCriteria {
 	_call(input_ids: (number | bigint)[][]) {
 		return input_ids.map((ids) => {
 			const written = ids.slice(this.start);
-			return written.length > 0 && this.tokenizer.decode(written.map(Number)).includes('\n');
+			if (!written.length) return false;
+			const said = this.tokenizer.decode(written.map(Number));
+			return said.includes('\n') || (said.trim().length >= REASON_MIN && /[.,;]$/.test(said));
 		});
 	}
 }
@@ -431,7 +452,7 @@ async function move(id: number, input: PromptInput) {
 				stops: [new LineEnd(tokenizer, start)]
 			}
 		);
-		if (turn !== current || text.endsWith('\n')) return next;
+		if (turn !== current || /[\n.,;]$/.test(text)) return next;
 		return write(next, '…');
 	};
 	// a line it has written ends at a line break; one cut short doesn't yet
