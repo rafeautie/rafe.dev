@@ -90,25 +90,13 @@ export function Pulse() {
 	);
 }
 
-// The move the model chose, in words: a card with the piece, where it went and
-// from where, and under it one card for each other thing it did, like taking a
-// piece or giving check. Every card is the same width, and every note card the
-// same height, however much a move does.
+// What the model's move did beyond moving, like taking a piece or giving
+// check, one card each, all the same size however much a move does
 function MoveCards({ move, random }: { move: Move; random?: boolean }) {
-	const { title, from, notes } = describeMove(move);
+	const { notes } = describeMove(move);
 	const other = move.color === 'w' ? 'b' : 'w';
 	return (
 		<div className="flex w-full flex-col gap-1.5">
-			<Card size="sm" className="h-16 w-full flex-row items-center gap-3 px-3 py-0">
-				<PieceTile piece={`${move.color}${move.piece.toUpperCase()}`} />
-				<div className="flex min-w-0 flex-col gap-0.5">
-					<p className="truncate leading-tight font-medium">{title}</p>
-					<p className="truncate text-xs text-muted-foreground">
-						{from ? `${from} · ` : ''}
-						{move.san}
-					</p>
-				</div>
-			</Card>
 			{notes.map((note) => (
 				<NoteCard
 					key={note.kind}
@@ -173,15 +161,14 @@ function NoteCard({
 				tone === 'highlight' && 'bg-(--chess-accent)/5 ring-(--chess-accent)/40'
 			)}
 		>
-			{/* as wide as the piece on the move card above, so the words line up */}
-			<span className="flex w-10 shrink-0 justify-center">{icon}</span>
+			<span className="flex shrink-0 justify-center">{icon}</span>
 			<p className="truncate">{children}</p>
 		</Card>
 	);
 }
 
 // One turn of the model's: what it's doing (or did), its thinking as it
-// writes it, and once it has moved, the cards for its move at the foot.
+// writes it, and once it has moved, what its move did.
 export function Generation({
 	status,
 	text,
@@ -215,7 +202,7 @@ export function Generation({
 					</p>
 				))}
 				{move && (
-					<div className="mt-auto flex flex-col gap-2">
+					<div className="flex flex-col gap-2">
 						<MoveCards move={move} random={random} />
 						{speed && (
 							<p className="text-xs text-foreground/40 tabular-nums">

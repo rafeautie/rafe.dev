@@ -379,8 +379,8 @@
 	--chess-threat: oklch(0.63 0.2 25);
 
 	.dark & {
-		--chess-light: oklch(0.34 0 0);
-		--chess-dark: oklch(0.25 0 0);
+		--chess-light: oklch(0.28 0 0);
+		--chess-dark: oklch(0.2 0 0);
 		--chess-ink: oklch(0.9 0 0);
 	}
 }
