@@ -1,11 +1,18 @@
-import { Chess, type Color, type Square } from 'chess.js';
+import { Chess, type Color, type Move, type Square } from 'chess.js';
 import { FlagIcon, InfoIcon, TriangleAlertIcon } from 'lucide-react';
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Board } from '~/components/chess/Board';
 import { MarksKey } from '~/components/chess/Key';
 import { Picker } from '~/components/chess/Picker';
-import { ACCENT_BUTTON, MoveList, Thread, Pulse, Section, Switch } from '~/components/chess/Rail';
+import {
+	ACCENT_BUTTON,
+	Generation,
+	MoveList,
+	Pulse,
+	Section,
+	Switch
+} from '~/components/chess/Rail';
 import { Button } from '~/components/ui/button';
 import { Card } from '~/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
@@ -73,6 +80,23 @@ function promptInput(chess: Chess, think: boolean, retry?: string): PromptInput 
 	};
 }
 
+// What a row of the move list looks like when pointed at: the position after
+// it, its last move, and the model's turn in it with the moves it considered
+// drawn on the board
+function previewOf(row: number | undefined, history: Move[], entries: Entry[]) {
+	if (row === undefined || row * 2 >= history.length) return undefined;
+	const lastPly = Math.min(row * 2 + 1, history.length - 1);
+	const ply = row * 2 + 1;
+	const entry = entries[ply];
+	const ai = entry?.by === 'ai' && history[ply] ? { entry, move: history[ply] } : undefined;
+	const marks: Highlight[] = ai?.entry.thinking
+		? findConsidered(`${ai.entry.thinking}\n`, new Chess(ai.move.before)).map(
+				({ mention, threat }) => ({ ...mention, fading: false, threat })
+			)
+		: [];
+	return { fen: history[lastPly].after, last: history[lastPly], ai, marks };
+}
+
 function outcome(chess: Chess, model: ChessModel): string | undefined {
 	if (chess.isCheckmate()) {
 		return chess.turn() === YOU ? `${model.name} wins by checkmate` : 'You win by checkmate';
@@ -115,11 +139,11 @@ export default function Game() {
 	const [now, setNow] = useState(() => Date.now());
 	// what its thinking points at on the board right now
 	const [mentions, setMentions] = useState<Highlight[]>([]);
+	// the row of the move list being pointed at, shown on the board and rail
+	const [preview, setPreview] = useState<number>();
 	const { state: opponent, load, ask, stop } = useOpponent();
 
-	const marks = useRef(
-		new Map<string, { mention: Mention; at: number; note?: string; threat?: boolean }>()
-	);
+	const marks = useRef(new Map<string, { mention: Mention; at: number; threat?: boolean }>());
 
 	// What this device can run, and the model for a game left from last time
 	useEffect(() => {
@@ -169,10 +193,10 @@ export default function Game() {
 	// the marks still showing, each as strong as its age allows
 	function showMarks(time = Date.now()) {
 		const shown: Highlight[] = [];
-		for (const [key, { mention, at, note, threat }] of marks.current) {
+		for (const [key, { mention, at, threat }] of marks.current) {
 			const left = MARK_MS - (time - at);
 			if (left <= 0) marks.current.delete(key);
-			else shown.push({ ...mention, fading: left <= FADE_MS, note, threat });
+			else shown.push({ ...mention, fading: left <= FADE_MS, threat });
 		}
 		setMentions(shown);
 	}
@@ -198,8 +222,8 @@ export default function Game() {
 			// Each candidate and the threat, once its line is written, stays
 			// until the move is played.
 			const at = Date.now();
-			for (const { mention, note, threat } of findConsidered(text, chess))
-				marks.current.set(mentionKey(mention), { mention, at, note, threat });
+			for (const { mention, threat } of findConsidered(text, chess))
+				marks.current.set(mentionKey(mention), { mention, at, threat });
 			showMarks();
 		};
 
@@ -287,6 +311,7 @@ export default function Game() {
 		setResult(undefined);
 		setLive(undefined);
 		setMentions([]);
+		setPreview(undefined);
 		setPhase(next);
 	}
 
@@ -352,6 +377,30 @@ export default function Game() {
 	const history = chess.history({ verbose: true });
 	const last = history.at(-1);
 	const showThinking = settings.showThinking;
+	const shown = previewOf(preview, history, entries);
+	// the model's turn the rail shows: the row pointed at, or else the one in
+	// progress, or else its last
+	let lastAi = entries.length - 1;
+	while (lastAi >= 0 && entries[lastAi].by !== 'ai') lastAi--;
+	const turnShown = shown
+		? shown.ai
+		: live
+			? undefined
+			: lastAi >= 0
+				? { entry: entries[lastAi], move: history[lastAi] }
+				: undefined;
+	const status = (
+		<StatusCard
+			phase={phase}
+			state={opponent}
+			aiTurn={aiTurn}
+			live={live}
+			now={now}
+			result={result}
+			gpu={device?.webgpu ?? false}
+			onPickAnother={() => reset('setup')}
+		/>
+	);
 
 	return (
 		<div className="chess grid gap-8 xl:grid-cols-[minmax(20rem,1fr)_auto_minmax(20rem,1fr)] xl:items-start">
@@ -370,39 +419,35 @@ export default function Game() {
 						<Section label="opponent">
 							<p className="font-medium">{model.name}</p>
 						</Section>
-						<Thread
-							entries={entries}
-							moves={history}
-							live={
-								live && {
-									text: live.text,
-									// still thinking, or about to again after a miss
-									thinking: live.stage !== 'answering',
-									seconds: (now - live.started) / 1000
-								}
-							}
-						/>
-						<StatusCard
-							phase={phase}
-							state={opponent}
-							aiTurn={aiTurn}
-							live={live}
-							now={now}
-							result={result}
-							gpu={device?.webgpu ?? false}
-							onPickAnother={() => reset('setup')}
-						/>
+						{turnShown ? (
+							<Generation
+								status={status}
+								text={turnShown.entry.thinking}
+								chosen={turnShown.entry.san}
+								missed={turnShown.entry.missed}
+								speed={turnShown.entry.speed}
+								move={turnShown.move}
+								random={turnShown.entry.random}
+							/>
+						) : (
+							<Generation status={status} text={shown ? undefined : live?.text} />
+						)}
 					</>
 				)}
 			</section>
 			<div className="order-1 mx-auto w-full max-w-[min(40rem,calc(100dvh-7.75rem))] xl:order-2 xl:w-(--chess-board) xl:max-w-none">
 				<Board
 					chess={chess}
-					fen={fen}
 					orientation="white"
-					canMove={phase === 'playing' && chess.turn() === YOU}
-					lastMove={last && { from: last.from, to: last.to }}
-					mentions={live && showThinking ? mentions : []}
+					fen={shown?.fen ?? fen}
+					canMove={!shown && phase === 'playing' && chess.turn() === YOU}
+					lastMove={
+						(shown?.last ?? last) && {
+							from: (shown?.last ?? last)!.from,
+							to: (shown?.last ?? last)!.to
+						}
+					}
+					mentions={shown ? shown.marks : live && showThinking ? mentions : []}
 					onMove={onMove}
 				/>
 			</div>
@@ -487,7 +532,7 @@ export default function Game() {
 									)
 								}
 							>
-								<MoveList entries={entries} />
+								<MoveList entries={entries} preview={preview} onPreview={setPreview} />
 							</Section>
 						</>
 					)

@@ -375,6 +375,8 @@
 	--chess-dark: oklch(0.78 0 0);
 	--chess-ink: oklch(0.4 0 0);
 	--chess-accent: var(--color-blue-500);
+	/* a threat the model sees: the same red as its arrow on the board (Board.tsx) */
+	--chess-threat: oklch(0.63 0.2 25);
 
 	.dark & {
 		--chess-light: oklch(0.34 0 0);

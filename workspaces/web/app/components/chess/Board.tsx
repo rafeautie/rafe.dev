@@ -16,8 +16,6 @@ import { PIECES } from './pieces';
 // smooth transition rather than a step on every tick.
 export type Highlight = Mention & {
 	fading: boolean;
-	// the model's own few words on it
-	note?: string;
 	// a move the opponent threatens, drawn in its own colour
 	threat?: boolean;
 };
@@ -176,7 +174,6 @@ export function Board({
 	return (
 		<div className="chess-board relative text-(--chess-accent)">
 			<Chessboard options={options} />
-			<Caption mentions={mentions} orientation={orientation} />
 			{promoting && (
 				<PromotionPicker
 					square={promoting.to}
@@ -261,44 +258,6 @@ function PromotionPicker({
 					);
 				})}
 			</div>
-		</div>
-	);
-}
-
-// The model's words on the move it wrote last, by the square its arrow points
-// to: above it on the lower half of the board and below it on the upper half,
-// reaching in from whichever side has more room. It fades with the arrow.
-function Caption({
-	mentions,
-	orientation
-}: {
-	mentions: Highlight[];
-	orientation: 'white' | 'black';
-}) {
-	const latest = mentions.at(-1);
-	if (latest?.kind !== 'arrow' || !latest.note) return null;
-	const square = latest.to;
-	const file = square.charCodeAt(0) - 'a'.charCodeAt(0);
-	const rank = Number(square[1]) - 1;
-	const column = orientation === 'white' ? file : 7 - file;
-	const row = orientation === 'white' ? 7 - rank : rank;
-	const below = row < 4;
-	const left = column < 4;
-	return (
-		<div
-			key={latest.note}
-			aria-hidden
-			className={cn(
-				'pointer-events-none absolute z-[1] w-max max-w-[min(14rem,50%)] rounded-md bg-popover/95 px-2 py-1 text-xs leading-snug text-popover-foreground shadow-md ring-1 ring-foreground/10 transition-opacity duration-250 starting:opacity-0',
-				latest.fading && 'opacity-0 duration-1000'
-			)}
-			style={{
-				...(below ? { top: `${(row + 1) * 12.5}%` } : { bottom: `${(8 - row) * 12.5}%` }),
-				...(left ? { left: `${column * 12.5}%` } : { right: `${(7 - column) * 12.5}%` }),
-				margin: '0.25rem'
-			}}
-		>
-			{latest.note}
 		</div>
 	);
 }
