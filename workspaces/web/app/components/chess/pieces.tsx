@@ -14,11 +14,12 @@ const FILES = import.meta.glob<string>('../../assets/chess/pieces/*.svg', {
 // Drawn inline rather than as images, so the outline (each SVG's first path,
 // the silhouette the body sits on) can take the accent when the model
 // mentions the piece: --chess-mark, set on its square (Board.tsx), mixes it in.
+// --chess-mark-color takes another color instead, like a king in check's.
 function markable(svg: string) {
 	return svg
 		.replace(
 			/fill="(#[0-9a-f]{6})"/i,
-			'style="fill: color-mix(in oklab, var(--chess-accent) var(--chess-mark), $1)"'
+			'style="fill: color-mix(in oklab, var(--chess-mark-color, var(--chess-accent)) var(--chess-mark), $1)"'
 		)
 		.replace(/width="72" height="72"/, 'width="100%" height="100%"');
 }

@@ -604,11 +604,11 @@ function StatusCard({
 		const won = result?.startsWith('You win');
 		const drawn = result?.startsWith('Draw');
 		icon = won ? (
-			<TrophyIcon className="size-4 text-(--chess-accent)" />
+			<TrophyIcon className="size-4 text-(--chess-mated-it)" />
 		) : drawn ? (
 			<HandshakeIcon className="size-4 text-muted-foreground" />
 		) : (
-			<FlagIcon className="size-4 text-muted-foreground" />
+			<FlagIcon className="size-4 text-(--chess-mated-you)" />
 		);
 		title = won ? 'You won' : drawn ? 'A draw' : 'You lost';
 		// how, without saying again who won: "By checkmate, after 4 moves."

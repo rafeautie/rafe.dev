@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { DicesIcon } from 'lucide-react';
 import type { Move } from 'chess.js';
 import { PIECES } from '~/components/chess/pieces';
@@ -97,20 +97,32 @@ function MoveCards({ move, random }: { move: Move; random?: boolean }) {
 	const other = move.color === 'w' ? 'b' : 'w';
 	return (
 		<div className="flex w-full flex-col gap-1.5">
-			{notes.map((note) => (
-				<NoteCard
-					key={note.kind}
-					icon={
-						<PieceTile
-							small
-							piece={`${note.kind === 'promotion' ? move.color : other}${note.piece!.toUpperCase()}`}
-						/>
-					}
-					highlight
-				>
-					{note.text}
-				</NoteCard>
-			))}
+			{notes.map((note) => {
+				// a check or mate is the king's color on the board, outline too
+				const king =
+					note.kind === 'checkmate'
+						? move.color === 'w'
+							? 'var(--chess-mated-it)'
+							: 'var(--chess-mated-you)'
+						: note.kind === 'check'
+							? 'var(--chess-check)'
+							: undefined;
+				return (
+					<NoteCard
+						key={note.kind}
+						icon={
+							<PieceTile
+								small
+								mark={king}
+								piece={`${note.kind === 'promotion' ? move.color : other}${note.piece!.toUpperCase()}`}
+							/>
+						}
+						color={king ?? 'var(--chess-accent)'}
+					>
+						{note.text}
+					</NoteCard>
+				);
+			})}
 			{random && (
 				<NoteCard
 					icon={
@@ -127,24 +139,38 @@ function MoveCards({ move, random }: { move: Move; random?: boolean }) {
 	);
 }
 
-function PieceTile({ piece, small = false }: { piece: string; small?: boolean }) {
+function PieceTile({
+	piece,
+	small = false,
+	mark
+}: {
+	piece: string;
+	small?: boolean;
+	mark?: string;
+}) {
 	const Piece = PIECES[piece];
 	return (
-		<span className={cn('shrink-0 rounded-md bg-foreground/5', small ? 'size-6' : 'size-10')}>
+		<span
+			className={cn('shrink-0 rounded-md bg-foreground/5', small ? 'size-6' : 'size-10')}
+			style={
+				mark ? ({ '--chess-mark': '100%', '--chess-mark-color': mark } as CSSProperties) : undefined
+			}
+		>
 			<Piece />
 		</span>
 	);
 }
 
-// What its move did, in the accent; the random-move note stays quiet
+// What its move did, in the accent, or for a check or mate the king's color on
+// the board (Board.tsx, kingMark); the random-move note stays quiet
 function NoteCard({
 	icon,
-	highlight = false,
+	color,
 	title,
 	children
 }: {
 	icon: ReactNode;
-	highlight?: boolean;
+	color?: string;
 	title?: string;
 	children: ReactNode;
 }) {
@@ -154,8 +180,9 @@ function NoteCard({
 			title={title}
 			className={cn(
 				'h-10 w-full flex-row items-center gap-3 px-3 py-0',
-				highlight && 'bg-(--chess-accent)/5 text-(--chess-accent) ring-(--chess-accent)/40'
+				color && 'bg-(--note)/5 text-(--note) ring-(--note)/40'
 			)}
+			style={color ? ({ '--note': color } as CSSProperties) : undefined}
 		>
 			<span className="flex shrink-0 justify-center">{icon}</span>
 			<p className="truncate">{children}</p>

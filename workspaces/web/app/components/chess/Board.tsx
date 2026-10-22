@@ -53,6 +53,14 @@ function useWideEnough() {
 		() => true
 	);
 }
+// The outline color of a king in check (pieces.tsx): purple, or once mated,
+// green for the player's win and red for their loss. The player sits at the
+// foot of the board.
+function kingMark(mated: boolean, king: 'w' | 'b', orientation: 'white' | 'black') {
+	if (!mated) return 'var(--chess-check)';
+	return king === orientation[0] ? 'var(--chess-mated-you)' : 'var(--chess-mated-it)';
+}
+
 export const targetDot = 'radial-gradient(circle, var(--chess-accent) 8%, transparent 10%)';
 
 export function Board({
@@ -89,14 +97,19 @@ export function Board({
 		style(lastMove.from, { backgroundColor: squareTint });
 		style(lastMove.to, { backgroundColor: squareTint });
 	}
-	// A king in check, or mated, gets a red ring inside its square
+	// A king in check has its outline in purple, and a mated one in green if
+	// you mated it, red if it mated you (Key.tsx)
 	const position = new Chess(fen);
 	if (position.inCheck()) {
 		const king = position
 			.board()
 			.flat()
 			.find((piece) => piece?.type === 'k' && piece.color === position.turn());
-		if (king) style(king.square, { boxShadow: 'inset 0 0 0 3px var(--chess-threat)' });
+		if (king)
+			style(king.square, {
+				['--chess-mark' as string]: '100%',
+				['--chess-mark-color' as string]: kingMark(position.isCheckmate(), king.color, orientation)
+			});
 	}
 	if (selected && canMove) style(selected, { backgroundColor: squareTint });
 	for (const square of targets) style(square, { backgroundImage: targetDot });

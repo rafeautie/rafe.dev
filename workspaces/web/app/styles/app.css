@@ -377,6 +377,10 @@
 	--chess-accent: var(--color-blue-500);
 	/* a threat the model sees: the same red as its arrow on the board (Board.tsx) */
 	--chess-threat: oklch(0.63 0.2 25);
+	/* a king in check, and one mated: by you (green) or by the model (red) */
+	--chess-check: oklch(0.6 0.22 300);
+	--chess-mated-you: var(--chess-threat);
+	--chess-mated-it: oklch(0.65 0.17 150);
 
 	.dark & {
 		--chess-light: oklch(0.28 0 0);
