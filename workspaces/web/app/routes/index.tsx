@@ -1,13 +1,33 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { Link } from '~/components/Link';
 import { PhotoPicture } from '~/components/PhotoPicture';
-import { SlashNav } from '~/components/SlashNav';
-import { absoluteUrl, getPhoto, PHOTOS } from '~/photos';
+import { absoluteUrl, getPhoto, PHOTOS, type Photo } from '~/photos';
+import { POSTS } from '~/writing';
 
-// The hero is object-contain inside the padded viewport box below, so the
-// padding is the most it can lose. Its real painted width depends on the
-// photo's aspect ratio against the viewport's, so this is an upper bound.
-const HERO_SIZES = '(min-width: 640px) calc(100vw - 120px), calc(100vw - 80px)';
+// The hero is fitted inside a mat on the right 3/5 of the padded page from sm
+// up, and the full padded width above the list below it, so these are upper
+// bounds.
+const HERO_SIZES = '(min-width: 640px) calc(60vw - 140px), calc(100vw - 88px)';
+
+// One row per section. The note is a quiet line about what is there now, so
+// it should come from the section's own data where there is any.
+const SECTIONS = [
+	{ href: '/photography', name: 'photography', note: `${PHOTOS.length} photos` },
+	{ href: '/development', name: 'development', note: 'apps and experiments' },
+	{ href: '/writing', name: 'writing', note: POSTS[0] && `latest: ${POSTS[0].title}` }
+];
+
+const MONTH_FORMAT = new Intl.DateTimeFormat('en-US', {
+	month: 'short',
+	year: 'numeric',
+	timeZone: 'UTC'
+});
+
+// "yosemite, jan 2026", or as much of it as the photo has
+function photoCredit(photo: Photo) {
+	const month = photo.date && MONTH_FORMAT.format(new Date(photo.date));
+	return [photo.location, month].filter(Boolean).join(', ').toLowerCase();
+}
 
 export const Route = createFileRoute('/')({
 	// The photo list is bundled, so drawing one costs nothing. Drawn in the
@@ -68,36 +88,45 @@ export const Route = createFileRoute('/')({
 
 function HomePage() {
 	const photo = getPhoto(Route.useLoaderData().file);
+	const credit = photoCredit(photo);
 
 	return (
-		<div className="flex w-full flex-col items-center justify-center">
-			{/* The padding is what the photo is contained within, so it sits on this
-			    element and the image fills what is left. This is the content box the
-			    old background-origin: content-box was measuring against. */}
-			<div className="relative h-dvh w-full p-10 sm:p-15">
-				<PhotoPicture
-					picture={photo.picture}
-					sizes={HERO_SIZES}
-					// Decorative: the photo rotates per request and carries no
-					// caption here, and the nav below is the page's actual content.
-					alt=""
-					fetchPriority="high"
-					decoding="async"
-					className="h-full w-full object-contain"
-				/>
-				{/* Overlaid rather than a sibling in flow, so the nav stays centred on
-				    the viewport whether or not a photo loaded. Padded like the photo,
-				    so on a phone, where the photo spans that box, the nav wraps inside
-				    it rather than running white text off onto the white margin. */}
-				<div className="absolute inset-0 flex flex-col items-center justify-center px-10 text-[clamp(1rem,2.5vmin,10rem)] font-medium text-background transition-colors duration-500 sm:px-15 smh:text-background/0">
-					<SlashNav
-						className="text-center text-balance"
-						separatorClassName="text-inherit opacity-60"
-					>
-						<Link href="/photography">photography</Link>
-						<Link href="/development">development</Link>
-						<Link href="/writing">writing</Link>
-					</SlashNav>
+		<div className="grid min-h-dvh w-full grid-rows-[46dvh_1fr] gap-7 p-6 text-black sm:h-dvh sm:min-h-140 sm:grid-cols-[minmax(300px,2fr)_3fr] sm:grid-rows-1 sm:gap-15 sm:p-15">
+			<nav className="flex flex-col gap-8 sm:justify-between">
+				<p className="text-lg font-medium">rafe autie</p>
+				<ul className="flex flex-col gap-4 sm:gap-5.5">
+					{SECTIONS.map((section) => (
+						<li key={section.href}>
+							<Link
+								href={section.href}
+								className="text-[1.375rem] font-medium tracking-tight sm:text-[1.625rem]"
+							>
+								{section.name}
+							</Link>
+							{section.note && (
+								<p className="mt-0.5 text-sm font-medium text-muted-foreground">{section.note}</p>
+							)}
+						</li>
+					))}
+				</ul>
+				<p className="text-[0.8125rem] font-medium text-muted-foreground">{credit}</p>
+			</nav>
+			{/* A fixed mat, so the frame stays put when a refresh swaps a wide
+			    photo for a tall one. The photo is absolutely placed so the cell,
+			    not the photo, sets the row's size, and is fitted whole, never
+			    cropped. */}
+			<div className="relative order-first min-h-0 bg-muted sm:order-last">
+				<div className="absolute inset-5 sm:inset-10">
+					<PhotoPicture
+						picture={photo.picture}
+						sizes={HERO_SIZES}
+						// Decorative: the photo rotates per request, and the credit beside
+						// the list says where it was taken.
+						alt=""
+						fetchPriority="high"
+						decoding="async"
+						className="h-full w-full object-contain"
+					/>
 				</div>
 			</div>
 		</div>
