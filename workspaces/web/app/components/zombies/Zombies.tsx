@@ -79,9 +79,9 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 				zombies
 			</SlashNav>
 			{/* boxed in like the tiles elsewhere on the site, the controls in a card of their
-			    own beside it, or below it on a narrow screen */}
-			<div className="mx-auto mt-16 flex max-w-sm flex-col gap-4 sm:mt-24 md:max-w-2xl md:flex-row md:items-start">
-				<div className={`${CARD} md:flex-1`}>
+			    own beside it at the same size, or below it on a narrow screen */}
+			<div className="mx-auto mt-16 grid max-w-sm gap-4 sm:mt-24 md:max-w-3xl md:grid-cols-2">
+				<div className={CARD}>
 					{!session || !state || closed ? (
 						<Start
 							name={name}
@@ -99,7 +99,7 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 						<Lobby session={session} onLeave={leave} />
 					)}
 				</div>
-				<section className={`${CARD} flex flex-col gap-4 md:w-64`}>
+				<section className={`${CARD} flex flex-col gap-4`}>
 					<h2 className="text-lg font-medium tracking-tight">Controls</h2>
 					<Controls />
 				</section>
