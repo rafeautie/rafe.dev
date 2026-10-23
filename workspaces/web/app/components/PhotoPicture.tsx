@@ -8,6 +8,12 @@ import type { Picture } from '~/photos';
 // With reveal, the photo blurs and fades in once it has both loaded and come
 // into view. Lazy loading fetches well ahead of the viewport, so waiting on
 // load alone would play most of the gallery's reveals offscreen.
+//
+// A cached page loads everything at once, so a whole screen would come into
+// focus together. Each photo waits a random beat first, so they arrive one by
+// one in no particular order.
+const REVEAL_MAX_DELAY = 900;
+
 export function PhotoPicture({
 	picture,
 	sizes,
@@ -21,6 +27,7 @@ export function PhotoPicture({
 	const ref = useRef<HTMLImageElement>(null);
 	const [loaded, setLoaded] = useState(false);
 	const [inView, setInView] = useState(false);
+	const [shown, setShown] = useState(false);
 
 	useEffect(() => {
 		const element = ref.current;
@@ -36,6 +43,12 @@ export function PhotoPicture({
 		return () => observer.disconnect();
 	}, [reveal]);
 
+	useEffect(() => {
+		if (!loaded || !inView) return;
+		const timer = setTimeout(() => setShown(true), Math.random() * REVEAL_MAX_DELAY);
+		return () => clearTimeout(timer);
+	}, [loaded, inView]);
+
 	return (
 		<picture>
 			{Object.entries(picture.sources).map(([format, srcSet]) => (
@@ -46,7 +59,7 @@ export function PhotoPicture({
 				src={picture.img.src}
 				width={picture.img.w}
 				height={picture.img.h}
-				data-reveal={reveal ? (loaded && inView ? 'shown' : 'waiting') : undefined}
+				data-reveal={reveal ? (shown ? 'shown' : 'waiting') : undefined}
 				onLoad={(event) => {
 					setLoaded(true);
 					onLoad?.(event);
