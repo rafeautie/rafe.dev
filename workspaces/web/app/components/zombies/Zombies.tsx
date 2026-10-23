@@ -9,6 +9,7 @@ import { MAX_PLAYERS, isLobbyCode } from '~/lib/zombies/signal';
 import { Game } from './Game';
 
 const NAME_KEY = 'zombies-name';
+const CARD = 'rounded-xl border border-black/10 bg-black/[0.02] p-6';
 
 const CONTROLS = [
 	['WASD', 'Move'],
@@ -76,25 +77,27 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 				<Link href="/">rafe</Link>
 				zombies
 			</SlashNav>
-			{/* boxed in like the tiles elsewhere on the site, controls set off below */}
-			<div className="mx-auto mt-16 flex max-w-sm flex-col gap-6 rounded-xl border border-black/10 bg-black/[0.02] p-6 sm:mt-24">
-				{!session || !state || closed ? (
-					<Start
-						name={name}
-						setName={setName}
-						joinCode={joinCode}
-						error={shownError}
-						onHost={() => begin(true)}
-						onJoin={() => begin(false)}
-					/>
-				) : state.status === 'connecting' ? (
-					<p className="text-sm font-medium text-muted-foreground">
-						{state.isHost ? 'Opening a Lobby' : `Joining Lobby ${state.code}`}
-					</p>
-				) : (
-					<Lobby session={session} onLeave={leave} />
-				)}
-				<Controls className="border-t border-black/10 pt-6" />
+			{/* boxed in like the tiles elsewhere on the site, the controls in a card of their own */}
+			<div className="mx-auto mt-16 flex max-w-sm flex-col gap-4 sm:mt-24">
+				<div className={CARD}>
+					{!session || !state || closed ? (
+						<Start
+							name={name}
+							setName={setName}
+							joinCode={joinCode}
+							error={shownError}
+							onHost={() => begin(true)}
+							onJoin={() => begin(false)}
+						/>
+					) : state.status === 'connecting' ? (
+						<p className="text-sm font-medium text-muted-foreground">
+							{state.isHost ? 'Opening a Lobby' : `Joining Lobby ${state.code}`}
+						</p>
+					) : (
+						<Lobby session={session} onLeave={leave} />
+					)}
+				</div>
+				<Controls className={CARD} />
 			</div>
 		</div>
 	);
@@ -160,17 +163,16 @@ function Start(props: {
 
 function Lobby({ session, onLeave }: { session: Session; onLeave: () => void }) {
 	const state = useSyncExternalStore(session.subscribe, session.getState);
-	const [copied, setCopied] = useState(false);
-	const link = session.inviteLink;
+	const [copied, setCopied] = useState<'yes' | 'failed' | null>(null);
 
 	const copy = async () => {
 		try {
-			await navigator.clipboard.writeText(link);
-			setCopied(true);
-			setTimeout(() => setCopied(false), 1500);
+			await navigator.clipboard.writeText(session.inviteLink);
+			setCopied('yes');
 		} catch {
-			// the link is on screen to copy by hand
+			setCopied('failed');
 		}
+		setTimeout(() => setCopied(null), 1500);
 	};
 
 	return (
@@ -182,12 +184,9 @@ function Lobby({ session, onLeave }: { session: Session; onLeave: () => void }) 
 				</p>
 			</div>
 			{state.isHost && (
-				<div className="flex items-center gap-2">
-					<Input readOnly value={link} onFocus={(e) => e.target.select()} />
-					<Button variant="outline" onClick={copy} className="w-16">
-						{copied ? 'Copied' : 'Copy'}
-					</Button>
-				</div>
+				<Button variant="outline" onClick={copy} className="w-36 self-start">
+					{copied === 'yes' ? 'Copied' : copied === 'failed' ? 'Copy Failed' : 'Copy Invite Link'}
+				</Button>
 			)}
 			<div className="flex flex-col gap-2">
 				<p className="text-sm font-medium text-muted-foreground">
