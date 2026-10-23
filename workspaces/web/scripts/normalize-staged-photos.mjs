@@ -11,7 +11,10 @@ const git = (args, options = {}) => execFileSync('git', args, { encoding: 'utf8'
 const top = git(['rev-parse', '--show-toplevel']).trim();
 // Resolved without importing photo-lib, so a commit that touches nothing in
 // content/photos does not need sharp installed.
-const photosDir = relative(top, join(import.meta.dirname, '../content/photos')).replaceAll('\\', '/');
+const photosDir = relative(top, join(import.meta.dirname, '../content/photos')).replaceAll(
+	'\\',
+	'/'
+);
 
 const staged = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', '--', photosDir])
 	.split('\0')

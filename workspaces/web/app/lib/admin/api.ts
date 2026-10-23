@@ -50,7 +50,9 @@ async function withConflicts<T>(run: () => Promise<T>) {
 		return await run();
 	} catch (error) {
 		if (error instanceof Conflict) {
-			throw new Error(`${error.message}. Reload to get the latest version, then try again.`);
+			throw new Error(`${error.message}. Reload to get the latest version, then try again.`, {
+				cause: error
+			});
 		}
 		throw error;
 	}
@@ -74,7 +76,8 @@ function optionalString(value: unknown, name: string): string | undefined {
 
 function slug(value: unknown): string {
 	const text = string(value, 'slug');
-	if (!SLUG_PATTERN.test(text)) throw new Error('A post name uses lowercase letters, numbers and dashes');
+	if (!SLUG_PATTERN.test(text))
+		throw new Error('A post name uses lowercase letters, numbers and dashes');
 	return text;
 }
 
@@ -203,9 +206,7 @@ export const listPosts = createServerFn({ method: 'GET' }).handler(async () => {
 		})
 	);
 	// drafts first, then newest first, as /writing lists them
-	return posts.sort(
-		(a, b) => Number(b.draft) - Number(a.draft) || b.date.localeCompare(a.date)
-	);
+	return posts.sort((a, b) => Number(b.draft) - Number(a.draft) || b.date.localeCompare(a.date));
 });
 
 // A post as it stands now, or as it was at an older commit. `sha` is always the
@@ -366,7 +367,10 @@ export const savePhotos = createServerFn({ method: 'POST' })
 			const listed = new Set(data.photos.map((photo) => photo.file));
 			const uploaded = new Set(data.uploads.map((upload) => upload.name));
 			const changes: Change[] = [
-				{ path: PHOTOS_MANIFEST, base64: encodeText(`${JSON.stringify(data.photos, null, '\t')}\n`) },
+				{
+					path: PHOTOS_MANIFEST,
+					base64: encodeText(`${JSON.stringify(data.photos, null, '\t')}\n`)
+				},
 				...data.uploads.map((upload) => ({
 					path: `${PHOTOS_DIR}/${upload.name}`,
 					base64: upload.base64
@@ -406,4 +410,3 @@ export const savePhotos = createServerFn({ method: 'POST' })
 			return { commit };
 		})
 	);
-

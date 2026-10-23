@@ -18,6 +18,8 @@ export type AdminSession = {
 const EIGHT_HOURS = 8 * 60 * 60;
 
 export function adminSession() {
+	// TanStack's server-side session helper, not a React hook
+	// eslint-disable-next-line react-hooks/rules-of-hooks
 	return useSession<AdminSession>({
 		name: 'rafe-admin',
 		password: env.SESSION_SECRET,

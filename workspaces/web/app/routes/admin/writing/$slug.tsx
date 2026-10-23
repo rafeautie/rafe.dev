@@ -139,6 +139,8 @@ function PostForm({
 		const saved = readUnsaved<Draft>(storageKey);
 		if (!saved || saved.sha !== (post?.sha ?? null)) return;
 		load(saved.value);
+		// browser storage is only readable once the page is running
+		// eslint-disable-next-line react-hooks/set-state-in-effect
 		setDirty(true);
 		toast('Brought back your unsaved edits', {
 			action: { label: 'Discard', onClick: discard }
@@ -212,7 +214,10 @@ function PostForm({
 		const added = new Map(uploads);
 		for (const file of files) {
 			try {
-				const prepared = await preparePostImage(file, (name) => existing.has(name) || added.has(name));
+				const prepared = await preparePostImage(
+					file,
+					(name) => existing.has(name) || added.has(name)
+				);
 				added.set(prepared.name, prepared);
 				paths.push(prepared.name);
 			} catch (error) {
@@ -321,7 +326,7 @@ function PostForm({
 					placeholder="Title"
 					value={fields.title}
 					onChange={(event) => setField('title', event.target.value)}
-					className="h-auto rounded-none border-0 px-0 py-0 text-4xl font-semibold tracking-tight shadow-none focus-visible:ring-0 md:text-4xl sm:text-5xl md:sm:text-5xl dark:bg-transparent"
+					className="h-auto rounded-none border-0 px-0 py-0 text-4xl font-semibold tracking-tight shadow-none focus-visible:ring-0 sm:text-5xl md:text-4xl md:sm:text-5xl dark:bg-transparent"
 				/>
 				<div className="mt-3 flex flex-wrap items-center gap-x-3 text-sm">
 					<DatePicker

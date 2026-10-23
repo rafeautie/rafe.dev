@@ -3,7 +3,17 @@ import { captureDate, inspectJpeg, isNormalized, toPhotoFile } from './jpeg';
 
 // A minimal JPEG header: SOI, an optional APP1, then a baseline frame.
 function jpeg({ width, height, exif }: { width: number; height: number; exif?: Uint8Array }) {
-	const frame = [0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 0xff, width >> 8, width & 0xff];
+	const frame = [
+		0xff,
+		0xc0,
+		0x00,
+		0x11,
+		0x08,
+		height >> 8,
+		height & 0xff,
+		width >> 8,
+		width & 0xff
+	];
 	const app1 = exif ? [0xff, 0xe1, (exif.length + 2) >> 8, (exif.length + 2) & 0xff, ...exif] : [];
 	return new Uint8Array([0xff, 0xd8, ...app1, ...frame, ...new Array(12).fill(0), 0xff, 0xda]);
 }
@@ -27,7 +37,9 @@ function exifWithDate(date: string) {
 	tiff.setUint32(32, 20, true);
 	tiff.setUint32(36, 44, true);
 	[...date].forEach((char, i) => tiff.setUint8(44 + i, char.charCodeAt(0)));
-	return new Uint8Array([...'Exif\0\0'].map((c) => c.charCodeAt(0)).concat([...new Uint8Array(tiff.buffer)]));
+	return new Uint8Array(
+		[...'Exif\0\0'].map((c) => c.charCodeAt(0)).concat([...new Uint8Array(tiff.buffer)])
+	);
 }
 
 describe('inspectJpeg', () => {
@@ -37,7 +49,10 @@ describe('inspectJpeg', () => {
 			height: 1707,
 			hasMetadata: false
 		});
-		expect(inspectJpeg(jpeg({ width: 10, height: 10, exif: exifWithDate('2026:01:25 09:00:00') })).hasMetadata).toBe(true);
+		expect(
+			inspectJpeg(jpeg({ width: 10, height: 10, exif: exifWithDate('2026:01:25 09:00:00') }))
+				.hasMetadata
+		).toBe(true);
 	});
 
 	it('accepts only stripped JPEGs within the size limit', () => {
@@ -49,9 +64,9 @@ describe('inspectJpeg', () => {
 
 describe('captureDate', () => {
 	it('reads DateTimeOriginal as yyyy-mm-dd', () => {
-		expect(captureDate(jpeg({ width: 1, height: 1, exif: exifWithDate('2026:01:25 09:00:00') }))).toBe(
-			'2026-01-25'
-		);
+		expect(
+			captureDate(jpeg({ width: 1, height: 1, exif: exifWithDate('2026:01:25 09:00:00') }))
+		).toBe('2026-01-25');
 	});
 
 	it('is empty without EXIF', () => {

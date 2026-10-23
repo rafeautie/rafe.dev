@@ -6,7 +6,7 @@ import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/r
 import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import { BoldIcon, Heading2Icon, ImagePlusIcon, ItalicIcon, LinkIcon } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
@@ -17,18 +17,18 @@ import { Toggle } from '~/components/ui/toggle';
 
 // Images keep the relative path the Markdown uses (half-dome.jpg); only what
 // the browser draws is swapped for a URL it can load.
-const PostImage = Image.extend<ImageOptions & { resolveSrc: (src: string) => string }>({
+const PostImage = Image.extend<ImageOptions & { resolver: { current: (src: string) => string } }>({
 	addOptions() {
 		return {
 			...this.parent!(),
-			resolveSrc: (src: string) => src
+			resolver: { current: (src: string) => src }
 		};
 	},
 	renderHTML({ HTMLAttributes }) {
 		return [
 			'img',
 			mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
-				src: this.options.resolveSrc(String(HTMLAttributes.src ?? ''))
+				src: this.options.resolver.current(String(HTMLAttributes.src ?? ''))
 			})
 		];
 	}
@@ -46,12 +46,18 @@ const RawHtml = Node.create({
 		return { html: { default: '' } };
 	},
 	parseHTML() {
-		return [{ tag: 'div[data-raw-html]', getAttrs: (el) => ({ html: el.getAttribute('data-raw-html') }) }];
+		return [
+			{ tag: 'div[data-raw-html]', getAttrs: (el) => ({ html: el.getAttribute('data-raw-html') }) }
+		];
 	},
 	renderHTML({ node }) {
 		const html = String(node.attrs.html);
 		const tag = html.match(/^<\s*([a-z][\w-]*)/i)?.[1] ?? 'html';
-		return ['div', { 'data-raw-html': html, class: 'raw-html' }, `<${tag}> block, edit it in GitHub`];
+		return [
+			'div',
+			{ 'data-raw-html': html, class: 'raw-html' },
+			`<${tag}> block, edit it in GitHub`
+		];
 	},
 	markdownTokenName: 'html',
 	parseMarkdown(token) {
@@ -77,12 +83,15 @@ export function PostEditor({
 	// files dropped or pasted in: returns the relative paths to insert
 	onImages: (files: File[]) => Promise<string[]>;
 }) {
+	// the editor is built once, so it reaches the latest callbacks through refs
 	const resolver = useRef(resolveSrc);
-	resolver.current = resolveSrc;
 	const imagesHandler = useRef(onImages);
-	imagesHandler.current = onImages;
 	const changeHandler = useRef(onChange);
-	changeHandler.current = onChange;
+	useLayoutEffect(() => {
+		resolver.current = resolveSrc;
+		imagesHandler.current = onImages;
+		changeHandler.current = onChange;
+	});
 
 	const editor = useEditor({
 		immediatelyRender: false,
@@ -91,7 +100,9 @@ export function PostEditor({
 				heading: { levels: [2, 3, 4] },
 				link: { openOnClick: false, autolink: true }
 			}),
-			PostImage.configure({ resolveSrc: (src: string) => resolver.current(src) }),
+			// read only when an image is drawn, never during render
+			// eslint-disable-next-line react-hooks/refs
+			PostImage.configure({ resolver }),
 			RawHtml,
 			Markdown,
 			Placeholder.configure({ placeholder: 'Write something' })
@@ -155,7 +166,12 @@ export function PostEditor({
 						if (files.length) insertImages(files);
 					}}
 				/>
-				<Button variant="ghost" size="sm" className="-mx-2.5 text-foreground/50" onClick={() => picker.current?.click()}>
+				<Button
+					variant="ghost"
+					size="sm"
+					className="-mx-2.5 text-foreground/50"
+					onClick={() => picker.current?.click()}
+				>
 					<ImagePlusIcon />
 					add image
 				</Button>

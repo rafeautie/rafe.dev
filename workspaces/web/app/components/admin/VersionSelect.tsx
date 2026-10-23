@@ -1,4 +1,10 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue
+} from '~/components/ui/select';
 import type { Commit } from '~/lib/admin/types';
 import { timeAgo } from '~/lib/admin/time';
 
@@ -37,7 +43,11 @@ export function VersionSelect({
 			<SelectTrigger className="w-32" aria-label="Version">
 				<SelectValue />
 			</SelectTrigger>
-			<SelectContent align="end" alignItemWithTrigger={false} className="w-auto max-w-[min(24rem,calc(100vw-2rem))]">
+			<SelectContent
+				align="end"
+				alignItemWithTrigger={false}
+				className="w-auto max-w-[min(24rem,calc(100vw-2rem))]"
+			>
 				{items.map((item) => (
 					<SelectItem key={item.value} value={item.value} className="[&_span]:truncate">
 						{item.label}

@@ -74,7 +74,8 @@ export async function preparePostImage(file: File, taken: (name: string) => bool
 	const extension = keep ? file.name.split('.').pop()!.toLowerCase() : png ? 'png' : 'jpg';
 
 	let name = safeName(file.name, extension);
-	for (let n = 2; taken(name); n++) name = safeName(`${file.name.replace(/\.[^.]*$/, '')}-${n}`, extension);
+	for (let n = 2; taken(name); n++)
+		name = safeName(`${file.name.replace(/\.[^.]*$/, '')}-${n}`, extension);
 
 	if (keep) {
 		const bytes = new Uint8Array(await file.arrayBuffer());

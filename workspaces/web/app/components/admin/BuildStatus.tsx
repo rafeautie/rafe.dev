@@ -26,7 +26,8 @@ export function useBuildWatch() {
 
 	return {
 		build: watch?.build ?? null,
-		start: (sha: string) => setWatch({ sha, build: { state: 'pending', url: '' }, since: Date.now() })
+		start: (sha: string) =>
+			setWatch({ sha, build: { state: 'pending', url: '' }, since: Date.now() })
 	};
 }
 

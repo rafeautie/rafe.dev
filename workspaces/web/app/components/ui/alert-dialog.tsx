@@ -60,7 +60,10 @@ function AlertDialogFooter({ className, ...props }: React.ComponentProps<'div'>)
 	);
 }
 
-function AlertDialogTitle({ className, ...props }: WithClassName<AlertDialogPrimitive.Title.Props>) {
+function AlertDialogTitle({
+	className,
+	...props
+}: WithClassName<AlertDialogPrimitive.Title.Props>) {
 	return (
 		<AlertDialogPrimitive.Title
 			data-slot="alert-dialog-title"
