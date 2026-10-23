@@ -12,7 +12,7 @@ import sharp from 'sharp';
 import exifReader from 'exif-reader';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-export const PHOTOS_DIR = join(root, 'app/photos');
+export const PHOTOS_DIR = join(root, 'content/photos');
 export const MANIFEST_PATH = join(PHOTOS_DIR, 'photos.json');
 
 // Comfortably above the largest variant the build emits (2048), so it never

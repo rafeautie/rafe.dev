@@ -1,25 +1,29 @@
 import { getPhoto } from '~/photos';
 import type { PostMeta } from '../../plugins/markdown';
 
-// A post is app/writing/<slug>/index.md, with its images beside it. The
+// A post is content/writing/<slug>/index.md, with its images beside it. The
 // frontmatter takes a title, a description, a date (yyyy-mm-dd), and optionally
-// an updated date, and an image (a relative path) and imageAlt for link previews.
-// plugins/markdown.ts compiles each one at build time.
+// an updated date, an image (a relative path) and imageAlt for link previews, and
+// draft: true to keep it off the site. plugins/markdown.ts compiles each one at
+// build time; /admin edits them through GitHub.
 export type Post = PostMeta & { slug: string; url: string };
 
-const META = import.meta.glob<PostMeta>('./*/index.md', {
+const META = import.meta.glob<PostMeta>('/content/writing/*/index.md', {
 	query: '?meta',
 	import: 'meta',
 	eager: true
 });
 
 // lazy, so each post's body is its own chunk
-const HTML = import.meta.glob<string>('./*/index.md', { import: 'html' });
+const HTML = import.meta.glob<string>('/content/writing/*/index.md', { import: 'html' });
 
-// newest first
+// Published posts, newest first. Drafts are left out everywhere: the list, the
+// post pages, the feed and the sitemap all read from here.
 export const POSTS: Post[] = Object.entries(META)
+	.filter(([, meta]) => !meta.draft)
 	.map(([file, meta]) => {
-		const slug = file.split('/')[1];
+		// /content/writing/<slug>/index.md
+		const slug = file.split('/')[3];
 		return { ...meta, slug, url: `https://rafe.dev/writing/${slug}` };
 	})
 	.sort((a, b) => b.date.localeCompare(a.date));
@@ -34,7 +38,7 @@ export function lastModified(post: Post): string {
 }
 
 export function loadHtml(post: Post): Promise<string> {
-	return HTML[`./${post.slug}/index.md`]();
+	return HTML[`/content/writing/${post.slug}/index.md`]();
 }
 
 const DEFAULT_PHOTO = getPhoto('DSCF0740.jpg');

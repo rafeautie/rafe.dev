@@ -1,6 +1,6 @@
 // Adds photos to the gallery straight from the camera:
 //   pnpm add-photo ~/Pictures/DSCF1234.JPG [...more]
-// Each is resized and stripped (see photo-lib.mjs), copied into app/photos and
+// Each is resized and stripped (see photo-lib.mjs), copied into content/photos and
 // appended to photos.json with its capture date. Alt text, caption and location
 // are left for you to fill in; gallery order is the order of photos.json.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -42,4 +42,4 @@ for (const source of sources) {
 }
 
 writeManifest(photos);
-process.stdout.write('Fill in alt text, caption and location in app/photos/photos.json.\n');
+process.stdout.write('Fill in alt text, caption and location in content/photos/photos.json.\n');

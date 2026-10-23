@@ -59,6 +59,8 @@ export type PostMeta = {
 	date: string;
 	// ISO yyyy-mm-dd, for a post revised after it went out
 	updated?: string;
+	// kept off the site until it is published
+	draft?: boolean;
 	image?: { src: string; width: number; height: number; alt: string };
 };
 
@@ -125,20 +127,24 @@ async function readMeta(
 	assets: Assets,
 	watch: (asset: string) => void
 ): Promise<PostMeta> {
-	const { title, description, date, updated, image, imageAlt } = frontmatter;
-	for (const [key, value] of Object.entries({ title, description, date })) {
+	const { title, description, date, updated, image, imageAlt, draft } = frontmatter;
+	// A draft only needs a title, so one can be saved before it is finished.
+	const required = draft === true ? { title } : { title, description, date };
+	for (const [key, value] of Object.entries(required)) {
 		if (typeof value !== 'string' || !value) throw new Error(`${file}: frontmatter needs ${key}`);
 	}
 	for (const [key, value] of Object.entries({ date, updated })) {
+		if (draft === true && !value) continue;
 		if (value !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
 			throw new Error(`${file}: ${key} must be yyyy-mm-dd`);
 		}
 	}
 	const meta: PostMeta = {
 		title: title as string,
-		description: description as string,
-		date: date as string
+		description: typeof description === 'string' ? description : '',
+		date: date ? String(date) : ''
 	};
+	if (draft === true) meta.draft = true;
 	if (updated !== undefined) {
 		if (String(updated) < meta.date) throw new Error(`${file}: updated is before date`);
 		meta.updated = String(updated);
