@@ -584,7 +584,7 @@ export function Globe({
 	}, []);
 
 	return (
-		<div className="mx-auto w-full max-w-80 sm:mr-0">
+		<div>
 			<div className="flex items-center justify-end gap-2 pb-2">
 				<span className="text-xs text-foreground/50">{LEVELS[level]}</span>
 				<div className="flex">
@@ -608,7 +608,7 @@ export function Globe({
 					</Button>
 				</div>
 			</div>
-			<div className="relative">
+			<div className="relative mx-auto max-w-80">
 				<canvas
 					ref={canvasRef}
 					role="img"
