@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { createFileRoute } from '@tanstack/react-router';
-import { adminSession, redirectTo } from '~/lib/admin/session.server';
+import { adminSession, markSignedIn, redirectTo } from '~/lib/admin/session.server';
 
 // A form post from the overview's "sign out".
 export const Route = createFileRoute('/admin/logout')({
@@ -13,6 +13,7 @@ export const Route = createFileRoute('/admin/logout')({
 				const session = await adminSession();
 				const { token } = session.data;
 				await session.clear();
+				markSignedIn(false);
 				// end the token at GitHub too, so a copy of the cookie stops working
 				if (token) {
 					await fetch(`https://api.github.com/applications/${env.GITHUB_CLIENT_ID}/token`, {

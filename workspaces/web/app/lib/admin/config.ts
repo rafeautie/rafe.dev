@@ -10,6 +10,11 @@ export const WRITING_DIR = `${CONTENT_ROOT}/writing`;
 export const PHOTOS_DIR = `${CONTENT_ROOT}/photos`;
 export const PHOTOS_MANIFEST = `${PHOTOS_DIR}/photos.json`;
 
+// A readable cookie that only says a sign-in may exist, so public pages know
+// whether to ask the server and show their admin links. It grants nothing;
+// the server checks the real, encrypted one.
+export const SIGNED_IN_COOKIE = 'rafe-admin-signed-in';
+
 // Rafe's GitHub account. Anyone else who signs in is turned away.
 export const ADMIN_GITHUB_ID = 45886348;
 

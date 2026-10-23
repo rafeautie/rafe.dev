@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { Link } from '~/components/Link';
 import { PhotoPicture } from '~/components/PhotoPicture';
 import { absoluteUrl, getPhoto, PHOTOS, type Photo } from '~/photos';
+import { useSignedIn } from '~/lib/admin/signed-in';
 import { POSTS } from '~/writing';
 
 // The hero is fitted inside a mat, so these are upper bounds. From md up the
@@ -96,6 +97,10 @@ export const Route = createFileRoute('/')({
 function HomePage() {
 	const photo = getPhoto(Route.useLoaderData().file);
 	const credit = photoCredit(photo);
+	const signedIn = useSignedIn();
+	const sections = signedIn
+		? [...SECTIONS, { href: '/admin', name: 'admin', note: 'edit posts and photos' }]
+		: SECTIONS;
 
 	return (
 		<div className="grid min-h-dvh w-full grid-rows-[46dvh_1fr] gap-7 p-6 text-foreground md:h-dvh md:min-h-140 md:grid-cols-[2fr_3fr] md:grid-rows-1 md:gap-15 md:p-15">
@@ -103,7 +108,7 @@ function HomePage() {
 				<h1 className="text-lg font-medium">rafe autie</h1>
 				<nav>
 					<ul className="flex flex-col gap-4 md:gap-5.5">
-						{SECTIONS.map((section) => (
+						{sections.map((section) => (
 							<li key={section.href}>
 								<Link
 									href={section.href}

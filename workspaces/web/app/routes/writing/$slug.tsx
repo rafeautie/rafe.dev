@@ -1,7 +1,10 @@
 import { createFileRoute, notFound } from '@tanstack/react-router';
+import { PencilIcon } from 'lucide-react';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { ThemeToggle } from '~/components/ThemeToggle';
+import { Button } from '~/components/ui/button';
+import { useSignedIn } from '~/lib/admin/signed-in';
 import { absoluteUrl } from '~/photos';
 import { DEFAULT_IMAGE, formatDate, getPost, lastModified, loadHtml } from '~/writing';
 
@@ -70,6 +73,7 @@ export const Route = createFileRoute('/writing/$slug')({
 
 function PostPage() {
 	const { post, html } = Route.useLoaderData();
+	const signedIn = useSignedIn();
 
 	return (
 		<div className="px-6 py-8 text-base text-foreground sm:px-8">
@@ -79,7 +83,19 @@ function PostPage() {
 						<Link href="/">rafe</Link>
 						<Link href="/writing">writing</Link>
 					</SlashNav>
-					<ThemeToggle />
+					<div className="flex items-center gap-4">
+						{signedIn && (
+							<Button
+								variant="outline"
+								size="sm"
+								render={<Link plain href={`/admin/writing/${post.slug}`} />}
+							>
+								<PencilIcon />
+								Edit
+							</Button>
+						)}
+						<ThemeToggle />
+					</div>
 				</div>
 				<article className="mt-16 sm:mt-24">
 					<header>

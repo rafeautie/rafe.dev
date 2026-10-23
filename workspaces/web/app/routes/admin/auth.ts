@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { env } from 'cloudflare:workers';
 import { ADMIN_GITHUB_ID } from '~/lib/admin/config';
-import { adminSession, redirectTo } from '~/lib/admin/session.server';
+import { adminSession, markSignedIn, redirectTo } from '~/lib/admin/session.server';
 
 // Step two: GitHub sends the browser back with a one-time code. The code is
 // swapped for a token, and the token kept only if it belongs to Rafe.
@@ -17,6 +17,7 @@ export const Route = createFileRoute('/admin/auth')({
 				const state = url.searchParams.get('state');
 				if (!code || !state || state !== session.data.state) {
 					await session.clear();
+					markSignedIn(false);
 					return back('?signin=failed');
 				}
 
@@ -33,6 +34,7 @@ export const Route = createFileRoute('/admin/auth')({
 				const { access_token: token } = (await exchange.json()) as { access_token?: string };
 				if (!token) {
 					await session.clear();
+					markSignedIn(false);
 					return back('?signin=failed');
 				}
 
@@ -50,10 +52,12 @@ export const Route = createFileRoute('/admin/auth')({
 				};
 				if (id !== ADMIN_GITHUB_ID || !login) {
 					await session.clear();
+					markSignedIn(false);
 					return back('?signin=denied');
 				}
 
 				await session.update({ token, userId: id, login, avatarUrl: avatar_url, state: undefined });
+				markSignedIn(true);
 				return back();
 			}
 		}
