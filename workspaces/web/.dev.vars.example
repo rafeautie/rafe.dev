@@ -1,0 +1,10 @@
+# Secrets for /admin, read by `pnpm dev`. Copy to .dev.vars and fill in.
+# In production these are Worker secrets (wrangler secret put <NAME>).
+
+# From the GitHub App: Settings > Developer settings > GitHub Apps > rafe.dev admin
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+
+# Encrypts the sign-in cookie. Any random string of 32 or more characters:
+#   openssl rand -base64 32
+SESSION_SECRET=

@@ -14,10 +14,17 @@ import { Route as ShmoneyRouteImport } from './routes/shmoney'
 import { Route as PhotographyRouteImport } from './routes/photography'
 import { Route as DevelopmentRouteImport } from './routes/development'
 import { Route as ChessRouteImport } from './routes/chess'
+import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WritingIndexRouteImport } from './routes/writing/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as WritingFeedDotxmlRouteImport } from './routes/writing/feed[.]xml'
 import { Route as WritingSlugRouteImport } from './routes/writing/$slug'
+import { Route as AdminLogoutRouteImport } from './routes/admin/logout'
+import { Route as AdminLoginRouteImport } from './routes/admin/login'
+import { Route as AdminCallbackRouteImport } from './routes/admin/callback'
+import { Route as AdminWritingIndexRouteImport } from './routes/admin/writing/index'
+import { Route as AdminWritingSlugRouteImport } from './routes/admin/writing/$slug'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -44,6 +51,11 @@ const ChessRoute = ChessRouteImport.update({
   path: '/chess',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRouteRoute = AdminRouteRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -53,6 +65,11 @@ const WritingIndexRoute = WritingIndexRouteImport.update({
   id: '/writing/',
   path: '/writing/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRouteRoute,
 } as any)
 const WritingFeedDotxmlRoute = WritingFeedDotxmlRouteImport.update({
   id: '/writing/feed.xml',
@@ -64,17 +81,49 @@ const WritingSlugRoute = WritingSlugRouteImport.update({
   path: '/writing/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminLogoutRoute = AdminLogoutRouteImport.update({
+  id: '/logout',
+  path: '/logout',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminLoginRoute = AdminLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminCallbackRoute = AdminCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminWritingIndexRoute = AdminWritingIndexRouteImport.update({
+  id: '/writing/',
+  path: '/writing/',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminWritingSlugRoute = AdminWritingSlugRouteImport.update({
+  id: '/writing/$slug',
+  path: '/writing/$slug',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteRouteWithChildren
   '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/admin/callback': typeof AdminCallbackRoute
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/logout': typeof AdminLogoutRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
+  '/admin/': typeof AdminIndexRoute
   '/writing/': typeof WritingIndexRoute
+  '/admin/writing/$slug': typeof AdminWritingSlugRoute
+  '/admin/writing/': typeof AdminWritingIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -83,34 +132,54 @@ export interface FileRoutesByTo {
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/admin/callback': typeof AdminCallbackRoute
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/logout': typeof AdminLogoutRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
+  '/admin': typeof AdminIndexRoute
   '/writing': typeof WritingIndexRoute
+  '/admin/writing/$slug': typeof AdminWritingSlugRoute
+  '/admin/writing': typeof AdminWritingIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteRouteWithChildren
   '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/admin/callback': typeof AdminCallbackRoute
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/logout': typeof AdminLogoutRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
+  '/admin/': typeof AdminIndexRoute
   '/writing/': typeof WritingIndexRoute
+  '/admin/writing/$slug': typeof AdminWritingSlugRoute
+  '/admin/writing/': typeof AdminWritingIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/chess'
     | '/development'
     | '/photography'
     | '/shmoney'
     | '/sitemap.xml'
+    | '/admin/callback'
+    | '/admin/login'
+    | '/admin/logout'
     | '/writing/$slug'
     | '/writing/feed.xml'
+    | '/admin/'
     | '/writing/'
+    | '/admin/writing/$slug'
+    | '/admin/writing/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -119,24 +188,38 @@ export interface FileRouteTypes {
     | '/photography'
     | '/shmoney'
     | '/sitemap.xml'
+    | '/admin/callback'
+    | '/admin/login'
+    | '/admin/logout'
     | '/writing/$slug'
     | '/writing/feed.xml'
+    | '/admin'
     | '/writing'
+    | '/admin/writing/$slug'
+    | '/admin/writing'
   id:
     | '__root__'
     | '/'
+    | '/admin'
     | '/chess'
     | '/development'
     | '/photography'
     | '/shmoney'
     | '/sitemap.xml'
+    | '/admin/callback'
+    | '/admin/login'
+    | '/admin/logout'
     | '/writing/$slug'
     | '/writing/feed.xml'
+    | '/admin/'
     | '/writing/'
+    | '/admin/writing/$slug'
+    | '/admin/writing/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRouteRoute: typeof AdminRouteRouteWithChildren
   ChessRoute: typeof ChessRoute
   DevelopmentRoute: typeof DevelopmentRoute
   PhotographyRoute: typeof PhotographyRoute
@@ -184,6 +267,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChessRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -197,6 +287,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/writing/'
       preLoaderRoute: typeof WritingIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRouteRoute
     }
     '/writing/feed.xml': {
       id: '/writing/feed.xml'
@@ -212,11 +309,69 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WritingSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/logout': {
+      id: '/admin/logout'
+      path: '/logout'
+      fullPath: '/admin/logout'
+      preLoaderRoute: typeof AdminLogoutRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/login': {
+      id: '/admin/login'
+      path: '/login'
+      fullPath: '/admin/login'
+      preLoaderRoute: typeof AdminLoginRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/callback': {
+      id: '/admin/callback'
+      path: '/callback'
+      fullPath: '/admin/callback'
+      preLoaderRoute: typeof AdminCallbackRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/writing/': {
+      id: '/admin/writing/'
+      path: '/writing'
+      fullPath: '/admin/writing/'
+      preLoaderRoute: typeof AdminWritingIndexRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/writing/$slug': {
+      id: '/admin/writing/$slug'
+      path: '/writing/$slug'
+      fullPath: '/admin/writing/$slug'
+      preLoaderRoute: typeof AdminWritingSlugRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
   }
 }
 
+interface AdminRouteRouteChildren {
+  AdminCallbackRoute: typeof AdminCallbackRoute
+  AdminLoginRoute: typeof AdminLoginRoute
+  AdminLogoutRoute: typeof AdminLogoutRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+  AdminWritingSlugRoute: typeof AdminWritingSlugRoute
+  AdminWritingIndexRoute: typeof AdminWritingIndexRoute
+}
+
+const AdminRouteRouteChildren: AdminRouteRouteChildren = {
+  AdminCallbackRoute: AdminCallbackRoute,
+  AdminLoginRoute: AdminLoginRoute,
+  AdminLogoutRoute: AdminLogoutRoute,
+  AdminIndexRoute: AdminIndexRoute,
+  AdminWritingSlugRoute: AdminWritingSlugRoute,
+  AdminWritingIndexRoute: AdminWritingIndexRoute,
+}
+
+const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
+  AdminRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRouteRoute: AdminRouteRouteWithChildren,
   ChessRoute: ChessRoute,
   DevelopmentRoute: DevelopmentRoute,
   PhotographyRoute: PhotographyRoute,
