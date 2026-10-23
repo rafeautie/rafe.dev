@@ -2,7 +2,7 @@ import { type ExtendedFeature, geoArea, geoCentroid, geoDistance } from 'd3-geo'
 import GlobeGl, { type GlobeInstance } from 'globe.gl';
 import { MinusIcon, PlusIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CanvasTexture, CircleGeometry, Mesh, MeshBasicMaterial } from 'three';
+import { type Mesh, MeshBasicMaterial } from 'three';
 import { feature } from 'topojson-client';
 import { Button } from '~/components/ui/button';
 import type { FilterKey } from '~/lib/stats/dimensions';
@@ -432,49 +432,12 @@ export function Globe({
 				if (shapesHover && picked.value) onPickRef.current(picked.key, picked.value);
 			});
 
-		// cities: a heatmap of soft glows that darken where they overlap, with
-		// a small dot on each to name and choose it
-		const cityMax = Math.max(1, ...cities.map((city) => city.visitors));
-		const share = (city: CityRow) => Math.sqrt(city.visitors / cityMax);
-		const fade = document.createElement('canvas');
-		fade.width = fade.height = 64;
-		const context = fade.getContext('2d');
-		if (context) {
-			const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
-			gradient.addColorStop(0, ink(1));
-			gradient.addColorStop(1, ink(0));
-			context.fillStyle = gradient;
-			context.fillRect(0, 0, 64, 64);
-		}
-		const glowTexture = new CanvasTexture(fade);
-		const disc = new CircleGeometry(1, 32);
-		const glows: MeshBasicMaterial[] = [];
+		// a small dot on each city, to name and choose it
 		globe
-			.customLayerData(level === 2 ? cities : [])
-			.customThreeObject((city) => {
-				const glow = new MeshBasicMaterial({
-					map: glowTexture,
-					transparent: true,
-					depthWrite: false,
-					opacity: 0.35 + 0.5 * share(city as CityRow)
-				});
-				glows.push(glow);
-				const mesh = new Mesh(disc, glow);
-				// in globe units, where the globe's radius is 100
-				mesh.scale.setScalar(1.5 + 3 * share(city as CityRow));
-				return mesh;
-			})
-			.customThreeObjectUpdate((mesh, city) => {
-				const { lat, lng } = city as CityRow;
-				const at = globe.getCoords(lat, lng, 0.006);
-				mesh.position.set(at.x, at.y, at.z);
-				// flat on the ground, facing out
-				mesh.lookAt(at.x * 2, at.y * 2, at.z * 2);
-			})
 			.pointsData(level === 2 ? cities : [])
 			.pointLat('lat')
 			.pointLng('lng')
-			.pointAltitude(0.008)
+			.pointAltitude(0.016)
 			.pointRadius(0.25)
 			.pointColor((city) => ((city as CityRow).key === active.city ? ink(1) : ink(0.6)))
 			.onPointHover((city) => {
@@ -484,12 +447,51 @@ export function Globe({
 			})
 			.onPointClick((city) => onPickRef.current('city', (city as CityRow).key));
 		return () => {
-			for (const made of [...flat.values(), ...glows]) made.dispose();
+			for (const made of flat.values()) made.dispose();
 			sea.dispose();
-			disc.dispose();
-			glowTexture.dispose();
 		};
 	}, [areas, cities, level, active.country, active.region, active.city, theme]);
+
+	// cities as a heatmap: how many visit, spread over the land around them.
+	// Apart from the dots, so it is worked out again only when the cities,
+	// level or theme change.
+	useEffect(() => {
+		const globe = globeRef.current;
+		const box = boxRef.current;
+		if (!globe || !box) return;
+		const [r, g, b] = rgbOf(
+			getComputedStyle(box).getPropertyValue('--foreground').trim() || '#000'
+		);
+		const cityMax = Math.max(1, ...cities.map((city) => city.visitors));
+		globe
+			.heatmapPoints('points')
+			.heatmapPointLat('lat')
+			.heatmapPointLng('lng')
+			.heatmapPointWeight((city) => (city as CityRow).visitors / cityMax)
+			// in degrees: wide enough to stay quick, so close cities run together
+			.heatmapBandwidth(1.6)
+			.heatmapColorSaturation(1)
+			.heatmapBaseAltitude(0.014)
+			.heatmapColorFn(() => (t: number) => `rgba(${r},${g},${b},${0.75 * t ** 1.5})`)
+			.heatmapsData(level === 2 && cities.length ? [{ points: cities }] : []);
+		// The heatmap is a whole sphere just above the ground, see-through where
+		// nobody visits; it must not hide the outlines under it.
+		let frame = 0;
+		let tries = 0;
+		const seeThrough = () => {
+			let found = false;
+			globe.scene().traverse((object) => {
+				if ((object as { __globeObjType?: string }).__globeObjType !== 'heatmap') return;
+				const mesh = object as Mesh;
+				(mesh.material as MeshBasicMaterial).depthWrite = false;
+				mesh.renderOrder = 1;
+				found = true;
+			});
+			if (!found && ++tries < 30) frame = requestAnimationFrame(seeThrough);
+		};
+		if (level === 2) seeThrough();
+		return () => cancelAnimationFrame(frame);
+	}, [cities, level, theme]);
 
 	// turn to what the page is filtered by
 	const focus = active.country ?? (active.city ?? active.region)?.split(', ').pop() ?? undefined;
