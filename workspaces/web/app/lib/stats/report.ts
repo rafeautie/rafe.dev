@@ -274,7 +274,10 @@ export const getStats = createServerFn({ method: 'GET' })
 			// 10: the last time anyone was here, and the first
 			db.prepare('SELECT max(seen) AS last, min(at) AS first FROM views'),
 			// 11 on: the breakdowns
-			...BREAKDOWNS.map((dimension) => run(breakdown(dimension, filter)))
+			// every country, for the map
+			...BREAKDOWNS.map((dimension) =>
+				run(breakdown(dimension, filter, dimension === 'country' ? 300 : 25))
+			)
 		];
 		const results = await db.batch(statements);
 		const rows = <T>(index: number) => results[index].results as T[];

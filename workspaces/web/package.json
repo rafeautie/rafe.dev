@@ -12,6 +12,7 @@
 		"format": "prettier --write .",
 		"gen": "wrangler types",
 		"add-photo": "node scripts/add-photo.mjs",
+		"world-map": "node scripts/world-map.mjs",
 		"test": "vitest run --passWithNoTests"
 	},
 	"dependencies": {
@@ -59,12 +60,15 @@
 		"@tailwindcss/forms": "^0.5.11",
 		"@tailwindcss/typography": "^0.5.19",
 		"@tailwindcss/vite": "^4.3.0",
+		"@types/d3-geo": "^3.1.1",
 		"@types/hast": "^3.0.5",
 		"@types/node": "^25.9.1",
 		"@types/react": "^19.2.15",
 		"@types/react-dom": "^19.2.3",
+		"@types/topojson-client": "^3.1.5",
 		"@vitejs/plugin-react": "^6.0.2",
 		"cloudflare": "^6.3.0",
+		"d3-geo": "^3.1.1",
 		"eslint": "^10.4.0",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-react": "^7.37.5",
@@ -72,6 +76,7 @@
 		"eslint-plugin-react-refresh": "^0.5.2",
 		"exif-reader": "^2.0.3",
 		"globals": "^17.6.0",
+		"i18n-iso-countries": "^7.14.0",
 		"prettier": "^3.8.3",
 		"prettier-plugin-tailwindcss": "^0.8.0",
 		"rehype-autolink-headings": "^7.1.0",
@@ -82,6 +87,7 @@
 		"remark-rehype": "^11.1.2",
 		"sharp": "^0.34.5",
 		"tailwindcss": "^4.3.0",
+		"topojson-client": "^3.1.0",
 		"tw-animate-css": "^1.4.0",
 		"typescript": "^6.0.3",
 		"typescript-eslint": "^8.59.4",
@@ -89,6 +95,7 @@
 		"vite": "^8.0.14",
 		"vite-imagetools": "^12.0.1",
 		"vitest": "^4.1.7",
+		"world-atlas": "^2.0.2",
 		"wrangler": "^4.105.0"
 	}
 }

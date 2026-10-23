@@ -8,6 +8,7 @@ import { Heatmap } from '~/components/admin/stats/Heatmap';
 import { Panel, Ranking, type View } from '~/components/admin/stats/Panel';
 import { TimeChart } from '~/components/admin/stats/TimeChart';
 import { VisitList } from '~/components/admin/stats/Visits';
+import { WorldMap } from '~/components/admin/stats/WorldMap';
 import { Badge } from '~/components/ui/badge';
 import { ScrollArea } from '~/components/ui/scroll-area';
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group';
@@ -313,6 +314,34 @@ function Report({
 						}
 					]}
 				/>
+				<div className="grid items-start gap-x-12 gap-y-6 sm:col-span-2 sm:grid-cols-[3fr_2fr]">
+					<section className="sm:pt-12">
+						<WorldMap
+							rows={b.country}
+							active={filters.country}
+							onPick={(code) => onFilter('country', code)}
+						/>
+					</section>
+					<Panel
+						value={placesTab}
+						onChange={setPlacesTab}
+						views={[
+							{
+								key: 'country',
+								title: 'Countries',
+								unit: 'visitors',
+								content: ranking('country', b.country, (row) => country(row.key))
+							},
+							{
+								key: 'region',
+								title: 'Regions',
+								unit: 'visitors',
+								content: ranking('region', b.region)
+							},
+							{ key: 'city', title: 'Cities', unit: 'visitors', content: ranking('city', b.city) }
+						]}
+					/>
+				</div>
 				<Panel
 					value={sourcesTab}
 					onChange={setSourcesTab}
@@ -336,26 +365,8 @@ function Report({
 						}
 					]}
 				/>
-				<Panel
-					value={placesTab}
-					onChange={setPlacesTab}
-					views={[
-						{
-							key: 'country',
-							title: 'Countries',
-							unit: 'visitors',
-							content: ranking('country', b.country, (row) => country(row.key))
-						},
-						{
-							key: 'region',
-							title: 'Regions',
-							unit: 'visitors',
-							content: ranking('region', b.region)
-						},
-						{ key: 'city', title: 'Cities', unit: 'visitors', content: ranking('city', b.city) }
-					]}
-				/>
-				<section>
+				<Panel menu value={moreTab} onChange={setMoreTab} views={more} />
+				<section className="sm:col-span-2">
 					<h2 className="flex min-h-10 items-center border-b border-foreground/10 pb-2 text-sm text-foreground/50">
 						When people visit
 					</h2>
@@ -363,7 +374,6 @@ function Report({
 						<Heatmap cells={stats.heatmap} />
 					</div>
 				</section>
-				<Panel menu value={moreTab} onChange={setMoreTab} views={more} />
 			</div>
 
 			<Panel
