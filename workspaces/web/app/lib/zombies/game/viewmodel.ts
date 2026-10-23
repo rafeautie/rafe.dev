@@ -7,6 +7,7 @@ import { WEAPONS, type WeaponId } from '../weapons';
 
 const HIP = new THREE.Vector3(0.2, -0.2, -0.42);
 const ADS = new THREE.Vector3(0, -0.115, -0.32);
+export const VIEW_LAYER = 1;
 
 export class ViewModel {
 	readonly root = new THREE.Group();
@@ -52,11 +53,10 @@ export class ViewModel {
 		);
 		this.knife.visible = false;
 		this.root.add(this.gun, this.knife);
-		// drawn last, over walls it would otherwise poke into
-		this.root.traverse((o) => {
-			o.renderOrder = 10;
-			if (o instanceof THREE.Mesh) (o.material as THREE.Material).depthTest = false;
-		});
+		// drawn in a pass of its own after the world, over walls and zombies it
+		// would otherwise poke into; the muzzle light still lights the world
+		this.root.traverse((o) => o.layers.set(VIEW_LAYER));
+		this.light.layers.enable(0);
 	}
 
 	setWeapon(id: WeaponId) {

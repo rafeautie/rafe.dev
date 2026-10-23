@@ -8,7 +8,7 @@ import { KNIFE, WEAPONS, ammoCost, type WeaponId } from '../weapons';
 import { Sound } from './audio';
 import { Body, J, Ragdoll, playerPose, rayCapsule, zombiePose, type Joints } from './rig';
 import { PALETTE, buildWorld, type World } from './scene';
-import { ViewModel } from './viewmodel';
+import { VIEW_LAYER, ViewModel } from './viewmodel';
 
 // One player's view of the game: the 3D scene, the controls, and their own
 // player, which moves on this machine and tells the host where it is. Zombies
@@ -155,6 +155,8 @@ export class GameClient {
 		this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 		this.renderer.shadowMap.enabled = true;
 		this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+		// cleared by hand, so the gun's pass can draw over the world's
+		this.renderer.autoClear = false;
 		this.scene.background = new THREE.Color(PALETTE.sky);
 		this.scene.fog = new THREE.Fog(PALETTE.sky, 10, 62);
 		this.world = buildWorld(this.map);
@@ -443,7 +445,7 @@ export class GameClient {
 		this.updateParticles(dt);
 		this.world.update(dt);
 		this.placeCamera(dt, now);
-		this.renderer.render(this.scene, this.camera);
+		this.render();
 
 		this.pressed.clear();
 		this.wheel = 0;
@@ -452,6 +454,24 @@ export class GameClient {
 			this.hudWait = HUD_EVERY;
 			this.publishHud();
 		}
+	}
+
+	// The world first, then the gun on a cleared depth buffer, so nothing in
+	// the world (zombies included, which are transparent and drawn late) can
+	// cover it. The shadows from the first pass are reused for the second.
+	private render() {
+		const { renderer, scene, camera } = this;
+		renderer.clear();
+		camera.layers.set(0);
+		renderer.render(scene, camera);
+		renderer.clearDepth();
+		camera.layers.set(VIEW_LAYER);
+		const background = scene.background;
+		scene.background = null;
+		renderer.shadowMap.autoUpdate = false;
+		renderer.render(scene, camera);
+		renderer.shadowMap.autoUpdate = true;
+		scene.background = background;
 	}
 
 	private move(dt: number, active: boolean) {

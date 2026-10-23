@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CELL, SIZE, WALL_HEIGHT, WORLD, type GameMap } from '../map';
 import { WEAPONS, ammoCost } from '../weapons';
+import { VIEW_LAYER } from './viewmodel';
 
 // The world is drawn the way the rest of rafe.dev looks: pale grays, a soft
 // haze, and type in Geist. Zombies are the darkest thing in it, so they read
@@ -153,6 +154,9 @@ export function buildWorld(map: GameMap): World {
 		far: 120
 	});
 	sun.shadow.bias = -0.0005;
+	// the gun in hand is drawn in its own pass and needs the same light
+	sky.layers.enable(VIEW_LAYER);
+	sun.layers.enable(VIEW_LAYER);
 	sun.shadow.normalBias = 0.02;
 	root.add(sun, sun.target);
 

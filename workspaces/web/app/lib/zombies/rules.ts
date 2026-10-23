@@ -1,7 +1,9 @@
 // The numbers behind a game, kept close to Black Ops 2's where they are known.
 
 export const START_POINTS = 500;
-export const POINTS = { hit: 10, kill: 60, headshot: 100, knife: 130 };
+// paid for every shot or stab that lands, the killing one included; there is
+// no bonus for the kill itself. A shotgun blast pays once per zombie it hits.
+export const POINTS = { hit: 20, headshot: 30, knife: 50 };
 // share of points lost when downed, rounded down to tens
 export const DOWNED_LOSS = 0.1;
 

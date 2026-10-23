@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HostGame, TICK } from './host';
 import { Blocking, buildMap, cellIndex, cellOf } from './map';
 import type { HostMessage, PlayerMessage, Snapshot } from './protocol';
-import { BREAK, START_POINTS, zombieCount } from './rules';
+import { BREAK, POINTS, START_POINTS, zombieCount } from './rules';
 import { WEAPONS } from './weapons';
 
 function setup(players = 1) {
@@ -62,7 +62,7 @@ describe('host game', () => {
 		expect(snap().zombies.length).toBeGreaterThan(0);
 	});
 
-	it('pays for hits and kills, and ends the round when all are dead', () => {
+	it('pays for every hit, kills included, and ends the round when all are dead', () => {
 		const { game, run, snap, sent } = setup();
 		game.start();
 		run(BREAK.first + 0.1);
@@ -106,7 +106,7 @@ describe('host game', () => {
 		}
 		expect(kills).toBe(zombieCount(1, 1));
 		expect(snap().phase).toBe('break');
-		expect(snap().players[0].points).toBe(START_POINTS + kills * (10 + 100));
+		expect(snap().players[0].points).toBe(START_POINTS + kills * (POINTS.hit + POINTS.headshot));
 		expect(sent.filter((s) => s.m.t === 'died')).toHaveLength(kills);
 	});
 

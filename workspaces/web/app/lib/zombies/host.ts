@@ -252,14 +252,8 @@ export class HostGame {
 		// a downed player can still shoot; the dead cannot
 		if (p.state === 'dead') return;
 		z.hp -= Math.min(m.damage, 20000);
-		if (z.hp > 0) {
-			this.award(p, POINTS.hit);
-			return;
-		}
-		this.award(
-			p,
-			m.knife === true ? POINTS.knife : m.head === true ? POINTS.headshot : POINTS.kill
-		);
+		this.award(p, m.knife === true ? POINTS.knife : m.head === true ? POINTS.headshot : POINTS.hit);
+		if (z.hp > 0) return;
 		p.kills++;
 		this.zombies.delete(z.id);
 		const dir = m.dir.map((v) => (Number.isFinite(v) ? v : 0)) as [number, number, number];
