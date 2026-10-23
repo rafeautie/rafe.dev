@@ -584,7 +584,7 @@ export function Globe({
 	}, []);
 
 	return (
-		<div className="relative">
+		<div className="relative mx-auto w-full max-w-80">
 			<canvas
 				ref={canvasRef}
 				role="img"
