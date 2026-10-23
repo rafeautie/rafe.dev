@@ -509,7 +509,21 @@ function PostForm({
 									className="mx-0 w-full justify-start border border-input"
 								/>
 							</Setting>
-							<Setting label="Updated" hint="Pick the same day again to clear it.">
+							<Setting
+								label="Updated"
+								action={
+									fields.updated && (
+										<Button
+											variant="ghost"
+											size="xs"
+											className="-my-1 text-foreground/50"
+											onClick={() => setField('updated', '')}
+										>
+											Clear
+										</Button>
+									)
+								}
+							>
 								<DatePicker
 									value={fields.updated}
 									onChange={(value) => setField('updated', value)}
@@ -605,17 +619,23 @@ const NO_IMAGE = 'none';
 function Setting({
 	label,
 	hint,
+	action,
 	className,
 	children
 }: {
 	label: string;
 	hint?: string;
+	// beside the label, at the right
+	action?: ReactNode;
 	className?: string;
 	children: ReactNode;
 }) {
 	return (
 		<div className={cn('flex flex-col gap-1.5', className)}>
-			<span className="text-foreground/50">{label}</span>
+			<div className="flex items-center justify-between gap-2">
+				<span className="text-foreground/50">{label}</span>
+				{action}
+			</div>
 			{children}
 			{hint && <span className="text-xs text-foreground/40">{hint}</span>}
 		</div>
