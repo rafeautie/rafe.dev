@@ -1,3 +1,4 @@
+import { CheckIcon } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
@@ -187,11 +188,6 @@ function Lobby({ session, onLeave }: { session: Session; onLeave: () => void }) 
 					{state.isHost ? 'Send this link to whoever is playing' : 'Waiting for the host to start'}
 				</p>
 			</div>
-			{state.isHost && (
-				<Button variant="outline" onClick={copy} className="w-36 self-start">
-					{copied === 'yes' ? 'Copied' : copied === 'failed' ? 'Copy Failed' : 'Copy Invite Link'}
-				</Button>
-			)}
 			<div className="flex flex-col gap-2">
 				<p className="text-sm font-medium text-muted-foreground">
 					Players {state.players.length}/{MAX_PLAYERS}
@@ -207,8 +203,25 @@ function Lobby({ session, onLeave }: { session: Session; onLeave: () => void }) 
 					))}
 				</ul>
 			</div>
-			<div className="flex gap-2">
-				{state.isHost && <Button onClick={() => session.start()}>Start Game</Button>}
+			<div className="flex flex-wrap gap-2">
+				{state.isHost && (
+					<>
+						<Button onClick={() => session.start()}>Start Game</Button>
+						{/* a fixed width, so the row does not shift as the label changes */}
+						<Button variant="outline" onClick={copy} className="w-36">
+							{copied === 'yes' ? (
+								<>
+									<CheckIcon />
+									Copied
+								</>
+							) : copied === 'failed' ? (
+								'Copy Failed'
+							) : (
+								'Copy Invite Link'
+							)}
+						</Button>
+					</>
+				)}
 				<Button variant="outline" onClick={onLeave}>
 					Leave
 				</Button>
