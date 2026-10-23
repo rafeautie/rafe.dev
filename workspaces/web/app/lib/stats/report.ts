@@ -299,7 +299,7 @@ export const getStats = createServerFn({ method: 'GET' })
 				`SELECT ${DIMENSIONS.city.key} AS key, city AS label, country, avg(latitude) AS lat,
 					avg(longitude) AS lng, count(DISTINCT ${VISITOR}) AS visitors, count(*) AS views
 				FROM views WHERE ${filter.sql} AND city IS NOT NULL AND city != ''
-					AND latitude IS NOT NULL AND longitude IS NOT NULL
+					AND country IS NOT NULL AND latitude IS NOT NULL AND longitude IS NOT NULL
 				GROUP BY key ORDER BY visitors DESC LIMIT 1000`
 			)
 		);

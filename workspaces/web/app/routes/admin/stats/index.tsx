@@ -1,11 +1,10 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { XIcon } from 'lucide-react';
-import { useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useState, useSyncExternalStore } from 'react';
 import { Link } from '~/components/Link';
 import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
 import { country, duration, formatMetric, NUMBER, place } from '~/components/admin/stats/format';
 import { FilterMenu } from '~/components/admin/stats/FilterMenu';
-import { Globe } from '~/components/admin/stats/Globe';
 import { Heatmap } from '~/components/admin/stats/Heatmap';
 import { Panel, Ranking, type View } from '~/components/admin/stats/Panel';
 import { TimeChart } from '~/components/admin/stats/TimeChart';
@@ -53,6 +52,30 @@ export const Route = createFileRoute('/admin/stats/')({
 });
 
 type Stats = Awaited<ReturnType<typeof getStats>>;
+
+// The globe draws in the browser only, so the server's bundle leaves it and
+// its outlines out; the page holds its space until it loads.
+const Globe = import.meta.env.SSR
+	? null
+	: lazy(() =>
+			import('~/components/admin/stats/Globe').then((module) => ({ default: module.Globe }))
+		);
+const noop = () => () => undefined;
+const useHydrated = () =>
+	useSyncExternalStore(
+		noop,
+		() => true,
+		() => false
+	);
+
+function GlobeSpace() {
+	return (
+		<div aria-hidden>
+			<div className="h-9" />
+			<div className="mx-auto aspect-square max-w-80" />
+		</div>
+	);
+}
 
 // A section's chosen tab, remembered in this browser. The server, which has no
 // storage, renders the default, and the browser switches once hydrated.
@@ -216,6 +239,7 @@ function Report({
 	const [placesTab, setPlacesTab] = useChoice('places', 'country');
 	const [moreTab, setMoreTab] = useChoice('more', 'device');
 	const [visitsTab, setVisitsTab] = useChoice('visits', 'latest');
+	const hydrated = useHydrated();
 	const hourly = stats.bucket < 24 * 60 * 60 * 1000;
 	const { breakdowns: b, filters } = stats;
 
@@ -323,13 +347,19 @@ function Report({
 				/>
 				<div className="grid items-start gap-x-12 gap-y-6 sm:col-span-2 sm:grid-cols-2">
 					<section>
-						<Globe
-							countries={b.country}
-							regions={stats.places.regions}
-							cities={stats.places.cities}
-							active={filters}
-							onPick={onFilter}
-						/>
+						{Globe && hydrated ? (
+							<Suspense fallback={<GlobeSpace />}>
+								<Globe
+									countries={b.country}
+									regions={stats.places.regions}
+									cities={stats.places.cities}
+									active={filters}
+									onPick={onFilter}
+								/>
+							</Suspense>
+						) : (
+							<GlobeSpace />
+						)}
 					</section>
 					<Panel
 						value={placesTab}
