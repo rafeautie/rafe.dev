@@ -3,6 +3,7 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from '@tanstack/react-r
 import { Toaster } from 'sonner';
 import '../styles/app.css';
 import faviconUrl from '../assets/favicon.png?url';
+import { useVisitTracking } from '../lib/stats/tracker';
 import { THEME_SCRIPT } from '../lib/writing-theme';
 
 export const Route = createRootRoute({
@@ -32,6 +33,8 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+	// visits, for /admin/stats
+	useVisitTracking();
 	return (
 		// THEME_SCRIPT adds a class to <html> before hydration on /writing, /chess and /admin
 		<html lang="en" className="light" suppressHydrationWarning>

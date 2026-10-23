@@ -67,6 +67,7 @@ function Overview({ overview }: { overview: Awaited<ReturnType<typeof getOvervie
 			>
 				<Link href="/admin/writing">writing</Link>
 				<Link href="/admin/photos">photos</Link>
+				<Link href="/admin/stats">stats</Link>
 				<form method="post" action="/admin/logout">
 					<button
 						type="submit"

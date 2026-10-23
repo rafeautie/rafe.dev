@@ -12,6 +12,14 @@
 	"vars": {
 		"GITHUB_CLIENT_ID": "Iv23li0qGHjWnZ9qeBqq"
 	},
+	// Visits recorded by lib/stats for /admin/stats. No database_id: the first
+	// deploy creates the database and later deploys find it by name.
+	"d1_databases": [
+		{
+			"binding": "STATS",
+			"database_name": "rafe-dev-stats"
+		}
+	],
 	"observability": {
 		"enabled": true,
 		"head_sampling_rate": 1,

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ShmoneyRouteImport } from './routes/shmoney'
+import { Route as SeenRouteImport } from './routes/seen'
 import { Route as PhotographyRouteImport } from './routes/photography'
 import { Route as DevelopmentRouteImport } from './routes/development'
 import { Route as ChessRouteImport } from './routes/chess'
@@ -20,6 +21,7 @@ import { Route as WritingIndexRouteImport } from './routes/writing/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as WritingFeedDotxmlRouteImport } from './routes/writing/feed[.]xml'
 import { Route as WritingSlugRouteImport } from './routes/writing/$slug'
+import { Route as AdminStatsRouteImport } from './routes/admin/stats'
 import { Route as AdminPhotosRouteImport } from './routes/admin/photos'
 import { Route as AdminLogoutRouteImport } from './routes/admin/logout'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
@@ -35,6 +37,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const ShmoneyRoute = ShmoneyRouteImport.update({
   id: '/shmoney',
   path: '/shmoney',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SeenRoute = SeenRouteImport.update({
+  id: '/seen',
+  path: '/seen',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PhotographyRoute = PhotographyRouteImport.update({
@@ -82,6 +89,11 @@ const WritingSlugRoute = WritingSlugRouteImport.update({
   path: '/writing/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminStatsRoute = AdminStatsRouteImport.update({
+  id: '/stats',
+  path: '/stats',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const AdminPhotosRoute = AdminPhotosRouteImport.update({
   id: '/photos',
   path: '/photos',
@@ -119,12 +131,14 @@ export interface FileRoutesByFullPath {
   '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
+  '/seen': typeof SeenRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
+  '/admin/stats': typeof AdminStatsRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
   '/admin/': typeof AdminIndexRoute
@@ -137,12 +151,14 @@ export interface FileRoutesByTo {
   '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
+  '/seen': typeof SeenRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
+  '/admin/stats': typeof AdminStatsRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
   '/admin': typeof AdminIndexRoute
@@ -157,12 +173,14 @@ export interface FileRoutesById {
   '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
+  '/seen': typeof SeenRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
+  '/admin/stats': typeof AdminStatsRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
   '/admin/': typeof AdminIndexRoute
@@ -178,12 +196,14 @@ export interface FileRouteTypes {
     | '/chess'
     | '/development'
     | '/photography'
+    | '/seen'
     | '/shmoney'
     | '/sitemap.xml'
     | '/admin/auth'
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
+    | '/admin/stats'
     | '/writing/$slug'
     | '/writing/feed.xml'
     | '/admin/'
@@ -196,12 +216,14 @@ export interface FileRouteTypes {
     | '/chess'
     | '/development'
     | '/photography'
+    | '/seen'
     | '/shmoney'
     | '/sitemap.xml'
     | '/admin/auth'
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
+    | '/admin/stats'
     | '/writing/$slug'
     | '/writing/feed.xml'
     | '/admin'
@@ -215,12 +237,14 @@ export interface FileRouteTypes {
     | '/chess'
     | '/development'
     | '/photography'
+    | '/seen'
     | '/shmoney'
     | '/sitemap.xml'
     | '/admin/auth'
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
+    | '/admin/stats'
     | '/writing/$slug'
     | '/writing/feed.xml'
     | '/admin/'
@@ -235,6 +259,7 @@ export interface RootRouteChildren {
   ChessRoute: typeof ChessRoute
   DevelopmentRoute: typeof DevelopmentRoute
   PhotographyRoute: typeof PhotographyRoute
+  SeenRoute: typeof SeenRoute
   ShmoneyRoute: typeof ShmoneyRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   WritingSlugRoute: typeof WritingSlugRoute
@@ -256,6 +281,13 @@ declare module '@tanstack/react-router' {
       path: '/shmoney'
       fullPath: '/shmoney'
       preLoaderRoute: typeof ShmoneyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seen': {
+      id: '/seen'
+      path: '/seen'
+      fullPath: '/seen'
+      preLoaderRoute: typeof SeenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/photography': {
@@ -321,6 +353,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WritingSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/stats': {
+      id: '/admin/stats'
+      path: '/stats'
+      fullPath: '/admin/stats'
+      preLoaderRoute: typeof AdminStatsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/admin/photos': {
       id: '/admin/photos'
       path: '/photos'
@@ -371,6 +410,7 @@ interface AdminRouteRouteChildren {
   AdminLoginRoute: typeof AdminLoginRoute
   AdminLogoutRoute: typeof AdminLogoutRoute
   AdminPhotosRoute: typeof AdminPhotosRoute
+  AdminStatsRoute: typeof AdminStatsRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminWritingSlugRoute: typeof AdminWritingSlugRoute
   AdminWritingIndexRoute: typeof AdminWritingIndexRoute
@@ -381,6 +421,7 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminLoginRoute: AdminLoginRoute,
   AdminLogoutRoute: AdminLogoutRoute,
   AdminPhotosRoute: AdminPhotosRoute,
+  AdminStatsRoute: AdminStatsRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminWritingSlugRoute: AdminWritingSlugRoute,
   AdminWritingIndexRoute: AdminWritingIndexRoute,
@@ -396,6 +437,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChessRoute: ChessRoute,
   DevelopmentRoute: DevelopmentRoute,
   PhotographyRoute: PhotographyRoute,
+  SeenRoute: SeenRoute,
   ShmoneyRoute: ShmoneyRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   WritingSlugRoute: WritingSlugRoute,
