@@ -20,9 +20,9 @@ import { zoneOffset } from './zone';
 
 export type Row = { key: string; label: string; visitors: number; views: number };
 export type PageRow = Row & { engaged: number | null; scroll: number | null };
-// a country's regions and cities, for the map zoomed into it
-export type RegionRow = Row & { code: string | null };
-export type CityRow = Row & { lat: number; lng: number };
+// regions and cities, for the globe
+export type RegionRow = Row & { country: string; code: string | null };
+export type CityRow = Row & { country: string | null; lat: number; lng: number };
 
 export type SessionView = { at: number; path: string; engaged: number; scroll: number };
 
@@ -176,15 +176,8 @@ function timeZoneOffset(now: number) {
 
 const BREAKDOWNS = Object.keys(DIMENSIONS).filter((key) => key !== 'page') as Dimension[];
 
-// where the map's queries go in the batch, after the breakdowns
+// where the globe's queries go in the batch, after the breakdowns
 const MAP = 11 + BREAKDOWNS.length;
-
-// The country the map zooms into: the one filtered by, or the one a filtered
-// region or city is in (the last part of its key).
-export function mapCountry(filters: Filters) {
-	const code = filters.country ?? (filters.city ?? filters.region)?.split(', ').pop();
-	return code && /^[A-Z]{2}$/.test(code) ? code : null;
-}
 
 export const getStats = createServerFn({ method: 'GET' })
 	.inputValidator((input: unknown) => {
@@ -292,30 +285,24 @@ export const getStats = createServerFn({ method: 'GET' })
 				run(breakdown(dimension, filter, dimension === 'country' ? 300 : 25))
 			)
 		];
-		const zoom = mapCountry(data.filters);
-		if (zoom) {
-			statements.push(
-				// MAP: the country's regions, with Cloudflare's code for each
-				db
-					.prepare(
-						`SELECT ${DIMENSIONS.region.key} AS key, region AS label, max(region_code) AS code,
-							count(DISTINCT ${VISITOR}) AS visitors, count(*) AS views
-						FROM views WHERE ${filter.sql} AND country = ? AND region IS NOT NULL AND region != ''
-						GROUP BY key ORDER BY visitors DESC`
-					)
-					.bind(...filter.params, zoom),
-				// MAP + 1: its cities, where they are
-				db
-					.prepare(
-						`SELECT ${DIMENSIONS.city.key} AS key, city AS label, avg(latitude) AS lat,
-							avg(longitude) AS lng, count(DISTINCT ${VISITOR}) AS visitors, count(*) AS views
-						FROM views WHERE ${filter.sql} AND country = ? AND city IS NOT NULL AND city != ''
-							AND latitude IS NOT NULL AND longitude IS NOT NULL
-						GROUP BY key ORDER BY visitors DESC LIMIT 300`
-					)
-					.bind(...filter.params, zoom)
-			);
-		}
+		statements.push(
+			// MAP: regions, with each one's country and Cloudflare's code for it
+			run(
+				`SELECT ${DIMENSIONS.region.key} AS key, region AS label, country,
+					max(region_code) AS code, count(DISTINCT ${VISITOR}) AS visitors, count(*) AS views
+				FROM views WHERE ${filter.sql} AND region IS NOT NULL AND region != ''
+					AND country IS NOT NULL
+				GROUP BY key ORDER BY visitors DESC LIMIT 1000`
+			),
+			// MAP + 1: cities, where they are
+			run(
+				`SELECT ${DIMENSIONS.city.key} AS key, city AS label, country, avg(latitude) AS lat,
+					avg(longitude) AS lng, count(DISTINCT ${VISITOR}) AS visitors, count(*) AS views
+				FROM views WHERE ${filter.sql} AND city IS NOT NULL AND city != ''
+					AND latitude IS NOT NULL AND longitude IS NOT NULL
+				GROUP BY key ORDER BY visitors DESC LIMIT 1000`
+			)
+		);
 		const results = await db.batch(statements);
 		const rows = <T>(index: number) => results[index].results as T[];
 
@@ -386,9 +373,7 @@ export const getStats = createServerFn({ method: 'GET' })
 			pages: rows<PageRow>(4),
 			clicks: rows<Row>(5),
 			breakdowns,
-			map: zoom
-				? { country: zoom, regions: rows<RegionRow>(MAP), cities: rows<CityRow>(MAP + 1) }
-				: null,
+			places: { regions: rows<RegionRow>(MAP), cities: rows<CityRow>(MAP + 1) },
 			recent,
 			visitors: rows<{
 				visitor: string;

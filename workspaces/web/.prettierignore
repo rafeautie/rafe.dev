@@ -14,8 +14,7 @@ app.config.timestamp_*.js
 # Generated files
 app/routeTree.gen.ts
 worker-configuration.d.ts
-app/components/admin/stats/world-map.json
+app/components/admin/stats/globe/
 
 # Miscellaneous
 /static/
-app/components/admin/stats/regions/

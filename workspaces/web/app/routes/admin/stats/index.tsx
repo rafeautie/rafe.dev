@@ -5,11 +5,11 @@ import { Link } from '~/components/Link';
 import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
 import { country, duration, formatMetric, NUMBER, place } from '~/components/admin/stats/format';
 import { FilterMenu } from '~/components/admin/stats/FilterMenu';
+import { Globe } from '~/components/admin/stats/Globe';
 import { Heatmap } from '~/components/admin/stats/Heatmap';
 import { Panel, Ranking, type View } from '~/components/admin/stats/Panel';
 import { TimeChart } from '~/components/admin/stats/TimeChart';
 import { VisitList } from '~/components/admin/stats/Visits';
-import { WorldMap } from '~/components/admin/stats/WorldMap';
 import { Badge } from '~/components/ui/badge';
 import { ScrollArea } from '~/components/ui/scroll-area';
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group';
@@ -103,8 +103,8 @@ function StatsPage() {
 	const navigate = useNavigate({ from: Route.fullPath });
 	const metric = search.metric ?? 'visitors';
 	const filters = Object.entries(stats.filters) as [FilterKey, string][];
-	const setFilters = (patch: Filters) => navigate({ search: (prev) => ({ ...prev, ...patch }) });
-	const setFilter = (key: FilterKey, value: string | undefined) => setFilters({ [key]: value });
+	const setFilter = (key: FilterKey, value: string | undefined) =>
+		navigate({ search: (prev) => ({ ...prev, [key]: value }) });
 	// what each filter can be, from what is in view
 	const values = Object.fromEntries(
 		FILTER_KEYS.map((key) => [key, key === 'page' ? stats.pages : stats.breakdowns[key]])
@@ -187,7 +187,6 @@ function StatsPage() {
 							})
 						}
 						onFilter={setFilter}
-						onFilters={setFilters}
 					/>
 				) : (
 					<p className="mt-10 text-foreground/50">
@@ -205,14 +204,12 @@ function Report({
 	stats,
 	metric,
 	onMetric,
-	onFilter,
-	onFilters
+	onFilter
 }: {
 	stats: Stats;
 	metric: Metric;
 	onMetric: (metric: Metric) => void;
 	onFilter: (key: FilterKey, value: string) => void;
-	onFilters: (patch: Filters) => void;
 }) {
 	const [pagesTab, setPagesTab] = useChoice('pages', 'page');
 	const [sourcesTab, setSourcesTab] = useChoice('sources', 'source');
@@ -326,12 +323,12 @@ function Report({
 				/>
 				<div className="grid items-start gap-x-12 gap-y-6 sm:col-span-2 sm:grid-cols-[3fr_2fr]">
 					<section className="sm:pt-12">
-						<WorldMap
-							rows={b.country}
-							zoom={stats.map}
+						<Globe
+							countries={b.country}
+							regions={stats.places.regions}
+							cities={stats.places.cities}
 							active={filters}
 							onPick={onFilter}
-							onWorld={() => onFilters({ country: undefined, region: undefined, city: undefined })}
 						/>
 					</section>
 					<Panel
