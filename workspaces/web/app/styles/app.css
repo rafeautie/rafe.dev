@@ -190,7 +190,7 @@
 	}
 }
 
-/* Photos on the home page and in the gallery (PhotoPicture's reveal) come into
+/* Photos in the gallery (PhotoPicture's reveal) come into
    focus as they arrive: a short blur and fade, nothing that moves. */
 @media (prefers-reduced-motion: no-preference) {
 	[data-reveal] {
