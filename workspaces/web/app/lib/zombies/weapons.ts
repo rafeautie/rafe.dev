@@ -24,7 +24,7 @@ export type Weapon = {
 export const WEAPONS: Record<WeaponId, Weapon> = {
 	m1911: {
 		id: 'm1911',
-		name: 'm1911',
+		name: 'M1911',
 		damage: 40,
 		pellets: 1,
 		headshot: 2.5,
@@ -42,7 +42,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
 	},
 	olympia: {
 		id: 'olympia',
-		name: 'olympia',
+		name: 'Olympia',
 		damage: 45,
 		pellets: 8,
 		headshot: 1.5,
@@ -60,7 +60,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
 	},
 	m14: {
 		id: 'm14',
-		name: 'm14',
+		name: 'M14',
 		damage: 110,
 		pellets: 1,
 		headshot: 3,
@@ -78,7 +78,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
 	},
 	mp5: {
 		id: 'mp5',
-		name: 'mp5',
+		name: 'MP5',
 		damage: 45,
 		pellets: 1,
 		headshot: 2.5,
@@ -96,7 +96,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
 	},
 	ak74u: {
 		id: 'ak74u',
-		name: 'ak74u',
+		name: 'AK74u',
 		damage: 70,
 		pellets: 1,
 		headshot: 2.5,
@@ -114,7 +114,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
 	},
 	remington: {
 		id: 'remington',
-		name: 'remington 870',
+		name: 'Remington 870',
 		damage: 70,
 		pellets: 8,
 		headshot: 1.5,
@@ -132,7 +132,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
 	},
 	galil: {
 		id: 'galil',
-		name: 'galil',
+		name: 'Galil',
 		damage: 95,
 		pellets: 1,
 		headshot: 2.5,

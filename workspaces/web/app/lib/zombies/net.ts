@@ -31,12 +31,12 @@ function sendOn(
 }
 
 export const REFUSALS: Record<string, string> = {
-	'no-lobby': 'that lobby has closed',
-	taken: 'that lobby is already hosted',
-	full: 'that lobby is full',
-	timeout: 'could not reach the host',
-	'host-left': 'the host left',
-	lost: 'lost the connection to the host',
+	'no-lobby': 'That lobby has closed',
+	taken: 'That lobby is already hosted',
+	full: 'That lobby is full',
+	timeout: 'Could not reach the host',
+	'host-left': 'The host left',
+	lost: 'Lost the connection to the host',
 	socket: 'could not reach the lobby'
 };
 

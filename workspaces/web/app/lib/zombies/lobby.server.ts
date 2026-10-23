@@ -57,7 +57,7 @@ export class ZombiesLobby extends DurableObject<Env> {
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url);
 		const role = url.searchParams.get('role') === 'host' ? 'host' : 'join';
-		const name = (url.searchParams.get('name') ?? '').trim().slice(0, 16) || 'player';
+		const name = (url.searchParams.get('name') ?? '').trim().slice(0, 16) || 'Player';
 		const { 0: client, 1: server } = new WebSocketPair();
 		this.ctx.acceptWebSocket(server);
 

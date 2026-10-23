@@ -26,7 +26,7 @@ type RoomSpec = {
 
 const ROOM_SPECS: Record<RoomId, RoomSpec> = {
 	'00': {
-		name: 'lab',
+		name: 'Lab',
 		pillars: [
 			[2, 2, 2, 1],
 			[7, 2, 2, 1],
@@ -40,7 +40,7 @@ const ROOM_SPECS: Record<RoomId, RoomSpec> = {
 		]
 	},
 	'01': {
-		name: 'courtyard',
+		name: 'Courtyard',
 		pillars: [[4, 4, 3, 3]],
 		spawns: [
 			[0, 0],
@@ -49,7 +49,7 @@ const ROOM_SPECS: Record<RoomId, RoomSpec> = {
 		]
 	},
 	'02': {
-		name: 'garage',
+		name: 'Garage',
 		pillars: [
 			[2, 3, 1, 5],
 			[8, 3, 1, 5]
@@ -61,7 +61,7 @@ const ROOM_SPECS: Record<RoomId, RoomSpec> = {
 		]
 	},
 	'10': {
-		name: 'office',
+		name: 'Office',
 		pillars: [
 			[3, 2, 1, 3],
 			[3, 7, 1, 2],
@@ -74,7 +74,7 @@ const ROOM_SPECS: Record<RoomId, RoomSpec> = {
 		]
 	},
 	'11': {
-		name: 'spawn',
+		name: 'Spawn',
 		pillars: [
 			[2, 2, 1, 1],
 			[8, 2, 1, 1],
@@ -88,7 +88,7 @@ const ROOM_SPECS: Record<RoomId, RoomSpec> = {
 		]
 	},
 	'12': {
-		name: 'warehouse',
+		name: 'Warehouse',
 		pillars: [
 			[2, 2, 3, 2],
 			[6, 6, 3, 2],
@@ -101,7 +101,7 @@ const ROOM_SPECS: Record<RoomId, RoomSpec> = {
 		]
 	},
 	'20': {
-		name: 'depot',
+		name: 'Depot',
 		pillars: [
 			[3, 3, 5, 1],
 			[3, 7, 5, 1]
@@ -113,7 +113,7 @@ const ROOM_SPECS: Record<RoomId, RoomSpec> = {
 		]
 	},
 	'21': {
-		name: 'yard',
+		name: 'Yard',
 		pillars: [
 			[2, 2, 1, 1],
 			[5, 5, 1, 1],
@@ -128,7 +128,7 @@ const ROOM_SPECS: Record<RoomId, RoomSpec> = {
 		]
 	},
 	'22': {
-		name: 'power',
+		name: 'Power',
 		pillars: [
 			[4, 2, 3, 1],
 			[4, 8, 3, 1],

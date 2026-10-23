@@ -8,7 +8,7 @@ import { Controls } from './Zombies';
 const NUMBER = new Intl.NumberFormat('en-US');
 
 // Everything drawn over the game, kept as quiet as the rest of the site:
-// lowercase Geist on white panels, one panel per thing, with numbers that do
+// Geist in title case on white panels, one panel per thing, with numbers that do
 // not jump as they change.
 export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => void }) {
 	const hud = useSyncExternalStore(client.subscribe, client.getHud);
@@ -80,16 +80,16 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 			{hud.life !== 'alive' && !over && (
 				<Panel className="absolute top-[24%] left-1/2 flex min-w-56 -translate-x-1/2 flex-col items-center gap-1 px-6 py-4 text-center">
 					<p className="text-2xl tracking-tight">
-						{hud.life === 'downed' ? 'downed' : 'you bled out'}
+						{hud.life === 'downed' ? 'Downed' : 'You Bled Out'}
 					</p>
 					<p className="text-sm text-muted-foreground">
 						{hud.life === 'dead'
-							? 'back next round'
+							? 'Back Next Round'
 							: hud.beingRevived > 0
-								? 'being revived'
+								? 'Being Revived'
 								: hud.players.length > 1
-									? `bleeding out ${hud.bleed}`
-									: `back up in ${hud.bleed}`}
+									? `Bleeding Out ${hud.bleed}`
+									: `Back Up in ${hud.bleed}`}
 					</p>
 					{hud.beingRevived > 0 && <Progress value={hud.beingRevived} className="mt-2" />}
 				</Panel>
@@ -106,9 +106,9 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				<p className="mt-1.5 text-sm text-muted-foreground">
 					{hud.phase === 'break'
 						? hud.round
-							? `next round in ${hud.timer}`
-							: `starting in ${hud.timer}`
-						: `round · ${hud.left} left`}
+							? `Next Round in ${hud.timer}`
+							: `Starting in ${hud.timer}`
+						: `Round · ${hud.left} Left`}
 				</p>
 			</Panel>
 
@@ -146,7 +146,7 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				{hud.life !== 'dead' && (
 					<Panel className="flex min-w-40 flex-col items-end px-4 pt-2.5 pb-3">
 						<p className="text-sm text-muted-foreground">
-							{hud.reloading ? 'reloading' : hud.weapon}
+							{hud.reloading ? 'Reloading' : hud.weapon}
 						</p>
 						<p className="text-4xl leading-none tracking-tight">
 							<span className={cn(hud.mag === 0 && 'text-destructive')}>{hud.mag}</span>
@@ -158,13 +158,13 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 
 			{paused && (
 				<Card>
-					<p className="text-2xl tracking-tight">paused</p>
-					<p className="text-sm text-muted-foreground">the game keeps going for everyone else</p>
+					<p className="text-2xl tracking-tight">Paused</p>
+					<p className="text-sm text-muted-foreground">The game keeps going for everyone else</p>
 					<Controls className="mt-2" />
 					<div className="mt-3 flex gap-2">
-						<Button onClick={() => client.lock()}>play</Button>
+						<Button onClick={() => client.lock()}>Play</Button>
 						<Button variant="outline" onClick={onLeave}>
-							leave
+							Leave
 						</Button>
 					</div>
 				</Card>
@@ -172,22 +172,22 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 
 			{over && (
 				<Card>
-					<p className="text-2xl tracking-tight">game over</p>
+					<p className="text-2xl tracking-tight">Game Over</p>
 					<p className="text-sm text-muted-foreground">
-						{hud.round === 1 ? 'you survived 1 round' : `you survived ${hud.round} rounds`}
+						{hud.round === 1 ? 'You Survived 1 Round' : `You Survived ${hud.round} Rounds`}
 					</p>
 					<ul className="mt-2 flex w-full flex-col gap-1 text-sm">
 						{hud.players.map((p) => (
 							<li key={p.id} className="flex justify-between gap-6">
 								<span>{p.name}</span>
-								<span className="text-muted-foreground">{p.kills} kills</span>
+								<span className="text-muted-foreground">{p.kills} Kills</span>
 							</li>
 						))}
 					</ul>
 					<div className="mt-3 flex gap-2">
-						{hud.isHost && <Button onClick={() => client.restart()}>play again</Button>}
+						{hud.isHost && <Button onClick={() => client.restart()}>Play Again</Button>}
 						<Button variant="outline" onClick={onLeave}>
-							leave
+							Leave
 						</Button>
 					</div>
 				</Card>

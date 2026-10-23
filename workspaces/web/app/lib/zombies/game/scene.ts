@@ -88,7 +88,7 @@ export function buildWorld(map: GameMap): World {
 			g.font = `500 64px ${FONT}`;
 			g.fillText(String(door.cost), 128, 118);
 			g.font = `500 26px ${FONT}`;
-			g.fillText('door', 128, 172);
+			g.fillText('DOOR', 128, 172);
 		});
 		const plain = new THREE.MeshLambertMaterial({ color: PALETTE.door });
 		const face = new THREE.MeshLambertMaterial({ map: label });
@@ -126,7 +126,7 @@ export function buildWorld(map: GameMap): World {
 			g.fillText(weapon.name, 256, 196);
 			g.font = `500 28px ${FONT}`;
 			g.globalAlpha = 0.7;
-			g.fillText(`${weapon.cost} · ammo ${ammoCost(weapon)}`, 256, 236);
+			g.fillText(`${weapon.cost} · AMMO ${ammoCost(weapon)}`, 256, 236);
 		});
 		const plane = new THREE.Mesh(
 			new THREE.PlaneGeometry(1.8, 0.9),

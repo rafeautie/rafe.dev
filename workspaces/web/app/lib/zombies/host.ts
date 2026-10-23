@@ -106,7 +106,7 @@ export class HostGame {
 		const spot = this.map.playerSpawns[this.players.size % this.map.playerSpawns.length];
 		this.players.set(id, {
 			id,
-			name: name.trim().slice(0, 16) || 'player',
+			name: name.trim().slice(0, 16) || 'Player',
 			x: spot.x,
 			y: 0,
 			z: spot.z,

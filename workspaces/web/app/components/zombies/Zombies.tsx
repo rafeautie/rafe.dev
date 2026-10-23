@@ -11,16 +11,16 @@ import { Game } from './Game';
 const NAME_KEY = 'zombies-name';
 
 const CONTROLS = [
-	['wasd', 'move'],
-	['shift', 'sprint'],
-	['space', 'jump'],
-	['click', 'shoot'],
-	['right click', 'aim'],
-	['r', 'reload'],
-	['v', 'knife'],
-	['f', 'buy, open, revive'],
-	['1 2', 'swap guns'],
-	['esc', 'pause']
+	['WASD', 'Move'],
+	['SHIFT', 'Sprint'],
+	['SPACE', 'Jump'],
+	['Click', 'Shoot'],
+	['Right Click', 'Aim'],
+	['R', 'Reload'],
+	['V', 'Knife'],
+	['F', 'Buy, Open, Revive'],
+	['1 2', 'Swap Guns'],
+	['ESC', 'Pause']
 ];
 
 function savedName() {
@@ -47,10 +47,10 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 
 	// a lost connection or a refused join lands back on the start screen
 	const closed = state?.status === 'closed';
-	const shownError = closed && state.error ? (REFUSALS[state.error] ?? 'the game ended') : null;
+	const shownError = closed && state.error ? (REFUSALS[state.error] ?? 'The game ended') : null;
 
 	const begin = (host: boolean) => {
-		const clean = name.trim().slice(0, 16) || 'player';
+		const clean = name.trim().slice(0, 16) || 'Player';
 		try {
 			localStorage.setItem(NAME_KEY, clean);
 		} catch {
@@ -88,7 +88,7 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 					/>
 				) : state.status === 'connecting' ? (
 					<p className="text-sm font-medium text-muted-foreground">
-						{state.isHost ? 'opening a lobby' : `joining lobby ${state.code}`}
+						{state.isHost ? 'Opening a Lobby' : `Joining Lobby ${state.code}`}
 					</p>
 				) : (
 					<Lobby session={session} onLeave={leave} />
@@ -120,36 +120,36 @@ function Start(props: {
 			}}
 		>
 			<div className="flex flex-col gap-1.5">
-				<h1 className="text-[1.625rem] font-medium tracking-tight">zombies</h1>
+				<h1 className="text-[1.625rem] font-medium tracking-tight">Zombies</h1>
 				<p className="text-sm font-medium text-pretty text-muted-foreground">
 					Round after round of the dead, in the style of Black Ops 2. Your browser hosts the game;
 					send the invite link to up to {MAX_PLAYERS - 1} friends.
 				</p>
 			</div>
 			<label className="flex flex-col gap-1.5 text-sm font-medium">
-				name
+				Name
 				<Input
 					value={props.name}
 					maxLength={16}
-					placeholder="player"
+					placeholder="Player"
 					onChange={(e) => props.setName(e.target.value)}
 				/>
 			</label>
 			<div className="flex gap-2">
 				{props.joinCode ? (
 					<>
-						<Button type="submit">join lobby {props.joinCode}</Button>
+						<Button type="submit">Join Lobby {props.joinCode}</Button>
 						<Button type="button" variant="outline" onClick={props.onHost}>
-							host my own
+							Host My Own
 						</Button>
 					</>
 				) : (
-					<Button type="submit">start a lobby</Button>
+					<Button type="submit">Start a Lobby</Button>
 				)}
 			</div>
 			{matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches && (
 				<p className="text-sm font-medium text-muted-foreground">
-					zombies needs a keyboard and mouse
+					Zombies needs a keyboard and mouse
 				</p>
 			)}
 			{props.error && <p className="text-sm font-medium text-destructive">{props.error}</p>}
@@ -175,38 +175,38 @@ function Lobby({ session, onLeave }: { session: Session; onLeave: () => void }) 
 	return (
 		<div className="flex flex-col gap-6">
 			<div className="flex flex-col gap-1.5">
-				<h1 className="text-[1.625rem] font-medium tracking-tight">lobby {state.code}</h1>
+				<h1 className="text-[1.625rem] font-medium tracking-tight">Lobby {state.code}</h1>
 				<p className="text-sm font-medium text-muted-foreground">
-					{state.isHost ? 'send this link to whoever is playing' : 'waiting for the host to start'}
+					{state.isHost ? 'Send this link to whoever is playing' : 'Waiting for the host to start'}
 				</p>
 			</div>
 			{state.isHost && (
 				<div className="flex items-center gap-2">
 					<Input readOnly value={link} onFocus={(e) => e.target.select()} />
 					<Button variant="outline" onClick={copy} className="w-16">
-						{copied ? 'copied' : 'copy'}
+						{copied ? 'Copied' : 'Copy'}
 					</Button>
 				</div>
 			)}
 			<div className="flex flex-col gap-2">
 				<p className="text-sm font-medium text-muted-foreground">
-					players {state.players.length}/{MAX_PLAYERS}
+					Players {state.players.length}/{MAX_PLAYERS}
 				</p>
 				<ul className="flex flex-col gap-1">
 					{state.players.map((p, i) => (
 						<li key={p.id} className="flex items-baseline gap-2 font-medium">
 							{p.name}
 							<span className="text-sm text-muted-foreground">
-								{[i === 0 && 'host', p.id === state.you && 'you'].filter(Boolean).join(', ')}
+								{[i === 0 && 'Host', p.id === state.you && 'You'].filter(Boolean).join(', ')}
 							</span>
 						</li>
 					))}
 				</ul>
 			</div>
 			<div className="flex gap-2">
-				{state.isHost && <Button onClick={() => session.start()}>start game</Button>}
+				{state.isHost && <Button onClick={() => session.start()}>Start Game</Button>}
 				<Button variant="outline" onClick={onLeave}>
-					leave
+					Leave
 				</Button>
 			</div>
 		</div>

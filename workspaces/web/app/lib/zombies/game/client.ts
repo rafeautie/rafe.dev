@@ -301,7 +301,7 @@ export class GameClient {
 				break;
 			case 'denied':
 				this.sound.deny();
-				this.note('not enough points');
+				this.note('Not Enough Points');
 				break;
 			case 'hurt':
 				this.sound.hurt();
@@ -778,19 +778,19 @@ export class GameClient {
 				Math.hypot(p.x - this.me.x, p.z - this.me.z) < PLAYER.reviveRange
 		);
 		if (downed) {
-			hint = { text: `hold f to revive ${downed.name}`, muted: false };
+			hint = { text: `Hold F to Revive ${downed.name}`, muted: false };
 			if (active && this.keys.has('KeyF')) this.reviving = downed.id;
 		} else {
 			const door = this.map.doors.find(
 				(d) => !this.blocking.open[d.index] && Math.hypot(d.x - this.me.x, d.z - this.me.z) < 2.3
 			);
 			if (door) {
-				hint = { text: `press f to open door · ${door.cost}`, muted: points < door.cost };
+				hint = { text: `Press F to Open Door · ${door.cost}`, muted: points < door.cost };
 				if (press) {
 					this.interactWait = 0.4;
 					if (points < door.cost) {
 						this.sound.deny();
-						this.note('not enough points');
+						this.note('Not Enough Points');
 					} else this.session.post({ t: 'buyDoor', door: door.index });
 				}
 			} else {
@@ -807,15 +807,15 @@ export class GameClient {
 					const cost = owned ? ammoCost(weapon) : weapon.cost;
 					hint = {
 						text: owned
-							? `press f for ${weapon.name} ammo · ${cost}`
-							: `press f to buy ${weapon.name} · ${cost}`,
+							? `Press F for ${weapon.name} Ammo · ${cost}`
+							: `Press F to Buy ${weapon.name} · ${cost}`,
 						muted: points < cost
 					};
 					if (press) {
 						this.interactWait = 0.4;
 						if (points < cost) {
 							this.sound.deny();
-							this.note('not enough points');
+							this.note('Not Enough Points');
 						} else this.session.post({ t: 'buyWeapon', wall: wall.index, owned });
 					}
 				}
