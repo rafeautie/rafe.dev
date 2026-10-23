@@ -21,7 +21,10 @@ const SCHEMA = [
 		utm_campaign TEXT,
 		country TEXT,
 		region TEXT,
+		region_code TEXT,
 		city TEXT,
+		latitude REAL,
+		longitude REAL,
 		timezone TEXT,
 		org TEXT,
 		browser TEXT,
@@ -49,13 +52,32 @@ const SCHEMA = [
 	'CREATE INDEX IF NOT EXISTS clicks_at ON clicks (at)'
 ];
 
+// Columns added to views since it was first made, for tables made before.
+const ADDED = { region_code: 'TEXT', latitude: 'REAL', longitude: 'REAL' };
+
+async function setUp(db: D1Database) {
+	await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
+	const { results } = await db.prepare('PRAGMA table_info(views)').all<{ name: string }>();
+	const have = new Set(results.map((column) => column.name));
+	for (const [name, type] of Object.entries(ADDED)) {
+		if (have.has(name)) continue;
+		await db
+			.prepare(`ALTER TABLE views ADD COLUMN ${name} ${type}`)
+			.run()
+			.catch((error: Error) => {
+				// another Worker instance added it first
+				if (!/duplicate column/i.test(error.message)) throw error;
+			});
+	}
+}
+
 // The tables are made on first use, once per Worker instance, so a deploy
 // needs no separate step to set the database up.
 let ready: Promise<unknown> | undefined;
 
 export function stats() {
 	const db = env.STATS;
-	ready ??= db.batch(SCHEMA.map((sql) => db.prepare(sql))).catch((error) => {
+	ready ??= setUp(db).catch((error) => {
 		ready = undefined;
 		throw error;
 	});
@@ -77,7 +99,11 @@ export type NewView = {
 	utmCampaign: string | null;
 	country: string | null;
 	region: string | null;
+	regionCode: string | null;
 	city: string | null;
+	// where the city is, to about 10km
+	latitude: number | null;
+	longitude: number | null;
 	timezone: string | null;
 	org: string | null;
 	browser: string;
@@ -97,10 +123,10 @@ export async function addView(view: NewView) {
 	await db
 		.prepare(
 			`INSERT OR IGNORE INTO views (id, at, seen, visitor, session, landing, new_visitor, path,
-				referrer, referrer_url, utm_source, utm_medium, utm_campaign, country, region, city,
-				timezone, org, browser, browser_version, os, device, screen, viewport, pixel_ratio,
+				referrer, referrer_url, utm_source, utm_medium, utm_campaign, country, region, region_code,
+				city, latitude, longitude, timezone, org, browser, browser_version, os, device, screen, viewport, pixel_ratio,
 				language, dark, load_ms)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		)
 		.bind(
 			view.id,
@@ -118,7 +144,10 @@ export async function addView(view: NewView) {
 			view.utmCampaign,
 			view.country,
 			view.region,
+			view.regionCode,
 			view.city,
+			view.latitude,
+			view.longitude,
 			view.timezone,
 			view.org,
 			view.browser,
