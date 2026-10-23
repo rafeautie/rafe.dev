@@ -1,9 +1,24 @@
 import { Placeholder } from '@tiptap/extensions';
 import { Markdown } from '@tiptap/markdown';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
-import { BubbleMenu } from '@tiptap/react/menus';
-import { BoldIcon, Heading2Icon, ImagePlusIcon, ItalicIcon, LinkIcon } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+	BoldIcon,
+	CodeIcon,
+	Heading2Icon,
+	Heading3Icon,
+	ImagePlusIcon,
+	ItalicIcon,
+	LinkIcon,
+	ListIcon,
+	ListOrderedIcon,
+	MinusIcon,
+	Redo2Icon,
+	SquareCodeIcon,
+	StrikethroughIcon,
+	TextQuoteIcon,
+	Undo2Icon
+} from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
@@ -11,9 +26,11 @@ import { Toggle } from '~/components/ui/toggle';
 import { postExtensions } from './post-schema';
 
 // The visual editor for a post's body. It shows the post styled as /writing
-// shows it, and reads and writes the same Markdown the file holds.
+// shows it, and reads and writes the same Markdown the file holds. The page
+// puts the body (PostBody) in the article and the formatting bar
+// (EditorToolbar) in its controls rail.
 
-export function PostEditor({
+export function usePostEditor({
 	markdown,
 	onChange,
 	resolveSrc,
@@ -23,7 +40,7 @@ export function PostEditor({
 	markdown: string;
 	onChange: (markdown: string) => void;
 	resolveSrc: (src: string) => string;
-	// files dropped or pasted in: returns the relative paths to insert
+	// files dropped, pasted or picked: returns the relative paths to insert
 	onImages: (files: File[]) => Promise<string[]>;
 }) {
 	// the editor is built once, so it reaches the latest callbacks through refs
@@ -79,95 +96,156 @@ export function PostEditor({
 		else editor.chain().focus().insertContentAt(at, nodes).run();
 	}
 
-	// another version picked: show it
+	// another version picked, or edits made as Markdown: show them
 	useEffect(() => {
 		if (!editor || editor.getMarkdown() === markdown) return;
 		editor.commands.setContent(markdown, { contentType: 'markdown', emitUpdate: false });
 	}, [editor, markdown]);
 
-	const picker = useRef<HTMLInputElement>(null);
+	return { editor, insertImages };
+}
 
-	return (
-		<>
-			{editor && <FormattingBar editor={editor} />}
-			<EditorContent editor={editor} />
-			<div className="mt-8">
-				<input
-					ref={picker}
-					type="file"
-					accept="image/*"
-					multiple
-					hidden
-					onChange={(event) => {
-						const files = [...(event.target.files ?? [])];
-						event.target.value = '';
-						if (files.length) insertImages(files);
-					}}
-				/>
-				<Button
-					variant="ghost"
-					size="sm"
-					className="-mx-2.5 text-foreground/50"
-					onClick={() => picker.current?.click()}
-				>
-					<ImagePlusIcon />
-					add image
-				</Button>
-			</div>
-		</>
-	);
+export function PostBody({ editor }: { editor: Editor | null }) {
+	return <EditorContent editor={editor} />;
 }
 
 function imageFiles(data: DataTransfer | null) {
 	return [...(data?.files ?? [])].filter((file) => file.type.startsWith('image/'));
 }
 
-// Over selected text: bold, italic, heading and link.
-function FormattingBar({ editor }: { editor: Editor }) {
+// The formatting bar: text styles, lists and blocks, images, undo. `end` sits
+// at its right edge (the Markdown switch).
+export function EditorToolbar({
+	editor,
+	onImages,
+	end
+}: {
+	editor: Editor | null;
+	onImages: (files: File[]) => void;
+	end?: ReactNode;
+}) {
 	const state = useEditorState({
 		editor,
-		selector: ({ editor }) => ({
-			bold: editor.isActive('bold'),
-			italic: editor.isActive('italic'),
-			heading: editor.isActive('heading', { level: 2 }),
-			link: editor.isActive('link'),
-			href: String(editor.getAttributes('link').href ?? '')
-		})
+		selector: ({ editor }) =>
+			editor && {
+				h2: editor.isActive('heading', { level: 2 }),
+				h3: editor.isActive('heading', { level: 3 }),
+				bold: editor.isActive('bold'),
+				italic: editor.isActive('italic'),
+				strike: editor.isActive('strike'),
+				code: editor.isActive('code'),
+				link: editor.isActive('link'),
+				href: String(editor.getAttributes('link').href ?? ''),
+				bullet: editor.isActive('bulletList'),
+				ordered: editor.isActive('orderedList'),
+				quote: editor.isActive('blockquote'),
+				codeBlock: editor.isActive('codeBlock'),
+				canUndo: editor.can().undo(),
+				canRedo: editor.can().redo()
+			}
 	});
+	const picker = useRef<HTMLInputElement>(null);
+	const chain = () => editor!.chain().focus();
+
+	const tool = (label: string, icon: ReactNode, pressed: boolean | undefined, run: () => void) => (
+		<Toggle
+			key={label}
+			size="sm"
+			aria-label={label}
+			title={label}
+			pressed={Boolean(pressed)}
+			disabled={!editor}
+			onPressedChange={run}
+		>
+			{icon}
+		</Toggle>
+	);
 
 	return (
-		<BubbleMenu
-			editor={editor}
-			options={{ placement: 'top', offset: 8 }}
-			className="flex items-center gap-0.5 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
-		>
-			<Toggle
-				size="sm"
-				aria-label="Bold"
-				pressed={state.bold}
-				onPressedChange={() => editor.chain().focus().toggleBold().run()}
-			>
-				<BoldIcon />
-			</Toggle>
-			<Toggle
-				size="sm"
-				aria-label="Italic"
-				pressed={state.italic}
-				onPressedChange={() => editor.chain().focus().toggleItalic().run()}
-			>
-				<ItalicIcon />
-			</Toggle>
-			<Toggle
-				size="sm"
-				aria-label="Heading"
-				pressed={state.heading}
-				onPressedChange={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-			>
-				<Heading2Icon />
-			</Toggle>
-			<LinkButton editor={editor} active={state.link} href={state.href} />
-		</BubbleMenu>
+		<div className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-background p-1 shadow-xs">
+			<div className="flex min-w-0 flex-1 [scrollbar-width:none] items-center gap-0.5 overflow-x-auto [&>*]:shrink-0">
+				{editor ? (
+					<>
+						{tool('Heading', <Heading2Icon />, state?.h2, () =>
+							chain().toggleHeading({ level: 2 }).run()
+						)}
+						{tool('Subheading', <Heading3Icon />, state?.h3, () =>
+							chain().toggleHeading({ level: 3 }).run()
+						)}
+						<Divider />
+						{tool('Bold', <BoldIcon />, state?.bold, () => chain().toggleBold().run())}
+						{tool('Italic', <ItalicIcon />, state?.italic, () => chain().toggleItalic().run())}
+						{tool('Strikethrough', <StrikethroughIcon />, state?.strike, () =>
+							chain().toggleStrike().run()
+						)}
+						{tool('Inline code', <CodeIcon />, state?.code, () => chain().toggleCode().run())}
+						<LinkButton editor={editor} active={Boolean(state?.link)} href={state?.href ?? ''} />
+						<Divider />
+						{tool('Bulleted list', <ListIcon />, state?.bullet, () =>
+							chain().toggleBulletList().run()
+						)}
+						{tool('Numbered list', <ListOrderedIcon />, state?.ordered, () =>
+							chain().toggleOrderedList().run()
+						)}
+						{tool('Quote', <TextQuoteIcon />, state?.quote, () => chain().toggleBlockquote().run())}
+						{tool('Code block', <SquareCodeIcon />, state?.codeBlock, () =>
+							chain().toggleCodeBlock().run()
+						)}
+						{tool('Divider line', <MinusIcon />, false, () => chain().setHorizontalRule().run())}
+						<input
+							ref={picker}
+							type="file"
+							accept="image/*"
+							multiple
+							hidden
+							onChange={(event) => {
+								const files = [...(event.target.files ?? [])];
+								event.target.value = '';
+								if (files.length) onImages(files);
+							}}
+						/>
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							aria-label="Add image"
+							title="Add image"
+							onClick={() => picker.current?.click()}
+						>
+							<ImagePlusIcon />
+						</Button>
+						<Divider />
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							aria-label="Undo"
+							title="Undo"
+							disabled={!state?.canUndo}
+							onClick={() => chain().undo().run()}
+						>
+							<Undo2Icon />
+						</Button>
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							aria-label="Redo"
+							title="Redo"
+							disabled={!state?.canRedo}
+							onClick={() => chain().redo().run()}
+						>
+							<Redo2Icon />
+						</Button>
+					</>
+				) : (
+					<span className="px-1.5 text-sm text-foreground/50">Editing as Markdown</span>
+				)}
+			</div>
+			{end && <div className="shrink-0">{end}</div>}
+		</div>
 	);
+}
+
+function Divider() {
+	return <span aria-hidden className="mx-1 h-5 w-px bg-foreground/10" />;
 }
 
 function LinkButton({ editor, active, href }: { editor: Editor; active: boolean; href: string }) {
@@ -189,7 +267,7 @@ function LinkButton({ editor, active, href }: { editor: Editor; active: boolean;
 				setOpen(next);
 			}}
 		>
-			<PopoverTrigger render={<Toggle size="sm" aria-label="Link" pressed={active} />}>
+			<PopoverTrigger render={<Toggle size="sm" aria-label="Link" title="Link" pressed={active} />}>
 				<LinkIcon />
 			</PopoverTrigger>
 			<PopoverContent className="w-72" side="bottom" align="center">

@@ -337,7 +337,14 @@ export const savePost = createServerFn({ method: 'POST' })
 
 			checkPost(data.source, present);
 			const { title, draft } = readFields(splitPost(data.source).yaml);
-			const verb = data.expected === null ? 'add' : draft ? 'save draft' : 'update';
+			const verb =
+				data.expected === null
+					? 'add'
+					: data.restoreFrom
+						? 'restore an earlier version of'
+						: draft
+							? 'save draft'
+							: 'update';
 			const commit = await github.commit({
 				message: `${COMMIT_PREFIX} ${verb} post "${title || data.slug}"`,
 				changes,
@@ -450,7 +457,13 @@ export const savePhotos = createServerFn({ method: 'POST' })
 				removed && `remove ${removed}`
 			].filter(Boolean);
 			const commit = await github.commit({
-				message: `${COMMIT_PREFIX} ${parts.length ? `${parts.join(', ')} photos` : 'update photos'}`,
+				message: `${COMMIT_PREFIX} ${
+					parts.length
+						? `${parts.join(', ')} photos`
+						: data.restoreFrom
+							? 'restore an earlier version of the photos'
+							: 'update photos'
+				}`,
 				changes,
 				expected: { [PHOTOS_MANIFEST]: data.expected }
 			});

@@ -54,6 +54,17 @@ export function assertContentPath(path: string) {
 	}
 }
 
+// What a commit or blob holds never changes, so it is kept for as long as the
+// Worker instance lives: a page asks GitHub only for what moved since.
+const remembered = new Map<string, unknown>();
+async function remember<T>(key: string, load: () => Promise<T>): Promise<T> {
+	if (remembered.has(key)) return remembered.get(key) as T;
+	const value = await load();
+	if (remembered.size >= 500) remembered.delete(remembered.keys().next().value!);
+	remembered.set(key, value);
+	return value;
+}
+
 export function gitHub(token: string) {
 	async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 		const response = await fetch(`${API}${path}`, {
@@ -83,25 +94,30 @@ export function gitHub(token: string) {
 		return ref.object.sha;
 	}
 
-	// Every file under content/ at a commit, by path. One call for the lot.
-	async function contentTree(commitSha: string) {
-		const commit = await repo<{ tree: { sha: string } }>(`/git/commits/${commitSha}`);
-		const tree = await repo<{ tree: TreeEntry[]; truncated: boolean }>(
-			`/git/trees/${commit.tree.sha}?recursive=1`
-		);
-		if (tree.truncated) throw new Error('The repository tree is too large to read in one go');
-		const files = new Map<string, string>();
-		for (const entry of tree.tree) {
-			if (entry.type === 'blob' && entry.path.startsWith(`${CONTENT_ROOT}/`)) {
-				files.set(entry.path, entry.sha);
+	// Every file under content/ at a commit, by path. One call for the lot: the
+	// trees endpoint takes a commit and answers with that commit's tree (its
+	// `sha` is then the commit's, not the tree's).
+	function contentTree(commitSha: string) {
+		return remember(`tree:${commitSha}`, async () => {
+			const tree = await repo<{ tree: TreeEntry[]; truncated: boolean }>(
+				`/git/trees/${commitSha}?recursive=1`
+			);
+			if (tree.truncated) throw new Error('The repository tree is too large to read in one go');
+			const files = new Map<string, string>();
+			for (const entry of tree.tree) {
+				if (entry.type === 'blob' && entry.path.startsWith(`${CONTENT_ROOT}/`)) {
+					files.set(entry.path, entry.sha);
+				}
 			}
-		}
-		return { treeSha: commit.tree.sha, files };
+			return { files };
+		});
 	}
 
-	async function blobText(sha: string) {
-		const blob = await repo<{ content: string }>(`/git/blobs/${sha}`);
-		return decodeText(blob.content);
+	function blobText(sha: string) {
+		return remember(`blob:${sha}`, async () => {
+			const blob = await repo<{ content: string }>(`/git/blobs/${sha}`);
+			return decodeText(blob.content);
+		});
 	}
 
 	function toCommit(item: {
@@ -124,9 +140,11 @@ export function gitHub(token: string) {
 		return items.map(toCommit);
 	}
 
-	async function changedFiles(sha: string) {
-		const commit = await repo<{ files?: { filename: string }[] }>(`/commits/${sha}`);
-		return (commit.files ?? []).map((file) => file.filename);
+	function changedFiles(sha: string) {
+		return remember(`files:${sha}`, async () => {
+			const commit = await repo<{ files?: { filename: string }[] }>(`/commits/${sha}`);
+			return (commit.files ?? []).map((file) => file.filename);
+		});
 	}
 
 	// Cloudflare's build for a commit: building, live or failed. Unknown when the
@@ -160,7 +178,11 @@ export function gitHub(token: string) {
 	}) {
 		for (const change of changes) assertContentPath(change.path);
 		const parent = await head();
-		const { treeSha, files } = await contentTree(parent);
+		const [{ files }, parentCommit] = await Promise.all([
+			contentTree(parent),
+			repo<{ tree: { sha: string } }>(`/git/commits/${parent}`)
+		]);
+		const treeSha = parentCommit.tree.sha;
 		for (const [path, sha] of Object.entries(expected)) {
 			if ((files.get(path) ?? null) !== sha) {
 				throw new Conflict(`${path.slice(CONTENT_ROOT.length + 1)} changed on GitHub`);
