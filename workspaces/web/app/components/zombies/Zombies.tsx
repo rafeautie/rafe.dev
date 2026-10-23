@@ -76,7 +76,8 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 				<Link href="/">rafe</Link>
 				zombies
 			</SlashNav>
-			<div className="mx-auto mt-16 flex max-w-sm flex-col gap-8 sm:mt-24">
+			{/* boxed in like the tiles elsewhere on the site, controls set off below */}
+			<div className="mx-auto mt-16 flex max-w-sm flex-col gap-6 rounded-xl border border-black/10 bg-black/[0.02] p-6 sm:mt-24">
 				{!session || !state || closed ? (
 					<Start
 						name={name}
@@ -93,7 +94,7 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 				) : (
 					<Lobby session={session} onLeave={leave} />
 				)}
-				<Controls />
+				<Controls className="border-t border-black/10 pt-6" />
 			</div>
 		</div>
 	);
