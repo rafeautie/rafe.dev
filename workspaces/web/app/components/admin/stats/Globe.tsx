@@ -2,7 +2,7 @@ import { type ExtendedFeature, geoArea, geoCentroid, geoDistance } from 'd3-geo'
 import GlobeGl, { type GlobeInstance } from 'globe.gl';
 import { MinusIcon, PlusIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { type Mesh, MeshBasicMaterial } from 'three';
+import { CanvasTexture, Mesh, MeshBasicMaterial, SphereGeometry, SRGBColorSpace } from 'three';
 import { feature } from 'topojson-client';
 import { Button } from '~/components/ui/button';
 import type { FilterKey } from '~/lib/stats/dimensions';
@@ -137,6 +137,54 @@ function rgbOf(css: string) {
 	context.fillRect(0, 0, 1, 1);
 	const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
 	return [r, g, b];
+}
+
+// how far each city's visitors spread, in degrees: about 60km
+const SPREAD = 0.55;
+
+// The whole world, flat, as a heatmap of cities: a bell curve of visitors
+// round each one, added up, then shaded from clear to the ink colour.
+function heatmap(cities: CityRow[], [r, g, b]: number[]) {
+	const width = 4096;
+	const height = 2048;
+	const perDegree = width / 360;
+	const sum = new Float32Array(width * height);
+	const reach = Math.ceil(SPREAD * 4 * perDegree);
+	for (const city of cities) {
+		const cx = ((city.lng + 180) / 360) * width;
+		const cy = ((90 - city.lat) / 180) * height;
+		// a degree of longitude narrows toward the poles
+		const squeeze = Math.max(0.1, Math.cos((city.lat * Math.PI) / 180));
+		const across = Math.ceil(reach / squeeze);
+		for (let y = Math.max(0, Math.floor(cy - reach)); y < Math.min(height, cy + reach); y++) {
+			const dy = (y - cy) / perDegree;
+			for (let x = Math.floor(cx - across); x < cx + across; x++) {
+				const dx = ((x - cx) / perDegree) * squeeze;
+				const at = y * width + ((x + width) % width);
+				sum[at] += city.visitors * Math.exp(-(dx * dx + dy * dy) / (2 * SPREAD * SPREAD));
+			}
+		}
+	}
+	let max = 0;
+	for (const value of sum) if (value > max) max = value;
+	const canvas = document.createElement('canvas');
+	canvas.width = width;
+	canvas.height = height;
+	const context = canvas.getContext('2d');
+	if (!context || !max) return canvas;
+	const image = context.createImageData(width, height);
+	for (let i = 0; i < sum.length; i++) {
+		// square root, so quieter cities still show beside the busiest, less a
+		// little so the faint edges fade to nothing
+		const strength = Math.sqrt(sum[i] / max) - 0.04;
+		if (strength <= 0) continue;
+		image.data[i * 4] = r;
+		image.data[i * 4 + 1] = g;
+		image.data[i * 4 + 2] = b;
+		image.data[i * 4 + 3] = (230 * strength) / 0.96;
+	}
+	context.putImageData(image, 0, 0);
+	return canvas;
 }
 
 // One shape on the globe: a country, or a state of one.
@@ -432,65 +480,57 @@ export function Globe({
 				if (shapesHover && picked.value) onPickRef.current(picked.key, picked.value);
 			});
 
-		// a small dot on each city, to name and choose it
+		// a small flat dot on each city, to name and choose it
 		globe
-			.pointsData(level === 2 ? cities : [])
-			.pointLat('lat')
-			.pointLng('lng')
-			.pointAltitude(0.016)
-			.pointRadius(0.25)
-			.pointColor((city) => ((city as CityRow).key === active.city ? ink(1) : ink(0.6)))
-			.onPointHover((city) => {
+			.labelsData(level === 2 ? cities : [])
+			.labelLat('lat')
+			.labelLng('lng')
+			.labelText(() => '')
+			.labelSize(0)
+			.labelAltitude(0.016)
+			.labelDotRadius(0.12)
+			.labelColor((city) => ((city as CityRow).key === active.city ? ink(1) : ink(0.7)))
+			.onLabelHover((city) => {
 				const row = city as CityRow | null;
 				box.style.cursor = row ? 'pointer' : '';
 				setTip(row && { label: row.label, visitors: row.visitors });
 			})
-			.onPointClick((city) => onPickRef.current('city', (city as CityRow).key));
+			.onLabelClick((city) => onPickRef.current('city', (city as CityRow).key));
 		return () => {
 			for (const made of flat.values()) made.dispose();
 			sea.dispose();
 		};
 	}, [areas, cities, level, active.country, active.region, active.city, theme]);
 
-	// cities as a heatmap: how many visit, spread over the land around them.
-	// Apart from the dots, so it is worked out again only when the cities,
-	// level or theme change.
+	// cities as a heatmap: each city's visitors spread over the land around
+	// it, added up, on a see-through layer just above the outlines. Worked out
+	// here rather than with globe.gl's own heatmap, which hid the outlines and
+	// took seconds at this scale.
 	useEffect(() => {
 		const globe = globeRef.current;
 		const box = boxRef.current;
-		if (!globe || !box) return;
+		if (!globe || !box || level !== 2 || !cities.length) {
+			globe?.customLayerData([]);
+			return;
+		}
 		const [r, g, b] = rgbOf(
 			getComputedStyle(box).getPropertyValue('--foreground').trim() || '#000'
 		);
-		const cityMax = Math.max(1, ...cities.map((city) => city.visitors));
-		globe
-			.heatmapPoints('points')
-			.heatmapPointLat('lat')
-			.heatmapPointLng('lng')
-			.heatmapPointWeight((city) => (city as CityRow).visitors / cityMax)
-			// in degrees: wide enough to stay quick, so close cities run together
-			.heatmapBandwidth(1.6)
-			.heatmapColorSaturation(1)
-			.heatmapBaseAltitude(0.014)
-			.heatmapColorFn(() => (t: number) => `rgba(${r},${g},${b},${0.75 * t ** 1.5})`)
-			.heatmapsData(level === 2 && cities.length ? [{ points: cities }] : []);
-		// The heatmap is a whole sphere just above the ground, see-through where
-		// nobody visits; it must not hide the outlines under it.
-		let frame = 0;
-		let tries = 0;
-		const seeThrough = () => {
-			let found = false;
-			globe.scene().traverse((object) => {
-				if ((object as { __globeObjType?: string }).__globeObjType !== 'heatmap') return;
-				const mesh = object as Mesh;
-				(mesh.material as MeshBasicMaterial).depthWrite = false;
-				mesh.renderOrder = 1;
-				found = true;
-			});
-			if (!found && ++tries < 30) frame = requestAnimationFrame(seeThrough);
+		const texture = new CanvasTexture(heatmap(cities, [r, g, b]));
+		texture.colorSpace = SRGBColorSpace;
+		texture.anisotropy = 4;
+		const geometry = new SphereGeometry(globe.getGlobeRadius() * 1.014, 180, 90);
+		const material = new MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false });
+		const layer = new Mesh(geometry, material);
+		// the way globe.gl turns its own globe, so the map lines up
+		layer.rotation.y = -Math.PI / 2;
+		globe.customLayerData([{}]).customThreeObject(() => layer);
+		return () => {
+			globe.customLayerData([]);
+			geometry.dispose();
+			material.dispose();
+			texture.dispose();
 		};
-		if (level === 2) seeThrough();
-		return () => cancelAnimationFrame(frame);
 	}, [cities, level, theme]);
 
 	// turn to what the page is filtered by
