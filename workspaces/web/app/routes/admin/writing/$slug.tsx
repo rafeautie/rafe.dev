@@ -1,13 +1,12 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { FileCodeIcon } from 'lucide-react';
-import { toast } from 'sonner';
 import { Link } from '~/components/Link';
 import { BuildBadge, useBuildWatch } from '~/components/admin/BuildStatus';
 import { ConfirmDialog } from '~/components/admin/ConfirmDialog';
 import { DatePicker } from '~/components/admin/DatePicker';
 import { EditorToolbar, PostBody, usePostEditor } from '~/components/admin/PostEditor';
-import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
+import { AdminHeader, ControlsRail, ProblemBadge } from '~/components/admin/AdminHeader';
 import { keepsMarkdown } from '~/components/admin/post-schema';
 import { LATEST, VersionSelect } from '~/components/admin/VersionSelect';
 import { Badge } from '~/components/ui/badge';
@@ -148,8 +147,10 @@ function PostForm({
 	// another version need a confirm
 	const [edited, setEdited] = useState(false);
 	const [saving, setSaving] = useState(false);
-	const [confirm, setConfirm] = useState<null | 'delete' | { version: string }>(null);
+	const [confirm, setConfirm] = useState<null | 'delete' | 'discard' | { version: string }>(null);
 	const watch = useBuildWatch();
+	// what last went wrong, shown in the rail until dismissed or the next publish
+	const [problem, setProblem] = useState<string | null>(null);
 
 	const postSlug = isNew ? newSlug : slug;
 	// the visual editor only for bodies it can write back unchanged
@@ -177,9 +178,6 @@ function PostForm({
 			setVersion(saved.value.version);
 			setViewRef(saved.value.version);
 		}
-		toast('Brought back your unsaved edits', {
-			action: { label: 'Discard', onClick: discard }
-		});
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
@@ -199,6 +197,8 @@ function PostForm({
 		setUploads(new Map());
 		setDirty(false);
 		setEdited(false);
+		setSlugTouched(false);
+		setProblem(null);
 	}
 
 	function changed(next: Partial<Draft> = {}) {
@@ -240,9 +240,10 @@ function PostForm({
 			// an older version on screen is a change worth publishing
 			setDirty(next !== LATEST);
 			setEdited(false);
+			setProblem(null);
 			clearUnsaved(storageKey);
 		} catch (error) {
-			toast.error(message(error));
+			setProblem(message(error));
 		}
 	}
 
@@ -263,7 +264,7 @@ function PostForm({
 				setUploads((previous) => new Map(previous).set(prepared.name, prepared));
 				paths.push(prepared.name);
 			} catch (error) {
-				toast.error(message(error));
+				setProblem(message(error));
 			}
 		}
 		return paths;
@@ -289,7 +290,7 @@ function PostForm({
 
 	function switchMode(toMarkdown: boolean) {
 		if (!toMarkdown && !keepsMarkdown(current.current)) {
-			return toast.error(
+			return setProblem(
 				'The visual editor would lose part of this Markdown (a table or inline HTML, say)'
 			);
 		}
@@ -309,22 +310,23 @@ function PostForm({
 	];
 
 	async function publish() {
+		setProblem(null);
 		const finalFields: PostFields = {
 			...fields,
 			// a post going out for the first time gets today's date
 			date: fields.date || (fields.draft ? '' : today())
 		};
-		if (!finalFields.title.trim()) return toast.error('Give the post a title first');
+		if (!finalFields.title.trim()) return setProblem('Give the post a title first');
 		if (!finalFields.draft && !finalFields.description.trim()) {
-			return toast.error('Add a description before publishing; it shows under the title');
+			return setProblem('Add a description before publishing; it shows under the title');
 		}
 		if (!SLUG_PATTERN.test(postSlug)) {
-			return toast.error(
+			return setProblem(
 				'The post address uses lowercase letters, numbers and dashes, and is not "new"'
 			);
 		}
 		if (finalFields.updated && finalFields.updated < finalFields.date) {
-			return toast.error('The updated date is before the post date');
+			return setProblem('The updated date is before the post date');
 		}
 		const source = joinPost(yaml, finalFields, current.current);
 		const used = [...uploads.values()].filter((upload) => source.includes(upload.name));
@@ -342,7 +344,6 @@ function PostForm({
 			});
 			clearUnsaved(storageKey);
 			if (isNew) clearUnsaved('post:new');
-			toast.success(finalFields.draft ? 'Draft saved' : 'Published');
 			await router.navigate({
 				to: '/admin/writing/$slug',
 				params: { slug: postSlug },
@@ -351,21 +352,21 @@ function PostForm({
 			});
 			await router.invalidate();
 		} catch (error) {
-			toast.error(message(error));
+			setProblem(message(error));
 		} finally {
 			setSaving(false);
 		}
 	}
 
 	async function remove() {
+		setProblem(null);
 		setSaving(true);
 		try {
 			await deletePost({ data: { slug, expected: post?.sha ?? null } });
 			clearUnsaved(storageKey);
-			toast.success('Post deleted');
 			await router.navigate({ to: '/admin/writing' });
 		} catch (error) {
-			toast.error(message(error));
+			setProblem(message(error));
 			setSaving(false);
 		}
 	}
@@ -381,6 +382,7 @@ function PostForm({
 							{fields.draft ? 'Draft' : 'Published'}
 						</Badge>
 						{dirty && <span>unsaved, kept in this browser</span>}
+						<ProblemBadge text={problem} onDismiss={() => setProblem(null)} />
 					</>
 				}
 			>
@@ -391,6 +393,11 @@ function PostForm({
 						disabled={saving}
 						onChange={(next) => (edited ? setConfirm({ version: next }) : showVersion(next))}
 					/>
+				)}
+				{dirty && (
+					<Button variant="ghost" disabled={saving} onClick={() => setConfirm('discard')}>
+						Discard
+					</Button>
 				)}
 				<Button onClick={publish} disabled={!dirty || saving} className="px-3.5">
 					{fields.draft ? 'Save draft' : 'Publish'}
@@ -509,7 +516,21 @@ function PostForm({
 									className="mx-0 w-full justify-start border border-input"
 								/>
 							</Setting>
-							<Setting label="Updated" hint="Pick the same day again to clear it.">
+							<Setting
+								label="Updated"
+								action={
+									fields.updated && (
+										<Button
+											variant="ghost"
+											size="xs"
+											className="-my-1 text-foreground/50"
+											onClick={() => setField('updated', '')}
+										>
+											Clear
+										</Button>
+									)
+								}
+							>
 								<DatePicker
 									value={fields.updated}
 									onChange={(value) => setField('updated', value)}
@@ -587,6 +608,15 @@ function PostForm({
 				onConfirm={remove}
 			/>
 			<ConfirmDialog
+				open={confirm === 'discard'}
+				onOpenChange={(open) => !open && setConfirm(null)}
+				title="Discard your changes?"
+				description="The post goes back to how it is on GitHub, and the copy kept in this browser is deleted."
+				confirm="Discard"
+				destructive
+				onConfirm={discard}
+			/>
+			<ConfirmDialog
 				open={typeof confirm === 'object' && confirm !== null}
 				onOpenChange={(open) => !open && setConfirm(null)}
 				title="Show another version?"
@@ -605,17 +635,23 @@ const NO_IMAGE = 'none';
 function Setting({
 	label,
 	hint,
+	action,
 	className,
 	children
 }: {
 	label: string;
 	hint?: string;
+	// beside the label, at the right
+	action?: ReactNode;
 	className?: string;
 	children: ReactNode;
 }) {
 	return (
 		<div className={cn('flex flex-col gap-1.5', className)}>
-			<span className="text-foreground/50">{label}</span>
+			<div className="flex items-center justify-between gap-2">
+				<span className="text-foreground/50">{label}</span>
+				{action}
+			</div>
 			{children}
 			{hint && <span className="text-xs text-foreground/40">{hint}</span>}
 		</div>

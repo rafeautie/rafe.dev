@@ -1,6 +1,12 @@
 import { env } from 'cloudflare:workers';
-import { getRequest, useSession } from '@tanstack/react-start/server';
-import { ADMIN_GITHUB_ID } from './config';
+import {
+	deleteCookie,
+	getCookie,
+	getRequest,
+	setCookie,
+	useSession
+} from '@tanstack/react-start/server';
+import { ADMIN_GITHUB_ID, SIGNED_IN_COOKIE } from './config';
 
 // The sign-in lives in one encrypted, HTTP-only cookie: GitHub's token for this
 // GitHub App and who it belongs to. The browser holds it but cannot read it,
@@ -28,6 +34,14 @@ export function adminSession() {
 		sessionHeader: false,
 		cookie: { httpOnly: true, secure: true, sameSite: 'lax', path: '/' }
 	});
+}
+
+// The public pages' hint (SIGNED_IN_COOKIE), set and cleared with the session.
+export function markSignedIn(signedIn: boolean) {
+	if (Boolean(getCookie(SIGNED_IN_COOKIE)) === signedIn) return;
+	const options = { secure: true, sameSite: 'lax', path: '/' } as const;
+	if (signedIn) setCookie(SIGNED_IN_COOKIE, '1', { ...options, maxAge: EIGHT_HOURS });
+	else deleteCookie(SIGNED_IN_COOKIE, options);
 }
 
 export class NotSignedIn extends Error {

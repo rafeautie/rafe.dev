@@ -1,11 +1,5 @@
 /// <reference types="vite/client" />
-import {
-	createRootRoute,
-	HeadContent,
-	Outlet,
-	Scripts,
-	useRouterState
-} from '@tanstack/react-router';
+import { createRootRoute, HeadContent, Outlet, Scripts } from '@tanstack/react-router';
 import { Toaster } from 'sonner';
 import '../styles/app.css';
 import faviconUrl from '../assets/favicon.png?url';
@@ -38,8 +32,6 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
-	// the admin keeps its Publish buttons top right, so its toasts go below
-	const admin = useRouterState({ select: (state) => state.location.pathname.startsWith('/admin') });
 	return (
 		// THEME_SCRIPT adds a class to <html> before hydration on /writing, /chess and /admin
 		<html lang="en" className="light" suppressHydrationWarning>
@@ -49,7 +41,7 @@ function RootComponent() {
 			</head>
 			<body>
 				<main>
-					<Toaster position={admin ? 'bottom-right' : 'top-right'} />
+					<Toaster position="top-right" />
 					<Outlet />
 				</main>
 				<Scripts />

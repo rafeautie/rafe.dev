@@ -18,7 +18,7 @@ import {
 	type GitHub
 } from './github.server';
 import { isJpeg, isNormalized } from './jpeg';
-import { currentAdmin, requireToken } from './session.server';
+import { currentAdmin, markSignedIn, requireToken } from './session.server';
 
 // Everything the admin pages ask of the server. Each handler checks the session
 // first (requireToken), then talks to GitHub as Rafe.
@@ -147,6 +147,9 @@ function checkPostAsset(upload: Upload) {
 
 export const getAdmin = createServerFn({ method: 'GET' }).handler(async () => {
 	const admin = await currentAdmin();
+	// keeps the public pages' hint in step: set for a sign-in made before it
+	// existed, cleared once a sign-in lapses
+	markSignedIn(Boolean(admin));
 	return admin ? { login: admin.login, avatarUrl: admin.avatarUrl } : null;
 });
 

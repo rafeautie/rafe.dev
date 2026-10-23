@@ -1,5 +1,7 @@
+import { XIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { SlashNav } from '~/components/SlashNav';
+import { Badge } from '~/components/ui/badge';
 
 // Every admin page's header: the slash path on the left, each segment a link
 // one level up, and links to other pages on the right. Pages that change
@@ -26,5 +28,28 @@ export function ControlsRail({ status, children }: { status?: ReactNode; childre
 				{children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
 			</div>
 		</div>
+	);
+}
+
+// What just went wrong, in the rail's status, until the page clears it or the
+// X does. The admin shows no toasts: what changed shows here instead.
+export function ProblemBadge({ text, onDismiss }: { text: string | null; onDismiss: () => void }) {
+	if (!text) return null;
+	return (
+		<Badge
+			variant="destructive"
+			role="alert"
+			className="h-auto py-1 pr-1 text-left whitespace-normal"
+		>
+			{text}
+			<button
+				type="button"
+				aria-label="Dismiss"
+				onClick={onDismiss}
+				className="cursor-pointer rounded-full p-0.5 hover:bg-destructive/10"
+			>
+				<XIcon className="size-3" />
+			</button>
+		</Badge>
 	);
 }

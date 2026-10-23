@@ -7,17 +7,12 @@ import {
 import { Link } from '~/components/Link';
 import { Button } from '~/components/ui/button';
 import { getAdmin } from '~/lib/admin/api';
+import { whoIsSignedIn } from '~/lib/admin/signed-in';
 import { useWritingTheme } from '~/lib/writing-theme';
 
 // /admin and everything under it: private pages for editing the site's
 // content, saved to GitHub (lib/admin). Kept out of search engines here and
 // in robots.txt.
-
-// In the browser, who is signed in is asked at most every few minutes rather
-// than before every page; each server call still checks the cookie, and a
-// lapsed sign-in shows AdminError.
-const RECHECK_MS = 5 * 60 * 1000;
-let known: { admin: Awaited<ReturnType<typeof getAdmin>>; at: number } | undefined;
 
 export const Route = createFileRoute('/admin')({
 	head: () => ({
@@ -25,10 +20,8 @@ export const Route = createFileRoute('/admin')({
 	}),
 	beforeLoad: async () => {
 		if (typeof window === 'undefined') return { admin: await getAdmin() };
-		if (!known?.admin || Date.now() - known.at > RECHECK_MS) {
-			known = { admin: await getAdmin(), at: Date.now() };
-		}
-		return { admin: known.admin };
+		// a lapsed sign-in shows AdminError on the next server call
+		return { admin: await whoIsSignedIn() };
 	},
 	component: AdminLayout,
 	errorComponent: AdminError
