@@ -54,12 +54,31 @@ export function assertContentPath(path: string) {
 	}
 }
 
-// What a commit or blob holds never changes, so it is kept for as long as the
-// Worker instance lives: a page asks GitHub only for what moved since.
+// What a commit or blob holds never changes, so once read it is kept: in this
+// Worker instance's memory, and in Cloudflare's cache for this location, which
+// outlives instances (https://developers.cloudflare.com/workers/runtime-apis/cache/).
+// Either can be emptied at any time; then GitHub is asked again. A page asks
+// GitHub only for what moved since.
 const remembered = new Map<string, unknown>();
+const CACHE_PREFIX = 'https://rafe.dev/__admin-cache/';
+
 async function remember<T>(key: string, load: () => Promise<T>): Promise<T> {
 	if (remembered.has(key)) return remembered.get(key) as T;
-	const value = await load();
+	// absent outside the Workers runtime, as in tests
+	const cache =
+		typeof caches === 'undefined' ? null : (caches as unknown as { default: Cache }).default;
+	const request = new Request(CACHE_PREFIX + key);
+	const cached = await cache?.match(request).catch(() => undefined);
+	const value = cached ? ((await cached.json()) as T) : await load();
+	if (!cached && cache) {
+		const response = new Response(JSON.stringify(value), {
+			headers: {
+				'Content-Type': 'application/json',
+				'Cache-Control': 'public, max-age=31536000, immutable'
+			}
+		});
+		await cache.put(request, response).catch(() => undefined);
+	}
 	if (remembered.size >= 500) remembered.delete(remembered.keys().next().value!);
 	remembered.set(key, value);
 	return value;
@@ -97,20 +116,18 @@ export function gitHub(token: string) {
 	// Every file under content/ at a commit, by path. One call for the lot: the
 	// trees endpoint takes a commit and answers with that commit's tree (its
 	// `sha` is then the commit's, not the tree's).
-	function contentTree(commitSha: string) {
-		return remember(`tree:${commitSha}`, async () => {
+	async function contentTree(commitSha: string) {
+		// kept as [path, blob] pairs, which survive a trip through JSON
+		const entries = await remember(`tree:${commitSha}`, async () => {
 			const tree = await repo<{ tree: TreeEntry[]; truncated: boolean }>(
 				`/git/trees/${commitSha}?recursive=1`
 			);
 			if (tree.truncated) throw new Error('The repository tree is too large to read in one go');
-			const files = new Map<string, string>();
-			for (const entry of tree.tree) {
-				if (entry.type === 'blob' && entry.path.startsWith(`${CONTENT_ROOT}/`)) {
-					files.set(entry.path, entry.sha);
-				}
-			}
-			return { files };
+			return tree.tree
+				.filter((entry) => entry.type === 'blob' && entry.path.startsWith(`${CONTENT_ROOT}/`))
+				.map((entry): [string, string] => [entry.path, entry.sha]);
 		});
+		return { files: new Map(entries) };
 	}
 
 	function blobText(sha: string) {
