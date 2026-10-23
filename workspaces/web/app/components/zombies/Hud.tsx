@@ -206,10 +206,16 @@ function Card({ children }: { children: React.ReactNode }) {
 	);
 }
 
-// One piece of the HUD: a white card, like the rest of the site's.
+// One piece of the HUD: frosted glass, so the game shows through, blurred
+// enough that the text stays readable over whatever is behind it.
 function Panel({ className, children }: { className?: string; children: React.ReactNode }) {
 	return (
-		<div className={cn('rounded-xl border border-border bg-white shadow-sm', className)}>
+		<div
+			className={cn(
+				'rounded-xl border border-white/50 bg-white/55 shadow-sm backdrop-blur-md',
+				className
+			)}
+		>
 			{children}
 		</div>
 	);
