@@ -12,6 +12,24 @@
 	"vars": {
 		"GITHUB_CLIENT_ID": "Iv23li0qGHjWnZ9qeBqq"
 	},
+	// Visits recorded by lib/stats for /admin/stats. No database_id: the first
+	// deploy creates the database and later deploys find it by name.
+	"d1_databases": [
+		{
+			"binding": "STATS",
+			"database_name": "rafe-dev-stats"
+		}
+	],
+	// Caps how often one address can report visits to /seen, so a script
+	// cannot flood the stats. The address is only the counter's key, never
+	// stored.
+	"ratelimits": [
+		{
+			"name": "SEEN_LIMIT",
+			"namespace_id": "1001",
+			"simple": { "limit": 120, "period": 60 }
+		}
+	],
 	"observability": {
 		"enabled": true,
 		"head_sampling_rate": 1,
