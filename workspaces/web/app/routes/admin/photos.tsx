@@ -17,13 +17,13 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { createFileRoute, useRouter } from '@tanstack/react-router';
-import { ImagePlusIcon } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Columns2Icon, Columns3Icon, ImagePlusIcon, RectangleVerticalIcon } from 'lucide-react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Link } from '~/components/Link';
 import { PhotoPicture } from '~/components/PhotoPicture';
-import { AdminHeader } from '~/components/admin/AdminHeader';
-import { BuildLine, useBuildWatch } from '~/components/admin/BuildStatus';
+import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
+import { BuildBadge, useBuildWatch } from '~/components/admin/BuildStatus';
 import { ConfirmDialog } from '~/components/admin/ConfirmDialog';
 import { DatePicker } from '~/components/admin/DatePicker';
 import { LATEST, VersionSelect } from '~/components/admin/VersionSelect';
@@ -65,6 +65,11 @@ export const Route = createFileRoute('/admin/photos')({
 });
 
 const STORAGE_KEY = 'photos';
+const PREVIEW_OPTIONS = [
+	{ columns: 1, icon: <RectangleVerticalIcon /> },
+	{ columns: 2, icon: <Columns2Icon /> },
+	{ columns: 3, icon: <Columns3Icon /> }
+];
 const BUILT = new Map(PHOTOS.map((photo) => [photo.file, photo]));
 
 function PhotosPage() {
@@ -84,6 +89,9 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 	const [version, setVersion] = useState(LATEST);
 	const [viewRef, setViewRef] = useState(loaded.ref);
 	const [dirty, setDirty] = useState(false);
+	// edited by hand since the version on screen loaded; only then does showing
+	// another version need a confirm
+	const [edited, setEdited] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [preparing, setPreparing] = useState(0);
 	const [editing, setEditing] = useState<string | null>(null);
@@ -91,6 +99,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 	const [pendingVersion, setPendingVersion] = useState<string | null>(null);
 	const picker = useRef<HTMLInputElement>(null);
 	const watch = useBuildWatch();
+	const dndId = useId();
 
 	useEffect(() => {
 		if (built) watch.start(built);
@@ -106,6 +115,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 	function update(next: PhotoEntry[], nextUploads = uploads) {
 		setPhotos(next);
 		setDirty(true);
+		setEdited(true);
 		if (nextUploads.size === 0) writeUnsaved(STORAGE_KEY, { sha: loaded.sha, value: next });
 		else clearUnsaved(STORAGE_KEY);
 	}
@@ -117,6 +127,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 		setVersion(LATEST);
 		setViewRef(loaded.ref);
 		setDirty(false);
+		setEdited(false);
 	}
 
 	// an unpublished order or captions from last time, on this same version
@@ -130,6 +141,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 		// eslint-disable-next-line react-hooks/set-state-in-effect
 		setPhotos(saved.value);
 		setDirty(true);
+		setEdited(true);
 		toast('Brought back your unsaved changes', {
 			action: { label: 'Discard', onClick: discard }
 		});
@@ -144,6 +156,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 			setVersion(next);
 			setViewRef(result.ref);
 			setDirty(next !== LATEST);
+			setEdited(false);
 			clearUnsaved(STORAGE_KEY);
 		} catch (error) {
 			toast.error(message(error));
@@ -254,61 +267,84 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 				add([...event.dataTransfer.files]);
 			}}
 		>
-			<div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-				<AdminHeader
-					path={[
-						<Link key="rafe" href="/">
-							rafe
-						</Link>,
-						<Link key="admin" href="/admin">
-							admin
-						</Link>,
-						'photos'
-					]}
-				/>
-				<div className="flex flex-col items-end gap-1.5">
-					<div className="flex flex-wrap items-center justify-end gap-3">
-						<div className="flex items-center gap-1 text-sm text-foreground/50">
-							preview
-							<ToggleGroup
-								size="sm"
-								value={preview ? [String(preview)] : []}
-								onValueChange={(value) => setPreview(value.length ? Number(value[0]) : null)}
-							>
-								{[1, 2, 3].map((count) => (
-									<ToggleGroupItem
-										key={count}
-										value={String(count)}
-										aria-label={`${count} columns`}
-									>
-										{count}
-									</ToggleGroupItem>
-								))}
-							</ToggleGroup>
-						</div>
-						<VersionSelect
-							versions={loaded.versions}
-							value={version}
-							disabled={saving}
-							onChange={(next) => (dirty ? setPendingVersion(next) : showVersion(next))}
-						/>
-						<Button
-							onClick={publish}
-							disabled={!dirty || saving || preparing > 0}
-							className="px-3.5"
+			<AdminHeader
+				path={[
+					<Link key="rafe" href="/">
+						rafe
+					</Link>,
+					<Link key="admin" href="/admin">
+						admin
+					</Link>,
+					'photos'
+				]}
+			/>
+			<ControlsRail
+				status={
+					<>
+						<BuildBadge build={watch.build} />
+						<span>
+							{preparing > 0
+								? `Preparing ${preparing} ${preparing === 1 ? 'photo' : 'photos'}…`
+								: `${photos.length} photos${dirty ? ' · unpublished changes' : ''}`}
+						</span>
+					</>
+				}
+			>
+				<ToggleGroup
+					variant="outline"
+					spacing={0}
+					aria-label="Preview the gallery in columns"
+					value={preview ? [String(preview)] : []}
+					onValueChange={(value) => setPreview(value.length ? Number(value[0]) : null)}
+				>
+					{PREVIEW_OPTIONS.map(({ columns, icon }) => (
+						<ToggleGroupItem
+							key={columns}
+							value={String(columns)}
+							aria-label={`${columns} ${columns === 1 ? 'column' : 'columns'}`}
+							title={`Preview in ${columns} ${columns === 1 ? 'column' : 'columns'}`}
 						>
-							Publish
-						</Button>
-					</div>
-					<BuildLine build={watch.build} liveHref="/photography" />
-				</div>
-			</div>
+							{icon}
+						</ToggleGroupItem>
+					))}
+				</ToggleGroup>
+				<VersionSelect
+					versions={loaded.versions}
+					value={version}
+					disabled={saving}
+					onChange={(next) => (edited ? setPendingVersion(next) : showVersion(next))}
+				/>
+				<input
+					ref={picker}
+					type="file"
+					accept="image/*"
+					multiple
+					hidden
+					onChange={(event) => {
+						const files = [...(event.target.files ?? [])];
+						event.target.value = '';
+						add(files);
+					}}
+				/>
+				<Button variant="outline" aria-label="Add photos" onClick={() => picker.current?.click()}>
+					<ImagePlusIcon />
+					<span className="hidden sm:inline">Add photos</span>
+				</Button>
+				<Button onClick={publish} disabled={!dirty || saving || preparing > 0} className="px-3.5">
+					Publish
+				</Button>
+			</ControlsRail>
 
-			<div className="mt-12 sm:mt-16">
+			<div className="mt-8">
 				{preview ? (
 					<Preview photos={photos} columns={preview} source={source} />
 				) : (
-					<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+					<DndContext
+						id={dndId}
+						sensors={sensors}
+						collisionDetection={closestCenter}
+						onDragEnd={onDragEnd}
+					>
 						<SortableContext
 							items={photos.map((photo) => photo.file)}
 							strategy={rectSortingStrategy}
@@ -328,36 +364,11 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 				)}
 			</div>
 
-			<div className="mt-8 flex flex-wrap items-center justify-between gap-3 text-sm text-foreground/50">
-				<p>
-					{preparing > 0
-						? `Preparing ${preparing} ${preparing === 1 ? 'photo' : 'photos'}…`
-						: preview
-							? 'The gallery as it will look at this width. Turn preview off to reorder.'
-							: 'Drag to reorder, click to edit. Drop photos anywhere to add them.'}
-				</p>
-				<input
-					ref={picker}
-					type="file"
-					accept="image/*"
-					multiple
-					hidden
-					onChange={(event) => {
-						const files = [...(event.target.files ?? [])];
-						event.target.value = '';
-						add(files);
-					}}
-				/>
-				<Button
-					variant="ghost"
-					size="sm"
-					className="-mx-2.5"
-					onClick={() => picker.current?.click()}
-				>
-					<ImagePlusIcon />
-					add photos
-				</Button>
-			</div>
+			<p className="mt-8 text-sm text-foreground/50">
+				{preview
+					? 'The gallery as it will look at this width. Turn preview off to reorder.'
+					: 'Drag to reorder, click a photo to edit it. Drop photos anywhere to add them.'}
+			</p>
 
 			<PhotoDialog
 				photo={editingPhoto}

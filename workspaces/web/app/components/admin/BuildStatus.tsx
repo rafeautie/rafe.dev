@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from '~/components/Link';
+import { Badge } from '~/components/ui/badge';
 import { Spinner } from '~/components/ui/spinner';
 import { getBuild } from '~/lib/admin/api';
 import type { Build } from '~/lib/admin/types';
@@ -11,8 +11,12 @@ const GIVE_UP_MS = 10 * 60 * 1000;
 
 // After a publish: follows Cloudflare's build of the new commit until it is
 // live or has failed.
-export function useBuildWatch() {
-	const [watch, setWatch] = useState<{ sha: string; build: Build; since: number } | null>(null);
+// `since` is when the commit was made, when known, so an old commit with no
+// build is not waited on.
+export function useBuildWatch(initial?: { sha: string; build: Build; since?: number }) {
+	const [watch, setWatch] = useState<{ sha: string; build: Build; since: number } | null>(() =>
+		initial ? { ...initial, since: initial.since ?? Date.now() } : null
+	);
 
 	useEffect(() => {
 		if (!watch || watch.build.state === 'live' || watch.build.state === 'failed') return;
@@ -31,52 +35,42 @@ export function useBuildWatch() {
 	};
 }
 
-// One quiet line: what the site is doing with the latest publish.
-export function BuildLine({
-	build,
-	liveHref,
-	className
-}: {
-	build: Build | null;
-	// where to look once it is live
-	liveHref?: string;
-	className?: string;
-}) {
+// What the site is doing with the latest publish, as a badge.
+export function BuildBadge({ build, className }: { build: Build | null; className?: string }) {
 	if (!build) return null;
-	const line = 'inline-flex items-center gap-1.5 text-sm text-foreground/50';
-
 	if (build.state === 'live') {
 		return (
-			<p className={cn(line, className)}>
+			<Badge variant="secondary" className={className}>
 				<span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
 				Live
-				{liveHref && (
-					<Link href={liveHref} className="text-foreground">
-						view
-					</Link>
-				)}
-			</p>
+			</Badge>
 		);
 	}
 	if (build.state === 'failed') {
-		return (
-			<p className={cn(line, 'text-destructive', className)}>
+		const badge = (
+			<Badge variant="destructive" className={className}>
 				Build failed
-				{build.url && (
-					<Link href={build.url} className="underline underline-offset-3">
-						see why
-					</Link>
-				)}
-			</p>
+			</Badge>
+		);
+		return build.url ? (
+			<a href={build.url} target="_blank" rel="noreferrer" title="See why on GitHub">
+				{badge}
+			</a>
+		) : (
+			badge
 		);
 	}
 	if (build.state === 'unknown') {
-		return <p className={cn(line, className)}>Build status unavailable</p>;
+		return (
+			<Badge variant="outline" className={cn('text-foreground/60', className)}>
+				Build status unavailable
+			</Badge>
+		);
 	}
 	return (
-		<p className={cn(line, className)}>
-			<Spinner className="size-3.5" />
+		<Badge variant="secondary" className={className}>
+			<Spinner />
 			{build.state === 'pending' ? 'Waiting to build' : 'Building'}
-		</p>
+		</Badge>
 	);
 }

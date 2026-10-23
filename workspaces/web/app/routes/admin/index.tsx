@@ -3,8 +3,8 @@ import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { ThemeToggle } from '~/components/ThemeToggle';
-import { AdminHeader } from '~/components/admin/AdminHeader';
-import { BuildLine } from '~/components/admin/BuildStatus';
+import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
+import { BuildBadge, useBuildWatch } from '~/components/admin/BuildStatus';
 import { Button } from '~/components/ui/button';
 import { getOverview } from '~/lib/admin/api';
 import { timeAgo } from '~/lib/admin/time';
@@ -49,8 +49,14 @@ function SignIn() {
 
 function Overview({ overview }: { overview: Awaited<ReturnType<typeof getOverview>> }) {
 	const latest = overview.changes[0];
+	// keeps checking while the latest commit is still building
+	const watch = useBuildWatch({
+		sha: overview.head,
+		build: overview.build,
+		since: latest?.date ? Date.parse(latest.date) : undefined
+	});
 	return (
-		<div className="mx-auto max-w-2xl">
+		<div className="mx-auto max-w-4xl">
 			<AdminHeader
 				path={[
 					<Link key="rafe" href="/">
@@ -72,16 +78,16 @@ function Overview({ overview }: { overview: Awaited<ReturnType<typeof getOvervie
 				<ThemeToggle />
 			</AdminHeader>
 
-			<div className="mt-16 flex flex-wrap items-baseline gap-x-3 gap-y-1 sm:mt-24">
-				<BuildLine
-					build={overview.build}
-					liveHref="https://rafe.dev"
-					className="text-base font-semibold text-foreground"
-				/>
-				{latest && <p className="text-foreground/50">updated {timeAgo(latest.date)}</p>}
-			</div>
+			<ControlsRail
+				status={
+					<>
+						<BuildBadge build={watch.build} />
+						{latest && <span>updated {timeAgo(latest.date)}</span>}
+					</>
+				}
+			/>
 
-			<section className="mt-14">
+			<section className="mt-10">
 				<h2 className="border-b border-foreground/10 pb-3 text-sm text-foreground/50">
 					Recent changes
 				</h2>

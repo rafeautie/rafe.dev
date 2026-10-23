@@ -8,7 +8,7 @@ import {
 	WRITING_DIR
 } from './config';
 import { parse as parseYaml } from 'yaml';
-import { readFields, splitPost } from './frontmatter';
+import { FENCED_CODE, readFields, splitPost } from './frontmatter';
 import {
 	type Change,
 	Conflict,
@@ -269,7 +269,7 @@ function checkPost(source: string, folder: Set<string>) {
 		throw new Error('The updated date is before the post date');
 	}
 	// every image the build will look for in the folder (code samples aside)
-	const prose = body.replace(/^(`{3,}|~{3,})[\s\S]*?^\1/gm, '').replace(/`[^`\n]*`/g, '');
+	const prose = body.replace(FENCED_CODE, '').replace(/`[^`\n]*`/g, '');
 	const images = [
 		...prose.matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)/g),
 		...prose.matchAll(/<img\b[^>]*\ssrc=["']([^"']+)/gi)
@@ -337,7 +337,14 @@ export const savePost = createServerFn({ method: 'POST' })
 
 			checkPost(data.source, present);
 			const { title, draft } = readFields(splitPost(data.source).yaml);
-			const verb = data.expected === null ? 'add' : draft ? 'save draft' : 'update';
+			const verb =
+				data.expected === null
+					? 'add'
+					: data.restoreFrom
+						? 'restore an earlier version of'
+						: draft
+							? 'save draft'
+							: 'update';
 			const commit = await github.commit({
 				message: `${COMMIT_PREFIX} ${verb} post "${title || data.slug}"`,
 				changes,
@@ -450,7 +457,13 @@ export const savePhotos = createServerFn({ method: 'POST' })
 				removed && `remove ${removed}`
 			].filter(Boolean);
 			const commit = await github.commit({
-				message: `${COMMIT_PREFIX} ${parts.length ? `${parts.join(', ')} photos` : 'update photos'}`,
+				message: `${COMMIT_PREFIX} ${
+					parts.length
+						? `${parts.join(', ')} photos`
+						: data.restoreFrom
+							? 'restore an earlier version of the photos'
+							: 'update photos'
+				}`,
 				changes,
 				expected: { [PHOTOS_MANIFEST]: data.expected }
 			});

@@ -41,7 +41,13 @@ export function VersionSelect({
 			disabled={disabled || older.length === 0}
 		>
 			<SelectTrigger className="w-32" aria-label="Version">
-				<SelectValue />
+				{/* the menu says what each version was; the button only how old */}
+				<SelectValue>
+					{(selected: string) => {
+						const commit = older.find((candidate) => candidate.sha === selected);
+						return commit ? timeAgo(commit.date) : 'Latest';
+					}}
+				</SelectValue>
 			</SelectTrigger>
 			<SelectContent
 				align="end"

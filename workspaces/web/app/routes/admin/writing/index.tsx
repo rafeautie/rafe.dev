@@ -16,7 +16,7 @@ export const Route = createFileRoute('/admin/writing/')({
 function PostList() {
 	const posts = Route.useLoaderData();
 	return (
-		<div className="mx-auto max-w-2xl">
+		<div className="mx-auto max-w-4xl">
 			<AdminHeader
 				path={[
 					<Link key="rafe" href="/">

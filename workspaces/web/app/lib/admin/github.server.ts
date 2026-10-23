@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { waitUntil } from 'cloudflare:workers';
 import { BRANCH, BUILD_CHECK, CONTENT_ROOT, REPO } from './config';
 import type { Build, Commit } from './types';
 
@@ -54,6 +55,58 @@ export function assertContentPath(path: string) {
 	}
 }
 
+// What a commit or blob holds never changes, so once read it is kept: in this
+// Worker instance's memory, and in Cloudflare's cache for this location, which
+// outlives instances (https://developers.cloudflare.com/workers/runtime-apis/cache/).
+// Either can be emptied at any time; then GitHub is asked again. A page asks
+// GitHub only for what moved since. Values must survive a trip through JSON. Requests that arrive together for
+// the same thing share one load.
+const remembered = new Map<string, Promise<unknown>>();
+// the version goes up whenever what a key holds changes shape
+const CACHE_PREFIX = 'https://rafe.dev/__admin-cache/v1/';
+
+type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+
+function remember<T extends Json>(key: string, load: () => Promise<T>): Promise<T> {
+	let value = remembered.get(key) as Promise<T> | undefined;
+	if (!value) {
+		value = fromCache(key, load);
+		// a failed load is not kept, so it is tried again next time
+		value.catch(() => remembered.delete(key));
+		if (remembered.size >= 500) remembered.delete(remembered.keys().next().value!);
+		remembered.set(key, value);
+	}
+	return value;
+}
+
+async function fromCache<T extends Json>(key: string, load: () => Promise<T>): Promise<T> {
+	// absent outside the Workers runtime, as in tests
+	if (typeof caches === 'undefined') return load();
+	// the browser's CacheStorage type, also loaded, has no `default`
+	const cache = (caches as CacheStorage & { default: Cache }).default;
+	const request = new Request(CACHE_PREFIX + key);
+	const cached = await cache.match(request).catch(() => undefined);
+	if (cached) {
+		const value = await cached.json<T>().catch(() => undefined);
+		if (value !== undefined) return value;
+		waitUntil(cache.delete(request).catch(() => undefined));
+	}
+	const value = await load();
+	const response = new Response(JSON.stringify(value), {
+		headers: {
+			'Content-Type': 'application/json',
+			'Cache-Control': 'public, max-age=31536000, immutable'
+		}
+	});
+	// written after the answer goes out
+	waitUntil(
+		cache
+			.put(request, response)
+			.catch((error: unknown) => console.warn('Admin cache write failed', error))
+	);
+	return value;
+}
+
 export function gitHub(token: string) {
 	async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 		const response = await fetch(`${API}${path}`, {
@@ -83,25 +136,28 @@ export function gitHub(token: string) {
 		return ref.object.sha;
 	}
 
-	// Every file under content/ at a commit, by path. One call for the lot.
+	// Every file under content/ at a commit, by path. One call for the lot: the
+	// trees endpoint takes a commit and answers with that commit's tree (its
+	// `sha` is then the commit's, not the tree's).
 	async function contentTree(commitSha: string) {
-		const commit = await repo<{ tree: { sha: string } }>(`/git/commits/${commitSha}`);
-		const tree = await repo<{ tree: TreeEntry[]; truncated: boolean }>(
-			`/git/trees/${commit.tree.sha}?recursive=1`
-		);
-		if (tree.truncated) throw new Error('The repository tree is too large to read in one go');
-		const files = new Map<string, string>();
-		for (const entry of tree.tree) {
-			if (entry.type === 'blob' && entry.path.startsWith(`${CONTENT_ROOT}/`)) {
-				files.set(entry.path, entry.sha);
-			}
-		}
-		return { treeSha: commit.tree.sha, files };
+		// kept as [path, blob] pairs, which survive a trip through JSON
+		const entries = await remember(`tree:${commitSha}`, async () => {
+			const tree = await repo<{ tree: TreeEntry[]; truncated: boolean }>(
+				`/git/trees/${commitSha}?recursive=1`
+			);
+			if (tree.truncated) throw new Error('The repository tree is too large to read in one go');
+			return tree.tree
+				.filter((entry) => entry.type === 'blob' && entry.path.startsWith(`${CONTENT_ROOT}/`))
+				.map((entry): [string, string] => [entry.path, entry.sha]);
+		});
+		return { files: new Map(entries) };
 	}
 
-	async function blobText(sha: string) {
-		const blob = await repo<{ content: string }>(`/git/blobs/${sha}`);
-		return decodeText(blob.content);
+	function blobText(sha: string) {
+		return remember(`blob:${sha}`, async () => {
+			const blob = await repo<{ content: string }>(`/git/blobs/${sha}`);
+			return decodeText(blob.content);
+		});
 	}
 
 	function toCommit(item: {
@@ -124,9 +180,11 @@ export function gitHub(token: string) {
 		return items.map(toCommit);
 	}
 
-	async function changedFiles(sha: string) {
-		const commit = await repo<{ files?: { filename: string }[] }>(`/commits/${sha}`);
-		return (commit.files ?? []).map((file) => file.filename);
+	function changedFiles(sha: string) {
+		return remember(`files:${sha}`, async () => {
+			const commit = await repo<{ files?: { filename: string }[] }>(`/commits/${sha}`);
+			return (commit.files ?? []).map((file) => file.filename);
+		});
 	}
 
 	// Cloudflare's build for a commit: building, live or failed. Unknown when the
@@ -160,7 +218,11 @@ export function gitHub(token: string) {
 	}) {
 		for (const change of changes) assertContentPath(change.path);
 		const parent = await head();
-		const { treeSha, files } = await contentTree(parent);
+		const [{ files }, parentCommit] = await Promise.all([
+			contentTree(parent),
+			repo<{ tree: { sha: string } }>(`/git/commits/${parent}`)
+		]);
+		const treeSha = parentCommit.tree.sha;
 		for (const [path, sha] of Object.entries(expected)) {
 			if ((files.get(path) ?? null) !== sha) {
 				throw new Conflict(`${path.slice(CONTENT_ROOT.length + 1)} changed on GitHub`);
