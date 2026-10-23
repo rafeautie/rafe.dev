@@ -197,6 +197,8 @@ function PostForm({
 		setUploads(new Map());
 		setDirty(false);
 		setEdited(false);
+		setSlugTouched(false);
+		setProblem(null);
 	}
 
 	function changed(next: Partial<Draft> = {}) {
@@ -238,6 +240,7 @@ function PostForm({
 			// an older version on screen is a change worth publishing
 			setDirty(next !== LATEST);
 			setEdited(false);
+			setProblem(null);
 			clearUnsaved(storageKey);
 		} catch (error) {
 			setProblem(message(error));

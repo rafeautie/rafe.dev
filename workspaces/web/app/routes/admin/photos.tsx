@@ -130,6 +130,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 		setViewRef(loaded.ref);
 		setDirty(false);
 		setEdited(false);
+		setProblem(null);
 	}
 
 	// an unpublished order or captions from last time, on this same version
@@ -156,6 +157,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 			setViewRef(result.ref);
 			setDirty(next !== LATEST);
 			setEdited(false);
+			setProblem(null);
 			clearUnsaved(STORAGE_KEY);
 		} catch (error) {
 			setProblem(message(error));
@@ -325,7 +327,11 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 					<span className="hidden sm:inline">Add photos</span>
 				</Button>
 				{dirty && (
-					<Button variant="ghost" disabled={saving} onClick={() => setConfirmDiscard(true)}>
+					<Button
+						variant="ghost"
+						disabled={saving || preparing > 0}
+						onClick={() => setConfirmDiscard(true)}
+					>
 						Discard
 					</Button>
 				)}

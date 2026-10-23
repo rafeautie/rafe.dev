@@ -48,7 +48,7 @@ export function ProblemBadge({ text, onDismiss }: { text: string | null; onDismi
 				onClick={onDismiss}
 				className="cursor-pointer rounded-full p-0.5 hover:bg-destructive/10"
 			>
-				<XIcon />
+				<XIcon className="size-3" />
 			</button>
 		</Badge>
 	);
