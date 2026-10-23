@@ -13,10 +13,11 @@ import { useWritingTheme } from '~/lib/writing-theme';
 // content, saved to GitHub (lib/admin). Kept out of search engines here and
 // in robots.txt.
 
-// In the browser, who is signed in is asked once per visit rather than before
-// every page; each server call still checks the cookie, and a lapsed sign-in
-// shows AdminError.
-let known: Awaited<ReturnType<typeof getAdmin>> | undefined;
+// In the browser, who is signed in is asked at most every few minutes rather
+// than before every page; each server call still checks the cookie, and a
+// lapsed sign-in shows AdminError.
+const RECHECK_MS = 5 * 60 * 1000;
+let known: { admin: Awaited<ReturnType<typeof getAdmin>>; at: number } | undefined;
 
 export const Route = createFileRoute('/admin')({
 	head: () => ({
@@ -24,8 +25,10 @@ export const Route = createFileRoute('/admin')({
 	}),
 	beforeLoad: async () => {
 		if (typeof window === 'undefined') return { admin: await getAdmin() };
-		known ??= await getAdmin();
-		return { admin: known };
+		if (!known?.admin || Date.now() - known.at > RECHECK_MS) {
+			known = { admin: await getAdmin(), at: Date.now() };
+		}
+		return { admin: known.admin };
 	},
 	component: AdminLayout,
 	errorComponent: AdminError

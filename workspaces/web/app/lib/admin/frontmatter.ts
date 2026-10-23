@@ -57,9 +57,21 @@ export function joinPost(yaml: string, fields: PostFields, body: string) {
 // Runs of blank lines (left by switching between the visual editor and
 // Markdown) become one, except inside code blocks.
 function tidy(body: string) {
-	return body
-		.trim()
-		.split(/(^(?:```|~~~)[\s\S]*?^(?:```|~~~))/m)
-		.map((part, index) => (index % 2 ? part : part.replace(/\n{3,}/g, '\n\n')))
-		.join('');
+	const text = body.trim();
+	let result = '';
+	let at = 0;
+	for (const match of text.matchAll(FENCED_CODE)) {
+		result += collapse(text.slice(at, match.index)) + match[0];
+		at = match.index + match[0].length;
+	}
+	return result + collapse(text.slice(at));
 }
+
+// blank lines in indented code (four spaces) are left alone too
+function collapse(text: string) {
+	return text.replace(/\n{3,}(?=[^\n])(?! {4}|\t)/g, '\n\n');
+}
+
+// A fenced code block: closed by the same fence it opened with, which may be
+// indented (inside a list item).
+export const FENCED_CODE = /^[ \t]*(`{3,}|~{3,})[\s\S]*?^[ \t]*\1/gm;

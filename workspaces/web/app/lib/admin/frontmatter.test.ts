@@ -45,4 +45,37 @@ describe('frontmatter', () => {
 		expect(out).toContain('One.\n\nTwo.');
 		expect(out).toContain('a\n\n\nb');
 	});
+
+	it('leaves code alone however it is fenced or indented', () => {
+		const body = [
+			'- item',
+			'',
+			'  ```',
+			'  a',
+			'',
+			'',
+			'  b',
+			'  ```',
+			'',
+			'````md',
+			'```',
+			'c',
+			'',
+			'',
+			'd',
+			'````',
+			'',
+			'',
+			'',
+			'    e',
+			'',
+			'',
+			'',
+			'    f'
+		].join('\n');
+		const out = joinPost('title: T', readFields('title: T'), body);
+		expect(out).toContain('  a\n\n\n  b');
+		expect(out).toContain('c\n\n\nd');
+		expect(out).toContain('    e\n\n\n\n    f');
+	});
 });

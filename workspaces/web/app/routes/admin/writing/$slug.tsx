@@ -298,9 +298,15 @@ function PostForm({
 	}
 
 	// images in the post's folder, for the link preview
-	const images = [...new Set([...(post?.files ?? []), ...uploads.keys()])].filter((name) =>
-		/\.(jpe?g|png|gif|webp|avif)$/i.test(name)
-	);
+	// (plus whatever the post names now, written however it is)
+	const images = [
+		...new Set([
+			...[...(post?.files ?? []), ...uploads.keys()].filter((name) =>
+				/\.(jpe?g|png|gif|webp|avif)$/i.test(name)
+			),
+			...(fields.image ? [fields.image] : [])
+		])
+	];
 
 	async function publish() {
 		const finalFields: PostFields = {
@@ -418,7 +424,6 @@ function PostForm({
 								<Toggle
 									size="sm"
 									pressed={markdownMode}
-									disabled={!lossless}
 									title={
 										lossless
 											? 'Edit the Markdown directly'

@@ -50,7 +50,11 @@ function SignIn() {
 function Overview({ overview }: { overview: Awaited<ReturnType<typeof getOverview>> }) {
 	const latest = overview.changes[0];
 	// keeps checking while the latest commit is still building
-	const watch = useBuildWatch({ sha: overview.head, build: overview.build });
+	const watch = useBuildWatch({
+		sha: overview.head,
+		build: overview.build,
+		since: latest?.date ? Date.parse(latest.date) : undefined
+	});
 	return (
 		<div className="mx-auto max-w-4xl">
 			<AdminHeader

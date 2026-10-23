@@ -27,8 +27,8 @@ import { postExtensions } from './post-schema';
 
 // The visual editor for a post's body. It shows the post styled as /writing
 // shows it, and reads and writes the same Markdown the file holds. The page
-// puts the body (PostBody) in the article and the formatting bar
-// (EditorToolbar) in its controls rail.
+// puts the body (PostBody) in the article with the formatting bar
+// (EditorToolbar) above it.
 
 export function usePostEditor({
 	markdown,

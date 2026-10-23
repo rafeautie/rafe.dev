@@ -11,14 +11,15 @@ const GIVE_UP_MS = 10 * 60 * 1000;
 
 // After a publish: follows Cloudflare's build of the new commit until it is
 // live or has failed.
-export function useBuildWatch(initial?: { sha: string; build: Build }) {
+// `since` is when the commit was made, when known, so an old commit with no
+// build is not waited on.
+export function useBuildWatch(initial?: { sha: string; build: Build; since?: number }) {
 	const [watch, setWatch] = useState<{ sha: string; build: Build; since: number } | null>(() =>
-		initial ? { ...initial, since: Date.now() } : null
+		initial ? { ...initial, since: initial.since ?? Date.now() } : null
 	);
 
 	useEffect(() => {
 		if (!watch || watch.build.state === 'live' || watch.build.state === 'failed') return;
-		if (watch.build.state === 'unknown') return;
 		if (Date.now() - watch.since > GIVE_UP_MS) return;
 		const timer = setTimeout(async () => {
 			const build = await getBuild({ data: { sha: watch.sha } }).catch(() => watch.build);

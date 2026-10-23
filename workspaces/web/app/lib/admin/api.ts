@@ -8,7 +8,7 @@ import {
 	WRITING_DIR
 } from './config';
 import { parse as parseYaml } from 'yaml';
-import { readFields, splitPost } from './frontmatter';
+import { FENCED_CODE, readFields, splitPost } from './frontmatter';
 import {
 	type Change,
 	Conflict,
@@ -269,7 +269,7 @@ function checkPost(source: string, folder: Set<string>) {
 		throw new Error('The updated date is before the post date');
 	}
 	// every image the build will look for in the folder (code samples aside)
-	const prose = body.replace(/^(`{3,}|~{3,})[\s\S]*?^\1/gm, '').replace(/`[^`\n]*`/g, '');
+	const prose = body.replace(FENCED_CODE, '').replace(/`[^`\n]*`/g, '');
 	const images = [
 		...prose.matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)/g),
 		...prose.matchAll(/<img\b[^>]*\ssrc=["']([^"']+)/gi)

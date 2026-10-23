@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { waitUntil } from 'cloudflare:workers';
 import { BRANCH, BUILD_CHECK, CONTENT_ROOT, REPO } from './config';
 import type { Build, Commit } from './types';
 
@@ -58,29 +59,51 @@ export function assertContentPath(path: string) {
 // Worker instance's memory, and in Cloudflare's cache for this location, which
 // outlives instances (https://developers.cloudflare.com/workers/runtime-apis/cache/).
 // Either can be emptied at any time; then GitHub is asked again. A page asks
-// GitHub only for what moved since.
-const remembered = new Map<string, unknown>();
-const CACHE_PREFIX = 'https://rafe.dev/__admin-cache/';
+// GitHub only for what moved since. Values must survive a trip through JSON. Requests that arrive together for
+// the same thing share one load.
+const remembered = new Map<string, Promise<unknown>>();
+// the version goes up whenever what a key holds changes shape
+const CACHE_PREFIX = 'https://rafe.dev/__admin-cache/v1/';
 
-async function remember<T>(key: string, load: () => Promise<T>): Promise<T> {
-	if (remembered.has(key)) return remembered.get(key) as T;
-	// absent outside the Workers runtime, as in tests
-	const cache =
-		typeof caches === 'undefined' ? null : (caches as unknown as { default: Cache }).default;
-	const request = new Request(CACHE_PREFIX + key);
-	const cached = await cache?.match(request).catch(() => undefined);
-	const value = cached ? ((await cached.json()) as T) : await load();
-	if (!cached && cache) {
-		const response = new Response(JSON.stringify(value), {
-			headers: {
-				'Content-Type': 'application/json',
-				'Cache-Control': 'public, max-age=31536000, immutable'
-			}
-		});
-		await cache.put(request, response).catch(() => undefined);
+type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+
+function remember<T extends Json>(key: string, load: () => Promise<T>): Promise<T> {
+	let value = remembered.get(key) as Promise<T> | undefined;
+	if (!value) {
+		value = fromCache(key, load);
+		// a failed load is not kept, so it is tried again next time
+		value.catch(() => remembered.delete(key));
+		if (remembered.size >= 500) remembered.delete(remembered.keys().next().value!);
+		remembered.set(key, value);
 	}
-	if (remembered.size >= 500) remembered.delete(remembered.keys().next().value!);
-	remembered.set(key, value);
+	return value;
+}
+
+async function fromCache<T extends Json>(key: string, load: () => Promise<T>): Promise<T> {
+	// absent outside the Workers runtime, as in tests
+	if (typeof caches === 'undefined') return load();
+	// the browser's CacheStorage type, also loaded, has no `default`
+	const cache = (caches as CacheStorage & { default: Cache }).default;
+	const request = new Request(CACHE_PREFIX + key);
+	const cached = await cache.match(request).catch(() => undefined);
+	if (cached) {
+		const value = await cached.json<T>().catch(() => undefined);
+		if (value !== undefined) return value;
+		waitUntil(cache.delete(request).catch(() => undefined));
+	}
+	const value = await load();
+	const response = new Response(JSON.stringify(value), {
+		headers: {
+			'Content-Type': 'application/json',
+			'Cache-Control': 'public, max-age=31536000, immutable'
+		}
+	});
+	// written after the answer goes out
+	waitUntil(
+		cache
+			.put(request, response)
+			.catch((error: unknown) => console.warn('Admin cache write failed', error))
+	);
 	return value;
 }
 

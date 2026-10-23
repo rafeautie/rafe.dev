@@ -15,17 +15,8 @@ export function AdminHeader({ path, children }: { path: ReactNode[]; children?: 
 
 // The controls rail: one row, the same on every page, that stays at the top
 // while the page scrolls. Status (the build, unsaved changes) on the left, the
-// page's controls and its main action on the right; `below` is a second row
-// for tools that belong with it, like the editor's formatting bar.
-export function ControlsRail({
-	status,
-	children,
-	below
-}: {
-	status?: ReactNode;
-	children?: ReactNode;
-	below?: ReactNode;
-}) {
+// page's controls and its main action on the right.
+export function ControlsRail({ status, children }: { status?: ReactNode; children?: ReactNode }) {
 	return (
 		<div className="sticky top-0 z-20 mt-6 border-b border-foreground/10 bg-background">
 			<div className="flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2.5">
@@ -34,7 +25,6 @@ export function ControlsRail({
 				</div>
 				{children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
 			</div>
-			{below}
 		</div>
 	);
 }
