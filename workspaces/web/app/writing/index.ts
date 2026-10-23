@@ -1,4 +1,4 @@
-import { getPhoto } from '~/photos';
+import { PHOTOS } from '~/photos';
 import type { PostMeta } from '../../plugins/markdown';
 
 // A post is content/writing/<slug>/index.md, with its images beside it. The
@@ -41,7 +41,8 @@ export function loadHtml(post: Post): Promise<string> {
 	return HTML[`/content/writing/${post.slug}/index.md`]();
 }
 
-const DEFAULT_PHOTO = getPhoto('DSCF0740.jpg');
+// the first photo stands in if this one is ever removed from /photography
+const DEFAULT_PHOTO = PHOTOS.find((photo) => photo.file === 'DSCF0740.jpg') ?? PHOTOS[0];
 
 // for posts without an image of their own
 export const DEFAULT_IMAGE: NonNullable<PostMeta['image']> = {

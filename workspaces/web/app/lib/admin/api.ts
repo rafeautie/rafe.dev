@@ -7,6 +7,7 @@ import {
 	SLUG_PATTERN,
 	WRITING_DIR
 } from './config';
+import { parse as parseYaml } from 'yaml';
 import { readFields, splitPost } from './frontmatter';
 import {
 	type Change,
@@ -42,7 +43,8 @@ export type Upload = { name: string; base64: string };
 
 const DATE = /^(\d{4}-\d{2}-\d{2})?$/;
 const PHOTO_FILE = /^[A-Za-z0-9._-]+\.jpg$/;
-const POST_ASSET = /^[A-Za-z0-9._-]+\.(jpe?g|png|gif|webp|svg|avif|mp4|webm)$/i;
+// no SVG: one served from rafe.dev could run script as the site
+const POST_ASSET = /^[A-Za-z0-9._-]+\.(jpe?g|png|gif|webp|avif|mp4|webm)$/i;
 
 // Conflicts reach the browser as a plain message it can show.
 async function withConflicts<T>(run: () => Promise<T>) {
@@ -77,7 +79,7 @@ function optionalString(value: unknown, name: string): string | undefined {
 function slug(value: unknown): string {
 	const text = string(value, 'slug');
 	if (!SLUG_PATTERN.test(text))
-		throw new Error('A post name uses lowercase letters, numbers and dashes');
+		throw new Error('A post name uses lowercase letters, numbers and dashes, and is not "new"');
 	return text;
 }
 
@@ -244,6 +246,49 @@ function referenced(source: string, name: string) {
 	return source.includes(name);
 }
 
+// What plugins/markdown.ts refuses at build time, refused here instead, so a
+// save can never leave main unable to build.
+function checkPost(source: string, folder: Set<string>) {
+	const { yaml, body } = splitPost(source);
+	let front: Record<string, unknown>;
+	try {
+		front = (parseYaml(yaml) as Record<string, unknown> | null) ?? {};
+	} catch {
+		throw new Error('The post settings (frontmatter) are not valid YAML');
+	}
+	const { title, description, date, updated, image, draft } = front;
+	const required = draft === true ? { title } : { title, description, date };
+	for (const [key, value] of Object.entries(required)) {
+		if (typeof value !== 'string' || !value) throw new Error(`The post needs a ${key}`);
+	}
+	for (const [key, value] of Object.entries({ date, updated })) {
+		if (value === undefined || (draft === true && !value)) continue;
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) throw new Error(`${key} must be yyyy-mm-dd`);
+	}
+	if (updated !== undefined && String(updated) < String(date ?? '')) {
+		throw new Error('The updated date is before the post date');
+	}
+	// every image the build will look for in the folder (code samples aside)
+	const prose = body.replace(/^(`{3,}|~{3,})[\s\S]*?^\1/gm, '').replace(/`[^`\n]*`/g, '');
+	const images = [
+		...prose.matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)/g),
+		...prose.matchAll(/<img\b[^>]*\ssrc=["']([^"']+)/gi)
+	].map((match) => match[1]);
+	if (typeof image === 'string') images.push(image);
+	for (const src of images) {
+		if (/^([a-z][a-z\d+.-]*:|\/)/i.test(src)) continue;
+		let name: string;
+		try {
+			name = decodeURI(src).replace(/^\.\//, '');
+		} catch {
+			name = src;
+		}
+		if (!folder.has(name)) {
+			throw new Error(`${name} is not in the post's folder; add the image again`);
+		}
+	}
+}
+
 export const savePost = createServerFn({ method: 'POST' })
 	.inputValidator((input: unknown) => {
 		const data = object(input);
@@ -290,6 +335,7 @@ export const savePost = createServerFn({ method: 'POST' })
 				}
 			}
 
+			checkPost(data.source, present);
 			const { title, draft } = readFields(splitPost(data.source).yaml);
 			const verb = data.expected === null ? 'add' : draft ? 'save draft' : 'update';
 			const commit = await github.commit({
@@ -363,6 +409,7 @@ export const savePhotos = createServerFn({ method: 'POST' })
 		withConflicts(async () => {
 			const github = gitHub(await requireToken());
 			data.uploads.forEach(checkPhoto);
+			if (!data.photos.length) throw new Error('Keep at least one photo; the home page shows one');
 			const { files } = await github.contentTree(await github.head());
 			const listed = new Set(data.photos.map((photo) => photo.file));
 			const uploaded = new Set(data.uploads.map((upload) => upload.name));

@@ -66,10 +66,14 @@ export async function preparePhoto(file: File, name: string) {
 	return { prepared, date };
 }
 
-// An image for a post. GIFs and SVGs go up as they are (a canvas would flatten
-// an animation); PNGs stay PNGs for their transparency; the rest become JPEGs.
+// An image for a post. GIFs go up as they are (a canvas would flatten an
+// animation); PNGs stay PNGs for their transparency; the rest become JPEGs.
+// SVGs are refused: served from rafe.dev, one could run script as the site.
 export async function preparePostImage(file: File, taken: (name: string) => boolean) {
-	const keep = /\.(gif|svg)$/i.test(file.name);
+	if (/\.svg$/i.test(file.name) || file.type === 'image/svg+xml') {
+		throw new Error(`${file.name}: SVG images aren't supported, export it as a PNG`);
+	}
+	const keep = /\.gif$/i.test(file.name);
 	const png = file.type === 'image/png';
 	const extension = keep ? file.name.split('.').pop()!.toLowerCase() : png ? 'png' : 'jpg';
 

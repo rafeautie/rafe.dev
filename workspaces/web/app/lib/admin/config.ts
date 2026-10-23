@@ -20,8 +20,9 @@ export const BUILD_CHECK = 'Workers Builds: rafe-dev';
 // of the content folder) separates content changes from code.
 export const COMMIT_PREFIX = 'content:';
 
-// A post's folder name is its URL.
-export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+// A post's folder name is its URL. "new" is /admin/writing/new, so no post can
+// take it.
+export const SLUG_PATTERN = /^(?!new$)[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 // Images are read straight from the public repo, so a file committed a moment
 // ago shows before the site has rebuilt.

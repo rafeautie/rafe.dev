@@ -1,5 +1,5 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Link } from '~/components/Link';
 import { AdminHeader } from '~/components/admin/AdminHeader';
@@ -7,11 +7,13 @@ import { BuildLine, useBuildWatch } from '~/components/admin/BuildStatus';
 import { ConfirmDialog } from '~/components/admin/ConfirmDialog';
 import { DatePicker } from '~/components/admin/DatePicker';
 import { PostEditor } from '~/components/admin/PostEditor';
+import { keepsMarkdown } from '~/components/admin/post-schema';
 import { LATEST, VersionSelect } from '~/components/admin/VersionSelect';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
 import { Switch } from '~/components/ui/switch';
+import { Textarea } from '~/components/ui/textarea';
 import { deletePost, getPost, getPostVersions, savePost } from '~/lib/admin/api';
 import { rawUrl, SLUG_PATTERN, WRITING_DIR } from '~/lib/admin/config';
 import { preparePostImage, type Prepared } from '~/lib/admin/files';
@@ -73,7 +75,9 @@ function Path({ slug, title }: { slug: string; title: string }) {
 }
 
 type Loaded = NonNullable<ReturnType<typeof Route.useLoaderData>['post']>;
-type Draft = { yaml: string; fields: PostFields; body: string; slug: string };
+// version: the older version being edited, if any, so a restore still brings
+// back its images after a reload
+type Draft = { yaml: string; fields: PostFields; body: string; slug: string; version?: string };
 
 const NEW_FIELDS: PostFields = { title: '', description: '', date: '', updated: '', draft: true };
 
@@ -126,6 +130,8 @@ function PostForm({
 	const watch = useBuildWatch();
 
 	const postSlug = isNew ? newSlug : slug;
+	// the visual editor only for bodies it can write back unchanged
+	const visual = useMemo(() => keepsMarkdown(body), [body]);
 	const folder = `${WRITING_DIR}/${postSlug}`;
 
 	// a publish that brought the page here
@@ -138,10 +144,14 @@ function PostForm({
 	useEffect(() => {
 		const saved = readUnsaved<Draft>(storageKey);
 		if (!saved || saved.sha !== (post?.sha ?? null)) return;
-		load(saved.value);
 		// browser storage is only readable once the page is running
 		// eslint-disable-next-line react-hooks/set-state-in-effect
 		setDirty(true);
+		load(saved.value);
+		if (saved.value.version && saved.value.version !== LATEST) {
+			setVersion(saved.value.version);
+			setViewRef(saved.value.version);
+		}
 		toast('Brought back your unsaved edits', {
 			action: { label: 'Discard', onClick: discard }
 		});
@@ -173,7 +183,8 @@ function PostForm({
 				yaml,
 				fields: next.fields ?? fields,
 				body: current.current,
-				slug: next.slug ?? newSlug
+				slug: next.slug ?? newSlug,
+				version
 			}
 		});
 	}
@@ -207,24 +218,22 @@ function PostForm({
 		}
 	}
 
-	const existing = new Set([...(post?.files ?? []), ...uploads.keys()]);
+	// names in the folder or already taken by an upload, this visit
+	const taken = useRef(new Set(post?.files ?? []));
 
 	async function addImages(files: File[]) {
 		const paths: string[] = [];
-		const added = new Map(uploads);
 		for (const file of files) {
 			try {
-				const prepared = await preparePostImage(
-					file,
-					(name) => existing.has(name) || added.has(name)
-				);
-				added.set(prepared.name, prepared);
+				const prepared = await preparePostImage(file, (name) => taken.current.has(name));
+				taken.current.add(prepared.name);
+				// added one at a time, so drops that overlap all land
+				setUploads((previous) => new Map(previous).set(prepared.name, prepared));
 				paths.push(prepared.name);
 			} catch (error) {
 				toast.error(message(error));
 			}
 		}
-		setUploads(added);
 		return paths;
 	}
 
@@ -247,7 +256,12 @@ function PostForm({
 			return toast.error('Add a description before publishing; it shows under the title');
 		}
 		if (!SLUG_PATTERN.test(postSlug)) {
-			return toast.error('The post address uses lowercase letters, numbers and dashes');
+			return toast.error(
+				'The post address uses lowercase letters, numbers and dashes, and is not "new"'
+			);
+		}
+		if (finalFields.updated && finalFields.updated < finalFields.date) {
+			return toast.error('The updated date is before the post date');
 		}
 		const source = joinPost(yaml, finalFields, current.current);
 		const used = [...uploads.values()].filter((upload) => source.includes(upload.name));
@@ -373,15 +387,34 @@ function PostForm({
 			</div>
 
 			<div className="mt-10 border-t border-foreground/10 pt-10">
-				<PostEditor
-					markdown={body}
-					resolveSrc={resolveSrc}
-					onImages={addImages}
-					onChange={(markdown) => {
-						current.current = markdown;
-						changed();
-					}}
-				/>
+				{visual ? (
+					<PostEditor
+						markdown={body}
+						resolveSrc={resolveSrc}
+						onImages={addImages}
+						onChange={(markdown) => {
+							current.current = markdown;
+							changed();
+						}}
+					/>
+				) : (
+					<>
+						<p className="mb-4 text-sm text-foreground/50">
+							This post uses Markdown the visual editor would lose (a table or inline HTML, say), so
+							it opens as plain Markdown.
+						</p>
+						<Textarea
+							key={body}
+							aria-label="Post body in Markdown"
+							defaultValue={body}
+							onChange={(event) => {
+								current.current = event.target.value;
+								changed();
+							}}
+							className="min-h-96 font-mono text-sm"
+						/>
+					</>
+				)}
 			</div>
 
 			<footer className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-foreground/10 pt-6 text-sm text-foreground/50">

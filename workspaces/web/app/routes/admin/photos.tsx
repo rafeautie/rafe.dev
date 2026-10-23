@@ -18,7 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { createFileRoute, useRouter } from '@tanstack/react-router';
 import { ImagePlusIcon } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Link } from '~/components/Link';
 import { PhotoPicture } from '~/components/PhotoPicture';
@@ -97,6 +97,12 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [built]);
 
+	// the latest photos and uploads, for an add that finishes after other changes
+	const latest = useRef({ photos, uploads });
+	useLayoutEffect(() => {
+		latest.current = { photos, uploads };
+	});
+
 	function update(next: PhotoEntry[], nextUploads = uploads) {
 		setPhotos(next);
 		setDirty(true);
@@ -148,30 +154,34 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 		const images = files.filter((file) => file.type.startsWith('image/'));
 		if (!images.length) return;
 		setPreparing((count) => count + images.length);
-		const taken = new Set(photos.map((photo) => photo.file));
-		const nextUploads = new Map(uploads);
-		const added: PhotoEntry[] = [];
+		let added = 0;
 		for (const file of images) {
 			const name = toPhotoFile(file.name);
 			try {
-				if (taken.has(name))
+				if (latest.current.photos.some((photo) => photo.file === name))
 					throw new Error(`${name} is already in the gallery. Rename it and try again.`);
 				const { prepared, date } = await preparePhoto(file, name);
-				nextUploads.set(name, prepared);
-				taken.add(name);
+				// read the page as it is now: other photos or edits may have
+				// landed while this one was being prepared
+				const now = latest.current;
+				if (now.photos.some((photo) => photo.file === name))
+					throw new Error(`${name} is already in the gallery. Rename it and try again.`);
+				const nextUploads = new Map(now.uploads).set(name, prepared);
 				// new photos go to the end, as `pnpm add-photo` adds them
-				added.push({ file: name, alt: '', caption: '', location: '', date });
+				const next = [...now.photos, { file: name, alt: '', caption: '', location: '', date }];
+				latest.current = { photos: next, uploads: nextUploads };
+				setUploads(nextUploads);
+				update(next, nextUploads);
+				added++;
 			} catch (error) {
 				toast.error(message(error));
 			} finally {
 				setPreparing((count) => count - 1);
 			}
 		}
-		if (!added.length) return;
-		setUploads(nextUploads);
-		update([...photos, ...added], nextUploads);
+		if (!added) return;
 		toast.success(
-			`Added ${added.length} ${added.length === 1 ? 'photo' : 'photos'}. Fill in their details, then publish.`
+			`Added ${added} ${added === 1 ? 'photo' : 'photos'}. Fill in their details, then publish.`
 		);
 	}
 

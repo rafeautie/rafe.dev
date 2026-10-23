@@ -1,74 +1,17 @@
-import { mergeAttributes, Node } from '@tiptap/core';
-import Image, { type ImageOptions } from '@tiptap/extension-image';
 import { Placeholder } from '@tiptap/extensions';
 import { Markdown } from '@tiptap/markdown';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
-import StarterKit from '@tiptap/starter-kit';
 import { BoldIcon, Heading2Icon, ImagePlusIcon, ItalicIcon, LinkIcon } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Toggle } from '~/components/ui/toggle';
+import { postExtensions } from './post-schema';
 
 // The visual editor for a post's body. It shows the post styled as /writing
 // shows it, and reads and writes the same Markdown the file holds.
-
-// Images keep the relative path the Markdown uses (half-dome.jpg); only what
-// the browser draws is swapped for a URL it can load.
-const PostImage = Image.extend<ImageOptions & { resolver: { current: (src: string) => string } }>({
-	addOptions() {
-		return {
-			...this.parent!(),
-			resolver: { current: (src: string) => src }
-		};
-	},
-	renderHTML({ HTMLAttributes }) {
-		return [
-			'img',
-			mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
-				src: this.options.resolver.current(String(HTMLAttributes.src ?? ''))
-			})
-		];
-	}
-});
-
-// Raw HTML in a post (a <video>, say) is kept exactly as written: shown as a
-// locked block that can be moved or deleted but not edited here.
-const RawHtml = Node.create({
-	name: 'rawHtml',
-	group: 'block',
-	atom: true,
-	selectable: true,
-	draggable: true,
-	addAttributes() {
-		return { html: { default: '' } };
-	},
-	parseHTML() {
-		return [
-			{ tag: 'div[data-raw-html]', getAttrs: (el) => ({ html: el.getAttribute('data-raw-html') }) }
-		];
-	},
-	renderHTML({ node }) {
-		const html = String(node.attrs.html);
-		const tag = html.match(/^<\s*([a-z][\w-]*)/i)?.[1] ?? 'html';
-		return [
-			'div',
-			{ 'data-raw-html': html, class: 'raw-html' },
-			`<${tag}> block, edit it in GitHub`
-		];
-	},
-	markdownTokenName: 'html',
-	parseMarkdown(token) {
-		// inline HTML is left to the Markdown extension
-		if (!token.block) return [];
-		return { type: 'rawHtml', attrs: { html: String(token.raw ?? '').trim() } };
-	},
-	renderMarkdown(node) {
-		return String(node.attrs?.html ?? '');
-	}
-});
 
 export function PostEditor({
 	markdown,
@@ -96,14 +39,9 @@ export function PostEditor({
 	const editor = useEditor({
 		immediatelyRender: false,
 		extensions: [
-			StarterKit.configure({
-				heading: { levels: [2, 3, 4] },
-				link: { openOnClick: false, autolink: true }
-			}),
 			// read only when an image is drawn, never during render
 			// eslint-disable-next-line react-hooks/refs
-			PostImage.configure({ resolver }),
-			RawHtml,
+			...postExtensions(resolver),
 			Markdown,
 			Placeholder.configure({ placeholder: 'Write something' })
 		],
