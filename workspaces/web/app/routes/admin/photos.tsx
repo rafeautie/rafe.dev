@@ -290,27 +290,24 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 					</>
 				}
 			>
-				<div className="flex items-center gap-2">
-					<span className="hidden text-sm text-foreground/50 sm:inline">Preview</span>
-					<ToggleGroup
-						variant="outline"
-						spacing={0}
-						aria-label="Preview the gallery in columns"
-						value={preview ? [String(preview)] : []}
-						onValueChange={(value) => setPreview(value.length ? Number(value[0]) : null)}
-					>
-						{PREVIEW_OPTIONS.map(({ columns, icon }) => (
-							<ToggleGroupItem
-								key={columns}
-								value={String(columns)}
-								aria-label={`${columns} ${columns === 1 ? 'column' : 'columns'}`}
-								title={`Preview in ${columns} ${columns === 1 ? 'column' : 'columns'}`}
-							>
-								{icon}
-							</ToggleGroupItem>
-						))}
-					</ToggleGroup>
-				</div>
+				<ToggleGroup
+					variant="outline"
+					spacing={0}
+					aria-label="Preview the gallery in columns"
+					value={preview ? [String(preview)] : []}
+					onValueChange={(value) => setPreview(value.length ? Number(value[0]) : null)}
+				>
+					{PREVIEW_OPTIONS.map(({ columns, icon }) => (
+						<ToggleGroupItem
+							key={columns}
+							value={String(columns)}
+							aria-label={`${columns} ${columns === 1 ? 'column' : 'columns'}`}
+							title={`Preview in ${columns} ${columns === 1 ? 'column' : 'columns'}`}
+						>
+							{icon}
+						</ToggleGroupItem>
+					))}
+				</ToggleGroup>
 				<VersionSelect
 					versions={loaded.versions}
 					value={version}
