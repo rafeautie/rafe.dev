@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { env } from 'cloudflare:workers';
 import { BOT, readAgent } from '~/lib/stats/agent';
 import { readBeacon, sourceOf } from '~/lib/stats/beacon';
 import { addClick, addView, updateView } from '~/lib/stats/store.server';
@@ -6,19 +7,26 @@ import { addClick, addView, updateView } from '~/lib/stats/store.server';
 // Where the public pages report visits (lib/stats/tracker.ts), for
 // /admin/stats. Always answers 204, so a bad or refused report shows nothing.
 const NOTHING = () => new Response(null, { status: 204 });
+const MAX_BYTES = 8000;
 
 export const Route = createFileRoute('/seen')({
 	server: {
 		handlers: {
 			POST: async ({ request }) => {
 				const site = new URL(request.url);
-				const origin = request.headers.get('origin');
-				if (origin && origin !== site.origin) return NOTHING();
+				// browsers always send their origin with a POST
+				if (request.headers.get('origin') !== site.origin) return NOTHING();
 				const ua = request.headers.get('user-agent') ?? '';
 				if (!ua || BOT.test(ua)) return NOTHING();
+				// a report is a few hundred bytes; anything big is not one, and is
+				// turned away before it is read
+				const length = Number(request.headers.get('content-length'));
+				if (!length || length > MAX_BYTES) return NOTHING();
+				const address = request.headers.get('cf-connecting-ip') ?? 'unknown';
+				if (!(await env.SEEN_LIMIT.limit({ key: address })).success) return NOTHING();
 				let beacon;
 				try {
-					beacon = readBeacon(JSON.parse((await request.text()).slice(0, 8000)));
+					beacon = readBeacon(JSON.parse(await request.text()));
 				} catch {
 					return NOTHING();
 				}

@@ -53,6 +53,9 @@ export type Point = { at: number } & Record<Metric, number | null>;
 
 const DAY = 24 * 60 * 60 * 1000;
 const VISITOR = 'coalesce(visitor, session)';
+// the same match as `${VISITOR} = ?1`, in a form the indexes on visitor and
+// session can serve
+const IS_VISITOR = '(visitor = ?1 OR (visitor IS NULL AND session = ?1))';
 
 // The WHERE clause for a time range and filters, and its parameters.
 function where(since: number, filters: Filters) {
@@ -61,16 +64,33 @@ function where(since: number, filters: Filters) {
 	for (const key of FILTER_KEYS) {
 		const value = filters[key];
 		if (value === undefined) continue;
-		clauses.push(`${DIMENSIONS[key].key} = ?`);
+		const dimension: { key: string; landing?: boolean } = DIMENSIONS[key];
+		// where a visit came from is only on its first page view, so those
+		// filters keep every page view of the visits that match
+		clauses.push(
+			dimension.landing
+				? `session IN (SELECT session FROM views WHERE landing = 1 AND ${dimension.key} = ?)`
+				: `${dimension.key} = ?`
+		);
 		params.push(value);
 	}
 	return { sql: clauses.join(' AND '), params };
 }
 
+// The same, widened to whole visits: every page view in the range of a visit
+// with any matching page view, so a visit's length or page count is the
+// whole visit's, not only its matching pages'.
+function wholeVisits(since: number, filter: ReturnType<typeof where>) {
+	if (filter.params.length === 1) return filter;
+	return {
+		sql: `at >= ? AND session IN (SELECT session FROM views WHERE ${filter.sql})`,
+		params: [since, ...filter.params]
+	};
+}
+
 function breakdown(dimension: Dimension, filter: ReturnType<typeof where>, limit = 25) {
-	const { key, landing, ...rest } = { landing: false, ...DIMENSIONS[dimension] };
-	const label = 'label' in rest ? rest.label : key;
-	return `SELECT ${key} AS key, ${label} AS label, count(DISTINCT ${VISITOR}) AS visitors,
+	const { key, landing } = { landing: false, ...DIMENSIONS[dimension] };
+	return `SELECT ${key} AS key, ${key} AS label, count(DISTINCT ${VISITOR}) AS visitors,
 			count(*) AS views
 		FROM views WHERE ${filter.sql} ${landing ? 'AND landing = 1' : ''}
 			AND ${key} IS NOT NULL AND ${key} != ''
@@ -173,13 +193,14 @@ export const getStats = createServerFn({ method: 'GET' })
 			? (lastBucket - Math.round(span / bucket) + 1) * bucket - offset
 			: 0;
 		const filter = where(since, data.filters);
-		const run = (sql: string, before: (string | number)[] = []) =>
-			db.prepare(sql).bind(...before, ...filter.params);
+		const visitFilter = wholeVisits(since, filter);
+		const run = (sql: string, before: (string | number)[] = [], scope = filter) =>
+			db.prepare(sql).bind(...before, ...scope.params);
 
 		const SESSIONS = `SELECT session, min(at) AS start, count(*) AS n, sum(engaged_ms) AS duration,
 				max(landing = 1 AND visitor IS NOT NULL AND new_visitor = 0) AS returned,
 				max(visitor IS NOT NULL) AS known
-			FROM views WHERE ${filter.sql} GROUP BY session`;
+			FROM views WHERE ${visitFilter.sql} GROUP BY session`;
 		const RECENT = `SELECT session FROM views WHERE ${filter.sql}
 			GROUP BY session ORDER BY max(seen) DESC LIMIT 50`;
 
@@ -193,7 +214,9 @@ export const getStats = createServerFn({ method: 'GET' })
 			run(
 				`SELECT count(*) AS visits, avg(n = 1) AS bounce, avg(duration) AS duration,
 					sum(returned) * 1.0 / nullif(sum(known), 0) AS returned
-				FROM (${SESSIONS})`
+				FROM (${SESSIONS})`,
+				[],
+				visitFilter
 			),
 			// 2: page views over time
 			run(
@@ -208,7 +231,8 @@ export const getStats = createServerFn({ method: 'GET' })
 					avg(n = 1) AS bounce, avg(duration) AS duration,
 					sum(returned) * 1.0 / nullif(sum(known), 0) AS returned
 				FROM (${SESSIONS}) GROUP BY bucket`,
-				[offset, bucket]
+				[offset, bucket],
+				visitFilter
 			),
 			// 4: pages, with reading time and scroll depth
 			run(
@@ -354,11 +378,11 @@ export const getVisitor = createServerFn({ method: 'GET' })
 		const now = Date.now();
 		const offset = timeZoneOffset(now);
 		const [views, clicks, pages] = await db.batch([
-			db.prepare(`SELECT * FROM views WHERE ${VISITOR} = ? ORDER BY at LIMIT 5000`).bind(data.id),
+			db.prepare(`SELECT * FROM views WHERE ${IS_VISITOR} ORDER BY at LIMIT 5000`).bind(data.id),
 			db
 				.prepare(
 					`SELECT session, href FROM clicks
-					WHERE session IN (SELECT session FROM views WHERE ${VISITOR} = ?) ORDER BY at`
+					WHERE session IN (SELECT session FROM views WHERE ${IS_VISITOR}) ORDER BY at`
 				)
 				.bind(data.id),
 			db
@@ -366,7 +390,7 @@ export const getVisitor = createServerFn({ method: 'GET' })
 					`SELECT path AS key, path AS label, count(DISTINCT session) AS visitors,
 						count(*) AS views, avg(nullif(engaged_ms, 0)) AS engaged,
 						avg(nullif(scroll, 0)) AS scroll
-					FROM views WHERE ${VISITOR} = ? GROUP BY path ORDER BY views DESC`
+					FROM views WHERE ${IS_VISITOR} GROUP BY path ORDER BY views DESC`
 				)
 				.bind(data.id)
 		]);

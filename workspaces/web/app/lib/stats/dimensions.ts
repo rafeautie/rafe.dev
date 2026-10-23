@@ -17,7 +17,7 @@ export function isRange(value: unknown): value is Range {
 	return typeof value === 'string' && value in RANGES;
 }
 
-// `key` is what a filter matches; `label`, when there is one, is what is shown.
+// `key` is what is shown and what a filter matches.
 // `landing` counts only the page a visit started on, which is the one that
 // knows where the visitor came from.
 export const DIMENSIONS = {
@@ -31,12 +31,9 @@ export const DIMENSIONS = {
 		landing: true
 	},
 	country: { title: 'Countries', key: 'country' },
-	region: { title: 'Regions', key: 'region', label: `region || ', ' || country` },
-	city: {
-		title: 'Cities',
-		key: 'city',
-		label: `city || ', ' || coalesce(region || ', ', '') || country`
-	},
+	// with their country, so places of the same name stay apart
+	region: { title: 'Regions', key: `region || ', ' || country` },
+	city: { title: 'Cities', key: `city || ', ' || coalesce(region || ', ', '') || country` },
 	device: { title: 'Devices', key: 'device' },
 	browser: { title: 'Browsers', key: 'browser' },
 	os: { title: 'Systems', key: 'os' },
@@ -44,10 +41,7 @@ export const DIMENSIONS = {
 	language: { title: 'Languages', key: 'language' },
 	network: { title: 'Networks', key: 'org' },
 	theme: { title: 'Theme', key: `CASE dark WHEN 1 THEN 'Dark' WHEN 0 THEN 'Light' END` }
-} as const satisfies Record<
-	string,
-	{ title: string; key: string; label?: string; landing?: boolean }
->;
+} as const satisfies Record<string, { title: string; key: string; landing?: boolean }>;
 
 export type Dimension = keyof typeof DIMENSIONS;
 

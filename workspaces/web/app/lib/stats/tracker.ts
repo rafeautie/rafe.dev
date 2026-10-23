@@ -67,7 +67,7 @@ function saveSession(session: Session) {
 
 // Who is visiting, and whether this page view starts a new visit. A browser
 // without the id (opted out, storage blocked) is never new or returning.
-function identify(now: number) {
+function identify(now: number, arrived: boolean) {
 	const store = storage();
 	let visitor: string | null = null;
 	let newVisitor = false;
@@ -85,10 +85,23 @@ function identify(now: number) {
 			session = undefined;
 		}
 	}
-	const landing = !session || now - session.last > SESSION_GAP_MS;
+	// arriving from another site starts a new visit, so where it came from
+	// is always on the visit's first page
+	const landing = !session || now - session.last > SESSION_GAP_MS || arrived;
 	const id = !session || landing ? crypto.randomUUID() : session.id;
 	saveSession({ id, last: now });
 	return { visitor, session: id, landing, newVisitor };
+}
+
+// The page that sent the visitor here, when it is on another site.
+function externalReferrer() {
+	try {
+		return document.referrer && new URL(document.referrer).host !== location.host
+			? document.referrer
+			: null;
+	} catch {
+		return null;
+	}
 }
 
 function loadMs() {
@@ -106,7 +119,8 @@ function scrollDepth() {
 // One page view: reading time and scroll depth, reported until the next one.
 function track(path: string, first: boolean) {
 	const now = Date.now();
-	const who = identify(now);
+	const referrer = first ? externalReferrer() : null;
+	const who = identify(now, referrer !== null);
 	const params = new URLSearchParams(location.search);
 	const view: ViewBeacon = {
 		type: 'view',
@@ -114,7 +128,7 @@ function track(path: string, first: boolean) {
 		...who,
 		path,
 		// the page that sent them, only on arrival; later pages are this site
-		referrer: first && document.referrer ? document.referrer : null,
+		referrer,
 		utm: {
 			source: params.get('utm_source') ?? params.get('ref'),
 			medium: params.get('utm_medium'),
