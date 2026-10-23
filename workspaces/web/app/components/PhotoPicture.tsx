@@ -12,7 +12,7 @@ import type { Picture } from '~/photos';
 // A cached page loads everything at once, so a whole screen would come into
 // focus together. Each photo waits a random beat first, so they arrive one by
 // one in no particular order.
-const REVEAL_MAX_DELAY = 900;
+const REVEAL_MAX_DELAY = 600;
 
 export function PhotoPicture({
 	picture,
