@@ -5,7 +5,7 @@ import { adminSession, redirectTo } from '~/lib/admin/session.server';
 
 // Step two: GitHub sends the browser back with a one-time code. The code is
 // swapped for a token, and the token kept only if it belongs to Rafe.
-export const Route = createFileRoute('/admin/callback')({
+export const Route = createFileRoute('/admin/auth')({
 	server: {
 		handlers: {
 			GET: async ({ request }) => {
@@ -27,7 +27,7 @@ export const Route = createFileRoute('/admin/callback')({
 						client_id: env.GITHUB_CLIENT_ID,
 						client_secret: env.GITHUB_CLIENT_SECRET,
 						code,
-						redirect_uri: new URL('/admin/callback', url).href
+						redirect_uri: new URL('/admin/auth', url).href
 					})
 				});
 				const { access_token: token } = (await exchange.json()) as { access_token?: string };

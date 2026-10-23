@@ -11,7 +11,7 @@ export type AdminSession = {
 	userId?: number;
 	login?: string;
 	avatarUrl?: string;
-	// the OAuth state, between /admin/login and /admin/callback
+	// the OAuth state, between /admin/login and /admin/auth
 	state?: string;
 };
 

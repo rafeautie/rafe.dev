@@ -23,7 +23,7 @@ import { Route as WritingSlugRouteImport } from './routes/writing/$slug'
 import { Route as AdminPhotosRouteImport } from './routes/admin/photos'
 import { Route as AdminLogoutRouteImport } from './routes/admin/logout'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
-import { Route as AdminCallbackRouteImport } from './routes/admin/callback'
+import { Route as AdminAuthRouteImport } from './routes/admin/auth'
 import { Route as AdminWritingIndexRouteImport } from './routes/admin/writing/index'
 import { Route as AdminWritingSlugRouteImport } from './routes/admin/writing/$slug'
 
@@ -97,9 +97,9 @@ const AdminLoginRoute = AdminLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => AdminRouteRoute,
 } as any)
-const AdminCallbackRoute = AdminCallbackRouteImport.update({
-  id: '/callback',
-  path: '/callback',
+const AdminAuthRoute = AdminAuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminWritingIndexRoute = AdminWritingIndexRouteImport.update({
@@ -121,7 +121,7 @@ export interface FileRoutesByFullPath {
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/admin/callback': typeof AdminCallbackRoute
+  '/admin/auth': typeof AdminAuthRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
@@ -139,7 +139,7 @@ export interface FileRoutesByTo {
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/admin/callback': typeof AdminCallbackRoute
+  '/admin/auth': typeof AdminAuthRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
@@ -159,7 +159,7 @@ export interface FileRoutesById {
   '/photography': typeof PhotographyRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/admin/callback': typeof AdminCallbackRoute
+  '/admin/auth': typeof AdminAuthRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
@@ -180,7 +180,7 @@ export interface FileRouteTypes {
     | '/photography'
     | '/shmoney'
     | '/sitemap.xml'
-    | '/admin/callback'
+    | '/admin/auth'
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
@@ -198,7 +198,7 @@ export interface FileRouteTypes {
     | '/photography'
     | '/shmoney'
     | '/sitemap.xml'
-    | '/admin/callback'
+    | '/admin/auth'
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
@@ -217,7 +217,7 @@ export interface FileRouteTypes {
     | '/photography'
     | '/shmoney'
     | '/sitemap.xml'
-    | '/admin/callback'
+    | '/admin/auth'
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
@@ -342,11 +342,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLoginRouteImport
       parentRoute: typeof AdminRouteRoute
     }
-    '/admin/callback': {
-      id: '/admin/callback'
-      path: '/callback'
-      fullPath: '/admin/callback'
-      preLoaderRoute: typeof AdminCallbackRouteImport
+    '/admin/auth': {
+      id: '/admin/auth'
+      path: '/auth'
+      fullPath: '/admin/auth'
+      preLoaderRoute: typeof AdminAuthRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/admin/writing/': {
@@ -367,7 +367,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteRouteChildren {
-  AdminCallbackRoute: typeof AdminCallbackRoute
+  AdminAuthRoute: typeof AdminAuthRoute
   AdminLoginRoute: typeof AdminLoginRoute
   AdminLogoutRoute: typeof AdminLogoutRoute
   AdminPhotosRoute: typeof AdminPhotosRoute
@@ -377,7 +377,7 @@ interface AdminRouteRouteChildren {
 }
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
-  AdminCallbackRoute: AdminCallbackRoute,
+  AdminAuthRoute: AdminAuthRoute,
   AdminLoginRoute: AdminLoginRoute,
   AdminLogoutRoute: AdminLogoutRoute,
   AdminPhotosRoute: AdminPhotosRoute,
