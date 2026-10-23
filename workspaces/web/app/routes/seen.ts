@@ -9,6 +9,14 @@ import { addClick, addView, updateView } from '~/lib/stats/store.server';
 const NOTHING = () => new Response(null, { status: 204 });
 const MAX_BYTES = 8000;
 
+// Cloudflare's guess at where the city is, kept only to about 10km
+function coordinate(value: string | undefined) {
+	const n = Number(value);
+	return value === undefined || value === '' || !Number.isFinite(n)
+		? null
+		: Math.round(n * 10) / 10;
+}
+
 export const Route = createFileRoute('/seen')({
 	server: {
 		handlers: {
@@ -58,7 +66,10 @@ export const Route = createFileRoute('/seen')({
 						utmCampaign: beacon.utm.campaign,
 						country: cf?.country ?? null,
 						region: cf?.region ?? null,
+						regionCode: cf?.regionCode ?? null,
 						city: cf?.city ?? null,
+						latitude: coordinate(cf?.latitude),
+						longitude: coordinate(cf?.longitude),
 						timezone: cf?.timezone ?? null,
 						org: cf?.asOrganization ?? null,
 						browser: agent.browser,

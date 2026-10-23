@@ -1,9 +1,10 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { XIcon } from 'lucide-react';
-import { useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useState, useSyncExternalStore } from 'react';
 import { Link } from '~/components/Link';
 import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
 import { country, duration, formatMetric, NUMBER, place } from '~/components/admin/stats/format';
+import { FilterMenu } from '~/components/admin/stats/FilterMenu';
 import { Heatmap } from '~/components/admin/stats/Heatmap';
 import { Panel, Ranking, type View } from '~/components/admin/stats/Panel';
 import { TimeChart } from '~/components/admin/stats/TimeChart';
@@ -16,6 +17,7 @@ import { requireAdmin } from '~/lib/admin/guard';
 import { timeAgo } from '~/lib/admin/time';
 import {
 	DIMENSIONS,
+	FILTER_KEYS,
 	type FilterKey,
 	type Filters,
 	isMetric,
@@ -50,6 +52,30 @@ export const Route = createFileRoute('/admin/stats/')({
 });
 
 type Stats = Awaited<ReturnType<typeof getStats>>;
+
+// The globe draws in the browser only, so the server's bundle leaves it and
+// its outlines out; the page holds its space until it loads.
+const Globe = import.meta.env.SSR
+	? null
+	: lazy(() =>
+			import('~/components/admin/stats/Globe').then((module) => ({ default: module.Globe }))
+		);
+const noop = () => () => undefined;
+const useHydrated = () =>
+	useSyncExternalStore(
+		noop,
+		() => true,
+		() => false
+	);
+
+function GlobeSpace() {
+	return (
+		<div aria-hidden>
+			<div className="h-9" />
+			<div className="mx-auto aspect-square max-w-80" />
+		</div>
+	);
+}
 
 // A section's chosen tab, remembered in this browser. The server, which has no
 // storage, renders the default, and the browser switches once hydrated.
@@ -102,6 +128,10 @@ function StatsPage() {
 	const filters = Object.entries(stats.filters) as [FilterKey, string][];
 	const setFilter = (key: FilterKey, value: string | undefined) =>
 		navigate({ search: (prev) => ({ ...prev, [key]: value }) });
+	// what each filter can be, from what is in view
+	const values = Object.fromEntries(
+		FILTER_KEYS.map((key) => [key, key === 'page' ? stats.pages : stats.breakdowns[key]])
+	) as Record<FilterKey, Row[]>;
 
 	return (
 		<TooltipProvider>
@@ -142,6 +172,7 @@ function StatsPage() {
 						</>
 					}
 				>
+					<FilterMenu values={values} filters={stats.filters} onFilter={setFilter} />
 					<ToggleGroup
 						variant="outline"
 						spacing={0}
@@ -208,6 +239,7 @@ function Report({
 	const [placesTab, setPlacesTab] = useChoice('places', 'country');
 	const [moreTab, setMoreTab] = useChoice('more', 'device');
 	const [visitsTab, setVisitsTab] = useChoice('visits', 'latest');
+	const hydrated = useHydrated();
 	const hourly = stats.bucket < 24 * 60 * 60 * 1000;
 	const { breakdowns: b, filters } = stats;
 
@@ -313,6 +345,42 @@ function Report({
 						}
 					]}
 				/>
+				<div className="grid items-start gap-x-12 gap-y-6 sm:col-span-2 sm:grid-cols-2">
+					<section>
+						{Globe && hydrated ? (
+							<Suspense fallback={<GlobeSpace />}>
+								<Globe
+									countries={b.country}
+									regions={stats.places.regions}
+									cities={stats.places.cities}
+									active={filters}
+									onPick={onFilter}
+								/>
+							</Suspense>
+						) : (
+							<GlobeSpace />
+						)}
+					</section>
+					<Panel
+						value={placesTab}
+						onChange={setPlacesTab}
+						views={[
+							{
+								key: 'country',
+								title: 'Countries',
+								unit: 'visitors',
+								content: ranking('country', b.country, (row) => country(row.key))
+							},
+							{
+								key: 'region',
+								title: 'Regions',
+								unit: 'visitors',
+								content: ranking('region', b.region)
+							},
+							{ key: 'city', title: 'Cities', unit: 'visitors', content: ranking('city', b.city) }
+						]}
+					/>
+				</div>
 				<Panel
 					value={sourcesTab}
 					onChange={setSourcesTab}
@@ -336,26 +404,8 @@ function Report({
 						}
 					]}
 				/>
-				<Panel
-					value={placesTab}
-					onChange={setPlacesTab}
-					views={[
-						{
-							key: 'country',
-							title: 'Countries',
-							unit: 'visitors',
-							content: ranking('country', b.country, (row) => country(row.key))
-						},
-						{
-							key: 'region',
-							title: 'Regions',
-							unit: 'visitors',
-							content: ranking('region', b.region)
-						},
-						{ key: 'city', title: 'Cities', unit: 'visitors', content: ranking('city', b.city) }
-					]}
-				/>
-				<section>
+				<Panel menu value={moreTab} onChange={setMoreTab} views={more} />
+				<section className="sm:col-span-2">
 					<h2 className="flex min-h-10 items-center border-b border-foreground/10 pb-2 text-sm text-foreground/50">
 						When people visit
 					</h2>
@@ -363,7 +413,6 @@ function Report({
 						<Heatmap cells={stats.heatmap} />
 					</div>
 				</section>
-				<Panel menu value={moreTab} onChange={setMoreTab} views={more} />
 			</div>
 
 			<Panel
