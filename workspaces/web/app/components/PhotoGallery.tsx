@@ -77,6 +77,7 @@ function GalleryPhoto({
 				picture={photo.picture}
 				sizes={GRID_SIZES}
 				alt={photo.alt}
+				reveal
 				loading={eager ? 'eager' : 'lazy'}
 				// The first photo leads the grid at every column count, so it is
 				// the likeliest LCP element.

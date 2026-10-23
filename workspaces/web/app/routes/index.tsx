@@ -130,6 +130,7 @@ function HomePage() {
 						picture={photo.picture}
 						sizes={HERO_SIZES}
 						alt={photo.alt}
+						reveal
 						fetchPriority="high"
 						decoding="async"
 						className="h-full w-full object-contain"
