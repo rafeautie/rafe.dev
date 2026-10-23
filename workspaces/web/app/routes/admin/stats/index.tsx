@@ -4,6 +4,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { Link } from '~/components/Link';
 import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
 import { country, duration, formatMetric, NUMBER, place } from '~/components/admin/stats/format';
+import { FilterMenu } from '~/components/admin/stats/FilterMenu';
 import { Heatmap } from '~/components/admin/stats/Heatmap';
 import { Panel, Ranking, type View } from '~/components/admin/stats/Panel';
 import { TimeChart } from '~/components/admin/stats/TimeChart';
@@ -17,6 +18,7 @@ import { requireAdmin } from '~/lib/admin/guard';
 import { timeAgo } from '~/lib/admin/time';
 import {
 	DIMENSIONS,
+	FILTER_KEYS,
 	type FilterKey,
 	type Filters,
 	isMetric,
@@ -101,8 +103,12 @@ function StatsPage() {
 	const navigate = useNavigate({ from: Route.fullPath });
 	const metric = search.metric ?? 'visitors';
 	const filters = Object.entries(stats.filters) as [FilterKey, string][];
-	const setFilter = (key: FilterKey, value: string | undefined) =>
-		navigate({ search: (prev) => ({ ...prev, [key]: value }) });
+	const setFilters = (patch: Filters) => navigate({ search: (prev) => ({ ...prev, ...patch }) });
+	const setFilter = (key: FilterKey, value: string | undefined) => setFilters({ [key]: value });
+	// what each filter can be, from what is in view
+	const values = Object.fromEntries(
+		FILTER_KEYS.map((key) => [key, key === 'page' ? stats.pages : stats.breakdowns[key]])
+	) as Record<FilterKey, Row[]>;
 
 	return (
 		<TooltipProvider>
@@ -143,6 +149,7 @@ function StatsPage() {
 						</>
 					}
 				>
+					<FilterMenu values={values} filters={stats.filters} onFilter={setFilter} />
 					<ToggleGroup
 						variant="outline"
 						spacing={0}
@@ -180,6 +187,7 @@ function StatsPage() {
 							})
 						}
 						onFilter={setFilter}
+						onFilters={setFilters}
 					/>
 				) : (
 					<p className="mt-10 text-foreground/50">
@@ -197,12 +205,14 @@ function Report({
 	stats,
 	metric,
 	onMetric,
-	onFilter
+	onFilter,
+	onFilters
 }: {
 	stats: Stats;
 	metric: Metric;
 	onMetric: (metric: Metric) => void;
 	onFilter: (key: FilterKey, value: string) => void;
+	onFilters: (patch: Filters) => void;
 }) {
 	const [pagesTab, setPagesTab] = useChoice('pages', 'page');
 	const [sourcesTab, setSourcesTab] = useChoice('sources', 'source');
@@ -318,8 +328,10 @@ function Report({
 					<section className="sm:pt-12">
 						<WorldMap
 							rows={b.country}
-							active={filters.country}
-							onPick={(code) => onFilter('country', code)}
+							zoom={stats.map}
+							active={filters}
+							onPick={onFilter}
+							onWorld={() => onFilters({ country: undefined, region: undefined, city: undefined })}
 						/>
 					</section>
 					<Panel

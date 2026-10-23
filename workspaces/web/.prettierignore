@@ -18,3 +18,4 @@ app/components/admin/stats/world-map.json
 
 # Miscellaneous
 /static/
+app/components/admin/stats/regions/
