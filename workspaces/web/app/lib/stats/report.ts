@@ -1,34 +1,32 @@
 import { createServerFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 import { requireToken } from '~/lib/admin/session.server';
+import {
+	DIMENSIONS,
+	type Dimension,
+	FILTER_KEYS,
+	type Filters,
+	isRange,
+	type Metric,
+	RANGES,
+	readFilters
+} from './dimensions';
 import { stats } from './store.server';
 import { zoneOffset } from './zone';
 
-// What /admin/stats shows, for one of a few time ranges, read from the visits
-// database in one round trip. Days and hours are Rafe's own, from where his
-// request comes from.
+// What /admin/stats shows, read from the visits database: for a time range,
+// narrowed by any filters, and for one visitor. Days and hours are Rafe's own,
+// from where his request comes from.
 
-export const RANGES = {
-	'24h': { label: '24 hours', span: 24 * 60 * 60 * 1000, bucket: 60 * 60 * 1000 },
-	'7d': { label: '7 days', span: 7 * 24 * 60 * 60 * 1000, bucket: 24 * 60 * 60 * 1000 },
-	'30d': { label: '30 days', span: 30 * 24 * 60 * 60 * 1000, bucket: 24 * 60 * 60 * 1000 },
-	'90d': { label: '90 days', span: 90 * 24 * 60 * 60 * 1000, bucket: 24 * 60 * 60 * 1000 },
-	all: { label: 'All time', span: Infinity, bucket: 24 * 60 * 60 * 1000 }
-} as const;
-
-export type Range = keyof typeof RANGES;
-
-export function isRange(value: unknown): value is Range {
-	return typeof value === 'string' && value in RANGES;
-}
-
-export type Row = { label: string; visitors: number; views: number };
+export type Row = { key: string; label: string; visitors: number; views: number };
 export type PageRow = Row & { engaged: number | null; scroll: number | null };
 
 export type SessionView = { at: number; path: string; engaged: number; scroll: number };
 
 export type Visit = {
 	session: string;
+	// the browser's id, or the visit's own when it has none (opted out)
+	visitor: string;
 	start: number;
 	end: number;
 	views: SessionView[];
@@ -45,245 +43,372 @@ export type Visit = {
 	device: string | null;
 	screen: string | null;
 	language: string | null;
-	// null when the browser has no id (opted out)
+	// null when the browser has no id
 	returning: boolean | null;
 	// every visit this browser has made, ever
 	visits: number | null;
 };
 
+export type Point = { at: number } & Record<Metric, number | null>;
+
+const DAY = 24 * 60 * 60 * 1000;
 const VISITOR = 'coalesce(visitor, session)';
 
-// label, visitors and views for the top values of one column
-function top(expr: string, { landing = false, limit = 10 } = {}) {
-	return `SELECT ${expr} AS label, count(DISTINCT ${VISITOR}) AS visitors, count(*) AS views
-		FROM views WHERE at >= ?1 ${landing ? 'AND landing = 1' : ''} AND ${expr} IS NOT NULL AND ${expr} != ''
-		GROUP BY label ORDER BY visitors DESC, views DESC LIMIT ${limit}`;
+// The WHERE clause for a time range and filters, and its parameters.
+function where(since: number, filters: Filters) {
+	const clauses = ['at >= ?'];
+	const params: (string | number)[] = [since];
+	for (const key of FILTER_KEYS) {
+		const value = filters[key];
+		if (value === undefined) continue;
+		clauses.push(`${DIMENSIONS[key].key} = ?`);
+		params.push(value);
+	}
+	return { sql: clauses.join(' AND '), params };
 }
 
-const BREAKDOWNS = {
-	sources: top(`coalesce(referrer, 'Direct')`, { landing: true }),
-	campaigns: top(
-		`CASE WHEN utm_source IS NULL AND utm_campaign IS NULL THEN NULL
-			ELSE coalesce(utm_source, '') || coalesce(' · ' || utm_campaign, '') END`,
-		{ landing: true }
-	),
-	countries: top('country'),
-	cities: top(`city || ', ' || coalesce(region || ', ', '') || country`),
-	networks: top('org'),
-	browsers: top('browser'),
-	systems: top('os'),
-	devices: top('device'),
-	screens: top('screen'),
-	languages: top('language'),
-	themes: top(`CASE dark WHEN 1 THEN 'Dark' WHEN 0 THEN 'Light' END`)
-} as const;
+function breakdown(dimension: Dimension, filter: ReturnType<typeof where>, limit = 25) {
+	const { key, landing, ...rest } = { landing: false, ...DIMENSIONS[dimension] };
+	const label = 'label' in rest ? rest.label : key;
+	return `SELECT ${key} AS key, ${label} AS label, count(DISTINCT ${VISITOR}) AS visitors,
+			count(*) AS views
+		FROM views WHERE ${filter.sql} ${landing ? 'AND landing = 1' : ''}
+			AND ${key} IS NOT NULL AND ${key} != ''
+		GROUP BY key ORDER BY visitors DESC, views DESC LIMIT ${limit}`;
+}
 
-export type Breakdown = keyof typeof BREAKDOWNS;
+// One visit per session, page by page, from its rows in time order.
+function toVisits(
+	rows: Record<string, string | number | null>[],
+	clicks: { session: string; href: string }[]
+) {
+	const visits = new Map<string, Visit>();
+	for (const row of rows) {
+		const session = String(row.session);
+		let visit = visits.get(session);
+		if (!visit) {
+			visit = {
+				session,
+				visitor: String(row.visitor ?? session),
+				start: Number(row.at),
+				end: Number(row.seen),
+				views: [],
+				clicks: [],
+				engaged: 0,
+				source: null,
+				campaign: null,
+				city: row.city as string | null,
+				region: row.region as string | null,
+				country: row.country as string | null,
+				org: row.org as string | null,
+				browser: row.browser as string | null,
+				os: row.os as string | null,
+				device: row.device as string | null,
+				screen: row.screen as string | null,
+				language: row.language as string | null,
+				returning: row.visitor ? false : null,
+				visits: null
+			};
+			visits.set(session, visit);
+		}
+		if (row.landing) {
+			visit.source = (row.referrer as string | null) ?? null;
+			visit.campaign = (row.utm_campaign ?? row.utm_source) as string | null;
+			if (row.visitor) visit.returning = !row.new_visitor;
+		}
+		visit.views.push({
+			at: Number(row.at),
+			path: String(row.path),
+			engaged: Number(row.engaged_ms),
+			scroll: Number(row.scroll)
+		});
+		visit.engaged += Number(row.engaged_ms);
+		visit.end = Math.max(visit.end, Number(row.seen));
+	}
+	for (const { session, href } of clicks) visits.get(session)?.clicks.push(href);
+	return [...visits.values()].sort((a, b) => b.end - a.end);
+}
+
+// How many visits each visit's browser has made, ever.
+async function countVisits(db: D1Database, visits: Visit[]) {
+	const ids = [...new Set(visits.filter((v) => v.returning !== null).map((v) => v.visitor))];
+	if (!ids.length) return;
+	const { results } = await db
+		.prepare(
+			`SELECT visitor, count(DISTINCT session) AS visits FROM views
+			WHERE visitor IN (${ids.map(() => '?').join(', ')}) GROUP BY visitor`
+		)
+		.bind(...ids)
+		.all<{ visitor: string; visits: number }>();
+	const counts = new Map(results.map((row) => [row.visitor, row.visits]));
+	for (const visit of visits) {
+		if (visit.returning !== null) visit.visits = counts.get(visit.visitor) ?? null;
+	}
+}
+
+function timeZoneOffset(now: number) {
+	const cf = (getRequest() as { cf?: IncomingRequestCfProperties }).cf;
+	return zoneOffset(cf?.timezone ?? 'UTC', now);
+}
+
+const BREAKDOWNS = Object.keys(DIMENSIONS).filter((key) => key !== 'page') as Dimension[];
 
 export const getStats = createServerFn({ method: 'GET' })
 	.inputValidator((input: unknown) => {
-		const range = (input as { range?: unknown } | null)?.range;
-		return { range: isRange(range) ? range : '7d' };
+		const data = (input ?? {}) as Record<string, unknown>;
+		return {
+			range: isRange(data.range) ? data.range : '7d',
+			filters: readFilters((data.filters ?? {}) as Record<string, unknown>)
+		};
 	})
 	.handler(async ({ data }) => {
 		await requireToken();
 		const db = await stats();
 		const now = Date.now();
 		const { span, bucket } = RANGES[data.range];
-		const cf = (getRequest() as { cf?: IncomingRequestCfProperties }).cf;
-		const offset = zoneOffset(cf?.timezone ?? 'UTC', now);
+		const offset = timeZoneOffset(now);
 		// whole hours or days: 7 days is today and the six before it
 		const lastBucket = Math.floor((now + offset) / bucket);
 		const since = Number.isFinite(span)
 			? (lastBucket - Math.round(span / bucket) + 1) * bucket - offset
 			: 0;
+		const filter = where(since, data.filters);
+		const run = (sql: string, before: (string | number)[] = []) =>
+			db.prepare(sql).bind(...before, ...filter.params);
+
+		const SESSIONS = `SELECT session, min(at) AS start, count(*) AS n, sum(engaged_ms) AS duration,
+				max(landing = 1 AND visitor IS NOT NULL AND new_visitor = 0) AS returned,
+				max(visitor IS NOT NULL) AS known
+			FROM views WHERE ${filter.sql} GROUP BY session`;
+		const RECENT = `SELECT session FROM views WHERE ${filter.sql}
+			GROUP BY session ORDER BY max(seen) DESC LIMIT 50`;
 
 		const statements = [
-			// 0: page views and people
-			db
-				.prepare(
-					`SELECT count(*) AS views, count(DISTINCT ${VISITOR}) AS visitors,
-						avg(nullif(engaged_ms, 0)) AS engaged, avg(nullif(scroll, 0)) AS scroll
-					FROM views WHERE at >= ?1`
-				)
-				.bind(since),
-			// 1: visits (sessions)
-			db
-				.prepare(
-					`SELECT count(*) AS visits, sum(n = 1) AS bounces, sum(returned) AS returned,
-						sum(known) AS known, avg(duration) AS duration
-					FROM (
-						SELECT count(*) AS n, sum(engaged_ms) AS duration,
-							max(landing = 1 AND visitor IS NOT NULL AND new_visitor = 0) AS returned,
-							max(visitor IS NOT NULL) AS known
-						FROM views WHERE at >= ?1 GROUP BY session
-					)`
-				)
-				.bind(since),
-			// 2: over time
-			db
-				.prepare(
-					`SELECT CAST((at + ?2) / ?3 AS INTEGER) AS bucket, count(*) AS views,
-						count(DISTINCT ${VISITOR}) AS visitors
-					FROM views WHERE at >= ?1 GROUP BY bucket ORDER BY bucket`
-				)
-				.bind(since, offset, bucket),
-			// 3: pages
-			db
-				.prepare(
-					`SELECT path AS label, count(DISTINCT ${VISITOR}) AS visitors, count(*) AS views,
-						avg(nullif(engaged_ms, 0)) AS engaged, avg(nullif(scroll, 0)) AS scroll
-					FROM views WHERE at >= ?1 GROUP BY path ORDER BY views DESC LIMIT 15`
-				)
-				.bind(since),
-			// 4: links followed off the site
-			db
-				.prepare(
-					`SELECT href AS label, count(DISTINCT session) AS visitors, count(*) AS views
-					FROM clicks WHERE at >= ?1 GROUP BY href ORDER BY views DESC LIMIT 10`
-				)
-				.bind(since),
-			// 5: the latest visits, page by page
-			db
-				.prepare(
-					`WITH recent AS (
-						SELECT session FROM views WHERE at >= ?1
-						GROUP BY session ORDER BY max(at) DESC LIMIT 25
-					)
-					SELECT v.* FROM views v JOIN recent USING (session) ORDER BY v.at`
-				)
-				.bind(since),
-			// 6: their links followed off the site
-			db
-				.prepare(
-					`WITH recent AS (
-						SELECT session FROM views WHERE at >= ?1
-						GROUP BY session ORDER BY max(at) DESC LIMIT 25
-					)
-					SELECT c.session, c.href FROM clicks c JOIN recent USING (session) ORDER BY c.at`
-				)
-				.bind(since),
-			// 7: the last time anyone was here
+			// 0: headline numbers from page views
+			run(
+				`SELECT count(*) AS views, count(DISTINCT ${VISITOR}) AS visitors
+				FROM views WHERE ${filter.sql}`
+			),
+			// 1: headline numbers from visits
+			run(
+				`SELECT count(*) AS visits, avg(n = 1) AS bounce, avg(duration) AS duration,
+					sum(returned) * 1.0 / nullif(sum(known), 0) AS returned
+				FROM (${SESSIONS})`
+			),
+			// 2: page views over time
+			run(
+				`SELECT CAST((at + ?) / ? AS INTEGER) AS bucket, count(*) AS views,
+					count(DISTINCT ${VISITOR}) AS visitors
+				FROM views WHERE ${filter.sql} GROUP BY bucket`,
+				[offset, bucket]
+			),
+			// 3: visits over time, by when they started
+			run(
+				`SELECT CAST((start + ?) / ? AS INTEGER) AS bucket, count(*) AS visits,
+					avg(n = 1) AS bounce, avg(duration) AS duration,
+					sum(returned) * 1.0 / nullif(sum(known), 0) AS returned
+				FROM (${SESSIONS}) GROUP BY bucket`,
+				[offset, bucket]
+			),
+			// 4: pages, with reading time and scroll depth
+			run(
+				`SELECT path AS key, path AS label, count(DISTINCT ${VISITOR}) AS visitors,
+					count(*) AS views, avg(nullif(engaged_ms, 0)) AS engaged,
+					avg(nullif(scroll, 0)) AS scroll
+				FROM views WHERE ${filter.sql}
+				GROUP BY path ORDER BY visitors DESC, views DESC LIMIT 25`
+			),
+			// 5: links followed off the site, from the page views in view
+			run(
+				`SELECT href AS key, href AS label, count(DISTINCT session) AS visitors,
+					count(*) AS views
+				FROM clicks WHERE view IN (SELECT id FROM views WHERE ${filter.sql})
+				GROUP BY href ORDER BY views DESC LIMIT 25`
+			),
+			// 6: when people visit, by weekday and hour
+			run(
+				`SELECT CAST(strftime('%w', CAST((at + ?) / 1000 AS INTEGER), 'unixepoch') AS INTEGER) AS day,
+					CAST(strftime('%H', CAST((at + ?) / 1000 AS INTEGER), 'unixepoch') AS INTEGER) AS hour,
+					count(DISTINCT ${VISITOR}) AS visitors, count(*) AS views
+				FROM views WHERE ${filter.sql} GROUP BY day, hour`,
+				[offset, offset]
+			),
+			// 7: the latest visits, page by page
+			run(`SELECT v.* FROM views v JOIN (${RECENT}) USING (session) ORDER BY v.at`),
+			// 8: their links followed off the site
+			run(`SELECT c.session, c.href FROM clicks c JOIN (${RECENT}) USING (session) ORDER BY c.at`),
+			// 9: the people who have come most often; the place and device are
+			// from their latest page view (SQLite takes bare columns from the
+			// row max() picked)
+			run(
+				`SELECT ${VISITOR} AS visitor, count(DISTINCT session) AS visits, count(*) AS views,
+					sum(engaged_ms) AS engaged, max(seen) AS last, city, region, country, browser, os,
+					device, visitor IS NULL AS anonymous
+				FROM views WHERE ${filter.sql}
+				GROUP BY ${VISITOR} ORDER BY visits DESC, views DESC, last DESC LIMIT 50`
+			),
+			// 10: the last time anyone was here, and the first
 			db.prepare('SELECT max(seen) AS last, min(at) AS first FROM views'),
-			...Object.values(BREAKDOWNS).map((sql) => db.prepare(sql).bind(since))
+			// 11 on: the breakdowns
+			...BREAKDOWNS.map((dimension) => run(breakdown(dimension, filter)))
 		];
 		const results = await db.batch(statements);
 		const rows = <T>(index: number) => results[index].results as T[];
 
-		const totals = rows<{
-			views: number;
-			visitors: number;
-			engaged: number | null;
-			scroll: number | null;
-		}>(0)[0];
-		const visits = rows<{
+		const totals = rows<{ views: number; visitors: number }>(0)[0];
+		const sessions = rows<{
 			visits: number;
-			bounces: number | null;
-			returned: number | null;
-			known: number | null;
+			bounce: number | null;
 			duration: number | null;
+			returned: number | null;
 		}>(1)[0];
-		const when = rows<{ last: number | null; first: number | null }>(7)[0];
+		const when = rows<{ last: number | null; first: number | null }>(10)[0];
 
 		// every bucket in the range, empty ones included
-		const counts = new Map(
+		const byViews = new Map(
 			rows<{ bucket: number; views: number; visitors: number }>(2).map((row) => [row.bucket, row])
 		);
+		const byVisits = new Map(
+			rows<{
+				bucket: number;
+				visits: number;
+				bounce: number | null;
+				duration: number | null;
+				returned: number | null;
+			}>(3).map((row) => [row.bucket, row])
+		);
 		const firstBucket = Math.floor(((since || when.first || now) + offset) / bucket);
-		const series = [];
+		const series: Point[] = [];
 		for (let b = Math.max(firstBucket, lastBucket - 400); b <= lastBucket; b++) {
+			const views = byViews.get(b);
+			const visits = byVisits.get(b);
 			series.push({
 				// the bucket's start as a wall-clock time, read as UTC
 				at: b * bucket,
-				views: counts.get(b)?.views ?? 0,
-				visitors: counts.get(b)?.visitors ?? 0
+				visitors: views?.visitors ?? 0,
+				views: views?.views ?? 0,
+				visits: visits?.visits ?? 0,
+				duration: visits?.duration ?? null,
+				bounce: visits?.bounce ?? null,
+				returning: visits?.returned ?? null
 			});
 		}
 
-		const visitRows = rows<Record<string, string | number | null>>(5);
-		const clickRows = rows<{ session: string; href: string }>(6);
-		const recent = new Map<string, Visit>();
-		for (const row of visitRows) {
-			const session = String(row.session);
-			let visit = recent.get(session);
-			if (!visit) {
-				visit = {
-					session,
-					start: Number(row.at),
-					end: Number(row.seen),
-					views: [],
-					clicks: [],
-					engaged: 0,
-					source: null,
-					campaign: null,
-					city: row.city as string | null,
-					region: row.region as string | null,
-					country: row.country as string | null,
-					org: row.org as string | null,
-					browser: row.browser as string | null,
-					os: row.os as string | null,
-					device: row.device as string | null,
-					screen: row.screen as string | null,
-					language: row.language as string | null,
-					returning: row.visitor ? false : null,
-					visits: null
-				};
-				recent.set(session, visit);
-			}
-			if (row.landing) {
-				visit.source = (row.referrer as string | null) ?? null;
-				visit.campaign = (row.utm_campaign ?? row.utm_source) as string | null;
-				if (row.visitor) visit.returning = !row.new_visitor;
-			}
-			visit.views.push({
-				at: Number(row.at),
-				path: String(row.path),
-				engaged: Number(row.engaged_ms),
-				scroll: Number(row.scroll)
-			});
-			visit.engaged += Number(row.engaged_ms);
-			visit.end = Math.max(visit.end, Number(row.seen));
-		}
-		for (const { session, href } of clickRows) recent.get(session)?.clicks.push(href);
-
-		// how many visits each of those browsers has made, ever
-		const visitors = [...new Set(visitRows.map((row) => row.visitor).filter(Boolean))] as string[];
-		if (visitors.length) {
-			const { results: made } = await db
-				.prepare(
-					`SELECT visitor, count(DISTINCT session) AS visits FROM views
-					WHERE visitor IN (${visitors.map(() => '?').join(', ')}) GROUP BY visitor`
-				)
-				.bind(...visitors)
-				.all<{ visitor: string; visits: number }>();
-			const byVisitor = new Map(made.map((row) => [row.visitor, row.visits]));
-			const visitorOf = new Map(visitRows.map((row) => [row.session, row.visitor]));
-			for (const visit of recent.values()) {
-				const visitor = visitorOf.get(visit.session);
-				if (visitor) visit.visits = byVisitor.get(String(visitor)) ?? null;
-			}
-		}
+		const recent = toVisits(
+			rows<Record<string, string | number | null>>(7),
+			rows<{ session: string; href: string }>(8)
+		);
+		await countVisits(db, recent);
 
 		const breakdowns = Object.fromEntries(
-			Object.keys(BREAKDOWNS).map((key, index) => [key, rows<Row>(8 + index)])
-		) as Record<Breakdown, Row[]>;
+			BREAKDOWNS.map((dimension, index) => [dimension, rows<Row>(11 + index)])
+		) as Record<Exclude<Dimension, 'page'>, Row[]>;
 
 		return {
 			range: data.range,
+			filters: data.filters,
 			bucket,
 			last: when.last,
-			views: totals.views,
-			visitors: totals.visitors,
-			visits: visits.visits,
-			engaged: totals.engaged,
-			scroll: totals.scroll,
-			bounceRate: visits.visits ? (visits.bounces ?? 0) / visits.visits : null,
-			returningRate: visits.known ? (visits.returned ?? 0) / visits.known : null,
-			visitLength: visits.duration,
+			totals: {
+				visitors: totals.visitors,
+				visits: sessions.visits,
+				views: totals.views,
+				duration: sessions.duration,
+				bounce: sessions.bounce,
+				returning: sessions.returned
+			} satisfies Record<Metric, number | null>,
 			series,
-			pages: rows<PageRow>(3),
-			clicks: rows<Row>(4),
-			recent: [...recent.values()].sort((a, b) => b.end - a.end),
-			...breakdowns
+			heatmap: rows<{ day: number; hour: number; visitors: number; views: number }>(6),
+			pages: rows<PageRow>(4),
+			clicks: rows<Row>(5),
+			breakdowns,
+			recent,
+			visitors: rows<{
+				visitor: string;
+				visits: number;
+				views: number;
+				engaged: number;
+				last: number;
+				city: string | null;
+				region: string | null;
+				country: string | null;
+				browser: string | null;
+				os: string | null;
+				device: string | null;
+				anonymous: number;
+			}>(9)
+		};
+	});
+
+// Everything one browser has done on the site (or one visit, for a browser
+// without an id).
+export const getVisitor = createServerFn({ method: 'GET' })
+	.inputValidator((input: unknown) => {
+		const id = (input as { id?: unknown } | null)?.id;
+		if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) throw new Error('Bad visitor');
+		return { id };
+	})
+	.handler(async ({ data }) => {
+		await requireToken();
+		const db = await stats();
+		const now = Date.now();
+		const offset = timeZoneOffset(now);
+		const [views, clicks, pages] = await db.batch([
+			db.prepare(`SELECT * FROM views WHERE ${VISITOR} = ? ORDER BY at LIMIT 5000`).bind(data.id),
+			db
+				.prepare(
+					`SELECT session, href FROM clicks
+					WHERE session IN (SELECT session FROM views WHERE ${VISITOR} = ?) ORDER BY at`
+				)
+				.bind(data.id),
+			db
+				.prepare(
+					`SELECT path AS key, path AS label, count(DISTINCT session) AS visitors,
+						count(*) AS views, avg(nullif(engaged_ms, 0)) AS engaged,
+						avg(nullif(scroll, 0)) AS scroll
+					FROM views WHERE ${VISITOR} = ? GROUP BY path ORDER BY views DESC`
+				)
+				.bind(data.id)
+		]);
+		const rows = views.results as Record<string, string | number | null>[];
+		if (!rows.length) return null;
+		const visits = toVisits(rows, clicks.results as { session: string; href: string }[]);
+		const unique = (values: unknown[]) =>
+			[...new Set(values.filter((value) => value !== null && value !== ''))] as string[];
+
+		// page views per day, from the first visit to today
+		const first = Math.floor((Number(rows[0].at) + offset) / DAY);
+		const last = Math.floor((now + offset) / DAY);
+		const perDay = new Map<number, number>();
+		for (const row of rows) {
+			const day = Math.floor((Number(row.at) + offset) / DAY);
+			perDay.set(day, (perDay.get(day) ?? 0) + 1);
+		}
+		const series = [];
+		for (let day = Math.max(first, last - 400); day <= last; day++) {
+			series.push({ at: day * DAY, views: perDay.get(day) ?? 0 });
+		}
+
+		return {
+			id: data.id,
+			anonymous: !rows[0].visitor,
+			first: Number(rows[0].at),
+			last: Math.max(...rows.map((row) => Number(row.seen))),
+			views: rows.length,
+			engaged: rows.reduce((sum, row) => sum + Number(row.engaged_ms), 0),
+			visits,
+			pages: pages.results as PageRow[],
+			series,
+			places: unique(
+				rows.map((row) => [row.city, row.region, row.country].filter(Boolean).join(', '))
+			),
+			sources: unique(rows.map((row) => row.referrer)),
+			networks: unique(rows.map((row) => row.org)),
+			devices: unique(
+				rows.map((row) =>
+					[`${row.browser} on ${row.os}`, row.device, row.screen].filter(Boolean).join(' · ')
+				)
+			),
+			languages: unique(rows.map((row) => row.language))
 		};
 	});

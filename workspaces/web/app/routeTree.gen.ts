@@ -21,13 +21,14 @@ import { Route as WritingIndexRouteImport } from './routes/writing/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as WritingFeedDotxmlRouteImport } from './routes/writing/feed[.]xml'
 import { Route as WritingSlugRouteImport } from './routes/writing/$slug'
-import { Route as AdminStatsRouteImport } from './routes/admin/stats'
 import { Route as AdminPhotosRouteImport } from './routes/admin/photos'
 import { Route as AdminLogoutRouteImport } from './routes/admin/logout'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminAuthRouteImport } from './routes/admin/auth'
 import { Route as AdminWritingIndexRouteImport } from './routes/admin/writing/index'
+import { Route as AdminStatsIndexRouteImport } from './routes/admin/stats/index'
 import { Route as AdminWritingSlugRouteImport } from './routes/admin/writing/$slug'
+import { Route as AdminStatsVisitorsIdRouteImport } from './routes/admin/stats/visitors/$id'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -89,11 +90,6 @@ const WritingSlugRoute = WritingSlugRouteImport.update({
   path: '/writing/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminStatsRoute = AdminStatsRouteImport.update({
-  id: '/stats',
-  path: '/stats',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
 const AdminPhotosRoute = AdminPhotosRouteImport.update({
   id: '/photos',
   path: '/photos',
@@ -119,9 +115,19 @@ const AdminWritingIndexRoute = AdminWritingIndexRouteImport.update({
   path: '/writing/',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const AdminStatsIndexRoute = AdminStatsIndexRouteImport.update({
+  id: '/stats/',
+  path: '/stats/',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const AdminWritingSlugRoute = AdminWritingSlugRouteImport.update({
   id: '/writing/$slug',
   path: '/writing/$slug',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminStatsVisitorsIdRoute = AdminStatsVisitorsIdRouteImport.update({
+  id: '/stats/visitors/$id',
+  path: '/stats/visitors/$id',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 
@@ -138,13 +144,14 @@ export interface FileRoutesByFullPath {
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
-  '/admin/stats': typeof AdminStatsRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
   '/admin/': typeof AdminIndexRoute
   '/writing/': typeof WritingIndexRoute
   '/admin/writing/$slug': typeof AdminWritingSlugRoute
+  '/admin/stats/': typeof AdminStatsIndexRoute
   '/admin/writing/': typeof AdminWritingIndexRoute
+  '/admin/stats/visitors/$id': typeof AdminStatsVisitorsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -158,13 +165,14 @@ export interface FileRoutesByTo {
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
-  '/admin/stats': typeof AdminStatsRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
   '/admin': typeof AdminIndexRoute
   '/writing': typeof WritingIndexRoute
   '/admin/writing/$slug': typeof AdminWritingSlugRoute
+  '/admin/stats': typeof AdminStatsIndexRoute
   '/admin/writing': typeof AdminWritingIndexRoute
+  '/admin/stats/visitors/$id': typeof AdminStatsVisitorsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -180,13 +188,14 @@ export interface FileRoutesById {
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
-  '/admin/stats': typeof AdminStatsRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
   '/admin/': typeof AdminIndexRoute
   '/writing/': typeof WritingIndexRoute
   '/admin/writing/$slug': typeof AdminWritingSlugRoute
+  '/admin/stats/': typeof AdminStatsIndexRoute
   '/admin/writing/': typeof AdminWritingIndexRoute
+  '/admin/stats/visitors/$id': typeof AdminStatsVisitorsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -203,13 +212,14 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
-    | '/admin/stats'
     | '/writing/$slug'
     | '/writing/feed.xml'
     | '/admin/'
     | '/writing/'
     | '/admin/writing/$slug'
+    | '/admin/stats/'
     | '/admin/writing/'
+    | '/admin/stats/visitors/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -223,13 +233,14 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
-    | '/admin/stats'
     | '/writing/$slug'
     | '/writing/feed.xml'
     | '/admin'
     | '/writing'
     | '/admin/writing/$slug'
+    | '/admin/stats'
     | '/admin/writing'
+    | '/admin/stats/visitors/$id'
   id:
     | '__root__'
     | '/'
@@ -244,13 +255,14 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
-    | '/admin/stats'
     | '/writing/$slug'
     | '/writing/feed.xml'
     | '/admin/'
     | '/writing/'
     | '/admin/writing/$slug'
+    | '/admin/stats/'
     | '/admin/writing/'
+    | '/admin/stats/visitors/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -353,13 +365,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WritingSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/stats': {
-      id: '/admin/stats'
-      path: '/stats'
-      fullPath: '/admin/stats'
-      preLoaderRoute: typeof AdminStatsRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
     '/admin/photos': {
       id: '/admin/photos'
       path: '/photos'
@@ -395,11 +400,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminWritingIndexRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/admin/stats/': {
+      id: '/admin/stats/'
+      path: '/stats'
+      fullPath: '/admin/stats/'
+      preLoaderRoute: typeof AdminStatsIndexRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/admin/writing/$slug': {
       id: '/admin/writing/$slug'
       path: '/writing/$slug'
       fullPath: '/admin/writing/$slug'
       preLoaderRoute: typeof AdminWritingSlugRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/stats/visitors/$id': {
+      id: '/admin/stats/visitors/$id'
+      path: '/stats/visitors/$id'
+      fullPath: '/admin/stats/visitors/$id'
+      preLoaderRoute: typeof AdminStatsVisitorsIdRouteImport
       parentRoute: typeof AdminRouteRoute
     }
   }
@@ -410,10 +429,11 @@ interface AdminRouteRouteChildren {
   AdminLoginRoute: typeof AdminLoginRoute
   AdminLogoutRoute: typeof AdminLogoutRoute
   AdminPhotosRoute: typeof AdminPhotosRoute
-  AdminStatsRoute: typeof AdminStatsRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminWritingSlugRoute: typeof AdminWritingSlugRoute
+  AdminStatsIndexRoute: typeof AdminStatsIndexRoute
   AdminWritingIndexRoute: typeof AdminWritingIndexRoute
+  AdminStatsVisitorsIdRoute: typeof AdminStatsVisitorsIdRoute
 }
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
@@ -421,10 +441,11 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminLoginRoute: AdminLoginRoute,
   AdminLogoutRoute: AdminLogoutRoute,
   AdminPhotosRoute: AdminPhotosRoute,
-  AdminStatsRoute: AdminStatsRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminWritingSlugRoute: AdminWritingSlugRoute,
+  AdminStatsIndexRoute: AdminStatsIndexRoute,
   AdminWritingIndexRoute: AdminWritingIndexRoute,
+  AdminStatsVisitorsIdRoute: AdminStatsVisitorsIdRoute,
 }
 
 const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
