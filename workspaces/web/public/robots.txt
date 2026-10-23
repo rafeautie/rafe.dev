@@ -1,5 +1,5 @@
-# allow crawling everything by default
+# allow crawling everything by default, bar the admin
 User-agent: *
-Disallow:
+Disallow: /admin
 
 Sitemap: https://rafe.dev/sitemap.xml

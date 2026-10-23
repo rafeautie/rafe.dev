@@ -7,6 +7,11 @@
 	// Served at rafe.dev only.
 	"workers_dev": false,
 	"preview_urls": false,
+	// The /admin GitHub App's client ID, which is public (it is in the sign-in
+	// URL). GITHUB_CLIENT_SECRET and SESSION_SECRET are Worker secrets.
+	"vars": {
+		"GITHUB_CLIENT_ID": "Iv23li0qGHjWnZ9qeBqq"
+	},
 	"observability": {
 		"enabled": true,
 		"head_sampling_rate": 1,

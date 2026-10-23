@@ -1,6 +1,6 @@
-import manifest from './photos.json';
+import manifest from '../../content/photos/photos.json';
 
-// The gallery is photos.json plus the JPEG masters beside it. Add photos with
+// The gallery is content/photos/photos.json plus the JPEG masters beside it. Add photos with
 // `pnpm add-photo`; order and metadata are edited in photos.json by hand. The
 // build encodes every master into AVIF and WebP srcsets under hashed asset
 // names, which public/_headers caches as immutable.
@@ -28,13 +28,13 @@ export type Photo = {
 // One import per format because quality is per import, and sharp's defaults
 // (AVIF 50, WebP 80) visibly smooth away grass, foliage and shadow detail at
 // 1:1. AVIF 75 is close to the master while still smaller than WebP 90.
-const AVIF = import.meta.glob<Picture>('./*.jpg', {
+const AVIF = import.meta.glob<Picture>('/content/photos/*.jpg', {
 	query: '?w=640;1024;1600;2048&format=avif&quality=75&as=picture',
 	import: 'default',
 	eager: true
 });
 
-const WEBP = import.meta.glob<Picture>('./*.jpg', {
+const WEBP = import.meta.glob<Picture>('/content/photos/*.jpg', {
 	query: '?w=640;1024;1600;2048&format=webp&quality=90&as=picture',
 	import: 'default',
 	eager: true
@@ -48,15 +48,18 @@ function buildPicture(path: string): Picture | undefined {
 	return { sources: { ...avif.sources, ...webp.sources }, img: webp.img };
 }
 
-const SOCIAL_IMAGES = import.meta.glob<string>('./*.jpg', {
+const SOCIAL_IMAGES = import.meta.glob<string>('/content/photos/*.jpg', {
 	query: '?w=1200&format=jpg',
 	import: 'default',
 	eager: true
 });
 
+// The glob keys, which are root-relative.
+const DIR = '/content/photos';
+
 export const PHOTOS: Photo[] = manifest.map((entry) => {
-	const picture = buildPicture(`./${entry.file}`);
-	const socialImage = SOCIAL_IMAGES[`./${entry.file}`];
+	const picture = buildPicture(`${DIR}/${entry.file}`);
+	const socialImage = SOCIAL_IMAGES[`${DIR}/${entry.file}`];
 	// scripts/photos.test.mjs keeps the two in sync; this is the error if it was
 	// skipped.
 	if (!picture || !socialImage) throw new Error(`photos.json lists missing ${entry.file}`);

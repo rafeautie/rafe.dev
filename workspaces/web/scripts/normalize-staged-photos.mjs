@@ -1,4 +1,4 @@
-// Pre-commit hook (.githooks/pre-commit). Photos dropped into app/photos by
+// Pre-commit hook (.githooks/pre-commit). Photos dropped into content/photos by
 // hand, rather than through `pnpm add-photo`, are normalized here before the
 // commit lands, because once a camera original is in the public history its
 // EXIF and full resolution are there for good.
@@ -10,8 +10,11 @@ const git = (args, options = {}) => execFileSync('git', args, { encoding: 'utf8'
 
 const top = git(['rev-parse', '--show-toplevel']).trim();
 // Resolved without importing photo-lib, so a commit that touches nothing in
-// app/photos does not need sharp installed.
-const photosDir = relative(top, join(import.meta.dirname, '../app/photos')).replaceAll('\\', '/');
+// content/photos does not need sharp installed.
+const photosDir = relative(top, join(import.meta.dirname, '../content/photos')).replaceAll(
+	'\\',
+	'/'
+);
 
 const staged = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', '--', photosDir])
 	.split('\0')
