@@ -584,14 +584,8 @@ export function Globe({
 	}, []);
 
 	return (
-		<div className="relative mx-auto w-full max-w-80">
-			<canvas
-				ref={canvasRef}
-				role="img"
-				aria-label="Globe of where visitors are. The lists beside it have the same numbers."
-				className="aspect-square w-full cursor-grab touch-none active:cursor-grabbing"
-			/>
-			<div className="absolute right-0 bottom-0 flex items-center gap-2">
+		<div className="mx-auto w-full max-w-80">
+			<div className="flex items-center justify-end gap-2 pb-2">
 				<span className="text-xs text-foreground/50">{LEVELS[level]}</span>
 				<div className="flex">
 					<Button
@@ -614,16 +608,24 @@ export function Globe({
 					</Button>
 				</div>
 			</div>
-			{hit && (
-				<div
-					role="tooltip"
-					className="pointer-events-none absolute z-10 w-max max-w-xs -translate-x-1/2 -translate-y-[calc(100%+10px)] rounded-md bg-foreground px-3 py-1.5 text-xs text-background"
-					style={{ left: hit.x, top: hit.y }}
-				>
-					{hit.label} · {hit.visitors.toLocaleString('en-US')}{' '}
-					{hit.visitors === 1 ? 'visitor' : 'visitors'}
-				</div>
-			)}
+			<div className="relative">
+				<canvas
+					ref={canvasRef}
+					role="img"
+					aria-label="Globe of where visitors are. The lists beside it have the same numbers."
+					className="aspect-square w-full cursor-grab touch-none active:cursor-grabbing"
+				/>
+				{hit && (
+					<div
+						role="tooltip"
+						className="pointer-events-none absolute z-10 w-max max-w-xs -translate-x-1/2 -translate-y-[calc(100%+10px)] rounded-md bg-foreground px-3 py-1.5 text-xs text-background"
+						style={{ left: hit.x, top: hit.y }}
+					>
+						{hit.label} · {hit.visitors.toLocaleString('en-US')}{' '}
+						{hit.visitors === 1 ? 'visitor' : 'visitors'}
+					</div>
+				)}
+			</div>
 		</div>
 	);
 }

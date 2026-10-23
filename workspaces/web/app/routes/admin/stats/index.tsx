@@ -322,7 +322,7 @@ function Report({
 					]}
 				/>
 				<div className="grid items-start gap-x-12 gap-y-6 sm:col-span-2 sm:grid-cols-2">
-					<section className="sm:pt-12">
+					<section>
 						<Globe
 							countries={b.country}
 							regions={stats.places.regions}
