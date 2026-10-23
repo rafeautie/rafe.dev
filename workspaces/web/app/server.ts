@@ -15,6 +15,12 @@ export default {
 			if (!isLobbyCode(code) || request.headers.get('upgrade') !== 'websocket') {
 				return new Response('not a lobby', { status: 400 });
 			}
+			// each connection can hand out TURN credentials, so one address
+			// cannot open many
+			const address = request.headers.get('cf-connecting-ip') ?? 'unknown';
+			if (!(await env.LOBBY_LIMIT.limit({ key: address })).success) {
+				return new Response('slow down', { status: 429 });
+			}
 			const lobby = env.ZOMBIES_LOBBY.get(env.ZOMBIES_LOBBY.idFromName(code));
 			return lobby.fetch(request);
 		}

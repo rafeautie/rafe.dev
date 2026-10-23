@@ -34,6 +34,13 @@
 			"name": "SEEN_LIMIT",
 			"namespace_id": "1001",
 			"simple": { "limit": 120, "period": 60 }
+		},
+		// Caps how often one address can connect to /zombies lobbies, since
+		// each connection can hand out TURN credentials.
+		{
+			"name": "LOBBY_LIMIT",
+			"namespace_id": "1002",
+			"simple": { "limit": 20, "period": 60 }
 		}
 	],
 	"observability": {

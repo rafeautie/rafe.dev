@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HostGame, TICK } from './host';
 import { Blocking, buildMap, cellIndex, cellOf } from './map';
-import type { HostMessage, Snapshot } from './protocol';
+import type { HostMessage, PlayerMessage, Snapshot } from './protocol';
 import { BREAK, START_POINTS, zombieCount } from './rules';
 import { WEAPONS } from './weapons';
 
@@ -169,5 +169,26 @@ describe('host game', () => {
 		expect(snap().players[1].revive).toBeGreaterThan(0);
 		run(2.2);
 		expect(snap().players[1].state).toBe('alive');
+	});
+
+	it('ignores a malformed hit rather than half killing a zombie', () => {
+		const { game, run, snap } = setup();
+		game.start();
+		run(BREAK.first + 3);
+		const [id] = snap().zombies[0];
+		const bad = { t: 'hit', zombie: id, damage: 1e9, head: false, knife: false, force: 3 };
+		game.handle('p0', bad as unknown as PlayerMessage);
+		expect(snap().zombies.some(([z]) => z === id)).toBe(true);
+		expect(snap().players[0].points).toBe(START_POINTS);
+	});
+
+	it('does not reset a player who says hello twice', () => {
+		const { game, snap } = setup();
+		game.start();
+		const p = game as unknown as { players: Map<string, { points: number }> };
+		p.players.get('p0')!.points = 42;
+		expect(game.addPlayer('p0', 'again')).toBe(true);
+		expect(snap().players).toHaveLength(1);
+		expect(snap().players[0].points).toBe(42);
 	});
 });

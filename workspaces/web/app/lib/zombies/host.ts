@@ -100,6 +100,8 @@ export class HostGame {
 
 	// false if the game is full
 	addPlayer(id: string, name: string): boolean {
+		// a second hello changes nothing
+		if (this.players.has(id)) return true;
 		if (this.players.size >= MAX_PLAYERS) return false;
 		const spot = this.map.playerSpawns[this.players.size % this.map.playerSpawns.length];
 		this.players.set(id, {
@@ -195,9 +197,9 @@ export class HostGame {
 				}
 				p.yaw = message.yaw;
 				p.pitch = message.pitch;
-				if (message.weapon in WEAPONS) p.weapon = message.weapon;
-				p.shots = message.shots;
-				p.knifes = message.knifes;
+				if (Object.hasOwn(WEAPONS, message.weapon)) p.weapon = message.weapon;
+				if (Number.isFinite(message.shots)) p.shots = message.shots;
+				if (Number.isFinite(message.knifes)) p.knifes = message.knifes;
 				p.reviving = typeof message.reviving === 'string' ? message.reviving : null;
 				break;
 			}
@@ -238,7 +240,15 @@ export class HostGame {
 
 	private hit(p: HostPlayer, m: Extract<PlayerMessage, { t: 'hit' }>) {
 		const z = this.zombies.get(m.zombie);
-		if (!z || !Number.isFinite(m.damage) || m.damage <= 0) return;
+		// checked in full before anything changes, so a bad message cannot
+		// leave a kill half done
+		const valid =
+			Number.isFinite(m.damage) &&
+			m.damage > 0 &&
+			Number.isFinite(m.force) &&
+			Array.isArray(m.dir) &&
+			m.dir.length === 3;
+		if (!z || !valid) return;
 		// a downed player can still shoot; the dead cannot
 		if (p.state === 'dead') return;
 		z.hp -= Math.min(m.damage, 20000);
@@ -246,7 +256,10 @@ export class HostGame {
 			this.award(p, POINTS.hit);
 			return;
 		}
-		this.award(p, m.knife ? POINTS.knife : m.head ? POINTS.headshot : POINTS.kill);
+		this.award(
+			p,
+			m.knife === true ? POINTS.knife : m.head === true ? POINTS.headshot : POINTS.kill
+		);
 		p.kills++;
 		this.zombies.delete(z.id);
 		const dir = m.dir.map((v) => (Number.isFinite(v) ? v : 0)) as [number, number, number];
@@ -255,7 +268,7 @@ export class HostGame {
 			id: z.id,
 			dir,
 			force: Math.min(Math.max(m.force, 0), 15),
-			head: m.head
+			head: m.head === true
 		});
 		this.checkRoundDone();
 	}
@@ -269,8 +282,11 @@ export class HostGame {
 		this.time += dt;
 		if (this.phase === 'playing' || this.phase === 'break') {
 			this.updatePlayers(dt);
-			this.updateZombies(dt);
-			if (this.phase === 'break') {
+			// either can end the game, and nothing more happens after that
+			if (!this.ended()) this.updateZombies(dt);
+			if (this.ended()) {
+				// until a restart
+			} else if (this.phase === 'break') {
 				this.breakTimer -= dt;
 				if (this.breakTimer <= 0) this.beginRound();
 			} else {
@@ -282,6 +298,12 @@ export class HostGame {
 			}
 		}
 		if (++this.ticks % SNAPSHOT_EVERY === 0) this.broadcast(this.snapshot());
+	}
+
+	// a method rather than a comparison inline, since the phase can change
+	// partway through a tick
+	private ended() {
+		return this.phase === 'over';
 	}
 
 	private beginBreak(seconds: number) {
@@ -391,6 +413,7 @@ export class HostGame {
 		}
 		const zombies = [...this.zombies.values()];
 		for (const z of zombies) {
+			if (this.ended()) break;
 			if (z.rise > 0) {
 				z.rise -= dt;
 				continue;
@@ -462,6 +485,8 @@ export class HostGame {
 	}
 
 	private hurt(p: HostPlayer, z: HostZombie) {
+		// two swings can land on the same tick
+		if (p.state !== 'alive') return;
 		p.hp -= ZOMBIE.damage;
 		p.lastHurt = this.time;
 		this.send(p.id, { t: 'hurt', from: [z.x, z.z] });

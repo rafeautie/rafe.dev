@@ -1,7 +1,12 @@
 import { DurableObject } from 'cloudflare:workers';
 import { MAX_PLAYERS, type SignalDown, type SignalUp } from './signal';
 
-type Attachment = { id: string; role: 'host' | 'join'; name: string };
+type Attachment = { id: string; role: 'host' | 'join'; name: string; since: number };
+
+// A joiner closes its socket once connected to the host, so one still open
+// after this long is stuck or idle, and only holds a place in the lobby.
+const JOIN_TIMEOUT = 30_000;
+const TURN_TIMEOUT = 3000;
 
 // Free STUN from Cloudflare, enough for most home networks. When the Worker
 // has a Cloudflare Realtime TURN key (TURN_KEY_ID and TURN_KEY_API_TOKEN), each
@@ -23,7 +28,8 @@ async function iceServers(env: Env): Promise<RTCIceServer[]> {
 					authorization: `Bearer ${TURN_KEY_API_TOKEN}`,
 					'content-type': 'application/json'
 				},
-				body: JSON.stringify({ ttl: TURN_TTL_SECONDS })
+				body: JSON.stringify({ ttl: TURN_TTL_SECONDS }),
+				signal: AbortSignal.timeout(TURN_TIMEOUT)
 			}
 		);
 		if (!response.ok) return STUN;
@@ -55,6 +61,12 @@ export class ZombiesLobby extends DurableObject<Env> {
 		const { 0: client, 1: server } = new WebSocketPair();
 		this.ctx.acceptWebSocket(server);
 
+		for (const s of this.ctx.getWebSockets()) {
+			const who = this.attachment(s);
+			if (who?.role === 'join' && Date.now() - who.since > JOIN_TIMEOUT) this.left(s);
+		}
+		// fetched first, so nothing below can change while it is awaited
+		const ice = await iceServers(this.env);
 		const host = this.host();
 		const refuse = (reason: 'no-lobby' | 'taken' | 'full') => {
 			send(server, { type: 'refused', reason });
@@ -69,12 +81,12 @@ export class ZombiesLobby extends DurableObject<Env> {
 			refuse('full');
 		else {
 			const id = crypto.randomUUID().slice(0, 8);
-			server.serializeAttachment({ id, role, name } satisfies Attachment);
+			server.serializeAttachment({ id, role, name, since: Date.now() } satisfies Attachment);
 			send(server, {
 				type: 'welcome',
 				id,
 				hostId: role === 'host' ? id : this.attachment(host!)!.id,
-				iceServers: await iceServers(this.env)
+				iceServers: ice
 			});
 			if (role === 'join') send(host!, { type: 'peer-joined', id, name });
 		}

@@ -56,6 +56,8 @@ export type HostMessage =
 			z: number;
 	  }
 	| { t: 'lobby'; players: { id: string; name: string }[] }
+	// the game already has as many players as it takes
+	| { t: 'full' }
 	| { t: 'start' }
 	| {
 			t: 'died';

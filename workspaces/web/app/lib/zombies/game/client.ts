@@ -192,7 +192,17 @@ export class GameClient {
 		for (const d of this.disposers) d();
 		if (document.pointerLockElement === this.canvas) document.exitPointerLock();
 		this.sound.close();
+		this.scene.traverse((o) => {
+			if (!(o instanceof THREE.Mesh || o instanceof THREE.Sprite)) return;
+			o.geometry.dispose();
+			for (const m of [o.material].flat()) {
+				(m as THREE.MeshBasicMaterial).map?.dispose();
+				m.dispose();
+			}
+		});
 		this.renderer.dispose();
+		// browsers allow only a few WebGL contexts at once, so give this one back now
+		this.renderer.forceContextLoss();
 	}
 
 	subscribe = (listener: () => void) => {
@@ -330,6 +340,9 @@ export class GameClient {
 	}
 
 	private onSnapshot(snap: Snapshot) {
+		// snapshots can arrive out of order; a late one is already out of date
+		const last = this.snaps.at(-1);
+		if (last && snap.time <= last.snap.time) return;
 		const zombies = new Map<number, ZombieSnap>();
 		for (const z of snap.zombies) zombies.set(z[0], z);
 		this.snaps.push({ at: performance.now(), snap, zombies });
@@ -904,6 +917,8 @@ export class GameClient {
 			if (seen.has(id)) continue;
 			view.body.dispose();
 			view.label.removeFromParent();
+			view.label.material.map?.dispose();
+			view.label.material.dispose();
 			this.others.delete(id);
 		}
 	}

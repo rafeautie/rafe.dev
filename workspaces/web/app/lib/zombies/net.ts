@@ -7,6 +7,7 @@ import { LOBBY_PATH, type SignalDown, type SignalUp } from './signal';
 // that drops what arrives late.
 
 const CONNECT_TIMEOUT = 15_000;
+const RECONNECT_DELAY = 2000;
 // skip a snapshot rather than queue it behind a slow connection
 const MAX_BUFFERED = 64 * 1024;
 
@@ -47,13 +48,15 @@ type Peer = {
 };
 
 export class HostNet {
-	private ws: WebSocket;
+	private ws!: WebSocket;
 	private peers = new Map<string, Peer>();
 	private iceServers: RTCIceServer[] = [];
+	private welcomed = false;
+	private closed = false;
 
 	constructor(
-		code: string,
-		name: string,
+		private code: string,
+		private name: string,
 		private events: {
 			ready(): void;
 			peerOpen(id: string): void;
@@ -62,20 +65,40 @@ export class HostNet {
 			failed(reason: string): void;
 		}
 	) {
-		this.ws = lobbySocket(code, 'host', name);
-		let welcomed = false;
-		this.ws.onmessage = (e) => {
+		this.openSocket();
+		setTimeout(() => {
+			if (!this.welcomed && !this.closed) this.events.failed('socket');
+		}, CONNECT_TIMEOUT);
+	}
+
+	// The lobby socket is what lets new players in. If it drops once the lobby
+	// is open (a deploy restarts the lobby, or the network blips), the game
+	// carries on and the socket comes back, so the invite link keeps working.
+	private openSocket() {
+		const ws = lobbySocket(this.code, 'host', this.name);
+		this.ws = ws;
+		ws.onmessage = (e) => {
 			const message = JSON.parse(e.data) as SignalDown;
 			if (message.type === 'welcome') {
-				welcomed = true;
 				this.iceServers = message.iceServers;
-				this.events.ready();
-			} else if (message.type === 'refused') this.events.failed(message.reason);
-			else if (message.type === 'peer-joined') this.connect(message.id);
-			else if (message.type === 'signal') this.signal(message.from, message.data as Signal);
+				if (!this.welcomed) {
+					this.welcomed = true;
+					this.events.ready();
+				}
+			} else if (message.type === 'refused') {
+				// a reconnect can be refused while the lobby still holds the old socket
+				if (!this.welcomed) this.events.failed(message.reason);
+			} else if (message.type === 'peer-joined') this.connect(message.id);
+			else if (message.type === 'signal') void this.signal(message.from, message.data as Signal);
 		};
-		this.ws.onerror = () => {
-			if (!welcomed) this.events.failed('socket');
+		ws.onclose = () => {
+			if (this.closed || !this.welcomed) return;
+			setTimeout(() => {
+				if (!this.closed && this.ws === ws) this.openSocket();
+			}, RECONNECT_DELAY);
+		};
+		ws.onerror = () => {
+			if (!this.welcomed) this.events.failed('socket');
 		};
 	}
 
@@ -145,12 +168,14 @@ export class HostNet {
 		if (peer?.open) sendOn(peer.channels, message, RELIABLE(message));
 	}
 
-	// lets a peer go, and stops it from trying again
-	kick(id: string) {
-		this.drop(id);
+	// turns a peer away when the game is full, telling it why first
+	turnAway(id: string) {
+		this.send(id, { t: 'full' });
+		setTimeout(() => this.drop(id), 500);
 	}
 
 	close() {
+		this.closed = true;
 		this.ws.close();
 		for (const id of [...this.peers.keys()]) this.drop(id);
 	}

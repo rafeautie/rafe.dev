@@ -45,7 +45,7 @@ export class Session {
 			peerOpen: () => {},
 			peerMessage: (id, m) => {
 				if (m.t === 'hello') {
-					if (!game.addPlayer(id, m.name)) net?.kick(id);
+					if (!game.addPlayer(id, m.name)) net?.turnAway(id);
 				} else if (m.t !== 'start' && m.t !== 'restart') game.handle(id, m);
 			},
 			peerClose: (id) => game.removePlayer(id),
@@ -87,6 +87,9 @@ export class Session {
 	private receive(m: HostMessage) {
 		if (this.state.status === 'closed') return;
 		switch (m.t) {
+			case 'full':
+				this.close('full');
+				return;
 			case 'welcome':
 				this.doors = m.doors;
 				this.spawn = { x: m.x, z: m.z };
