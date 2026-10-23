@@ -8,3 +8,9 @@ GITHUB_CLIENT_SECRET=
 # Encrypts the sign-in cookie. Any random string of 32 or more characters:
 #   openssl rand -base64 32
 SESSION_SECRET=
+
+# Optional, for /zombies: a Cloudflare Realtime TURN key, so players on
+# networks that cannot connect directly are relayed. Without one, players
+# connect with STUN only. Dashboard > Realtime > TURN Server.
+TURN_KEY_ID=
+TURN_KEY_API_TOKEN=
