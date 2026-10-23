@@ -19,10 +19,9 @@ import { CSS } from '@dnd-kit/utilities';
 import { createFileRoute, useRouter } from '@tanstack/react-router';
 import { Columns2Icon, Columns3Icon, ImagePlusIcon, RectangleVerticalIcon } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
 import { Link } from '~/components/Link';
 import { PhotoPicture } from '~/components/PhotoPicture';
-import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
+import { AdminHeader, ControlsRail, ProblemBadge } from '~/components/admin/AdminHeader';
 import { BuildBadge, useBuildWatch } from '~/components/admin/BuildStatus';
 import { ConfirmDialog } from '~/components/admin/ConfirmDialog';
 import { DatePicker } from '~/components/admin/DatePicker';
@@ -97,6 +96,9 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 	const [editing, setEditing] = useState<string | null>(null);
 	const [preview, setPreview] = useState<number | null>(null);
 	const [pendingVersion, setPendingVersion] = useState<string | null>(null);
+	const [confirmDiscard, setConfirmDiscard] = useState(false);
+	// what last went wrong, shown in the rail until dismissed or the next publish
+	const [problem, setProblem] = useState<string | null>(null);
 	const picker = useRef<HTMLInputElement>(null);
 	const watch = useBuildWatch();
 	const dndId = useId();
@@ -142,9 +144,6 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 		setPhotos(saved.value);
 		setDirty(true);
 		setEdited(true);
-		toast('Brought back your unsaved changes', {
-			action: { label: 'Discard', onClick: discard }
-		});
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
@@ -159,7 +158,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 			setEdited(false);
 			clearUnsaved(STORAGE_KEY);
 		} catch (error) {
-			toast.error(message(error));
+			setProblem(message(error));
 		}
 	}
 
@@ -167,7 +166,6 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 		const images = files.filter((file) => file.type.startsWith('image/'));
 		if (!images.length) return;
 		setPreparing((count) => count + images.length);
-		let added = 0;
 		for (const file of images) {
 			const name = toPhotoFile(file.name);
 			try {
@@ -185,17 +183,12 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 				latest.current = { photos: next, uploads: nextUploads };
 				setUploads(nextUploads);
 				update(next, nextUploads);
-				added++;
 			} catch (error) {
-				toast.error(message(error));
+				setProblem(message(error));
 			} finally {
 				setPreparing((count) => count - 1);
 			}
 		}
-		if (!added) return;
-		toast.success(
-			`Added ${added} ${added === 1 ? 'photo' : 'photos'}. Fill in their details, then publish.`
-		);
 	}
 
 	function edit(file: string, fields: Partial<PhotoEntry>) {
@@ -214,6 +207,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 	}
 
 	async function publish() {
+		setProblem(null);
 		setSaving(true);
 		try {
 			const listed = new Set(photos.map((photo) => photo.file));
@@ -228,11 +222,10 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 				}
 			});
 			clearUnsaved(STORAGE_KEY);
-			toast.success('Published');
 			await router.navigate({ to: '/admin/photos', search: { built: commit }, replace: true });
 			await router.invalidate();
 		} catch (error) {
-			toast.error(message(error));
+			setProblem(message(error));
 		} finally {
 			setSaving(false);
 		}
@@ -287,6 +280,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 								? `Preparing ${preparing} ${preparing === 1 ? 'photo' : 'photos'}…`
 								: `${photos.length} photos${dirty ? ' · unpublished changes' : ''}`}
 						</span>
+						<ProblemBadge text={problem} onDismiss={() => setProblem(null)} />
 					</>
 				}
 			>
@@ -330,6 +324,11 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 					<ImagePlusIcon />
 					<span className="hidden sm:inline">Add photos</span>
 				</Button>
+				{dirty && (
+					<Button variant="ghost" disabled={saving} onClick={() => setConfirmDiscard(true)}>
+						Discard
+					</Button>
+				)}
 				<Button onClick={publish} disabled={!dirty || saving || preparing > 0} className="px-3.5">
 					Publish
 				</Button>
@@ -384,6 +383,15 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 				description="Your unpublished changes will be replaced by that version."
 				confirm="Show it"
 				onConfirm={() => pendingVersion && showVersion(pendingVersion)}
+			/>
+			<ConfirmDialog
+				open={confirmDiscard}
+				onOpenChange={setConfirmDiscard}
+				title="Discard your changes?"
+				description="The photos go back to how they are on GitHub, and the copy kept in this browser is deleted."
+				confirm="Discard"
+				destructive
+				onConfirm={discard}
 			/>
 		</div>
 	);
