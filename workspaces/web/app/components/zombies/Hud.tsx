@@ -160,7 +160,7 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				<Card>
 					<p className="text-2xl tracking-tight">Paused</p>
 					<p className="text-sm text-muted-foreground">The game keeps going for everyone else</p>
-					<Controls className="mt-2" />
+					<Controls className="mt-2 w-full" />
 					<div className="mt-3 flex gap-2">
 						<Button onClick={() => client.lock()}>Play</Button>
 						<Button variant="outline" onClick={onLeave}>

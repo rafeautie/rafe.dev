@@ -233,12 +233,13 @@ function Lobby({ session, onLeave }: { session: Session; onLeave: () => void }) 
 export function Controls({ className }: { className?: string }) {
 	return (
 		<dl
-			className={`grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[0.8125rem] font-medium ${className ?? ''}`}
+			className={`grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-[0.8125rem] font-medium ${className ?? ''}`}
 		>
+			{/* what it does on the left, the key for it on the right */}
 			{CONTROLS.map(([key, action]) => (
 				<div key={key} className="contents">
-					<dt className="text-foreground">{key}</dt>
-					<dd className="text-muted-foreground">{action}</dd>
+					<dt className="text-muted-foreground">{action}</dt>
+					<dd className="text-right text-foreground">{key}</dd>
 				</div>
 			))}
 		</dl>
