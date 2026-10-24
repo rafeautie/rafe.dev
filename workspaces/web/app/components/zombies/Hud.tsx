@@ -20,6 +20,7 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 	const waiting = !hud.locked && !hud.played && !over;
 	const paused = !hud.locked && hud.played && !over;
 	const pausedCount = hud.players.filter((p) => p.paused).length;
+	const awayCount = hud.players.filter((p) => p.away).length;
 
 	return (
 		<div className="pointer-events-none absolute inset-0 font-medium text-foreground tabular-nums">
@@ -46,9 +47,9 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 			</Panel>
 
 			{/* who's on the pause screen, when playing with others */}
-			{hud.players.length > 1 && pausedCount > 0 && !paused && !over && (
+			{hud.players.length > 1 && pausedCount + awayCount > 0 && !paused && !over && (
 				<Panel className="absolute top-5 left-1/2 -translate-x-1/2 px-3 py-1.5 text-sm text-muted-foreground">
-					{pausedLine(pausedCount, hud.players.length)}
+					{pausedLine(pausedCount, awayCount, hud.players.length)}
 				</Panel>
 			)}
 
@@ -198,9 +199,9 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 											{Math.abs(pop.amount)}
 										</span>
 									))}
-								{p.paused && (
+								{(p.paused || p.away) && (
 									<span className="text-xs tracking-wide text-muted-foreground uppercase">
-										Paused
+										{p.away ? 'Away' : 'Paused'}
 									</span>
 								)}
 								<span
@@ -373,8 +374,11 @@ function GameOver({
 	);
 }
 
-function pausedLine(paused: number, players: number) {
-	return `${paused} of ${players} Paused`;
+// how many are paused, and how many have dropped out and may be back
+function pausedLine(paused: number, away: number, players: number) {
+	if (!away) return `${paused} of ${players} Paused`;
+	if (!paused) return `${away} of ${players} Away`;
+	return `${paused} Paused, ${away} Away`;
 }
 
 // The pause screen: the menu and the settings side by side, with the game's
@@ -397,9 +401,12 @@ function PauseMenu({
 						{hud.players.length < 2
 							? 'The game is paused'
 							: hud.held
-								? `All ${hud.players.length} Paused, so the game is too`
+								? hud.players.some((p) => p.away)
+									? 'Everyone is paused or away, so the game is too'
+									: `All ${hud.players.length} Paused, so the game is too`
 								: `${pausedLine(
 										Math.max(1, hud.players.filter((p) => p.paused).length),
+										hud.players.filter((p) => p.away).length,
 										hud.players.length
 									)}. The game keeps going until everyone is`}
 					</p>

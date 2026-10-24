@@ -17,6 +17,7 @@ import {
 	CROUCH,
 	POSE_ADS,
 	POSE_AIR,
+	POSE_AWAY,
 	POSE_PAUSED,
 	POSE_RELOAD,
 	POSE_SPRINT,
@@ -128,6 +129,8 @@ export type HudPlayer = {
 	you: boolean;
 	// on the pause screen
 	paused: boolean;
+	// their connection dropped, and they have a minute to come back
+	away: boolean;
 };
 
 export type HudState = {
@@ -199,6 +202,8 @@ type OtherView = {
 	label: THREE.Sprite;
 	// shown over their head while they have the pause screen up
 	badge: THREE.Sprite;
+	// and this while their connection is down
+	away: THREE.Sprite;
 	step: number;
 	x: number;
 	z: number;
@@ -1549,7 +1554,8 @@ export class GameClient {
 					body: new Body(this.dynamic, PLAYER_COLORS),
 					gun: new HeldGun(this.dynamic),
 					label: nameLabel(pb.name),
-					badge: pausedBadge(),
+					badge: badge('PAUSED'),
+					away: badge('AWAY'),
 					step: 0,
 					x: pb.x,
 					z: pb.z,
@@ -1557,7 +1563,7 @@ export class GameClient {
 					knifes: pb.knifes,
 					pose: { ...STANDING, knife: 1 }
 				};
-				this.dynamic.add(view.label, view.badge);
+				this.dynamic.add(view.label, view.badge, view.away);
 				this.others.set(pb.id, view);
 			}
 			this.drawOther(view, pa, pb, alpha, dt);
@@ -1566,7 +1572,7 @@ export class GameClient {
 			if (seen.has(id)) continue;
 			view.body.dispose();
 			view.gun.dispose();
-			for (const sprite of [view.label, view.badge]) {
+			for (const sprite of [view.label, view.badge, view.away]) {
 				sprite.removeFromParent();
 				sprite.material.map?.dispose();
 				sprite.material.dispose();
@@ -1618,6 +1624,8 @@ export class GameClient {
 		view.label.position.set(x, y + top, z);
 		view.badge.visible = visible && (pb.flags & POSE_PAUSED) !== 0;
 		view.badge.position.set(x, y + top + 0.32, z);
+		view.away.visible = visible && (pb.flags & POSE_AWAY) !== 0;
+		view.away.position.copy(view.badge.position);
 		view.gun.setWeapon(pb.weapon);
 		// pointed down and across the body at a sprint, tipped up for a reload
 		const tipping = pose.reload > 0 ? Math.sin(Math.min(1, pose.reload * 4) * Math.PI * 0.5) : 0;
@@ -1858,7 +1866,8 @@ export class GameClient {
 				paused:
 					p.id === you
 						? this.played && document.pointerLockElement !== this.canvas
-						: (p.flags & POSE_PAUSED) !== 0
+						: (p.flags & POSE_PAUSED) !== 0,
+				away: (p.flags & POSE_AWAY) !== 0
 			})),
 			hint: this.hint,
 			note: performance.now() < this.noteUntil ? this.hud.note : null,
@@ -1901,8 +1910,8 @@ function lerpAngle(a: number, b: number, t: number) {
 	return a + d * t;
 }
 
-// a dark pill reading PAUSED
-function pausedBadge() {
+// a dark pill reading PAUSED, or AWAY
+function badge(text: string) {
 	const canvas = document.createElement('canvas');
 	canvas.width = 256;
 	canvas.height = 80;
@@ -1916,7 +1925,7 @@ function pausedBadge() {
 	g.textBaseline = 'middle';
 	g.fillStyle = '#fafafa';
 	g.letterSpacing = '4px';
-	g.fillText('PAUSED', 130, 41);
+	g.fillText(text, 130, 41);
 	const texture = new THREE.CanvasTexture(canvas);
 	texture.colorSpace = THREE.SRGBColorSpace;
 	const sprite = new THREE.Sprite(
