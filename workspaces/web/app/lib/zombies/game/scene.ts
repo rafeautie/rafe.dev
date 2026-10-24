@@ -29,9 +29,9 @@ export const PALETTE = {
 };
 const FONT = '"Geist Variable", system-ui, sans-serif';
 
-// with real textures the world goes dark and dusty, lit from inside
+// with real textures the world is a run-down town at dusk
 export const DUSK = {
-	sky: '#1d2026',
+	sky: '#2b2b35',
 	chalk: '#ece6d6'
 };
 
@@ -62,14 +62,8 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 	const sky = art ? DUSK.sky : PALETTE.sky;
 
 	if (art) {
-		const floor = new THREE.Mesh(
-			metrePlane(WORLD, WORLD),
-			surfaceMaterial(art.surfaces.floor, 3, '#b3aca0')
-		);
-		floor.rotation.x = -Math.PI / 2;
-		floor.position.set(WORLD / 2, 0, WORLD / 2);
-		floor.receiveShadow = true;
-		root.add(floor);
+		buildGround(root, map, art);
+		root.add(skyDome());
 	} else {
 		// one tile per cell
 		const tile = canvasTexture(128, 128, (g) => {
@@ -101,15 +95,18 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 		if (!map.solid[c] || own.has(c)) continue;
 		const cx = c % SIZE;
 		const cy = Math.floor(c / SIZE);
-		// the walls between rooms are bare concrete; pillars are in the
-		// room's own finish
+		// the backs of brick buildings all round the edge, concrete walls
+		// between the yards, and each yard's own pillars and fences
+		const edge = cx === 0 || cy === 0 || cx === SIZE - 1 || cy === SIZE - 1;
 		const divider = cx % SPAN === 0 || cy % SPAN === 0;
 		const material = !finishes
 			? plainWall
-			: divider
-				? finishes.wall_concrete!
-				: (finishes[ROOM_FINISH[map.roomName(centerOf(cx), centerOf(cy))]] ??
-					finishes.wall_concrete!);
+			: edge
+				? finishes.wall_brick!
+				: divider
+					? finishes.wall_concrete!
+					: (finishes[ROOM_FINISH[map.roomName(centerOf(cx), centerOf(cy))]] ??
+						finishes.wall_concrete!);
 		if (!byFinish.has(material)) byFinish.set(material, []);
 		byFinish.get(material)!.push(c);
 	}
@@ -131,7 +128,6 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 	}
 
 	if (art) {
-		buildCeilings(root, map, art);
 		scatterProps(root, map, art);
 	}
 
@@ -225,13 +221,15 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 	}
 
 	const ambient = art
-		? new THREE.HemisphereLight('#c8d0dc', '#8a7f72', 2.2)
+		? new THREE.HemisphereLight('#9aaacb', '#6a5848', 2.6)
 		: new THREE.HemisphereLight('#ffffff', '#9a9a9a', 1.6);
 	root.add(ambient);
 	const sun = art
-		? new THREE.DirectionalLight('#ffd2a1', 1.8)
+		? new THREE.DirectionalLight('#ffb27a', 2.4)
 		: new THREE.DirectionalLight('#ffffff', 1.5);
-	sun.position.set(WORLD / 2 + 20, 40, WORLD / 2 + 12);
+	// with the art, a low sun setting off to one side
+	if (art) sun.position.set(WORLD / 2 + 40, 24, WORLD / 2 + 26);
+	else sun.position.set(WORLD / 2 + 20, 40, WORLD / 2 + 12);
 	sun.target.position.set(WORLD / 2, 0, WORLD / 2);
 	sun.castShadow = true;
 	sun.shadow.mapSize.set(2048, 2048);
@@ -293,16 +291,16 @@ function metrePlane(width: number, height: number) {
 	return geometry;
 }
 
-// what each room's pillars are made of
+// what each yard's pillars and fences are made of
 const ROOM_FINISH: Record<string, SurfaceName> = {
 	Lab: 'wall_plaster',
 	Office: 'wall_plaster',
 	Spawn: 'wall_concrete',
-	Courtyard: 'wall_brick',
-	Yard: 'wall_brick',
+	Courtyard: 'fence',
+	Yard: 'fence',
+	Depot: 'fence',
 	Garage: 'wall_brick',
 	Warehouse: 'wall_brick',
-	Depot: 'wall_concrete',
 	Power: 'wall_concrete'
 };
 
@@ -310,73 +308,90 @@ function wallFinishes(art: Art) {
 	return {
 		wall_concrete: surfaceMaterial(art.surfaces.wall_concrete, CELL),
 		wall_plaster: surfaceMaterial(art.surfaces.wall_plaster, CELL),
-		wall_brick: surfaceMaterial(art.surfaces.wall_brick, CELL)
+		wall_brick: surfaceMaterial(art.surfaces.wall_brick, CELL, '#b8998a'),
+		fence: surfaceMaterial(art.surfaces.fence, CELL)
 	} as Partial<Record<SurfaceName, THREE.Material>>;
 }
 
 // a room's cells plus the wall on one side; three rooms to a side
 const SPAN = (SIZE - 1) / 3;
 
-// rooms open to the sky; the rest have a ceiling with strip lights
-const OUTDOORS = new Set(['Courtyard', 'Yard']);
+// yards on dirt rather than asphalt
+const DIRT = new Set(['Courtyard', 'Yard', 'Depot']);
 const ROOM = (SPAN - 1) * CELL;
 
-function buildCeilings(root: THREE.Object3D, map: GameMap, art: Art) {
-	const material = surfaceMaterial(art.surfaces.wall_concrete, 3, '#9a9a9a');
-	const poolShape = new THREE.PlaneGeometry(9, 9);
-	const poolMaterial = new THREE.MeshBasicMaterial({
-		map: canvasTexture(128, 128, (g) => {
-			const glow = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-			glow.addColorStop(0, 'rgba(225,232,255,0.32)');
-			glow.addColorStop(0.5, 'rgba(225,232,255,0.1)');
-			glow.addColorStop(1, 'rgba(225,232,255,0)');
-			g.fillStyle = glow;
-			g.fillRect(0, 0, 128, 128);
-		}),
-		transparent: true,
-		depthWrite: false,
-		blending: THREE.AdditiveBlending
-	});
-	const fixture = art.props.mounted_fluorescent_lights.getObjectByName(
-		'mounted_fluorescent_lights_d'
+// Asphalt everywhere, with the dirt yards laid over it.
+function buildGround(root: THREE.Object3D, map: GameMap, art: Art) {
+	const asphalt = new THREE.Mesh(
+		metrePlane(WORLD, WORLD),
+		surfaceMaterial(art.surfaces.ground_asphalt, 4, '#c9c3b8')
 	);
-	fixture?.traverse((o) => {
-		const mesh = o as THREE.Mesh;
-		if (!mesh.isMesh) return;
-		mesh.castShadow = false;
-		const mat = mesh.material as THREE.MeshStandardMaterial;
-		if (mat.emissiveMap) {
-			mat.emissive.set('#f4f8ff');
-			mat.emissiveIntensity = 2.2;
-		}
-	});
+	asphalt.rotation.x = -Math.PI / 2;
+	asphalt.position.set(WORLD / 2, 0, WORLD / 2);
+	asphalt.receiveShadow = true;
+	root.add(asphalt);
+	const dirt = surfaceMaterial(art.surfaces.ground_dirt, 4);
+	dirt.polygonOffset = true;
+	dirt.polygonOffsetFactor = -1;
 	for (let row = 0; row < 3; row++) {
 		for (let col = 0; col < 3; col++) {
 			const x = (col * SPAN + 1) * CELL + ROOM / 2;
 			const z = (row * SPAN + 1) * CELL + ROOM / 2;
-			if (OUTDOORS.has(map.roomName(x, z))) continue;
-			const ceiling = new THREE.Mesh(metrePlane(ROOM + CELL, ROOM + CELL), material);
-			ceiling.rotation.x = Math.PI / 2;
-			ceiling.position.set(x, WALL_HEIGHT, z);
-			ceiling.castShadow = true;
-			root.add(ceiling);
-			for (const fx of [-5, 5]) {
-				for (const fz of [-5, 5]) {
-					if (fixture) {
-						const light = fixture.clone();
-						light.position.set(x + fx, WALL_HEIGHT - 0.02, z + fz);
-						root.add(light);
-					}
-					// the pool of light it throws, painted on the floor rather
-					// than lit, which costs nothing to draw
-					const pool = new THREE.Mesh(poolShape, poolMaterial);
-					pool.rotation.x = -Math.PI / 2;
-					pool.position.set(x + fx, 0.015, z + fz);
-					root.add(pool);
-				}
-			}
+			if (!DIRT.has(map.roomName(x, z))) continue;
+			const patch = new THREE.Mesh(metrePlane(ROOM, ROOM), dirt);
+			patch.rotation.x = -Math.PI / 2;
+			patch.position.set(x, 0.002, z);
+			patch.receiveShadow = true;
+			root.add(patch);
 		}
 	}
+}
+
+// A dusk sky: deep blue overhead, a warm glow low down where the sun set.
+function skyDome() {
+	const texture = canvasTexture(4, 256, (g) => {
+		const sky = g.createLinearGradient(0, 0, 0, 256);
+		sky.addColorStop(0, '#141a2b');
+		sky.addColorStop(0.42, '#2c3550');
+		sky.addColorStop(0.5, '#7a5a55');
+		sky.addColorStop(0.53, '#c47e52');
+		sky.addColorStop(0.6, '#2a2624');
+		sky.addColorStop(1, '#1a1716');
+		g.fillStyle = sky;
+		g.fillRect(0, 0, 4, 256);
+	});
+	const dome = new THREE.Mesh(
+		new THREE.SphereGeometry(140, 32, 16),
+		new THREE.MeshBasicMaterial({
+			map: texture,
+			side: THREE.BackSide,
+			fog: false,
+			depthWrite: false
+		})
+	);
+	dome.position.set(WORLD / 2, 0, WORLD / 2);
+	dome.renderOrder = -1;
+	return dome;
+}
+
+// A street lamp's light, painted on the ground under it.
+function lampPool() {
+	return new THREE.Mesh(
+		new THREE.PlaneGeometry(8, 8),
+		new THREE.MeshBasicMaterial({
+			map: canvasTexture(128, 128, (g) => {
+				const glow = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+				glow.addColorStop(0, 'rgba(255,196,120,0.42)');
+				glow.addColorStop(0.45, 'rgba(255,180,100,0.14)');
+				glow.addColorStop(1, 'rgba(255,170,90,0)');
+				g.fillStyle = glow;
+				g.fillRect(0, 0, 128, 128);
+			}),
+			transparent: true,
+			depthWrite: false,
+			blending: THREE.AdditiveBlending
+		})
+	);
 }
 
 const ROOM_PROPS: Record<string, PropName[]> = {
@@ -455,6 +470,7 @@ function scatterProps(root: THREE.Object3D, map: GameMap, art: Art) {
 		return seed / 2147483647;
 	};
 	const taken: [number, number][] = [];
+	const lit = new Set<string>();
 	for (let cy = 0; cy < SIZE; cy++) {
 		for (let cx = 0; cx < SIZE; cx++) {
 			const c = cy * SIZE + cx;
@@ -470,8 +486,16 @@ function scatterProps(root: THREE.Object3D, map: GameMap, art: Art) {
 			if (keepClear.some(([kx, kz]) => Math.hypot(kx - x, kz - z) < CELL * 1.6)) continue;
 			if (taken.some(([tx, tz]) => Math.hypot(tx - x, tz - z) < CELL * 2)) continue;
 			if (random() > 0.55) continue;
-			const names = ROOM_PROPS[map.roomName(x, z)];
+			const room = map.roomName(x, z);
+			const names = ROOM_PROPS[room];
 			if (!names) continue;
+			// every yard gets a street lamp first
+			if (!lit.has(room)) {
+				lit.add(room);
+				placeLamp(root, art, x, z, wall);
+				taken.push([x, z]);
+				continue;
+			}
 			const name = names[Math.floor(random() * names.length)];
 			const { object, size } = shape(name);
 			const prop = object.clone();
@@ -488,6 +512,46 @@ function scatterProps(root: THREE.Object3D, map: GameMap, art: Art) {
 			taken.push([x, z]);
 		}
 	}
+}
+
+// A street lamp against a wall, its arm reaching out over the yard, its bulb
+// lit and its light on the ground below.
+function placeLamp(
+	root: THREE.Object3D,
+	art: Art,
+	x: number,
+	z: number,
+	[wx, wz]: [number, number]
+) {
+	const lamp = art.props.street_lamp_01.clone();
+	let bulb: THREE.Object3D | null = null;
+	lamp.traverse((o) => {
+		const mesh = o as THREE.Mesh;
+		if (!mesh.isMesh) return;
+		const mat = mesh.material as THREE.MeshStandardMaterial;
+		if (/bulb|glass/.test(mat.name)) {
+			const lit = mat.clone();
+			lit.emissive.set('#ffc98a');
+			lit.emissiveIntensity = 3;
+			mesh.material = lit;
+			if (/bulb/.test(mat.name)) bulb = mesh;
+		}
+	});
+	// which way the arm reaches, from where the bulb sits
+	lamp.updateMatrixWorld(true);
+	const head = new THREE.Box3().setFromObject(bulb ?? lamp).getCenter(new THREE.Vector3());
+	const flip = head.x < 0 ? Math.PI : 0;
+	// local +x turned to point out of the wall
+	lamp.rotation.y = Math.atan2(wz, -wx) + flip;
+	const back = CELL / 2 - 0.25;
+	lamp.position.set(x + wx * back, 0, z + wz * back);
+	root.add(lamp);
+	lamp.updateMatrixWorld(true);
+	const at = new THREE.Box3().setFromObject(bulb ?? lamp).getCenter(new THREE.Vector3());
+	const pool = lampPool();
+	pool.rotation.x = -Math.PI / 2;
+	pool.position.set(at.x, 0.02, at.z);
+	root.add(pool);
 }
 
 const wood = new THREE.MeshLambertMaterial({ color: '#8a6a4a' });

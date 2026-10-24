@@ -8,7 +8,9 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 const BASE = '/zombies/world/';
 
 export const SURFACES = [
-	'floor',
+	'ground_asphalt',
+	'ground_dirt',
+	'fence',
 	'wall_concrete',
 	'wall_plaster',
 	'wall_brick',
@@ -19,7 +21,7 @@ export type SurfaceName = (typeof SURFACES)[number];
 
 export const PROPS = [
 	'wooden_military_crate',
-	'mounted_fluorescent_lights',
+	'street_lamp_01',
 	'old_military_crate',
 	'barrel_01',
 	'metal_trash_can',
