@@ -7,6 +7,8 @@ import type {
 	LifeState,
 	Phase,
 	PlayerSnap,
+	Loadout,
+	PlayerMessage,
 	PowerupKind,
 	Snapshot,
 	ZombieSnap
@@ -167,6 +169,8 @@ export type HudState = {
 	// the game's numbers so far, while paused, and in full once it's over
 	stats: GameStats | null;
 	isHost: boolean;
+	// the connection to the host dropped and is being found again
+	reconnecting: boolean;
 	area: string;
 };
 
@@ -263,6 +267,13 @@ export class GameClient {
 	// where recent hits came from, for the marks round the crosshair
 	private danger: { id: number; x: number; z: number; at: number }[] = [];
 	private drops = new Map<number, THREE.Mesh>();
+	// for showing kills before the host confirms them: damage sent to each
+	// zombie lately, kills shown early and when, when recent hits were sent,
+	// and the time to the host and back, ms
+	private pending = new Map<number, { damage: number; at: number }[]>();
+	private predicted = new Map<number, number>();
+	private hitTimes: number[] = [];
+	private rtt = 0;
 	private box: BoxSnap = { state: 'idle', weapon: null, by: null, left: 0 };
 	// how long F has been held at a window, toward the next board
 	private repairHeld = 0;
@@ -321,6 +332,9 @@ export class GameClient {
 		this.me.x = spawn.x;
 		this.me.z = spawn.z;
 		this.resetLoadout();
+		// back in a game after reloading the page, with the guns they had
+		if (session.loadout?.length)
+			this.slots = session.loadout.map(([weapon, mag, reserve]) => ({ weapon, mag, reserve }));
 
 		this.hud = this.makeHud();
 		session.listen((m) => this.receive(m));
@@ -440,6 +454,12 @@ export class GameClient {
 			case 'snap':
 				this.onSnapshot(m);
 				break;
+			case 'welcome':
+				// back after a dropped connection, perhaps to a new host whose
+				// clock is behind the last: start the timeline afresh. Where this
+				// player is and what they hold is already right here.
+				this.snaps = [];
+				break;
 			case 'died':
 				this.kill(m.id, m.dir, m.force, m.head);
 				break;
@@ -472,6 +492,12 @@ export class GameClient {
 					});
 				break;
 			case 'points':
+				// each hit is paid for, so the time to the pay says how far away
+				// the host is
+				if (m.amount > 0 && this.hitTimes.length) {
+					const sample = performance.now() - this.hitTimes.shift()!;
+					this.rtt += (Math.min(1000, sample) - this.rtt) * 0.2;
+				}
 				this.hud = {
 					...this.hud,
 					pops: [...this.hud.pops.slice(-5), { id: ++this.popId, amount: m.amount }]
@@ -537,6 +563,13 @@ export class GameClient {
 		if (last && snap.time <= last.snap.time) return;
 		const zombies = new Map<number, ZombieSnap>();
 		for (const z of snap.zombies) zombies.set(z[0], z);
+		// a kill shown early that the host still hasn't made: bring it back
+		const now = performance.now();
+		for (const [id, at] of this.predicted) {
+			if (now - at < this.rtt + 300) continue;
+			this.predicted.delete(id);
+			if (zombies.has(id)) this.gone.delete(id);
+		}
 		this.snaps.push({ at: performance.now(), snap, zombies });
 		if (this.snaps.length > 30) this.snaps.shift();
 		this.phase = snap.phase;
@@ -711,7 +744,12 @@ export class GameClient {
 					(this.sprintNow > 0.5 ? POSE_SPRINT : 0) |
 					(this.ads > 0.5 ? POSE_ADS : 0) |
 					(this.reloadLeft > 0 ? POSE_RELOAD : 0) |
-					(this.me.ground ? 0 : POSE_AIR)
+					(this.me.ground ? 0 : POSE_AIR),
+				// the gun in hand first
+				loadout: [
+					this.slots[this.current],
+					...this.slots.filter((x) => x !== this.slots[this.current])
+				].map((x) => [x.weapon, x.mag, x.reserve] as Loadout[number])
 			});
 		}
 
@@ -1127,7 +1165,7 @@ export class GameClient {
 		}
 		for (const [zombie, h] of hits) {
 			this.bleed(zombie, h.point, h.dir, h.head ? 1.6 : 1, weapon.force);
-			this.session.post({
+			this.sendHit({
 				t: 'hit',
 				zombie,
 				damage: Math.round(h.damage),
@@ -1194,6 +1232,30 @@ export class GameClient {
 		return best;
 	}
 
+	// Tells the host about a hit, and if it's surely a kill, drops the zombie
+	// here and now rather than a round trip later. The host still decides;
+	// a kill it doesn't agree with puts the zombie back.
+	private sendHit(m: Extract<PlayerMessage, { t: 'hit' }>) {
+		this.session.post(m);
+		const now = performance.now();
+		this.hitTimes.push(now);
+		if (this.hitTimes.length > 30) this.hitTimes.shift();
+		const latest = this.snaps.at(-1);
+		const z = latest?.zombies.get(m.zombie);
+		if (!latest || !z) return;
+		// hits the latest snapshot can't know about yet
+		const since = latest.at - this.rtt;
+		const pending = (this.pending.get(m.zombie) ?? []).filter((p) => p.at > since);
+		pending.push({ damage: m.damage, at: now });
+		this.pending.set(m.zombie, pending);
+		const dealt = pending.reduce((sum, p) => sum + p.damage, 0);
+		if (latest.snap.instakill > 0 || dealt >= z[6]) {
+			this.predicted.set(m.zombie, now);
+			this.pending.delete(m.zombie);
+			this.kill(m.zombie, m.dir, m.force, m.head);
+		}
+	}
+
 	private stab() {
 		this.knifes++;
 		this.view.stab();
@@ -1221,7 +1283,7 @@ export class GameClient {
 		this.bleed(target, new THREE.Vector3(z.x, 1.3, z.z), new THREE.Vector3(fx, 0.1, fz), 1.2, 9);
 		this.sound.hit(false);
 		this.hud = { ...this.hud, hits: this.hud.hits + 1 };
-		this.session.post({
+		this.sendHit({
 			t: 'hit',
 			zombie: target,
 			damage: KNIFE.damage,
@@ -1738,6 +1800,7 @@ export class GameClient {
 			held: false,
 			stats: null,
 			isHost: this.session.state.isHost,
+			reconnecting: false,
 			area: ''
 		};
 	}
@@ -1807,6 +1870,9 @@ export class GameClient {
 			played: this.played,
 			held: latest?.held ?? false,
 			stats: this.stats,
+			// both change when a player takes over from a host that left
+			isHost: this.session.state.isHost,
+			reconnecting: this.session.state.reconnecting,
 			area: this.map.roomName(this.me.x, this.me.z),
 			danger: this.dangerMarks()
 		};

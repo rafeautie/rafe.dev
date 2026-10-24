@@ -12,6 +12,7 @@ import type {
 	BoxSnap,
 	DropSnap,
 	GameStats,
+	Loadout,
 	HostMessage,
 	LifeState,
 	Phase,
@@ -31,6 +32,7 @@ import {
 	POSE_SPRINT,
 	POWERUP_KINDS,
 	SLIDE,
+	cleanLoadout,
 	STAND,
 	ZOMBIE_ATTACKING,
 	ZOMBIE_CLIMBING,
@@ -62,6 +64,8 @@ export const TICK = 1 / 30;
 const SNAPSHOT_EVERY = 2; // ticks, so 15 a second
 const FLOW_EVERY = 0.25; // seconds
 const CHASE_SIGHT = 14; // zombies walk straight at a player they can see this close
+// a player whose connection dropped is kept this long for them to come back
+const AWAY_LIMIT = 60;
 const STRAY_TIME = 15; // a zombie this long with no player near is sent back to spawn
 const STRAY_RANGE = 32;
 // within this, zombies spread round a player rather than all heading for
@@ -102,6 +106,12 @@ type HostPlayer = {
 	repaired: number;
 	repairPaid: number;
 	stats: Tally;
+	// their guns, as they last said, to give back after a dropped connection
+	loadout: Loadout | null;
+	// lost their connection, and how long ago: zombies leave them be, and
+	// they're let go after a while if they don't come back
+	away: boolean;
+	awayFor: number;
 };
 
 // what the game over screen shows, kept as the game goes
@@ -142,6 +152,33 @@ type HostZombie = {
 };
 
 export type Send = (to: string, message: HostMessage) => void;
+
+export type GameSave = {
+	// who was running it
+	host: string;
+	time: number;
+	phase: Phase;
+	round: number;
+	toSpawn: number;
+	spawnTimer: number;
+	breakTimer: number;
+	nextZombie: number;
+	nextDrop: number;
+	dropsThisRound: number;
+	roundTimes: number[];
+	windows: number[];
+	drops: DropSnap[];
+	instakill: number;
+	double: number;
+	box: BoxSnap;
+	doors: boolean[];
+	// in the order they joined
+	players: HostPlayer[];
+	zombies: HostZombie[];
+};
+
+const isWeapon = (id: unknown): id is WeaponId =>
+	typeof id === 'string' && Object.hasOwn(WEAPONS, id);
 
 // The game itself, run by the host's browser. Players report where they are
 // and what they hit; the host moves the zombies, keeps score, opens doors,
@@ -186,8 +223,25 @@ export class HostGame {
 
 	// false if the game is full
 	addPlayer(id: string, name: string): boolean {
-		// a second hello changes nothing
-		if (this.players.has(id)) return true;
+		const back = this.players.get(id);
+		if (back) {
+			// the same player again, perhaps after a dropped connection: pick
+			// up where they were
+			back.away = false;
+			back.awayFor = 0;
+			this.send(id, {
+				t: 'welcome',
+				you: id,
+				phase: this.phase,
+				round: this.round,
+				doors: [...this.blocking.open],
+				x: back.x,
+				z: back.z,
+				loadout: back.loadout
+			});
+			this.sendLobby();
+			return true;
+		}
 		if (this.players.size >= MAX_PLAYERS) return false;
 		const spot = this.map.playerSpawns[this.players.size % this.map.playerSpawns.length];
 		this.players.set(id, {
@@ -216,7 +270,10 @@ export class HostGame {
 			perks: 0,
 			repaired: -Infinity,
 			repairPaid: 0,
-			stats: newTally()
+			stats: newTally(),
+			loadout: null,
+			away: false,
+			awayFor: 0
 		});
 		this.send(id, {
 			t: 'welcome',
@@ -225,10 +282,22 @@ export class HostGame {
 			round: this.round,
 			doors: [...this.blocking.open],
 			x: spot.x,
-			z: spot.z
+			z: spot.z,
+			loadout: null
 		});
 		this.sendLobby();
 		return true;
+	}
+
+	// A player's connection dropped. In the lobby they're gone; in a game
+	// they're kept a while, in case they come back.
+	leave(id: string) {
+		const p = this.players.get(id);
+		if (!p) return;
+		if (this.phase === 'lobby' || this.phase === 'over') return this.removePlayer(id);
+		p.away = true;
+		p.awayFor = 0;
+		p.reviving = null;
 	}
 
 	removePlayer(id: string) {
@@ -306,6 +375,7 @@ export class HostGame {
 				p.flags = Number.isInteger(message.flags)
 					? message.flags & (POSE_SPRINT | POSE_ADS | POSE_RELOAD | POSE_AIR)
 					: 0;
+				p.loadout = cleanLoadout(message.loadout, isWeapon) ?? p.loadout;
 				break;
 			}
 			case 'hit':
@@ -439,7 +509,7 @@ export class HostGame {
 	// With everyone in the pause menu nobody is playing, so nothing moves and
 	// no timer runs until someone comes back.
 	private held() {
-		return this.players.size > 0 && [...this.players.values()].every((p) => p.paused);
+		return this.players.size > 0 && [...this.players.values()].every((p) => p.paused || p.away);
 	}
 
 	// a method rather than a comparison inline, since the phase can change
@@ -490,6 +560,12 @@ export class HostGame {
 	}
 
 	private updatePlayers(dt: number) {
+		for (const p of [...this.players.values()]) {
+			if (!p.away) continue;
+			p.awayFor += dt;
+			if (p.awayFor > AWAY_LIMIT) this.removePlayer(p.id);
+		}
+		if (this.ended()) return;
 		const solo = this.players.size === 1;
 		for (const p of this.players.values()) {
 			if (p.state === 'alive') {
@@ -503,6 +579,7 @@ export class HostGame {
 			const reviver = [...this.players.values()].find(
 				(q) =>
 					q.state === 'alive' &&
+					!q.away &&
 					q.reviving === p.id &&
 					Math.hypot(q.x - p.x, q.z - p.z) < PLAYER.reviveRange + 0.4
 			);
@@ -553,7 +630,7 @@ export class HostGame {
 	}
 
 	private targets(): HostPlayer[] {
-		return [...this.players.values()].filter((p) => p.state === 'alive');
+		return [...this.players.values()].filter((p) => p.state === 'alive' && !p.away);
 	}
 
 	private updateZombies(dt: number) {
@@ -885,6 +962,72 @@ export class HostGame {
 		};
 	}
 
+	// Everything needed to carry the game on somewhere else.
+	save(host: string): GameSave {
+		return {
+			host,
+			time: this.time,
+			phase: this.phase,
+			round: this.round,
+			toSpawn: this.toSpawn,
+			spawnTimer: this.spawnTimer,
+			breakTimer: this.breakTimer,
+			nextZombie: this.nextZombie,
+			nextDrop: this.nextDrop,
+			dropsThisRound: this.dropsThisRound,
+			roundTimes: [...this.roundTimes],
+			windows: [...this.windows],
+			drops: this.drops.map((d) => ({ ...d })),
+			instakill: this.instakill,
+			double: this.double,
+			box: { ...this.box },
+			doors: [...this.blocking.open],
+			// times kept relative to now, and finite, so they survive JSON
+			players: [...this.players.values()].map((p) => ({
+				...p,
+				lastHurt: Math.max(-1000, p.lastHurt - this.time),
+				repaired: Math.max(-1000, p.repaired - this.time)
+			})),
+			zombies: [...this.zombies.values()].map((z) => ({ ...z }))
+		};
+	}
+
+	// A game carried on from a save, by the player `me`, who leads; everyone
+	// else is away until they reconnect.
+	static restore(send: Send, save: GameSave, me: string, random?: () => number): HostGame {
+		const game = new HostGame(send, random);
+		game.time = save.time;
+		game.phase = save.phase;
+		game.round = save.round;
+		game.toSpawn = save.toSpawn;
+		game.spawnTimer = save.spawnTimer;
+		game.breakTimer = save.breakTimer;
+		game.nextZombie = save.nextZombie;
+		game.nextDrop = save.nextDrop;
+		game.dropsThisRound = save.dropsThisRound;
+		game.roundTimes = [...save.roundTimes];
+		game.windows = [...save.windows];
+		game.drops = save.drops.map((d) => ({ ...d }));
+		game.instakill = save.instakill;
+		game.double = save.double;
+		game.box = { ...save.box };
+		save.doors.forEach((open, i) => (game.blocking.open[i] = open));
+		const players = [...save.players].sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : 0));
+		for (const p of players) {
+			game.players.set(p.id, {
+				...p,
+				lastHurt: p.lastHurt + save.time,
+				repaired: p.repaired + save.time,
+				away: p.id !== me,
+				awayFor: 0,
+				paused: p.id === me ? p.paused : false,
+				reviving: null
+			});
+		}
+		for (const z of save.zombies) game.zombies.set(z.id, { ...z });
+		return game;
+	}
+
 	snapshot(): HostMessage {
 		const r2 = (v: number) => Math.round(v * 100) / 100;
 		const players: PlayerSnap[] = [...this.players.values()].map((p) => ({
@@ -905,7 +1048,7 @@ export class HostGame {
 			shots: p.shots,
 			knifes: p.knifes,
 			stance: p.stance,
-			flags: p.flags | (p.paused ? POSE_PAUSED : 0),
+			flags: p.flags | (p.paused || p.away ? POSE_PAUSED : 0),
 			perks: p.perks
 		}));
 		const zombies: ZombieSnap[] = [...this.zombies.values()].map((z) => [

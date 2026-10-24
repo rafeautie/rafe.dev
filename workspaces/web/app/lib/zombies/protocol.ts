@@ -1,3 +1,4 @@
+import type { GameSave } from './host';
 import type { PerkId } from './rules';
 import type { WeaponId } from './weapons';
 
@@ -32,6 +33,9 @@ export type PlayerSnap = {
 };
 
 export type Stance = 0 | 1 | 2; // standing, crouching, sliding
+
+// a player's guns: [gun, in the magazine, spare], the one in hand first
+export type Loadout = [WeaponId, number, number][];
 export const STAND = 0;
 export const CROUCH = 1;
 export const SLIDE = 2;
@@ -114,9 +118,12 @@ export type HostMessage =
 			phase: Phase;
 			round: number;
 			doors: boolean[];
-			// where this player starts
+			// where this player starts, or where they were before a dropped
+			// connection
 			x: number;
 			z: number;
+			// the guns they had, when coming back
+			loadout: Loadout | null;
 	  }
 	| { t: 'lobby'; players: { id: string; name: string }[] }
 	// the game already has as many players as it takes
@@ -145,10 +152,15 @@ export type HostMessage =
 	// a perk bought from a machine
 	| { t: 'perk'; perk: PerkId }
 	| { t: 'stats'; stats: GameStats }
+	// everything about the game, every couple of seconds, so a player can
+	// take over as host if the host leaves
+	| { t: 'save'; save: GameSave }
 	| { t: 'restart' };
 
 export type PlayerMessage =
-	| { t: 'hello'; name: string }
+	// id stays the same for a player through a dropped connection, so they
+	// come back as themselves
+	| { t: 'hello'; name: string; id: string }
 	| {
 			t: 'me';
 			x: number;
@@ -164,6 +176,7 @@ export type PlayerMessage =
 			paused: boolean;
 			stance: Stance;
 			flags: number; // POSE_SPRINT, POSE_ADS, POSE_RELOAD, POSE_AIR
+			loadout: Loadout;
 	  }
 	| {
 			t: 'hit';
@@ -188,3 +201,16 @@ export type PlayerMessage =
 	| { t: 'restart' };
 
 export const RELIABLE = (m: HostMessage | PlayerMessage) => m.t !== 'snap' && m.t !== 'me';
+
+// a loadout from a player, kept only if it makes sense
+export function cleanLoadout(raw: unknown, isWeapon: (id: unknown) => boolean): Loadout | null {
+	if (!Array.isArray(raw) || raw.length === 0 || raw.length > 2) return null;
+	const out: Loadout = [];
+	for (const slot of raw) {
+		if (!Array.isArray(slot) || !isWeapon(slot[0])) return null;
+		const [mag, spare] = [slot[1], slot[2]];
+		if (!Number.isFinite(mag) || !Number.isFinite(spare)) return null;
+		out.push([slot[0], Math.max(0, Math.floor(mag)), Math.max(0, Math.floor(spare))]);
+	}
+	return out;
+}

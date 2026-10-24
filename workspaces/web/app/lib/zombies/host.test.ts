@@ -94,7 +94,8 @@ describe('host game', () => {
 				reviving: null,
 				paused: false,
 				stance: 0,
-				flags: 0
+				flags: 0,
+				loadout: [['m1911', 8, 32]]
 			});
 			for (const [id] of snap().zombies) {
 				game.handle('p0', {
@@ -200,7 +201,8 @@ describe('host game', () => {
 				reviving: null,
 				paused,
 				stance: 0,
-				flags: 0
+				flags: 0,
+				loadout: [['m1911', 8, 32]]
 			});
 		game.start();
 		const timer = snap().timer;
@@ -234,7 +236,8 @@ describe('host game', () => {
 				reviving: null,
 				paused,
 				stance,
-				flags
+				flags,
+				loadout: [['m1911', 8, 32]]
 			} as PlayerMessage);
 		game.start();
 		me('p0', true, CROUCH, POSE_ADS | POSE_SPRINT | 64);
@@ -268,7 +271,8 @@ describe('host game', () => {
 			reviving: 'p1',
 			paused: false,
 			stance: 0,
-			flags: 0
+			flags: 0,
+			loadout: [['m1911', 8, 32]]
 		});
 		run(1);
 		expect(snap().players[1].revive).toBeGreaterThan(0);
@@ -415,5 +419,76 @@ describe('host game', () => {
 		expect(p.perks & PERKS.speed.bit).toBeFalsy();
 		g.down(p);
 		expect(p.perks).toBe(0);
+	});
+	it('keeps a dropped player for a while, with their points and guns', () => {
+		const { game, run, sent } = setup(2);
+		const g = game as unknown as Inside;
+		game.start();
+		run(BREAK.first + 0.1);
+		g.players.get('p1')!.points = 1234;
+		game.handle('p1', {
+			t: 'me',
+			x: g.players.get('p1')!.x,
+			y: 0,
+			z: g.players.get('p1')!.z,
+			yaw: 0,
+			pitch: 0,
+			weapon: 'mp5',
+			shots: 0,
+			knifes: 0,
+			reviving: null,
+			paused: false,
+			stance: 0,
+			flags: 0,
+			loadout: [
+				['mp5', 20, 90],
+				['m1911', 8, 32]
+			]
+		});
+		game.leave('p1');
+		run(5);
+		// still in the game, shown as away, and not what zombies chase
+		const away = (game.snapshot() as Snapshot).players.find((p) => p.id === 'p1')!;
+		expect(away.flags & POSE_PAUSED).toBeTruthy();
+		sent.length = 0;
+		expect(game.addPlayer('p1', 'back')).toBe(true);
+		const welcome = sent.find((m) => m.to === 'p1' && m.m.t === 'welcome')?.m;
+		expect(welcome).toMatchObject({
+			loadout: [
+				['mp5', 20, 90],
+				['m1911', 8, 32]
+			]
+		});
+		expect(g.players.get('p1')!.points).toBe(1234);
+
+		// gone for good after long enough away
+		game.leave('p1');
+		run(61);
+		expect((game.snapshot() as Snapshot).players.map((p) => p.id)).toEqual(['p0']);
+	});
+
+	it('carries a game on from a save, with the new host in charge', () => {
+		const { game, run } = setup(2);
+		const g = game as unknown as Inside;
+		game.start();
+		run(BREAK.first + 3);
+		g.players.get('p0')!.points = 777;
+		g.players.get('p1')!.points = 888;
+		const save = JSON.parse(JSON.stringify(game.save('p0')));
+		const sent: { to: string; m: HostMessage }[] = [];
+		const next = HostGame.restore((to, m) => sent.push({ to, m }), save, 'p1');
+		const before = game.snapshot() as Snapshot;
+		const after = next.snapshot() as Snapshot;
+		expect(after).toMatchObject({ round: before.round, left: before.left, phase: before.phase });
+		expect(after.zombies.map((z) => z[0])).toEqual(before.zombies.map((z) => z[0]));
+		// the new host first, the old one away until they come back
+		expect(after.players.map((p) => [p.id, p.points])).toEqual([
+			['p1', 888],
+			['p0', 777]
+		]);
+		expect(after.players[1].flags & POSE_PAUSED).toBeTruthy();
+		// and it keeps running
+		for (let t = 0; t < 2; t += TICK) next.tick();
+		expect((next.snapshot() as Snapshot).phase).toBe('playing');
 	});
 });
