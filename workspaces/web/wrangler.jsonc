@@ -3,7 +3,8 @@
 	"name": "rafe-dev",
 	"compatibility_date": "2026-01-31",
 	"compatibility_flags": ["nodejs_compat"],
-	"main": "@tanstack/react-start/server-entry",
+	// TanStack Start's handler, plus the Durable Object behind /zombies lobbies
+	"main": "./app/server.ts",
 	// Served at rafe.dev only.
 	"workers_dev": false,
 	"preview_urls": false,
@@ -23,11 +24,23 @@
 	// Caps how often one address can report visits to /seen, so a script
 	// cannot flood the stats. The address is only the counter's key, never
 	// stored.
+	// One per /zombies lobby, named by its code. It only introduces players
+	// for WebRTC; the game runs in the host's browser.
+	"durable_objects": {
+		"bindings": [{ "name": "ZOMBIES_LOBBY", "class_name": "ZombiesLobby" }]
+	},
 	"ratelimits": [
 		{
 			"name": "SEEN_LIMIT",
 			"namespace_id": "1001",
 			"simple": { "limit": 120, "period": 60 }
+		},
+		// Caps how often one address can connect to /zombies lobbies, since
+		// each connection can hand out TURN credentials.
+		{
+			"name": "LOBBY_LIMIT",
+			"namespace_id": "1002",
+			"simple": { "limit": 20, "period": 60 }
 		}
 	],
 	"observability": {
@@ -48,8 +61,7 @@
 	// The TheRaceGame Durable Object was removed with the games feature. v1
 	// created the class (still live in production); v2 deletes the class and
 	// all of its Durable Objects. A deploy cannot drop a DO class without an
-	// explicit delete-class migration. Once v2 has been deployed everywhere,
-	// this whole block can be removed.
+	// explicit delete-class migration. v3 adds the /zombies lobby.
 	"migrations": [
 		{
 			"tag": "v1",
@@ -58,6 +70,10 @@
 		{
 			"tag": "v2",
 			"deleted_classes": ["TheRaceGame"]
+		},
+		{
+			"tag": "v3",
+			"new_sqlite_classes": ["ZombiesLobby"]
 		}
 	]
 }

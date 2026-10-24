@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ZombiesRouteImport } from './routes/zombies'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ShmoneyRouteImport } from './routes/shmoney'
 import { Route as SeenRouteImport } from './routes/seen'
@@ -30,6 +31,11 @@ import { Route as AdminStatsIndexRouteImport } from './routes/admin/stats/index'
 import { Route as AdminWritingSlugRouteImport } from './routes/admin/writing/$slug'
 import { Route as AdminStatsVisitorsIdRouteImport } from './routes/admin/stats/visitors/$id'
 
+const ZombiesRoute = ZombiesRouteImport.update({
+  id: '/zombies',
+  path: '/zombies',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
@@ -140,6 +146,7 @@ export interface FileRoutesByFullPath {
   '/seen': typeof SeenRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/zombies': typeof ZombiesRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
@@ -161,6 +168,7 @@ export interface FileRoutesByTo {
   '/seen': typeof SeenRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/zombies': typeof ZombiesRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
@@ -184,6 +192,7 @@ export interface FileRoutesById {
   '/seen': typeof SeenRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/zombies': typeof ZombiesRoute
   '/admin/auth': typeof AdminAuthRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
@@ -208,6 +217,7 @@ export interface FileRouteTypes {
     | '/seen'
     | '/shmoney'
     | '/sitemap.xml'
+    | '/zombies'
     | '/admin/auth'
     | '/admin/login'
     | '/admin/logout'
@@ -229,6 +239,7 @@ export interface FileRouteTypes {
     | '/seen'
     | '/shmoney'
     | '/sitemap.xml'
+    | '/zombies'
     | '/admin/auth'
     | '/admin/login'
     | '/admin/logout'
@@ -251,6 +262,7 @@ export interface FileRouteTypes {
     | '/seen'
     | '/shmoney'
     | '/sitemap.xml'
+    | '/zombies'
     | '/admin/auth'
     | '/admin/login'
     | '/admin/logout'
@@ -274,6 +286,7 @@ export interface RootRouteChildren {
   SeenRoute: typeof SeenRoute
   ShmoneyRoute: typeof ShmoneyRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  ZombiesRoute: typeof ZombiesRoute
   WritingSlugRoute: typeof WritingSlugRoute
   WritingFeedDotxmlRoute: typeof WritingFeedDotxmlRoute
   WritingIndexRoute: typeof WritingIndexRoute
@@ -281,6 +294,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/zombies': {
+      id: '/zombies'
+      path: '/zombies'
+      fullPath: '/zombies'
+      preLoaderRoute: typeof ZombiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
@@ -461,6 +481,7 @@ const rootRouteChildren: RootRouteChildren = {
   SeenRoute: SeenRoute,
   ShmoneyRoute: ShmoneyRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  ZombiesRoute: ZombiesRoute,
   WritingSlugRoute: WritingSlugRoute,
   WritingFeedDotxmlRoute: WritingFeedDotxmlRoute,
   WritingIndexRoute: WritingIndexRoute,

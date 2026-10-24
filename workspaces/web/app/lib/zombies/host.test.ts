@@ -1,0 +1,251 @@
+import { describe, expect, it } from 'vitest';
+import { HostGame, TICK } from './host';
+import { Blocking, buildMap, cellIndex, cellOf } from './map';
+import type { HostMessage, PlayerMessage, Snapshot } from './protocol';
+import { BREAK, POINTS, START_POINTS, zombieCount } from './rules';
+import { WEAPONS } from './weapons';
+
+function setup(players = 1) {
+	const sent: { to: string; m: HostMessage }[] = [];
+	let seed = 1;
+	const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+	const game = new HostGame((to, m) => sent.push({ to, m }), random);
+	for (let i = 0; i < players; i++) game.addPlayer(`p${i}`, `player ${i}`);
+	const run = (seconds: number) => {
+		for (let t = 0; t < seconds; t += TICK) game.tick();
+	};
+	const snap = () => game.snapshot() as Snapshot;
+	return { game, sent, run, snap };
+}
+
+describe('map', () => {
+	const map = buildMap();
+
+	it('starts players in area 0 and splits the rest by doors', () => {
+		for (const s of map.playerSpawns) expect(map.area[cellIndex(cellOf(s.x), cellOf(s.z))]).toBe(0);
+		for (const d of map.doors) expect(d.areas[0]).not.toBe(d.areas[1]);
+	});
+
+	it('only reaches the rest of the map through doors', () => {
+		const blocking = new Blocking(map);
+		const start = map.playerSpawns[0];
+		const field = blocking.flowField([cellIndex(cellOf(start.x), cellOf(start.z))]);
+		const reachable = (x: number, z: number) =>
+			Number.isFinite(field[cellIndex(cellOf(x), cellOf(z))]);
+		const far = map.spawns.filter((s) => s.area !== 0);
+		expect(far.length).toBeGreaterThan(0);
+		for (const s of far) expect(reachable(s.x, s.z)).toBe(false);
+
+		blocking.open.fill(true);
+		const open = blocking.flowField([cellIndex(cellOf(start.x), cellOf(start.z))]);
+		for (const s of map.spawns)
+			expect(Number.isFinite(open[cellIndex(cellOf(s.x), cellOf(s.z))])).toBe(true);
+	});
+
+	it('keeps a moving circle out of walls', () => {
+		const blocking = new Blocking(map);
+		const s = map.playerSpawns[0];
+		const [x] = blocking.move(s.x, s.z, -40, 0, 0.35);
+		// stopped by the spawn room's west wall, not through it
+		expect(x).toBeGreaterThan(26);
+	});
+});
+
+describe('host game', () => {
+	it('runs a round of zombies after the first break', () => {
+		const { game, run, snap } = setup();
+		game.start();
+		expect(snap().phase).toBe('break');
+		run(BREAK.first + 0.1);
+		expect(snap()).toMatchObject({ phase: 'playing', round: 1, left: zombieCount(1, 1) });
+		run(4);
+		expect(snap().zombies.length).toBeGreaterThan(0);
+	});
+
+	it('pays for every hit, kills included, and ends the round when all are dead', () => {
+		const { game, run, snap, sent } = setup();
+		game.start();
+		run(BREAK.first + 0.1);
+		let kills = 0;
+		for (let i = 0; i < 400 && snap().phase === 'playing'; i++) {
+			// keep the player out of reach
+			game.handle('p0', {
+				t: 'me',
+				x: 37,
+				y: 0,
+				z: 37,
+				yaw: 0,
+				pitch: 0,
+				weapon: 'm1911',
+				shots: 0,
+				knifes: 0,
+				reviving: null,
+				paused: false
+			});
+			for (const [id] of snap().zombies) {
+				game.handle('p0', {
+					t: 'hit',
+					zombie: id,
+					damage: 50,
+					head: false,
+					knife: false,
+					dir: [0, 0, 1],
+					force: 3
+				});
+				game.handle('p0', {
+					t: 'hit',
+					zombie: id,
+					damage: 500,
+					head: true,
+					knife: false,
+					dir: [0, 0, 1],
+					force: 3
+				});
+				kills++;
+			}
+			run(0.5);
+		}
+		expect(kills).toBe(zombieCount(1, 1));
+		expect(snap().phase).toBe('break');
+		expect(snap().players[0].points).toBe(START_POINTS + kills * (POINTS.hit + POINTS.headshot));
+		expect(sent.filter((s) => s.m.t === 'died')).toHaveLength(kills);
+		// and keeps count for the stats screens
+		const stats = game.stats();
+		expect(stats.players[0]).toMatchObject({
+			kills,
+			headshots: kills,
+			earned: kills * (POINTS.hit + POINTS.headshot),
+			spent: 0,
+			downs: 0
+		});
+		expect(stats.rounds).toHaveLength(1);
+		expect(stats.rounds[0]).toMatchObject({
+			kills: [kills],
+			earned: [kills * (POINTS.hit + POINTS.headshot)]
+		});
+		expect(stats.rounds[0].time).toBeGreaterThan(0);
+		game.handle('p0', { t: 'stats' });
+		expect(sent.at(-1)?.m).toMatchObject({ t: 'stats', stats });
+	});
+
+	it('sells doors and guns only to players who can pay', () => {
+		const { game, sent } = setup();
+		game.start();
+		game.handle('p0', { t: 'buyDoor', door: 0 }); // 750
+		expect(sent.at(-1)?.m.t).toBe('denied');
+		expect(game.blocking.open[0]).toBe(false);
+		const wall = game.map.wallBuys.findIndex((w) => WEAPONS[w.weapon].cost === 500);
+		game.handle('p0', { t: 'buyWeapon', wall, owned: false });
+		expect(sent.at(-1)?.m).toMatchObject({ t: 'grant', ammo: false });
+		game.handle('p0', { t: 'buyWeapon', wall, owned: false });
+		expect(sent.at(-1)?.m.t).toBe('denied');
+		const p = game as unknown as { players: Map<string, { points: number }> };
+		p.players.get('p0')!.points = 750;
+		game.handle('p0', { t: 'buyDoor', door: 0 });
+		expect(game.blocking.open[0]).toBe(true);
+	});
+
+	it('downs a player who is caught, and gets a solo player back up', () => {
+		const { game, run, snap } = setup();
+		game.start();
+		// stand still until something gets there
+		for (let i = 0; i < 120 && snap().players[0].state === 'alive'; i++) run(0.5);
+		const downed = snap().players[0];
+		expect(downed.state).toBe('downed');
+		expect(downed.points).toBe(START_POINTS - 50);
+		run(11);
+		expect(snap().players[0].state).not.toBe('dead');
+	});
+
+	it('ends the game when every player is down', () => {
+		const { game, run, snap, sent } = setup(2);
+		game.start();
+		for (let i = 0; i < 400 && snap().phase !== 'over'; i++) run(0.5);
+		expect(snap().phase).toBe('over');
+		// with the whole game's numbers for the game over screen
+		const over = sent.find((s) => s.m.t === 'over')?.m;
+		if (over?.t !== 'over') throw new Error('no game over message');
+		expect(over.stats.players).toHaveLength(2);
+		for (const p of over.stats.players) expect(p.downs).toBeGreaterThan(0);
+		expect(over.stats.rounds.length).toBeGreaterThan(0);
+	});
+
+	it('stands still while every player is paused, and carries on when one comes back', () => {
+		const { game, run, snap } = setup(2);
+		const me = (id: string, paused: boolean) =>
+			game.handle(id, {
+				t: 'me',
+				x: 37,
+				y: 0,
+				z: 37,
+				yaw: 0,
+				pitch: 0,
+				weapon: 'm1911',
+				shots: 0,
+				knifes: 0,
+				reviving: null,
+				paused
+			});
+		game.start();
+		const timer = snap().timer;
+		me('p0', true);
+		run(3);
+		// one player still in, so the break counts down
+		expect(snap()).toMatchObject({ held: false });
+		expect(snap().timer).toBeLessThan(timer);
+		me('p1', true);
+		const before = snap();
+		run(30);
+		expect(snap()).toMatchObject({ held: true, phase: 'break', timer: before.timer });
+		me('p1', false);
+		run(BREAK.first);
+		expect(snap()).toMatchObject({ held: false, phase: 'playing', round: 1 });
+	});
+
+	it('revives a downed teammate who is held long enough', () => {
+		const { game, run, snap } = setup(2);
+		game.start();
+		const p = game as unknown as {
+			players: Map<string, { state: string; bleed: number; hp: number }>;
+		};
+		Object.assign(p.players.get('p1')!, { state: 'downed', bleed: 30, hp: 0 });
+		game.handle('p0', {
+			t: 'me',
+			x: 35.5,
+			y: 0,
+			z: 37,
+			yaw: 0,
+			pitch: 0,
+			weapon: 'm1911',
+			shots: 0,
+			knifes: 0,
+			reviving: 'p1',
+			paused: false
+		});
+		run(1);
+		expect(snap().players[1].revive).toBeGreaterThan(0);
+		run(2.2);
+		expect(snap().players[1].state).toBe('alive');
+	});
+
+	it('ignores a malformed hit rather than half killing a zombie', () => {
+		const { game, run, snap } = setup();
+		game.start();
+		run(BREAK.first + 3);
+		const [id] = snap().zombies[0];
+		const bad = { t: 'hit', zombie: id, damage: 1e9, head: false, knife: false, force: 3 };
+		game.handle('p0', bad as unknown as PlayerMessage);
+		expect(snap().zombies.some(([z]) => z === id)).toBe(true);
+		expect(snap().players[0].points).toBe(START_POINTS);
+	});
+
+	it('does not reset a player who says hello twice', () => {
+		const { game, snap } = setup();
+		game.start();
+		const p = game as unknown as { players: Map<string, { points: number }> };
+		p.players.get('p0')!.points = 42;
+		expect(game.addPlayer('p0', 'again')).toBe(true);
+		expect(snap().players).toHaveLength(1);
+		expect(snap().players[0].points).toBe(42);
+	});
+});
