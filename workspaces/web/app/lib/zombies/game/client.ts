@@ -1,6 +1,14 @@
 import * as THREE from 'three';
 import { Blocking, buildMap, type GameMap } from '../map';
-import type { HostMessage, LifeState, Phase, PlayerSnap, Snapshot, ZombieSnap } from '../protocol';
+import type {
+	GameStats,
+	HostMessage,
+	LifeState,
+	Phase,
+	PlayerSnap,
+	Snapshot,
+	ZombieSnap
+} from '../protocol';
 import { ZOMBIE_ATTACKING, ZOMBIE_RISING } from '../protocol';
 import { PLAYER, ZOMBIE } from '../rules';
 import type { Session } from '../session';
@@ -66,6 +74,8 @@ export type HudState = {
 	played: boolean;
 	// everyone is paused, so the game is too
 	held: boolean;
+	// the game's numbers so far, while paused, and in full once it's over
+	stats: GameStats | null;
 	isHost: boolean;
 	area: string;
 };
@@ -149,6 +159,8 @@ export class GameClient {
 	private last = 0;
 	private disposers: (() => void)[] = [];
 	private played = false;
+	private stats: GameStats | null = null;
+	private statsWait = 0;
 
 	constructor(
 		private canvas: HTMLCanvasElement,
@@ -273,6 +285,8 @@ export class GameClient {
 			if (!locked()) {
 				this.keys.clear();
 				this.buttons.clear();
+				// fresh numbers for the pause screen straight away
+				this.statsWait = 0;
 			} else this.played = true;
 			this.publishHud();
 		});
@@ -335,8 +349,12 @@ export class GameClient {
 			case 'round':
 				this.sound.round();
 				break;
+			case 'stats':
+				if (this.phase !== 'over') this.stats = m.stats;
+				break;
 			case 'over':
 				this.phase = 'over';
+				this.stats = m.stats;
 				if (document.pointerLockElement === this.canvas) document.exitPointerLock();
 				break;
 			case 'restart':
@@ -349,6 +367,7 @@ export class GameClient {
 				this.phase = 'break';
 				this.life = 'alive';
 				this.downedSlot = null;
+				this.stats = null;
 				break;
 		}
 	}
@@ -437,6 +456,13 @@ export class GameClient {
 		if (this.life !== 'dead') this.move(dt, active);
 		this.weapons(dt, active);
 		this.interact(dt, active);
+
+		// while the pause screen is up, keep its numbers current
+		this.statsWait -= dt;
+		if (!active && this.played && this.phase !== 'over' && this.statsWait <= 0) {
+			this.statsWait = 2;
+			this.session.post({ t: 'stats' });
+		}
 
 		this.sendWait -= dt;
 		if (this.sendWait <= 0) {
@@ -1085,6 +1111,7 @@ export class GameClient {
 			locked: false,
 			played: false,
 			held: false,
+			stats: null,
 			isHost: this.session.state.isHost,
 			area: ''
 		};
@@ -1126,6 +1153,7 @@ export class GameClient {
 			locked: document.pointerLockElement === this.canvas,
 			played: this.played,
 			held: latest?.held ?? false,
+			stats: this.stats,
 			area: this.map.roomName(this.me.x, this.me.z)
 		};
 		for (const l of this.hudListeners) l();

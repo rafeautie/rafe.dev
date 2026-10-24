@@ -44,6 +44,25 @@ export type Snapshot = {
 	zombies: ZombieSnap[];
 };
 
+// Totals for one player over a whole game, for the game over screen.
+export type PlayerStats = {
+	id: string;
+	name: string;
+	kills: number;
+	headshots: number; // kills by a shot to the head
+	earned: number; // points from hits, before anything was spent
+	spent: number; // on doors and guns
+	downs: number;
+	revives: number; // teammates picked up
+};
+
+export type GameStats = {
+	players: PlayerStats[];
+	// one entry per round reached, the last perhaps unfinished; kills and
+	// earned follow the order of players
+	rounds: { time: number; kills: number[]; earned: number[] }[];
+};
+
 export type HostMessage =
 	| Snapshot
 	| {
@@ -77,7 +96,8 @@ export type HostMessage =
 	| { t: 'points'; amount: number }
 	| { t: 'respawn'; x: number; z: number }
 	| { t: 'round'; round: number }
-	| { t: 'over'; round: number }
+	| { t: 'over'; round: number; stats: GameStats }
+	| { t: 'stats'; stats: GameStats }
 	| { t: 'restart' };
 
 export type PlayerMessage =
@@ -108,6 +128,8 @@ export type PlayerMessage =
 	| { t: 'buyWeapon'; wall: number; owned: boolean }
 	| { t: 'buyDoor'; door: number }
 	| { t: 'start' }
+	// the numbers so far, for the pause screen
+	| { t: 'stats' }
 	| { t: 'restart' };
 
 export const RELIABLE = (m: HostMessage | PlayerMessage) => m.t !== 'snap' && m.t !== 'me';

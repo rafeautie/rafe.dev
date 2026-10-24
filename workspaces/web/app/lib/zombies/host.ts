@@ -1,9 +1,11 @@
 import { Blocking, buildMap, cellIndex, cellOf, type GameMap } from './map';
 import type {
+	GameStats,
 	HostMessage,
 	LifeState,
 	Phase,
 	PlayerMessage,
+	PlayerStats,
 	PlayerSnap,
 	ZombieSnap
 } from './protocol';
@@ -51,7 +53,26 @@ type HostPlayer = {
 	lastHurt: number;
 	soloRevives: number;
 	paused: boolean;
+	stats: Tally;
 };
+
+// what the game over screen shows, kept as the game goes
+type Tally = Omit<PlayerStats, 'id' | 'name'> & {
+	// by round, from round 1 at index 0
+	roundKills: number[];
+	roundEarned: number[];
+};
+
+const newTally = (): Tally => ({
+	kills: 0,
+	headshots: 0,
+	earned: 0,
+	spent: 0,
+	downs: 0,
+	revives: 0,
+	roundKills: [],
+	roundEarned: []
+});
 
 type HostZombie = {
 	id: number;
@@ -86,6 +107,8 @@ export class HostGame {
 	private nextZombie = 1;
 	private time = 0;
 	private ticks = 0;
+	// how long each round took, from round 1 at index 0
+	private roundTimes: number[] = [];
 
 	constructor(
 		private send: Send,
@@ -125,7 +148,8 @@ export class HostGame {
 			knifes: 0,
 			lastHurt: -Infinity,
 			soloRevives: PLAYER.soloRevives,
-			paused: false
+			paused: false,
+			stats: newTally()
 		});
 		this.send(id, {
 			t: 'welcome',
@@ -157,6 +181,7 @@ export class HostGame {
 		this.blocking.open.fill(false);
 		this.flow = null;
 		this.round = 0;
+		this.roundTimes = [];
 		this.toSpawn = 0;
 		let i = 0;
 		for (const p of this.players.values()) {
@@ -172,7 +197,8 @@ export class HostGame {
 				points: START_POINTS,
 				kills: 0,
 				weapon: 'm1911',
-				soloRevives: PLAYER.soloRevives
+				soloRevives: PLAYER.soloRevives,
+				stats: newTally()
 			});
 		}
 		this.broadcast({ t: 'restart' });
@@ -216,6 +242,7 @@ export class HostGame {
 				const cost = message.owned ? ammoCost(weapon) : weapon.cost;
 				if (p.points < cost) return this.send(p.id, { t: 'denied' });
 				p.points -= cost;
+				p.stats.spent += cost;
 				this.send(p.id, { t: 'points', amount: -cost });
 				this.send(p.id, { t: 'grant', weapon: weapon.id, ammo: message.owned });
 				break;
@@ -225,6 +252,7 @@ export class HostGame {
 				if (!door || this.blocking.open[door.index] || p.state !== 'alive') return;
 				if (p.points < door.cost) return this.send(p.id, { t: 'denied' });
 				p.points -= door.cost;
+				p.stats.spent += door.cost;
 				this.send(p.id, { t: 'points', amount: -door.cost });
 				this.blocking.open[door.index] = true;
 				this.flow = null;
@@ -237,6 +265,9 @@ export class HostGame {
 				break;
 			case 'restart':
 				if (this.players.keys().next().value === from && this.phase === 'over') this.restart();
+				break;
+			case 'stats':
+				this.send(p.id, { t: 'stats', stats: this.stats() });
 				break;
 		}
 	}
@@ -258,6 +289,9 @@ export class HostGame {
 		this.award(p, m.knife === true ? POINTS.knife : m.head === true ? POINTS.headshot : POINTS.hit);
 		if (z.hp > 0) return;
 		p.kills++;
+		p.stats.kills++;
+		if (m.head === true) p.stats.headshots++;
+		if (this.round > 0) add(p.stats.roundKills, this.round - 1, 1);
 		this.zombies.delete(z.id);
 		const dir = m.dir.map((v) => (Number.isFinite(v) ? v : 0)) as [number, number, number];
 		this.broadcast({
@@ -272,6 +306,8 @@ export class HostGame {
 
 	private award(p: HostPlayer, amount: number) {
 		p.points += amount;
+		p.stats.earned += amount;
+		if (this.round > 0) add(p.stats.roundEarned, this.round - 1, amount);
 		this.send(p.id, { t: 'points', amount });
 	}
 
@@ -287,6 +323,7 @@ export class HostGame {
 				this.breakTimer -= dt;
 				if (this.breakTimer <= 0) this.beginRound();
 			} else {
+				this.roundTimes[this.round - 1] += dt;
 				this.spawnTimer -= dt;
 				if (this.toSpawn > 0 && this.spawnTimer <= 0 && this.zombies.size < ZOMBIE.maxAlive) {
 					if (this.spawnZombie()) this.toSpawn--;
@@ -316,6 +353,7 @@ export class HostGame {
 
 	private beginRound() {
 		this.round++;
+		this.roundTimes[this.round - 1] = 0;
 		this.phase = 'playing';
 		this.toSpawn = zombieCount(this.round, this.players.size);
 		this.spawnTimer = 1;
@@ -344,7 +382,7 @@ export class HostGame {
 		if (anyUp) return;
 		this.phase = 'over';
 		this.zombies.clear();
-		this.broadcast({ t: 'over', round: this.round });
+		this.broadcast({ t: 'over', round: this.round, stats: this.stats() });
 	}
 
 	private updatePlayers(dt: number) {
@@ -365,7 +403,10 @@ export class HostGame {
 			);
 			if (reviver) {
 				p.revive += dt / PLAYER.reviveTime;
-				if (p.revive >= 1) this.getUp(p);
+				if (p.revive >= 1) {
+					this.getUp(p);
+					reviver.stats.revives++;
+				}
 				continue;
 			}
 			p.revive = 0;
@@ -392,6 +433,7 @@ export class HostGame {
 
 	private down(p: HostPlayer) {
 		p.state = 'downed';
+		p.stats.downs++;
 		p.hp = 0;
 		const solo = this.players.size === 1;
 		p.bleed = solo ? PLAYER.soloReviveTime : PLAYER.bleedOut;
@@ -530,6 +572,27 @@ export class HostGame {
 		return true;
 	}
 
+	stats(): GameStats {
+		const players = [...this.players.values()];
+		return {
+			players: players.map((p) => ({
+				id: p.id,
+				name: p.name,
+				kills: p.stats.kills,
+				headshots: p.stats.headshots,
+				earned: p.stats.earned,
+				spent: p.stats.spent,
+				downs: p.stats.downs,
+				revives: p.stats.revives
+			})),
+			rounds: this.roundTimes.map((time, i) => ({
+				time: Math.round(time),
+				kills: players.map((p) => p.stats.roundKills[i] ?? 0),
+				earned: players.map((p) => p.stats.roundEarned[i] ?? 0)
+			}))
+		};
+	}
+
 	snapshot(): HostMessage {
 		const r2 = (v: number) => Math.round(v * 100) / 100;
 		const players: PlayerSnap[] = [...this.players.values()].map((p) => ({
@@ -588,4 +651,8 @@ function turnToward(from: number, to: number, max: number): number {
 	while (d > Math.PI) d -= Math.PI * 2;
 	while (d < -Math.PI) d += Math.PI * 2;
 	return from + Math.max(-max, Math.min(max, d));
+}
+
+function add(list: number[], index: number, amount: number) {
+	list[index] = (list[index] ?? 0) + amount;
 }

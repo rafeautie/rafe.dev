@@ -109,6 +109,23 @@ describe('host game', () => {
 		expect(snap().phase).toBe('break');
 		expect(snap().players[0].points).toBe(START_POINTS + kills * (POINTS.hit + POINTS.headshot));
 		expect(sent.filter((s) => s.m.t === 'died')).toHaveLength(kills);
+		// and keeps count for the stats screens
+		const stats = game.stats();
+		expect(stats.players[0]).toMatchObject({
+			kills,
+			headshots: kills,
+			earned: kills * (POINTS.hit + POINTS.headshot),
+			spent: 0,
+			downs: 0
+		});
+		expect(stats.rounds).toHaveLength(1);
+		expect(stats.rounds[0]).toMatchObject({
+			kills: [kills],
+			earned: [kills * (POINTS.hit + POINTS.headshot)]
+		});
+		expect(stats.rounds[0].time).toBeGreaterThan(0);
+		game.handle('p0', { t: 'stats' });
+		expect(sent.at(-1)?.m).toMatchObject({ t: 'stats', stats });
 	});
 
 	it('sells doors and guns only to players who can pay', () => {
@@ -141,10 +158,16 @@ describe('host game', () => {
 	});
 
 	it('ends the game when every player is down', () => {
-		const { game, run, snap } = setup(2);
+		const { game, run, snap, sent } = setup(2);
 		game.start();
 		for (let i = 0; i < 400 && snap().phase !== 'over'; i++) run(0.5);
 		expect(snap().phase).toBe('over');
+		// with the whole game's numbers for the game over screen
+		const over = sent.find((s) => s.m.t === 'over')?.m;
+		if (over?.t !== 'over') throw new Error('no game over message');
+		expect(over.stats.players).toHaveLength(2);
+		for (const p of over.stats.players) expect(p.downs).toBeGreaterThan(0);
+		expect(over.stats.rounds.length).toBeGreaterThan(0);
 	});
 
 	it('stands still while every player is paused, and carries on when one comes back', () => {

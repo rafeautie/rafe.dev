@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Button } from '~/components/ui/button';
-import type { GameClient } from '~/lib/zombies/game/client';
+import type { GameClient, HudState } from '~/lib/zombies/game/client';
+import type { GameStats } from '~/lib/zombies/protocol';
 import { PLAYER } from '~/lib/zombies/rules';
 import { cn } from '~/lib/utils';
 import { SettingsForm } from './Settings';
@@ -165,43 +166,154 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				</Panel>
 			)}
 
-			{paused && <PauseMenu client={client} held={hud.held} onLeave={onLeave} />}
+			{paused && <PauseMenu hud={hud} client={client} onLeave={onLeave} />}
 
-			{over && (
-				<Card>
-					<p className="text-2xl tracking-tight">Game Over</p>
-					<p className="text-sm text-muted-foreground">
-						{hud.round === 1 ? 'You Survived 1 Round' : `You Survived ${hud.round} Rounds`}
-					</p>
-					<ul className="mt-2 flex w-full flex-col gap-1 text-sm">
-						{hud.players.map((p) => (
-							<li key={p.id} className="flex justify-between gap-6">
-								<span>{p.name}</span>
-								<span className="text-muted-foreground">{p.kills} Kills</span>
-							</li>
-						))}
-					</ul>
-					<div className="mt-3 flex gap-2">
-						{hud.isHost && <Button onClick={() => client.restart()}>Play Again</Button>}
-						<Button variant="outline" onClick={onLeave}>
-							Leave
-						</Button>
-					</div>
-				</Card>
-			)}
+			{over && <GameOver hud={hud} client={client} onLeave={onLeave} />}
 		</div>
 	);
 }
 
-// Its own component so it opens on the pause screen each time, not wherever it
-// was left.
-function PauseMenu({
+const TIME = (seconds: number) =>
+	`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+
+const HEAD = 'pb-1.5 pl-3 text-right font-medium';
+const CELL = 'py-1.5 pl-3 text-right';
+
+// The game in numbers: each player's totals, then round by round. Shown on
+// the pause screen as it goes, and at the end.
+function Stats({ stats, you }: { stats: GameStats; you?: string }) {
+	const solo = stats.players.length < 2;
+	return (
+		<>
+			{/* scrolls sideways rather than squashing on a narrow window */}
+			<div className="w-full overflow-x-auto">
+				<table className="w-full text-sm">
+					<thead className="text-muted-foreground">
+						<tr>
+							<th className="pb-1.5 text-left font-medium">Player</th>
+							{['Kills', 'Headshots', 'Earned', 'Spent', 'Downs', 'Revives'].map((h) => (
+								<th key={h} className={HEAD}>
+									{h}
+								</th>
+							))}
+						</tr>
+					</thead>
+					<tbody>
+						{stats.players.map((p) => (
+							<tr key={p.id} className="border-t border-border">
+								<td className={cn('py-1.5', p.id !== you && 'text-muted-foreground')}>{p.name}</td>
+								{[p.kills, p.headshots, p.earned, p.spent, p.downs, p.revives].map((v, i) => (
+									<td key={i} className={CELL}>
+										{NUMBER.format(v)}
+									</td>
+								))}
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</div>
+
+			{stats.rounds.length > 0 && (
+				<>
+					<p className="mt-5 text-sm">By Round</p>
+					<div className="mt-1.5 max-h-56 w-full overflow-y-auto">
+						<table className="w-full text-sm">
+							<thead className="sticky top-0 bg-background text-muted-foreground">
+								<tr>
+									<th className="pb-1.5 text-left font-medium">Round</th>
+									<th className={HEAD}>Time</th>
+									{solo ? (
+										<>
+											<th className={HEAD}>Kills</th>
+											<th className={HEAD}>Earned</th>
+										</>
+									) : (
+										stats.players.map((p) => (
+											<th key={p.id} className={HEAD}>
+												{p.name}
+											</th>
+										))
+									)}
+								</tr>
+							</thead>
+							<tbody>
+								{/* latest first, so the round being played is on top */}
+								{stats.rounds
+									.map((r, i) => ({ ...r, n: i + 1 }))
+									.reverse()
+									.map((r) => (
+										<tr key={r.n} className="border-t border-border">
+											<td className="py-1.5">{r.n}</td>
+											<td className={cn(CELL, 'text-muted-foreground')}>{TIME(r.time)}</td>
+											{solo ? (
+												<>
+													<td className={CELL}>{r.kills[0] ?? 0}</td>
+													<td className={CELL}>{NUMBER.format(r.earned[0] ?? 0)}</td>
+												</>
+											) : (
+												r.kills.map((k, j) => (
+													<td key={j} className={CELL}>
+														{k}
+														<span className="text-muted-foreground">
+															{' · '}
+															{NUMBER.format(r.earned[j])}
+														</span>
+													</td>
+												))
+											)}
+										</tr>
+									))}
+							</tbody>
+						</table>
+					</div>
+					<p className="mt-1.5 text-[0.8125rem] text-muted-foreground">
+						{solo
+							? 'Time is spent fighting, not counting breaks.'
+							: "Each player's kills · points earned that round. Time is spent fighting, not counting breaks."}
+					</p>
+				</>
+			)}
+		</>
+	);
+}
+
+const STATS_WIDTH = 'w-[min(40rem,calc(100vw-2rem))]';
+
+function GameOver({
+	hud,
 	client,
-	held,
 	onLeave
 }: {
+	hud: HudState;
 	client: GameClient;
-	held: boolean;
+	onLeave: () => void;
+}) {
+	return (
+		<Card className={STATS_WIDTH}>
+			<p className="text-2xl tracking-tight">Game Over</p>
+			<p className="mb-4 text-sm text-muted-foreground">
+				{hud.round === 1 ? 'You Survived 1 Round' : `You Survived ${hud.round} Rounds`}
+			</p>
+			{hud.stats && <Stats stats={hud.stats} you={hud.players.find((p) => p.you)?.id} />}
+			<div className="mt-4 flex gap-2">
+				{hud.isHost && <Button onClick={() => client.restart()}>Play Again</Button>}
+				<Button variant="outline" onClick={onLeave}>
+					Leave
+				</Button>
+			</div>
+		</Card>
+	);
+}
+
+// Its own component so it opens on the pause screen each time, not wherever it
+// was left. The game's numbers so far sit in a card beside it.
+function PauseMenu({
+	hud,
+	client,
+	onLeave
+}: {
+	hud: HudState;
+	client: GameClient;
 	onLeave: () => void;
 }) {
 	const [view, setView] = useState<'pause' | 'settings'>('pause');
@@ -216,44 +328,74 @@ function PauseMenu({
 		return () => window.removeEventListener('keydown', onKey);
 	}, [view]);
 
-	if (view === 'settings') {
-		return (
-			<Card>
-				<p className="text-2xl tracking-tight">Settings</p>
-				<SettingsForm className="mt-3 w-80" />
-				<Button className="mt-4" onClick={() => setView('pause')}>
-					Back
-				</Button>
-			</Card>
-		);
-	}
 	return (
-		<Card>
-			<p className="text-2xl tracking-tight">Paused</p>
-			<p className="text-sm text-muted-foreground">
-				{held ? 'Everyone is paused, so the game is too' : 'The game keeps going for everyone else'}
-			</p>
-			<Controls className="mt-2 w-full" />
-			<div className="mt-3 flex gap-2">
-				<Button onClick={() => client.lock()}>Play</Button>
-				<Button variant="outline" onClick={() => setView('settings')}>
-					Settings
-				</Button>
-				<Button variant="outline" onClick={onLeave}>
-					Leave
-				</Button>
-			</div>
-		</Card>
+		<Overlay>
+			{view === 'settings' ? (
+				<Box>
+					<p className="text-2xl tracking-tight">Settings</p>
+					<SettingsForm className="mt-3 w-80" />
+					<Button className="mt-4" onClick={() => setView('pause')}>
+						Back
+					</Button>
+				</Box>
+			) : (
+				<Box>
+					<p className="text-2xl tracking-tight">Paused</p>
+					<p className="text-sm text-muted-foreground">
+						{hud.held
+							? 'Everyone is paused, so the game is too'
+							: 'The game keeps going for everyone else'}
+					</p>
+					<Controls className="mt-2 w-full" />
+					<div className="mt-3 flex gap-2">
+						<Button onClick={() => client.lock()}>Play</Button>
+						<Button variant="outline" onClick={() => setView('settings')}>
+							Settings
+						</Button>
+						<Button variant="outline" onClick={onLeave}>
+							Leave
+						</Button>
+					</div>
+				</Box>
+			)}
+			<Box className={STATS_WIDTH}>
+				<p className="text-2xl tracking-tight">Stats</p>
+				<p className="mb-4 text-sm text-muted-foreground">
+					{hud.round ? `Round ${hud.round} so far` : 'Nothing yet, the first round is coming'}
+				</p>
+				{hud.stats && <Stats stats={hud.stats} you={hud.players.find((p) => p.you)?.id} />}
+			</Box>
+		</Overlay>
 	);
 }
 
-function Card({ children }: { children: React.ReactNode }) {
+// Dims and blurs the game behind one or more boxes.
+function Overlay({ children }: { children: React.ReactNode }) {
 	return (
-		<div className="pointer-events-auto absolute inset-0 flex items-center justify-center bg-background/40 backdrop-blur-sm">
-			<div className="flex min-w-72 flex-col items-start gap-1 rounded-xl border border-border bg-background p-6 shadow-lg">
-				{children}
-			</div>
+		<div className="pointer-events-auto absolute inset-0 flex flex-wrap content-center items-stretch justify-center gap-4 overflow-y-auto bg-background/40 p-4 backdrop-blur-sm">
+			{children}
 		</div>
+	);
+}
+
+function Box({ children, className }: { children: React.ReactNode; className?: string }) {
+	return (
+		<div
+			className={cn(
+				'flex min-w-72 flex-col items-start gap-1 rounded-xl border border-border bg-background p-6 shadow-lg',
+				className
+			)}
+		>
+			{children}
+		</div>
+	);
+}
+
+function Card({ children, className }: { children: React.ReactNode; className?: string }) {
+	return (
+		<Overlay>
+			<Box className={className}>{children}</Box>
+		</Overlay>
 	);
 }
 
