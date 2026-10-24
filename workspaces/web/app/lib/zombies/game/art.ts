@@ -15,7 +15,17 @@ export const SURFACES = [
 	'wall_plaster',
 	'wall_brick',
 	'planks',
-	'rusty_metal'
+	'rusty_metal',
+	'ground_grass',
+	'ground_sidewalk',
+	'ground_concrete',
+	'floor_checker',
+	'wall_redbrick',
+	'wall_siding',
+	'wall_metal',
+	'roof_flat',
+	'roof_shingle',
+	'shutter'
 ] as const;
 export type SurfaceName = (typeof SURFACES)[number];
 
@@ -32,7 +42,22 @@ export const PROPS = [
 	'power_box_01',
 	'old_tyre',
 	'cardboard_box_01',
-	'trashbag'
+	'trashbag',
+	'covered_car',
+	'fire_hydrant',
+	'utility_box_02',
+	'exterior_aircon_unit',
+	'security_light',
+	'shrub_02',
+	'shrub_04',
+	'painted_wooden_bench',
+	'steel_frame_shelves_03',
+	'wooden_crate_02',
+	'concrete_road_barrier_02',
+	'water_manhole_cover',
+	'wooden_table_03',
+	'painted_wooden_chair_01',
+	'rollershutter_door'
 ] as const;
 export type PropName = (typeof PROPS)[number];
 

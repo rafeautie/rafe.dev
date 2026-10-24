@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Blocking, CELL, WINDOW_BOARDS, buildMap, cellIndex, cellOf, type GameMap } from '../map';
+import { Blocking, WINDOW_BOARDS, buildMap, type GameMap } from '../map';
 import type {
 	BoxSnap,
 	GameStats,
@@ -1785,25 +1785,32 @@ export class GameClient {
 		return { t, normal: this.normalAt(at, d), door: this.onDoor(at, d) };
 	}
 
+	// The wall a ray struck, looked for just around the point it struck.
+	private wallAt(at: THREE.Vector3, d: THREE.Vector3) {
+		const flat = Math.hypot(d.x, d.z) || 1;
+		return this.blocking.hit(
+			at.x - (d.x / flat) * 0.3,
+			at.z - (d.z / flat) * 0.3,
+			d.x,
+			d.z,
+			0.6,
+			true
+		);
+	}
+
 	// whether a point a ray struck is on a door, which marks shouldn't stick
 	// to since it opens
 	private onDoor(at: THREE.Vector3, d: THREE.Vector3) {
-		const cx = cellOf(at.x + d.x * 0.05);
-		const cz = cellOf(at.z + d.z * 0.05);
-		return at.y > 0.03 && (this.map.doorAt[cellIndex(cx, cz)] ?? -1) >= 0;
+		return at.y > 0.03 && this.wallAt(at, d).door;
 	}
 
 	// Which way the surface faces where a ray struck it: up for the floor,
-	// otherwise out of whichever face of the wall cell it crossed.
+	// otherwise out of the wall it met.
 	private normalAt(at: THREE.Vector3, d: THREE.Vector3) {
 		if (at.y < 0.03) return new THREE.Vector3(0, 1, 0);
-		const fx = at.x / CELL - Math.floor(at.x / CELL);
-		const fz = at.z / CELL - Math.floor(at.z / CELL);
-		const toX = Math.min(fx, 1 - fx);
-		const toZ = Math.min(fz, 1 - fz);
-		return toX < toZ
-			? new THREE.Vector3(-Math.sign(d.x) || 1, 0, 0)
-			: new THREE.Vector3(0, 0, -Math.sign(d.z) || 1);
+		const wall = this.wallAt(at, d);
+		if (wall.nx === 0 && wall.nz === 0) return new THREE.Vector3(-d.x, 0, -d.z).normalize();
+		return new THREE.Vector3(wall.nx, 0, wall.nz);
 	}
 
 	private placeCamera(dt: number, now: number) {
