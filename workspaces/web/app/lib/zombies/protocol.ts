@@ -45,6 +45,8 @@ export const POSE_AIR = 16;
 export type ZombieSnap = [number, number, number, number, number, number];
 export const ZOMBIE_ATTACKING = 1;
 export const ZOMBIE_RISING = 2;
+// knocked back by a hit, and slowed for a moment
+export const ZOMBIE_STAGGER = 4;
 
 export type Snapshot = {
 	t: 'snap';

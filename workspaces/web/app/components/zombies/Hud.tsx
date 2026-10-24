@@ -52,6 +52,17 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				</Panel>
 			)}
 
+			{/* which way each recent hit came from */}
+			{hud.danger.map((d) => (
+				<div
+					key={d.id}
+					className="absolute top-1/2 left-1/2 size-0"
+					style={{ transform: `rotate(${d.angle}deg)`, opacity: Math.min(1, d.left * 1.6) }}
+				>
+					<div className="absolute -top-36 -left-14 h-6 w-28 rounded-[50%] border-t-[5px] border-destructive drop-shadow-[0_0_6px_rgb(0_0_0/0.4)]" />
+				</div>
+			))}
+
 			{/* crosshair, with a mark for each hit */}
 			{hud.life !== 'dead' && !over && (
 				<div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">

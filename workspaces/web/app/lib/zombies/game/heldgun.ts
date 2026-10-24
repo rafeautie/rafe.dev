@@ -55,6 +55,9 @@ export class HeldGun {
 		this.body.scale.set(0.07, 0.09, this.length);
 		this.body.position.set(0, 0, -this.length / 2);
 		this.flash.position.set(0, 0, -this.length - 0.08);
+		const tint = WEAPONS[id].tracer ?? '#fff6e0';
+		(this.tracer.material as THREE.MeshBasicMaterial).color.set(tint);
+		(this.flash.material as THREE.MeshBasicMaterial).color.set(WEAPONS[id].tracer ?? '#fff3d6');
 	}
 
 	// hand is where the right hand is, in the world; yaw and pitch are where
