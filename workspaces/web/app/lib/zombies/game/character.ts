@@ -228,7 +228,10 @@ class Layer {
 
 	private fade = 0.2;
 
-	// eases every weight toward its target; scale multiplies the whole layer
+	// eases every weight toward its target; scale multiplies the whole layer.
+	// The weights are shared out so they always add up to one: a switch made
+	// mid-fade would otherwise start the new clip from nothing while the old
+	// ones were still fading, and the gap shows as the bare T-pose.
 	update(dt: number, scale = 1) {
 		const step = this.fade > 0 ? dt / this.fade : 1;
 		this.playing = this.playing.filter((p) => {
@@ -237,9 +240,10 @@ class Layer {
 				p.action.stop();
 				return false;
 			}
-			p.action.setEffectiveWeight(p.weight * scale);
 			return true;
 		});
+		const total = this.playing.reduce((sum, p) => sum + p.weight, 0);
+		for (const p of this.playing) p.action.setEffectiveWeight((p.weight / (total || 1)) * scale);
 	}
 
 	get busy() {
@@ -291,9 +295,14 @@ export class Character implements Figure {
 			const mesh = o as THREE.Mesh;
 			if (!mesh.isMesh) return;
 			// each body fades on its own, so each has its own materials
-			const own = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).map((mat) =>
-				mat.clone()
-			);
+			const own = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).map((mat) => {
+				const copy = mat.clone();
+				// faded by dithering rather than blending, so a body fading out
+				// draws with the same shaders as one standing, and the graphics
+				// card never has to stop and build new ones mid-game
+				if (!copy.transparent) copy.alphaHash = true;
+				return copy;
+			});
 			mesh.material = Array.isArray(mesh.material) ? own : own[0];
 			this.materials.push(...own);
 			this.meshes.push(mesh);
@@ -597,11 +606,7 @@ export class Character implements Figure {
 	}
 
 	setOpacity(opacity: number) {
-		for (const mat of this.materials) {
-			mat.transparent = opacity < 0.99;
-			mat.opacity = opacity;
-			mat.depthWrite = opacity > 0.99;
-		}
+		for (const mat of this.materials) mat.opacity = opacity;
 	}
 
 	dispose() {
