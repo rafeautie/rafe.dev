@@ -89,6 +89,26 @@ async function load(): Promise<Cast> {
 				dir: extras.dir ?? [0, 0]
 			});
 		}
+		// no pack has a shotgun reload, so a shell is the stretch of the rifle
+		// reload where the hand goes to the gun, played over and over
+		const reload = clips.get('reload');
+		if (reload) {
+			const frames = reload.full.duration * 30;
+			const part = (c: THREE.AnimationClip) =>
+				THREE.AnimationUtils.subclip(
+					c,
+					c.name + ':shell',
+					Math.round(frames * 0.45),
+					Math.round(frames * 0.7),
+					30
+				);
+			clips.set('reload_shell', {
+				...reload,
+				full: part(reload.full),
+				lower: part(reload.lower),
+				upper: part(reload.upper)
+			});
+		}
 		// every survivor and zombie stands about as tall; the brute towers
 		const want = name === 'zombie_brute' ? 1.18 : 0.96;
 		models.set(name, { scene, scale: want / worldHips(scene), clips });
@@ -393,10 +413,13 @@ export class Character implements Figure {
 		} else if (s.attacking) {
 			this.loop('z_attack', 1.6, 0.15, true);
 		} else if (s.speed > 0.2 || s.climbing) {
-			const name =
+			let name =
 				s.pace === 0
 					? ['z_walk_b', 'z_walk_a', 'z_walk_c'][s.variant % 3]
 					: ['z_run_a', 'z_run_b'][s.variant % 2];
+			// the slow shambles can't keep up with a walker at full pace
+			// without a frantic stride, so it takes the longest one
+			if (s.pace === 0 && s.speed / this.clip(name).speed > 2.2) name = 'z_walk_b';
 			const c = this.clip(name);
 			this.loop(name, clamp(Math.max(s.speed, 0.6) / c.speed, 0.6, s.pace === 0 ? 2.6 : 1.6));
 		} else {
@@ -423,6 +446,8 @@ export class Character implements Figure {
 			pistol: boolean;
 			// seconds a reload takes with this gun
 			reload: number;
+			// seconds for each shell, for a gun loaded a shell at a time
+			shell: number;
 			shots: number;
 			knifes: number;
 			pose: Posture;
@@ -478,6 +503,9 @@ export class Character implements Figure {
 			this.oneShot = 0.7;
 		} else if (this.oneShot > 0) {
 			// a stab or a shot plays out
+		} else if (s.reloading && s.shell > 0) {
+			const a = this.overlay('reload_shell', 0.15)!;
+			a.timeScale = this.clip('reload_shell').full.duration / s.shell;
 		} else if (s.reloading) {
 			const a = this.overlay('reload', 0.15, { once: true })!;
 			a.timeScale = this.clip('reload').full.duration / Math.max(0.5, s.reload);

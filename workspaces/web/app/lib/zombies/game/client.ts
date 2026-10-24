@@ -1683,6 +1683,7 @@ export class GameClient {
 				air: (pb.flags & POSE_AIR) !== 0,
 				pistol: weapon.reloadStyle === 'pistol',
 				reload: weapon.reload,
+				shell: weapon.reloadStyle === 'shells' ? shellTime(weapon) : 0,
 				reloading: (pb.flags & POSE_RELOAD) !== 0,
 				shots: pb.shots,
 				knifes: pb.knifes,
