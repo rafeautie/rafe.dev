@@ -2,11 +2,64 @@ import type { PowerupKind } from '../protocol';
 import type { PerkId } from '../rules';
 import type { WeaponId } from '../weapons';
 
-// Every sound is made on the spot with Web Audio, from filtered noise and a
-// few tones, so the game ships no audio files. Each sound is one named
-// method, so a recording can take its place later without the game
-// noticing. Sounds given a place in the world come from there: louder up
-// close, and from the left or right as the player turns.
+// Each sound is one named method. Most play a recording (guns, reloads,
+// steps, zombies, boards, the box, doors and the background), and fall back
+// to one made on the spot with Web Audio, from filtered noise and a few
+// tones, if the recordings haven't loaded. The tunes and cues are always
+// made on the spot. Sounds given a place in the world come from there:
+// louder up close, and from the left or right as the player turns.
+
+const BASE = '/zombies/sounds/';
+// each recording, and how many takes it has (name_1, name_2, ...) if more
+// than one
+const RECORDINGS: Record<string, number> = {
+	shot_m1911: 1,
+	shot_olympia: 1,
+	shot_m14: 1,
+	shot_mp5: 1,
+	shot_ak74u: 1,
+	shot_remington: 1,
+	shot_galil: 1,
+	shot_python: 1,
+	shot_rpd: 1,
+	shot_raygun: 1,
+	reload_out: 1,
+	reload_in: 1,
+	reload_slide: 1,
+	reload_shell: 1,
+	reload_pump: 1,
+	knife: 1,
+	step: 6,
+	groan: 9,
+	board_break: 2,
+	board_repair: 2,
+	door: 1,
+	box_open: 1,
+	box_close: 1,
+	ambience: 1
+};
+
+let fetching: Promise<Map<string, ArrayBuffer[]>> | null = null;
+
+// Fetches every recording, once; they're decoded when sound is allowed.
+// A recording that fails is left out, and its sound is made instead.
+export function loadSounds() {
+	fetching ??= Promise.all(
+		Object.entries(RECORDINGS).map(async ([name, takes]) => {
+			const files =
+				takes === 1 ? [name] : Array.from({ length: takes }, (_, i) => `${name}_${i + 1}`);
+			const data = await Promise.all(
+				files.map((f) =>
+					fetch(`${BASE}${f}.mp3`)
+						.then((r) => (r.ok ? r.arrayBuffer() : null))
+						.catch(() => null)
+				)
+			);
+			return [name, data.filter((d): d is ArrayBuffer => !!d)] as const;
+		})
+	).then((all) => new Map(all.filter(([, d]) => d.length)));
+	return fetching;
+}
 
 const SHOT_TONE: Record<WeaponId, { freq: number; decay: number; boom: number }> = {
 	m1911: { freq: 1400, decay: 0.12, boom: 0.4 },
@@ -38,6 +91,8 @@ export class Sound {
 	private master: GainNode | null = null;
 	private noise: AudioBuffer | null = null;
 	private volume = 0.5;
+	private recordings = new Map<string, AudioBuffer[]>();
+	private ambience: AudioBufferSourceNode | null = null;
 
 	// 0 to 1, from the player's settings
 	setVolume(volume: number) {
@@ -60,6 +115,49 @@ export class Sound {
 		this.noise = ctx.createBuffer(1, length, ctx.sampleRate);
 		const data = this.noise.getChannelData(0);
 		for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+		void loadSounds().then(async (files) => {
+			for (const [name, takes] of files) {
+				const buffers = await Promise.all(
+					// decoding takes the data, so each gets its own copy
+					takes.map((d) => ctx.decodeAudioData(d.slice(0)).catch(() => null))
+				);
+				const ok = buffers.filter((b): b is AudioBuffer => !!b);
+				if (ok.length && this.ctx === ctx) this.recordings.set(name, ok);
+			}
+			if (this.ctx === ctx) this.startAmbience();
+		});
+	}
+
+	// the background, looping quietly under everything
+	private startAmbience() {
+		const { ctx, master } = this;
+		const buffer = this.recordings.get('ambience')?.[0];
+		if (!ctx || !master || !buffer || this.ambience) return;
+		const src = ctx.createBufferSource();
+		src.buffer = buffer;
+		src.loop = true;
+		const gain = ctx.createGain();
+		gain.gain.value = 0.35;
+		src.connect(gain).connect(master);
+		src.start();
+		this.ambience = src;
+	}
+
+	// Plays a recording, a random take if it has several, a little higher or
+	// lower each time by up to `vary`. False if it isn't loaded.
+	private play(name: string, gain: number, at?: Place, vary = 0.04) {
+		const { ctx } = this;
+		const takes = this.recordings.get(name);
+		const out = this.out(at);
+		if (!ctx || !takes || !out) return false;
+		const src = ctx.createBufferSource();
+		src.buffer = takes[Math.floor(Math.random() * takes.length)];
+		src.playbackRate.value = 1 + (Math.random() * 2 - 1) * vary;
+		const g = ctx.createGain();
+		g.gain.value = gain;
+		src.connect(g).connect(out);
+		src.start();
+		return true;
 	}
 
 	// Where the player's ears are, and which way they face.
@@ -165,6 +263,7 @@ export class Sound {
 	shot(weapon: WeaponId, at?: Place) {
 		const t = SHOT_TONE[weapon];
 		const v = at ? 0.7 : 1;
+		if (this.play(`shot_${weapon}`, 0.75 * v, at)) return;
 		if (weapon === 'raygun') {
 			this.tone(1800, 0.22, 0.25 * v, 'sawtooth', 300, at);
 			this.burst({ freq: 2400, q: 2, decay: 0.12, gain: 0.3 * v }, at);
@@ -190,6 +289,15 @@ export class Sound {
 			open: [420, 0.06, 0.16, 'square'],
 			close: [650, 0.05, 0.2, 'square']
 		};
+		const recorded: Partial<Record<ReloadPart, string>> = {
+			out: 'reload_out',
+			in: 'reload_in',
+			slide: 'reload_slide',
+			shell: 'reload_shell',
+			pump: 'reload_pump'
+		};
+		const name = recorded[part];
+		if (name && this.play(name, 0.6)) return;
 		const [freq, decay, gain, type] = parts[part];
 		this.tone(freq, decay, gain, type, freq * 0.85);
 		this.burst({ freq: freq * 2.5, q: 1.2, decay: decay * 0.8, gain: gain * 0.8 });
@@ -201,6 +309,7 @@ export class Sound {
 	}
 
 	knife() {
+		if (this.play('knife', 0.5, undefined, 0.08)) return;
 		this.burst({ freq: 3000, q: 0.6, decay: 0.12, gain: 0.35, type: 'highpass' });
 	}
 
@@ -226,6 +335,7 @@ export class Sound {
 	footstep(surface: Surface, volume: number, at?: Place) {
 		void surface;
 		if (volume < 0.05) return;
+		if (this.play('step', 0.35 * volume, at, 0.08)) return;
 		const pitch = 0.85 + Math.random() * 0.3;
 		this.burst(
 			{ freq: 260 * pitch, q: 0.9, decay: 0.07, gain: 0.32 * volume, type: 'lowpass' },
@@ -237,6 +347,8 @@ export class Sound {
 	// a zombie's dragging step
 	zombieStep(at: Place, volume: number) {
 		if (volume < 0.05) return;
+		// the same recorded steps as a player's
+		if (this.play('step', 0.3 * volume, at, 0.05)) return;
 		this.burst(
 			{ freq: 180 + Math.random() * 80, q: 0.6, decay: 0.12, gain: 0.3 * volume, type: 'lowpass' },
 			at
@@ -255,6 +367,7 @@ export class Sound {
 	}
 
 	groan(at: Place) {
+		if (this.play('groan', 0.7, at, 0.1)) return;
 		const base = 70 + Math.random() * 50;
 		this.tone(base, 0.7 + Math.random() * 0.5, 0.3, 'sawtooth', base * 0.7, at);
 	}
@@ -271,17 +384,20 @@ export class Sound {
 	}
 
 	door() {
+		if (this.play('door', 0.7)) return;
 		this.burst({ freq: 200, q: 0.5, decay: 0.6, gain: 0.8, type: 'lowpass' });
 	}
 
 	// a board torn off a window
 	boardBreak(at: Place) {
+		if (this.play('board_break', 0.8, at, 0.08)) return;
 		this.burst({ freq: 700, q: 0.8, decay: 0.25, gain: 0.7 }, at);
 		this.tone(140, 0.2, 0.3, 'square', 90, at);
 	}
 
 	// a board nailed back on
 	boardRepair() {
+		if (this.play('board_repair', 0.6, undefined, 0.06)) return;
 		this.tone(900, 0.04, 0.22, 'square', 700);
 		this.tone(900, 0.04, 0.22, 'square', 700, undefined, 0.12);
 		this.burst({ freq: 400, q: 0.8, decay: 0.12, gain: 0.25, type: 'lowpass', delay: 0.05 });
@@ -289,6 +405,7 @@ export class Sound {
 
 	// the Mystery Box lid
 	boxOpen(at: Place) {
+		if (this.play('box_open', 0.7, at)) return;
 		this.burst({ freq: 300, q: 0.7, decay: 0.4, gain: 0.5, type: 'lowpass' }, at);
 	}
 
@@ -301,6 +418,7 @@ export class Sound {
 	}
 
 	boxClose(at: Place) {
+		if (this.play('box_close', 0.7, at)) return;
 		this.burst({ freq: 220, q: 0.7, decay: 0.3, gain: 0.5, type: 'lowpass' }, at);
 	}
 
@@ -350,5 +468,7 @@ export class Sound {
 	close() {
 		void this.ctx?.close();
 		this.ctx = null;
+		this.ambience = null;
+		this.recordings.clear();
 	}
 }
