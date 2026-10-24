@@ -351,7 +351,6 @@ function Report({
 							<Suspense fallback={<GlobeSpace />}>
 								<Globe
 									countries={b.country}
-									regions={stats.places.regions}
 									cities={stats.places.cities}
 									active={filters}
 									onPick={onFilter}
