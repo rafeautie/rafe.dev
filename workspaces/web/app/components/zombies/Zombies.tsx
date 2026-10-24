@@ -76,14 +76,14 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 	}
 
 	return (
-		<div className="min-h-dvh p-6 text-base text-foreground sm:p-8">
+		<div className="flex min-h-dvh flex-col p-6 text-base text-foreground sm:p-8">
 			<SlashNav className="text-xl font-medium">
 				<Link href="/">rafe</Link>
 				zombies
 			</SlashNav>
 			{/* boxed in like the tiles elsewhere on the site, with the controls and
 			    settings a click away in a window of their own */}
-			<div className={`relative mx-auto mt-16 max-w-sm sm:mt-24 ${CARD}`}>
+			<div className={`relative m-auto w-full max-w-sm ${CARD}`}>
 				<ControlsAndSettings />
 				{!session || !state || closed ? (
 					<Start
