@@ -6,6 +6,7 @@ import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '~/components/ui/dialog';
 import { Input } from '~/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
+import { loadArt } from '~/lib/zombies/game/art';
 import { loadCast } from '~/lib/zombies/game/character';
 import { REFUSALS } from '~/lib/zombies/net';
 import { Session } from '~/lib/zombies/session';
@@ -51,9 +52,12 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 	);
 
 	useEffect(() => () => session?.close(), [session]);
-	// the characters download while players gather in the lobby
+	// the characters and the world's art download while players gather in
+	// the lobby
 	useEffect(() => {
-		if (session) void loadCast();
+		if (!session) return;
+		void loadCast();
+		void loadArt();
 	}, [session]);
 
 	// a lost connection or a refused join lands back on the start screen

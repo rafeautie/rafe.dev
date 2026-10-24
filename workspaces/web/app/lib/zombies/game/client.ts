@@ -60,6 +60,7 @@ import {
 	type Joints,
 	type Posture
 } from './rig';
+import type { Art } from './art';
 import { PALETTE, buildWorld, type World } from './scene';
 import { VIEW_LAYER, ViewModel, type ViewState } from './viewmodel';
 
@@ -323,7 +324,9 @@ export class GameClient {
 		private canvas: HTMLCanvasElement,
 		private session: Session,
 		// the characters and their animations; without them, boxes
-		private cast: Cast | null = null
+		private cast: Cast | null = null,
+		// the world's textures and props; without them, plain
+		art: Art | null = null
 	) {
 		this.map = buildMap();
 		this.blocking = new Blocking(this.map);
@@ -335,9 +338,9 @@ export class GameClient {
 		this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 		// cleared by hand, so the gun's pass can draw over the world's
 		this.renderer.autoClear = false;
-		this.scene.background = new THREE.Color(PALETTE.sky);
-		this.scene.fog = new THREE.Fog(PALETTE.sky, 10, 62);
-		this.world = buildWorld(this.map);
+		this.world = buildWorld(this.map, art);
+		this.scene.background = new THREE.Color(this.world.sky);
+		this.scene.fog = new THREE.Fog(this.world.sky, art ? 14 : 10, art ? 70 : 62);
 		this.blocking.open.forEach((open, i) => open && this.world.openDoor(i));
 		this.world.update(10);
 		this.camera.rotation.order = 'YXZ';
