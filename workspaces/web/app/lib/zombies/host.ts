@@ -50,6 +50,7 @@ type HostPlayer = {
 	knifes: number;
 	lastHurt: number;
 	soloRevives: number;
+	paused: boolean;
 };
 
 type HostZombie = {
@@ -123,7 +124,8 @@ export class HostGame {
 			shots: 0,
 			knifes: 0,
 			lastHurt: -Infinity,
-			soloRevives: PLAYER.soloRevives
+			soloRevives: PLAYER.soloRevives,
+			paused: false
 		});
 		this.send(id, {
 			t: 'welcome',
@@ -201,6 +203,7 @@ export class HostGame {
 				if (Number.isFinite(message.shots)) p.shots = message.shots;
 				if (Number.isFinite(message.knifes)) p.knifes = message.knifes;
 				p.reviving = typeof message.reviving === 'string' ? message.reviving : null;
+				p.paused = message.paused === true;
 				break;
 			}
 			case 'hit':
@@ -274,7 +277,7 @@ export class HostGame {
 
 	tick(dt = TICK) {
 		this.time += dt;
-		if (this.phase === 'playing' || this.phase === 'break') {
+		if ((this.phase === 'playing' || this.phase === 'break') && !this.held()) {
 			this.updatePlayers(dt);
 			// either can end the game, and nothing more happens after that
 			if (!this.ended()) this.updateZombies(dt);
@@ -292,6 +295,12 @@ export class HostGame {
 			}
 		}
 		if (++this.ticks % SNAPSHOT_EVERY === 0) this.broadcast(this.snapshot());
+	}
+
+	// With everyone in the pause menu nobody is playing, so nothing moves and
+	// no timer runs until someone comes back.
+	private held() {
+		return this.players.size > 0 && [...this.players.values()].every((p) => p.paused);
 	}
 
 	// a method rather than a comparison inline, since the phase can change
@@ -556,6 +565,7 @@ export class HostGame {
 			round: this.round,
 			left: this.toSpawn + this.zombies.size,
 			timer: Math.ceil(Math.max(0, this.breakTimer)),
+			held: this.held(),
 			players,
 			zombies
 		};

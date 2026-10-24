@@ -39,6 +39,7 @@ export type Snapshot = {
 	round: number;
 	left: number; // zombies still to kill this round
 	timer: number; // seconds left in a break
+	held: boolean; // everyone is paused, so the game is too
 	players: PlayerSnap[];
 	zombies: ZombieSnap[];
 };
@@ -92,6 +93,8 @@ export type PlayerMessage =
 			shots: number;
 			knifes: number;
 			reviving: string | null;
+			// in the pause menu, or not yet clicked in
+			paused: boolean;
 	  }
 	| {
 			t: 'hit';

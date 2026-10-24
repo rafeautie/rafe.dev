@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Button } from '~/components/ui/button';
 import type { GameClient } from '~/lib/zombies/game/client';
 import { PLAYER } from '~/lib/zombies/rules';
@@ -165,7 +165,7 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				</Panel>
 			)}
 
-			{paused && <PauseMenu client={client} onLeave={onLeave} />}
+			{paused && <PauseMenu client={client} held={hud.held} onLeave={onLeave} />}
 
 			{over && (
 				<Card>
@@ -195,8 +195,26 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 
 // Its own component so it opens on the pause screen each time, not wherever it
 // was left.
-function PauseMenu({ client, onLeave }: { client: GameClient; onLeave: () => void }) {
+function PauseMenu({
+	client,
+	held,
+	onLeave
+}: {
+	client: GameClient;
+	held: boolean;
+	onLeave: () => void;
+}) {
 	const [view, setView] = useState<'pause' | 'settings'>('pause');
+
+	// ESC steps back out of Settings. On the pause screen itself it can't
+	// resume: browsers only capture the mouse after a click or another key.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape' && view === 'settings') setView('pause');
+		};
+		window.addEventListener('keydown', onKey);
+		return () => window.removeEventListener('keydown', onKey);
+	}, [view]);
 
 	if (view === 'settings') {
 		return (
@@ -212,7 +230,9 @@ function PauseMenu({ client, onLeave }: { client: GameClient; onLeave: () => voi
 	return (
 		<Card>
 			<p className="text-2xl tracking-tight">Paused</p>
-			<p className="text-sm text-muted-foreground">The game keeps going for everyone else</p>
+			<p className="text-sm text-muted-foreground">
+				{held ? 'Everyone is paused, so the game is too' : 'The game keeps going for everyone else'}
+			</p>
 			<Controls className="mt-2 w-full" />
 			<div className="mt-3 flex gap-2">
 				<Button onClick={() => client.lock()}>Play</Button>

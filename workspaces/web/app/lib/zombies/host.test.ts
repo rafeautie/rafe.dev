@@ -79,7 +79,8 @@ describe('host game', () => {
 				weapon: 'm1911',
 				shots: 0,
 				knifes: 0,
-				reviving: null
+				reviving: null,
+				paused: false
 			});
 			for (const [id] of snap().zombies) {
 				game.handle('p0', {
@@ -146,6 +147,38 @@ describe('host game', () => {
 		expect(snap().phase).toBe('over');
 	});
 
+	it('stands still while every player is paused, and carries on when one comes back', () => {
+		const { game, run, snap } = setup(2);
+		const me = (id: string, paused: boolean) =>
+			game.handle(id, {
+				t: 'me',
+				x: 37,
+				y: 0,
+				z: 37,
+				yaw: 0,
+				pitch: 0,
+				weapon: 'm1911',
+				shots: 0,
+				knifes: 0,
+				reviving: null,
+				paused
+			});
+		game.start();
+		const timer = snap().timer;
+		me('p0', true);
+		run(3);
+		// one player still in, so the break counts down
+		expect(snap()).toMatchObject({ held: false });
+		expect(snap().timer).toBeLessThan(timer);
+		me('p1', true);
+		const before = snap();
+		run(30);
+		expect(snap()).toMatchObject({ held: true, phase: 'break', timer: before.timer });
+		me('p1', false);
+		run(BREAK.first);
+		expect(snap()).toMatchObject({ held: false, phase: 'playing', round: 1 });
+	});
+
 	it('revives a downed teammate who is held long enough', () => {
 		const { game, run, snap } = setup(2);
 		game.start();
@@ -163,7 +196,8 @@ describe('host game', () => {
 			weapon: 'm1911',
 			shots: 0,
 			knifes: 0,
-			reviving: 'p1'
+			reviving: 'p1',
+			paused: false
 		});
 		run(1);
 		expect(snap().players[1].revive).toBeGreaterThan(0);

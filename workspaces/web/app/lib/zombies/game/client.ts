@@ -64,6 +64,8 @@ export type HudState = {
 	// whether the mouse has been captured yet this game, so the first
 	// click-to-play prompt isn't mistaken for a pause
 	played: boolean;
+	// everyone is paused, so the game is too
+	held: boolean;
 	isHost: boolean;
 	area: string;
 };
@@ -449,7 +451,8 @@ export class GameClient {
 				weapon: this.slot().weapon,
 				shots: this.shots,
 				knifes: this.knifes,
-				reviving: this.reviving
+				reviving: this.reviving,
+				paused: document.pointerLockElement !== this.canvas
 			});
 		}
 
@@ -1081,6 +1084,7 @@ export class GameClient {
 			pops: [],
 			locked: false,
 			played: false,
+			held: false,
 			isHost: this.session.state.isHost,
 			area: ''
 		};
@@ -1121,6 +1125,7 @@ export class GameClient {
 			note: performance.now() < this.noteUntil ? this.hud.note : null,
 			locked: document.pointerLockElement === this.canvas,
 			played: this.played,
+			held: latest?.held ?? false,
 			area: this.map.roomName(this.me.x, this.me.z)
 		};
 		for (const l of this.hudListeners) l();
