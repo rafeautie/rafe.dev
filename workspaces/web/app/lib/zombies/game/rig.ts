@@ -39,7 +39,19 @@ const geometries = PARTS.map(({ size }) => new THREE.BoxGeometry(size[0], size[1
 
 export type BodyColors = { skin: string; shirt: string; pants: string };
 
-export class Body {
+// Anything drawn from the eleven joints: the boxes here, or a real character
+// (character.ts). The ragdoll moves the joints and asks the figure to follow.
+export interface Figure {
+	readonly joints: Joints;
+	readonly meshes: THREE.Object3D[];
+	place(): void;
+	setOpacity(opacity: number): void;
+	hideHead(): void;
+	dispose(): void;
+	startRagdoll?(): void;
+}
+
+export class Body implements Figure {
 	readonly meshes: THREE.Mesh[];
 	readonly materials: THREE.MeshLambertMaterial[];
 
@@ -72,6 +84,10 @@ export class Body {
 			b.fromArray(j, part.b * 3);
 			placeBetween(this.meshes[i], a, b, right);
 		});
+	}
+
+	hideHead() {
+		this.meshes[1].visible = false;
 	}
 
 	setOpacity(opacity: number) {
@@ -358,10 +374,11 @@ export class Ragdoll {
 	age = 0;
 
 	constructor(
-		readonly body: Body,
+		readonly body: Figure,
 		// per joint velocity, m/s
 		velocity: Float32Array
 	) {
+		body.startRagdoll?.();
 		const j = body.joints;
 		this.prev = new Float32Array(j.length);
 		for (let i = 0; i < j.length; i++) this.prev[i] = j[i] - velocity[i] * STEP;

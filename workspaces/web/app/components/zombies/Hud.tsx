@@ -1,3 +1,5 @@
+import '@fontsource-variable/archivo/standard.css';
+import '@fontsource/rubik-dirt';
 import { useSyncExternalStore } from 'react';
 import { Button } from '~/components/ui/button';
 import type { GameClient, HudState } from '~/lib/zombies/game/client';
@@ -9,9 +11,17 @@ import { Controls } from './Zombies';
 
 const NUMBER = new Intl.NumberFormat('en-US');
 
-// Everything drawn over the game, kept as quiet as the rest of the site:
-// Geist in title case on white panels, one panel per thing, with numbers that do
-// not jump as they change.
+// each player's points in their own colour, in the order they joined
+const PLAYER_COLORS = ['#f4f1ea', '#6cb6ff', '#ffd24d', '#7ee08a'];
+// the round, scrawled in blood
+const BLOOD = '#b3141c';
+// white text that stays readable over a bright sky or a dark wall
+const SHADOW = '[text-shadow:0_1px_2px_rgb(0_0_0/0.9),0_0_12px_rgb(0_0_0/0.5)]';
+
+// Everything drawn over the game, in the style of the games it's after: no
+// boxes in the corners, just condensed capitals with a shadow, the round in a
+// rough red scrawl, and dark bands behind prompts, with numbers that do not
+// jump as they change. The menus are dark cards.
 export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => void }) {
 	const hud = useSyncExternalStore(client.subscribe, client.getHud);
 	const hurt = Math.max(0, 1 - hud.hp / hud.maxHp);
@@ -23,7 +33,12 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 	const awayCount = hud.players.filter((p) => p.away).length;
 
 	return (
-		<div className="pointer-events-none absolute inset-0 font-medium text-foreground tabular-nums">
+		<div
+			className={cn(
+				'pointer-events-none absolute inset-0 font-archivo font-semibold tracking-wide text-white uppercase font-stretch-75% tabular-nums',
+				SHADOW
+			)}
+		>
 			{/* damage: the edges close in as health drops */}
 			<div
 				className="absolute inset-0 transition-opacity duration-300"
@@ -42,22 +57,25 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 			/>
 
 			{/* where you are */}
-			<Panel className="absolute top-5 left-5 px-3 py-1.5 text-sm text-muted-foreground">
+			<p
+				className="absolute top-5 left-5 border-l-2 pl-2.5 text-sm tracking-[0.2em] text-white/85"
+				style={{ borderColor: BLOOD }}
+			>
 				{hud.area}
-			</Panel>
+			</p>
 
 			{/* who's on the pause screen, when playing with others */}
 			{hud.players.length > 1 && pausedCount + awayCount > 0 && !paused && !over && (
-				<Panel className="absolute top-5 left-1/2 -translate-x-1/2 px-3 py-1.5 text-sm text-muted-foreground">
+				<Panel className="absolute top-5 left-1/2 -translate-x-1/2 px-6 py-1 text-sm text-white/75">
 					{pausedLine(pausedCount, awayCount, hud.players.length)}
 				</Panel>
 			)}
 
 			{/* the host dropped out, or this player lost them for a moment */}
 			{hud.reconnecting && !over && (
-				<Panel className="absolute top-[30%] left-1/2 flex -translate-x-1/2 flex-col items-center gap-1 px-6 py-4 text-center">
-					<p className="animate-pulse text-xl tracking-tight">Reconnecting</p>
-					<p className="text-sm text-muted-foreground">Your Points and Guns Are Kept</p>
+				<Panel className="absolute top-[30%] left-1/2 flex -translate-x-1/2 flex-col items-center gap-1 px-14 py-3 text-center">
+					<p className="animate-pulse text-2xl">Reconnecting</p>
+					<p className="text-sm text-white/70">Your Points and Guns Are Kept</p>
 				</Panel>
 			)}
 
@@ -100,7 +118,12 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 			{/* what can be bought or done here */}
 			<div className="absolute top-[62%] left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
 				{hud.hint && (
-					<Panel className={cn('px-3.5 py-2 text-sm', hud.hint.muted && 'text-muted-foreground')}>
+					<Panel
+						className={cn(
+							'flex flex-col items-center px-12 py-1.5 text-base',
+							hud.hint.muted && 'text-white/60'
+						)}
+					>
 						{hud.hint.text}
 						{hud.reviving > 0 && <Progress value={hud.reviving} className="mt-2" />}
 						{hud.hint.progress !== undefined && hud.reviving <= 0 && (
@@ -111,8 +134,8 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				{hud.note && (
 					<Panel
 						className={cn(
-							'px-3.5 py-2 text-sm',
-							hud.note.warning ? 'text-destructive' : 'text-base tracking-wide uppercase'
+							'px-12 py-1.5',
+							hud.note.warning ? 'text-base text-red-400' : 'text-lg tracking-[0.15em]'
 						)}
 					>
 						{hud.note.text}
@@ -122,11 +145,14 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 
 			{/* downed or dead */}
 			{hud.life !== 'alive' && !over && (
-				<Panel className="absolute top-[24%] left-1/2 flex min-w-56 -translate-x-1/2 flex-col items-center gap-1 px-6 py-4 text-center">
-					<p className="text-2xl tracking-tight">
+				<Panel className="absolute top-[24%] left-1/2 flex min-w-72 -translate-x-1/2 flex-col items-center gap-1 px-14 py-3 text-center">
+					<p
+						className="font-[family-name:'Rubik_Dirt'] text-5xl font-normal tracking-normal normal-case"
+						style={{ color: BLOOD }}
+					>
 						{hud.life === 'downed' ? 'Downed' : 'You Bled Out'}
 					</p>
-					<p className="text-sm text-muted-foreground">
+					<p className="text-sm text-white/75">
 						{hud.life === 'dead'
 							? 'Back Next Round'
 							: hud.beingRevived > 0
@@ -149,13 +175,15 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 
 			{/* perks held, above the round */}
 			{hud.perks.length > 0 && (
-				<div className="absolute bottom-[7.5rem] left-5 flex gap-1.5">
+				<div className="absolute bottom-[8.5rem] left-5 flex gap-2">
 					{hud.perks.map((perk) => (
 						<span
 							key={perk}
 							title={PERKS[perk].name}
-							className="flex size-8 items-center justify-center rounded-md text-xs font-semibold text-white shadow-sm"
-							style={{ background: PERKS[perk].color }}
+							className="flex size-9 items-center justify-center rounded-full text-xs font-bold text-white ring-2 ring-black/50 [text-shadow:none]"
+							style={{
+								background: `radial-gradient(circle at 35% 30%, color-mix(in oklch, ${PERKS[perk].color} 70%, white), ${PERKS[perk].color} 55%, color-mix(in oklch, ${PERKS[perk].color} 60%, black))`
+							}}
 						>
 							{PERKS[perk].short}
 						</span>
@@ -164,27 +192,28 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 			)}
 
 			{/* round, bottom left */}
-			<Panel className="absolute bottom-5 left-5 flex min-w-28 flex-col px-4 pt-3 pb-2.5">
+			<div className="absolute bottom-5 left-5 flex flex-col">
 				<p
 					key={`round-${hud.round}`}
-					className="animate-in text-5xl leading-none tracking-tight duration-1000 fade-in"
+					className="animate-in font-[family-name:'Rubik_Dirt'] text-8xl leading-[0.85] font-normal tracking-normal duration-1000 fade-in"
+					style={{ color: BLOOD }}
 				>
 					{hud.round || '–'}
 				</p>
-				<p className="mt-1.5 text-sm text-muted-foreground">
+				<p className="mt-1 text-sm text-white/75">
 					{hud.phase === 'break'
 						? hud.round
 							? `Next Round in ${hud.timer}`
 							: `Starting in ${hud.timer}`
-						: `Round · ${hud.left} Left`}
+						: `${hud.left} Left`}
 				</p>
-			</Panel>
+			</div>
 
 			{/* points and ammo, bottom right */}
 			<div className="absolute right-5 bottom-5 flex flex-col items-end gap-2">
-				<Panel className="px-4 py-2.5">
-					<ul className="flex flex-col items-end gap-0.5 text-sm">
-						{hud.players.map((p) => (
+				<div>
+					<ul className="flex flex-col items-end gap-0.5 text-base">
+						{hud.players.map((p, i) => (
 							<li key={p.id} className="relative flex items-baseline gap-3">
 								{p.you &&
 									hud.pops.map((pop) => (
@@ -192,7 +221,7 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 											key={pop.id}
 											className={cn(
 												'absolute right-full mr-7 animate-out duration-1000 fill-mode-forwards fade-out slide-out-to-top-3',
-												pop.amount < 0 ? 'text-destructive' : 'text-muted-foreground'
+												pop.amount < 0 ? 'text-red-400' : 'text-amber-200'
 											)}
 										>
 											{pop.amount > 0 ? '+' : '−'}
@@ -200,37 +229,48 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 										</span>
 									))}
 								{(p.paused || p.away) && (
-									<span className="text-xs tracking-wide text-muted-foreground uppercase">
-										{p.away ? 'Away' : 'Paused'}
-									</span>
+									<span className="text-xs text-white/55">{p.away ? 'Away' : 'Paused'}</span>
 								)}
 								<span
-									className={cn('text-muted-foreground', p.state !== 'alive' && 'line-through')}
+									className={cn(
+										'text-sm text-white/60 normal-case',
+										p.state !== 'alive' && 'line-through'
+									)}
 								>
 									{p.name}
 								</span>
-								<span className={cn(p.you ? 'text-base' : 'text-muted-foreground')}>
+								<span
+									className={cn('min-w-16 text-right', p.you ? 'text-2xl' : 'text-lg')}
+									style={{ color: PLAYER_COLORS[i % PLAYER_COLORS.length] }}
+								>
 									{NUMBER.format(p.points)}
 								</span>
 							</li>
 						))}
 					</ul>
-				</Panel>
+				</div>
 				{hud.life !== 'dead' && (
-					<Panel className="flex min-w-40 flex-col items-end px-4 pt-2.5 pb-3">
-						<p className="text-sm text-muted-foreground">
+					<div className="flex flex-col items-end border-r-2 pr-3" style={{ borderColor: BLOOD }}>
+						<p
+							className={cn(
+								'text-sm tracking-[0.2em] text-white/75',
+								hud.reloading && 'animate-pulse'
+							)}
+						>
 							{hud.reloading ? 'Reloading' : hud.weapon}
 						</p>
-						<p className="text-4xl leading-none tracking-tight">
-							<span className={cn(hud.mag === 0 && 'text-destructive')}>{hud.mag}</span>
-							<span className="text-muted-foreground"> / {hud.reserve}</span>
+						<p className="font-bold">
+							<span className={cn('text-5xl leading-none', hud.mag === 0 && 'text-red-500')}>
+								{hud.mag}
+							</span>
+							<span className="text-2xl text-white/55"> / {hud.reserve}</span>
 						</p>
-					</Panel>
+					</div>
 				)}
 			</div>
 
 			{waiting && (
-				<Panel className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-6 px-3.5 py-2 text-sm">
+				<Panel className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-6 px-12 py-1.5 text-base">
 					Click to Play
 				</Panel>
 			)}
@@ -347,6 +387,7 @@ function Stats({ stats, you }: { stats: GameStats; you?: string }) {
 }
 
 const STATS_WIDTH = 'w-[min(48rem,calc(100vw-2rem))]';
+const HEADING = 'font-archivo text-3xl font-bold tracking-wide uppercase font-stretch-75%';
 
 function GameOver({
 	hud,
@@ -359,7 +400,9 @@ function GameOver({
 }) {
 	return (
 		<Card className={STATS_WIDTH}>
-			<p className="text-2xl tracking-tight">Game Over</p>
+			<p className={HEADING} style={{ color: BLOOD }}>
+				Game Over
+			</p>
 			<p className="mb-4 text-sm text-muted-foreground">
 				{hud.round === 1 ? 'You Survived 1 Round' : `You Survived ${hud.round} Rounds`}
 			</p>
@@ -396,7 +439,7 @@ function PauseMenu({
 		<Overlay>
 			<div className={cn('grid gap-4 md:grid-cols-2', STATS_WIDTH)}>
 				<Box>
-					<p className="text-2xl tracking-tight">Paused</p>
+					<p className={HEADING}>Paused</p>
 					<p className="text-sm text-muted-foreground">
 						{hud.players.length < 2
 							? 'The game is paused'
@@ -419,11 +462,11 @@ function PauseMenu({
 					</div>
 				</Box>
 				<Box>
-					<p className="text-2xl tracking-tight">Settings</p>
+					<p className={HEADING}>Settings</p>
 					<SettingsForm className="mt-3 w-full" />
 				</Box>
 				<Box className="md:col-span-2">
-					<p className="text-2xl tracking-tight">Stats</p>
+					<p className={HEADING}>Stats</p>
 					<p className="mb-4 text-sm text-muted-foreground">
 						{hud.round ? `Round ${hud.round} so far` : 'Nothing yet, the first round is coming'}
 					</p>
@@ -438,7 +481,7 @@ function PauseMenu({
 // rather than cut off when they're taller than the window.
 function Overlay({ children }: { children: React.ReactNode }) {
 	return (
-		<div className="pointer-events-auto absolute inset-0 flex overflow-y-auto bg-background/40 p-4 backdrop-blur-sm">
+		<div className="dark pointer-events-auto absolute inset-0 flex overflow-y-auto bg-black/55 p-4 font-sans font-medium tracking-normal text-foreground normal-case font-stretch-100% backdrop-blur-sm [text-shadow:none]">
 			<div className="m-auto flex flex-wrap justify-center gap-4">{children}</div>
 		</div>
 	);
@@ -448,7 +491,7 @@ function Box({ children, className }: { children: React.ReactNode; className?: s
 	return (
 		<div
 			className={cn(
-				'flex min-w-72 flex-col items-start gap-1 rounded-xl border border-border bg-background p-6 shadow-lg',
+				'flex min-w-72 flex-col items-start gap-1 rounded-xl border border-white/10 bg-neutral-950/85 p-6 shadow-2xl',
 				className
 			)}
 		>
@@ -465,13 +508,13 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
 	);
 }
 
-// One piece of the HUD: frosted glass, so the game shows through, blurred
-// enough that the text stays readable over whatever is behind it.
+// A prompt or a message: a dark band that fades out at both ends, so it
+// reads over anything without a hard box round it.
 function Panel({ className, children }: { className?: string; children: React.ReactNode }) {
 	return (
 		<div
 			className={cn(
-				'rounded-xl border border-white/50 bg-white/55 shadow-sm backdrop-blur-md',
+				'bg-[linear-gradient(90deg,transparent,rgb(0_0_0/0.6)_20%,rgb(0_0_0/0.6)_80%,transparent)]',
 				className
 			)}
 		>
@@ -484,19 +527,19 @@ function Boost({ label, left }: { label: string; left: number }) {
 	return (
 		<Panel
 			className={cn(
-				'px-3 py-1.5 text-sm tracking-wide uppercase',
-				left <= 5 && 'animate-pulse text-destructive'
+				'px-8 py-1 text-base tracking-[0.15em] text-amber-300',
+				left <= 5 && 'animate-pulse text-red-400'
 			)}
 		>
-			{label} <span className="text-muted-foreground tabular-nums">{left}</span>
+			{label} <span className="text-white/70 tabular-nums">{left}</span>
 		</Panel>
 	);
 }
 
 function Progress({ value, className }: { value: number; className?: string }) {
 	return (
-		<div className={cn('h-0.5 w-40 overflow-hidden rounded-full bg-foreground/15', className)}>
-			<div className="h-full bg-foreground" style={{ width: `${Math.min(1, value) * 100}%` }} />
+		<div className={cn('h-1 w-44 overflow-hidden bg-white/20', className)}>
+			<div className="h-full bg-white" style={{ width: `${Math.min(1, value) * 100}%` }} />
 		</div>
 	);
 }

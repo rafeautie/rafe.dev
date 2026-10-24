@@ -1,12 +1,21 @@
 import * as THREE from 'three';
 import { WEAPONS, type ReloadStyle, type WeaponId } from '../weapons';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import type { GunModel, Kit } from './guns';
 
-// The gun in the player's hands, and the knife. Plain dark boxes, drawn over
-// the world, that kick, sway behind the mouse, bob with each step, drop for
-// a sprint, a reload or a landing, and come up to the eye when aiming.
+// The gun in the player's hands, and the knife, drawn over the world: they
+// kick, sway behind the mouse, bob with each step, drop for a sprint, a
+// reload or a landing, and come up to the eye when aiming. With the gun
+// models loaded they're real guns held in two gloved hands; without, plain
+// dark boxes.
 
 const HIP = new THREE.Vector3(0.2, -0.2, -0.42);
 const ADS = new THREE.Vector3(0, -0.115, -0.32);
+// where the right hand holds a real gun, from the hip and aimed
+const MODEL_HIP = new THREE.Vector3(0.16, -0.17, -0.34);
+// where each elbow sits, out of sight below the view
+const ELBOW_R = new THREE.Vector3(0.2, -0.42, 0.05);
+const ELBOW_L = new THREE.Vector3(-0.16, -0.42, -0.08);
 export const VIEW_LAYER = 1;
 const KICK_STIFF = 320;
 const KICK_DAMP = 22;
@@ -34,6 +43,90 @@ export type ViewState = {
 	turnY: number;
 };
 
+const AIMED = new THREE.Vector3();
+const HAND_R = new THREE.Vector3();
+const HAND_L = new THREE.Vector3();
+const REACH = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
+const BASIS = new THREE.Matrix4();
+const TO_WRIST = new THREE.Vector3();
+const ALONG_R = new THREE.Vector3();
+const ALONG_L = new THREE.Vector3();
+
+// A forearm in a sleeve and a gloved fist, reaching from an elbow below the
+// view to close round whatever the hand holds.
+class Arm {
+	readonly root = new THREE.Group();
+	private forearm: THREE.Mesh;
+	private hand = new THREE.Group();
+	private dir = new THREE.Vector3();
+	private across = new THREE.Vector3();
+	private wrist = new THREE.Vector3();
+
+	constructor(kit: Kit, side: 1 | -1) {
+		// tapering from the elbow to the wrist, with a cuff at the end
+		const sleeve = new THREE.CylinderGeometry(0.033, 0.048, 1, 12, 1, true);
+		sleeve.translate(0, -0.5, 0);
+		this.forearm = new THREE.Mesh(sleeve, kit.sleeve);
+		const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.035, 12), kit.sleeve);
+		cuff.rotation.x = Math.PI / 2;
+		cuff.position.z = 0.055;
+		// the fist: its length runs along what it holds, x across the back
+		// of the hand, z back toward the wrist
+		const fist = new THREE.Mesh(new RoundedBoxGeometry(0.048, 0.088, 0.078, 2, 0.016), kit.glove);
+		const knuckles = new THREE.Mesh(new RoundedBoxGeometry(0.03, 0.084, 0.03, 2, 0.012), kit.glove);
+		knuckles.position.set(0.012, 0, -0.038);
+		const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.011, 0.04, 4, 8), kit.glove);
+		thumb.rotation.x = Math.PI / 2;
+		thumb.position.set(-0.024, 0.045 * side, -0.01);
+		this.hand.add(cuff, fist, knuckles, thumb);
+		this.root.add(this.forearm, this.hand);
+		this.root.traverse((o) => o.layers.set(VIEW_LAYER));
+	}
+
+	// hold is where the fist closes, along is the line of what it holds
+	place(hold: THREE.Vector3, along: THREE.Vector3, elbow: THREE.Vector3) {
+		// the forearm's line, square to what's held
+		this.dir.subVectors(elbow, hold);
+		this.dir.addScaledVector(along, -this.dir.dot(along)).normalize();
+		this.across.crossVectors(along, this.dir);
+		BASIS.makeBasis(this.across, along, this.dir);
+		this.hand.position.copy(hold);
+		this.hand.quaternion.setFromRotationMatrix(BASIS);
+		this.wrist.copy(hold).addScaledVector(this.dir, 0.06);
+		const reach = TO_WRIST.subVectors(this.wrist, elbow);
+		const length = reach.length();
+		this.forearm.position.copy(this.wrist);
+		this.forearm.quaternion.setFromUnitVectors(UP, reach.divideScalar(length));
+		this.forearm.scale.set(1, length, 1);
+	}
+}
+
+// A combat knife: a steel blade, a guard and a dark handle, held at the
+// handle's end.
+function combatKnife(kit: Kit) {
+	const knife = new THREE.Group();
+	const steel = new THREE.MeshStandardMaterial({
+		color: '#c9c9c4',
+		metalness: 0.6,
+		roughness: 0.4
+	});
+	const blade = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.03, 0.18), steel);
+	blade.position.z = -0.11;
+	const tip = new THREE.Mesh(new THREE.ConeGeometry(0.015, 0.04, 4), steel);
+	tip.rotation.x = -Math.PI / 2;
+	tip.scale.x = 0.2;
+	tip.position.z = -0.22;
+	const guard = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.06, 0.012), steel);
+	guard.position.z = -0.015;
+	const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.11, 8), kit.glove);
+	handle.rotation.x = Math.PI / 2;
+	handle.position.z = 0.04;
+	knife.add(blade, tip, guard, handle);
+	knife.traverse((o) => o.layers.set(VIEW_LAYER));
+	return knife;
+}
+
 function clamp(v: number, most: number) {
 	return Math.max(-most, Math.min(most, v));
 }
@@ -57,8 +150,18 @@ export class ViewModel {
 	private bobTime = 0;
 	private weapon: WeaponId | null = null;
 	private magHome = new THREE.Vector3();
+	// the real gun and its parts, when the models are loaded
+	private model: GunModel | null = null;
+	private shown: THREE.Object3D | null = null;
+	private modelMag: THREE.Object3D | null = null;
+	private modelMagHome = new THREE.Vector3();
+	// the middle of the magazine at rest, from the grip
+	private magCentre = new THREE.Vector3();
+	private right: Arm | null = null;
+	private left: Arm | null = null;
+	private blade: THREE.Object3D | null = null;
 
-	constructor() {
+	constructor(private kit: Kit | null = null) {
 		const dark = new THREE.MeshLambertMaterial({ color: '#2f2f2f' });
 		const darker = new THREE.MeshLambertMaterial({ color: '#232323' });
 		this.body = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), dark);
@@ -87,6 +190,15 @@ export class ViewModel {
 		);
 		this.knife.visible = false;
 		this.root.add(this.gun, this.knife);
+		if (kit) {
+			this.right = new Arm(kit, 1);
+			this.left = new Arm(kit, -1);
+			this.root.add(this.right.root, this.left.root);
+			this.knife.visible = false;
+			this.blade = combatKnife(kit);
+			this.blade.visible = false;
+			this.root.add(this.blade);
+		}
 		// drawn in a pass of its own after the world, over walls and zombies it
 		// would otherwise poke into; the muzzle light still lights the world
 		this.root.traverse((o) => o.layers.set(VIEW_LAYER));
@@ -123,6 +235,35 @@ export class ViewModel {
 		const muzzle = -len - len * 0.4 - 0.02;
 		this.flash.position.set(0, 0.012, muzzle);
 		this.light.position.set(0, 0.05, muzzle);
+		if (this.kit) this.showModel(this.kit.guns[id], style);
+	}
+
+	// Swaps the boxes for the real gun. A gun whose magazine doesn't come
+	// apart (a pistol's sits in the grip) keeps the box one, seen only once
+	// it's pulled.
+	private showModel(model: GunModel, style: ReloadStyle) {
+		this.shown?.removeFromParent();
+		this.model = model;
+		const shown = model.gun.clone();
+		shown.traverse((o) => o.layers.set(VIEW_LAYER));
+		this.shown = shown;
+		this.gun.add(shown);
+		for (const box of [this.body, this.barrel, this.grip, this.sight]) box.visible = false;
+		this.modelMag = shown.getObjectByName('mag') ?? null;
+		if (this.modelMag) {
+			this.mag.visible = false;
+			this.modelMagHome.copy(this.modelMag.position);
+			shown.updateMatrixWorld(true);
+			new THREE.Box3().setFromObject(this.modelMag).getCenter(this.magCentre);
+			shown.worldToLocal(this.magCentre);
+		} else {
+			this.magHome.set(0, -0.05, 0.01);
+			this.mag.position.copy(this.magHome);
+			this.magCentre.set(0, -0.08, 0);
+		}
+		this.mag.visible = this.mag.visible && !this.modelMag && style === 'pistol';
+		this.flash.position.copy(model.muzzle);
+		this.light.position.copy(model.muzzle);
 	}
 
 	fire(kick: number) {
@@ -149,7 +290,13 @@ export class ViewModel {
 		this.sway.y += (clamp(s.turnY * 0.012, 0.05) - this.sway.y) * ease;
 		const kick = Math.max(0, this.kick);
 		const bob = Math.min(1, s.moving / 5) * steady * (1 - s.slide);
-		const pos = HIP.clone().lerp(ADS, s.ads);
+		const model = this.model;
+		const pos = model
+			? MODEL_HIP.clone().lerp(
+					AIMED.set(0, -model.sight - 0.004, -Math.max(0.3, model.back + 0.1)),
+					s.ads
+				)
+			: HIP.clone().lerp(ADS, s.ads);
 		// a figure of eight with each pair of steps, bigger at a sprint
 		const big = 1 + s.sprint * 1.2;
 		pos.x += Math.sin(s.stride) * 0.011 * bob * big + this.sway.x * steady;
@@ -169,6 +316,12 @@ export class ViewModel {
 		this.mag.position.copy(this.magHome);
 		this.mag.position.y -= s.magOut * 0.3;
 		this.mag.position.x -= s.magOut * 0.05;
+		if (model && !this.modelMag) this.mag.visible = s.magOut > 0.02 && s.reloadStyle === 'pistol';
+		if (this.modelMag) {
+			this.modelMag.position.copy(this.modelMagHome);
+			this.modelMag.position.y -= s.magOut * 0.3;
+			this.modelMag.position.x -= s.magOut * 0.05;
+		}
 		// lowered for a swap, and for a landing
 		const dip = s.swap;
 		pos.y -= dip * 0.18 + s.dip * 0.35;
@@ -203,6 +356,50 @@ export class ViewModel {
 			this.gun.position.y -= Math.sin(Math.min(1, t) * Math.PI) * 0.15;
 			if (t >= 1) this.knifeTime = -1;
 		}
+		if (model) this.hands(s, a);
+	}
+
+	// Puts the gloved hands on the gun: the right on the grip, the left on
+	// the fore end, reaching for the magazine through a reload and taking
+	// the knife for a slash.
+	private hands(s: ViewState, a: number) {
+		const model = this.model!;
+		const right = this.right!;
+		const left = this.left!;
+		const blade = this.blade!;
+		this.knife.visible = false;
+		this.gun.updateMatrix();
+		const at = (p: THREE.Vector3) => p.applyMatrix4(this.gun.matrix);
+		const grip = at(HAND_R.set(0, 0, 0));
+		const hold = HAND_L.copy(model.fore);
+		const reach = s.reloadStyle === 'break' ? 0 : a;
+		if (reach > 0) {
+			// down to the magazine, following it out and back in
+			const mag = REACH.copy(this.magCentre);
+			mag.y -= s.magOut * 0.3;
+			mag.x -= s.magOut * 0.05;
+			if (s.reloadStyle === 'shells') mag.set(0.02, -0.02, model.fore.z * 0.55);
+			hold.lerp(mag, Math.min(1, reach * 1.6));
+		}
+		at(hold);
+		// the right fist closes round the grip, which leans back a touch; the
+		// left round the fore end, or under the right on a handgun
+		const handgun = model.fore.z > -0.1;
+		const along = ALONG_R.set(0, 1, 0.3).normalize().transformDirection(this.gun.matrix);
+		const alongL = ALONG_L.copy(
+			handgun ? ALONG_R : ALONG_L.set(0, 0, -1).transformDirection(this.gun.matrix)
+		);
+		const slashing = this.knifeTime >= 0;
+		blade.visible = slashing;
+		if (slashing) {
+			blade.position.copy(this.knife.position);
+			blade.rotation.copy(this.knife.rotation);
+			blade.updateMatrix();
+			hold.set(0, 0, 0.04).applyMatrix4(blade.matrix);
+			alongL.set(0, 0, -1).transformDirection(blade.matrix);
+		}
+		right.place(grip, along, ELBOW_R);
+		left.place(hold, alongL, ELBOW_L);
 	}
 }
 

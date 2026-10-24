@@ -45,7 +45,9 @@ import type { Session } from '../session';
 import { settings } from '../settings';
 import { KNIFE, WEAPONS, ammoCost, type ReloadStyle, type Weapon, type WeaponId } from '../weapons';
 import { Sound, type ReloadPart } from './audio';
+import { Character, SURVIVORS, ZOMBIES, type Cast } from './character';
 import { Effects } from './effects';
+import { type Kit } from './guns';
 import { HeldGun } from './heldgun';
 import {
 	Body,
@@ -55,9 +57,11 @@ import {
 	playerPose,
 	rayCapsule,
 	zombiePose,
+	type Figure,
 	type Joints,
 	type Posture
 } from './rig';
+import type { Art } from './art';
 import { PALETTE, buildWorld, type World } from './scene';
 import { VIEW_LAYER, ViewModel, type ViewState } from './viewmodel';
 
@@ -178,7 +182,11 @@ export type HudState = {
 };
 
 type ZombieView = {
-	body: Body;
+	body: Figure;
+	// which walk and run it uses, so the horde isn't in step
+	variant: number;
+	// hit this frame, for a flinch
+	struck: boolean;
 	step: number;
 	swing: number;
 	x: number;
@@ -197,7 +205,10 @@ type ZombieView = {
 };
 
 type OtherView = {
-	body: Body;
+	body: Figure;
+	// how fast they're going, m/s, eased
+	vx: number;
+	vz: number;
 	gun: HeldGun;
 	label: THREE.Sprite;
 	// shown over their head while they have the pause screen up
@@ -220,7 +231,7 @@ export class GameClient {
 	private map: GameMap;
 	private blocking: Blocking;
 	private world: World;
-	private view = new ViewModel();
+	private view: ViewModel;
 	private sound = new Sound();
 	private dynamic = new THREE.Group();
 
@@ -312,8 +323,15 @@ export class GameClient {
 
 	constructor(
 		private canvas: HTMLCanvasElement,
-		private session: Session
+		private session: Session,
+		// the characters and their animations; without them, boxes
+		private cast: Cast | null = null,
+		// the world's textures and props; without them, plain
+		art: Art | null = null,
+		// the guns and the hands that hold them; without them, boxes
+		private guns: Kit | null = null
 	) {
+		this.view = new ViewModel(guns);
 		this.map = buildMap();
 		this.blocking = new Blocking(this.map);
 		session.doors.forEach((open, i) => (this.blocking.open[i] = open));
@@ -324,9 +342,9 @@ export class GameClient {
 		this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 		// cleared by hand, so the gun's pass can draw over the world's
 		this.renderer.autoClear = false;
-		this.scene.background = new THREE.Color(PALETTE.sky);
-		this.scene.fog = new THREE.Fog(PALETTE.sky, 10, 62);
-		this.world = buildWorld(this.map);
+		this.world = buildWorld(this.map, art);
+		this.scene.background = new THREE.Color(this.world.sky);
+		this.scene.fog = new THREE.Fog(this.world.sky, art ? 14 : 10, art ? 70 : 62);
 		this.blocking.open.forEach((open, i) => open && this.world.openDoor(i));
 		this.world.update(10);
 		this.camera.rotation.order = 'YXZ';
@@ -1450,7 +1468,11 @@ export class GameClient {
 			let view = this.zombies.get(id);
 			if (!view) {
 				view = {
-					body: new Body(this.dynamic, ZOMBIE_COLORS),
+					body: this.cast
+						? new Character(this.dynamic, this.cast, zombieModel(id))
+						: new Body(this.dynamic, ZOMBIE_COLORS),
+					variant: id,
+					struck: false,
 					step: Math.random() * 6,
 					swing: 0,
 					x,
@@ -1491,6 +1513,7 @@ export class GameClient {
 			// someone else's hit, seen from the host: a jolt straight back
 			if (zb[5] & ZOMBIE_STAGGER && view.flinch < 0.2 && now - view.flinchAt > 400) {
 				view.flinch = 0.6;
+				view.struck = true;
 				view.flinchX = Math.sin(yaw);
 				view.flinchZ = Math.cos(yaw);
 				view.flinchAt = now;
@@ -1500,11 +1523,29 @@ export class GameClient {
 			const c = Math.cos(yaw);
 			const s = Math.sin(yaw);
 			const push = view.flinch * view.flinch * (3 - 2 * view.flinch);
-			zombiePose(view.body.joints, x, y - 1.9 * rising, z, yaw, view.step, view.swing, lean, {
-				x: (view.flinchX * c - view.flinchZ * s) * push,
-				z: (view.flinchX * s + view.flinchZ * c) * push
-			});
-			view.body.place();
+			if (view.body instanceof Character) {
+				view.body.zombie(dt, {
+					x,
+					y,
+					z,
+					yaw,
+					speed: Math.hypot(view.vx, view.vz),
+					pace: view.speed,
+					variant: view.variant,
+					rising,
+					attacking: (zb[5] & ZOMBIE_ATTACKING) !== 0,
+					tearing: (zb[5] & ZOMBIE_TEARING) !== 0,
+					climbing: (zb[5] & ZOMBIE_CLIMBING) !== 0,
+					hit: view.struck
+				});
+				view.struck = false;
+			} else {
+				zombiePose(view.body.joints, x, y - 1.9 * rising, z, yaw, view.step, view.swing, lean, {
+					x: (view.flinchX * c - view.flinchZ * s) * push,
+					z: (view.flinchX * s + view.flinchZ * c) * push
+				});
+				view.body.place();
+			}
 			const far = Math.hypot(x - this.me.x, z - this.me.z);
 			view.groan -= dt;
 			if (view.groan <= 0) {
@@ -1550,9 +1591,14 @@ export class GameClient {
 			const pa = before.get(pb.id) ?? pb;
 			let view = this.others.get(pb.id);
 			if (!view) {
+				const slot = b.snap.players.indexOf(pb);
 				view = {
-					body: new Body(this.dynamic, PLAYER_COLORS),
-					gun: new HeldGun(this.dynamic),
+					body: this.cast
+						? new Character(this.dynamic, this.cast, SURVIVORS[slot % SURVIVORS.length])
+						: new Body(this.dynamic, PLAYER_COLORS),
+					vx: 0,
+					vz: 0,
+					gun: new HeldGun(this.dynamic, this.guns),
 					label: nameLabel(pb.name),
 					badge: badge('PAUSED'),
 					away: badge('AWAY'),
@@ -1607,6 +1653,11 @@ export class GameClient {
 		pose.knife = Math.min(1, pose.knife + dt / 0.28);
 		// steps keep time with how fast they're really going, and stop in a slide
 		const moved = Math.hypot(x - view.x, z - view.z);
+		if (dt > 0) {
+			const k = 1 - Math.exp(-dt * 10);
+			view.vx += ((x - view.x) / dt - view.vx) * k;
+			view.vz += ((z - view.z) / dt - view.vz) * k;
+		}
 		if (pose.slide < 0.5 && !(pb.flags & POSE_AIR) && !downed) {
 			const before = view.step;
 			view.step += moved * 3;
@@ -1618,9 +1669,32 @@ export class GameClient {
 		const visible = pb.state !== 'dead';
 		for (const mesh of view.body.meshes) mesh.visible = visible;
 		view.label.visible = visible;
-		playerPose(view.body.joints, x, y, z, yaw, view.step, downed, pose);
-		view.body.place();
-		const top = downed ? 1.2 : 2.25 - pose.crouch * 0.15 - pose.slide * 0.45;
+		let top: number;
+		if (view.body instanceof Character) {
+			const weapon = WEAPONS[pb.weapon];
+			view.body.player(dt, {
+				x,
+				y,
+				z,
+				yaw,
+				vx: view.vx,
+				vz: view.vz,
+				downed,
+				air: (pb.flags & POSE_AIR) !== 0,
+				pistol: weapon.reloadStyle === 'pistol',
+				reload: weapon.reload,
+				shell: weapon.reloadStyle === 'shells' ? shellTime(weapon) : 0,
+				reloading: (pb.flags & POSE_RELOAD) !== 0,
+				shots: pb.shots,
+				knifes: pb.knifes,
+				pose
+			});
+			top = view.body.headHeight() - y + 0.35;
+		} else {
+			playerPose(view.body.joints, x, y, z, yaw, view.step, downed, pose);
+			view.body.place();
+			top = downed ? 1.2 : 2.25 - pose.crouch * 0.15 - pose.slide * 0.45;
+		}
 		view.label.position.set(x, y + top, z);
 		view.badge.visible = visible && (pb.flags & POSE_PAUSED) !== 0;
 		view.badge.position.set(x, y + top + 0.32, z);
@@ -1656,7 +1730,7 @@ export class GameClient {
 		const along = new THREE.Vector3(...dir).normalize();
 		if (head) {
 			// the head goes, in a burst
-			view.body.meshes[HEAD].visible = false;
+			view.body.hideHead();
 			this.effects.headPop(new THREE.Vector3().fromArray(j, J.headTop * 3), along);
 			this.sound.headPop();
 		}
@@ -1695,6 +1769,7 @@ export class GameClient {
 		const z = this.zombies.get(id);
 		if (z) {
 			z.flinch = Math.min(1, z.flinch + 0.45 + force * 0.05);
+			z.struck = true;
 			z.flinchX = dir.x;
 			z.flinchZ = dir.z;
 			z.flinchAt = performance.now();
@@ -1900,8 +1975,10 @@ const BODY_CAPSULES: [number, number, number][] = [
 // scratch, for where another player's right hand is
 const hand = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
-// the head's box, among a body's meshes
-const HEAD = 1;
+// which zombie a zombie looks like: mostly the two walkers, now and then a brute
+function zombieModel(id: number) {
+	return id % 7 === 3 ? ZOMBIES[2] : ZOMBIES[id % 2];
+}
 
 function lerpAngle(a: number, b: number, t: number) {
 	let d = b - a;
