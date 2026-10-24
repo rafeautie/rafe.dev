@@ -1,4 +1,5 @@
 import { type ExtendedFeature, geoArea, geoCentroid, geoDistance } from 'd3-geo';
+import { interpolateTurbo } from 'd3-scale-chromatic';
 import GlobeGl, { type GlobeInstance } from 'globe.gl';
 import { MinusIcon, PlusIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -143,8 +144,13 @@ function rgbOf(css: string) {
 const SPREAD = 0.55;
 
 // The whole world, flat, as a heatmap of cities: a bell curve of visitors
-// round each one, added up, then shaded from clear to the ink colour.
-function heatmap(cities: CityRow[], [r, g, b]: number[]) {
+// round each one, added up, then coloured as globe.gl colours its own
+// heatmaps: blue through red, clearer where fewer visit.
+const TURBO = Array.from({ length: 256 }, (_, i) =>
+	// 'rgb(r, g, b)'
+	(interpolateTurbo(i / 255).match(/\d+/g) ?? []).map(Number)
+);
+function heatmap(cities: CityRow[]) {
 	const width = 4096;
 	const height = 2048;
 	const perDegree = width / 360;
@@ -174,14 +180,15 @@ function heatmap(cities: CityRow[], [r, g, b]: number[]) {
 	if (!context || !max) return canvas;
 	const image = context.createImageData(width, height);
 	for (let i = 0; i < sum.length; i++) {
-		// square root, so quieter cities still show beside the busiest, less a
-		// little so the faint edges fade to nothing
-		const strength = Math.sqrt(sum[i] / max) - 0.04;
-		if (strength <= 0) continue;
+		// globe.gl's scale, red from two thirds of the busiest
+		const t = Math.min(1, (1.5 * sum[i]) / max);
+		if (t < 0.001) continue;
+		const [r, g, b] = TURBO[Math.round(t * 255)];
 		image.data[i * 4] = r;
 		image.data[i * 4 + 1] = g;
 		image.data[i * 4 + 2] = b;
-		image.data[i * 4 + 3] = (230 * strength) / 0.96;
+		// and its see-through edges, eased out so they fade to nothing
+		image.data[i * 4 + 3] = 255 * Math.cbrt(t) * Math.min(1, t / 0.05);
 	}
 	context.putImageData(image, 0, 0);
 	return canvas;
@@ -513,10 +520,7 @@ export function Globe({
 			globe?.customLayerData([]);
 			return;
 		}
-		const [r, g, b] = rgbOf(
-			getComputedStyle(box).getPropertyValue('--foreground').trim() || '#000'
-		);
-		const texture = new CanvasTexture(heatmap(cities, [r, g, b]));
+		const texture = new CanvasTexture(heatmap(cities));
 		texture.colorSpace = SRGBColorSpace;
 		texture.anisotropy = 4;
 		const geometry = new SphereGeometry(globe.getGlobeRadius() * 1.014, 180, 90);
@@ -531,7 +535,7 @@ export function Globe({
 			material.dispose();
 			texture.dispose();
 		};
-	}, [cities, level, theme]);
+	}, [cities, level]);
 
 	// turn to what the page is filtered by
 	const focus = active.country ?? (active.city ?? active.region)?.split(', ').pop() ?? undefined;
