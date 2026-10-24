@@ -144,18 +144,35 @@ export function zombiePose(
 	yaw: number,
 	step: number,
 	swing: number,
-	lean: number
+	lean: number,
+	// a jolt from a hit, in the zombie's own frame (x right, z back), as far
+	// as it's thrown right now
+	flinch = { x: 0, z: 0 }
 ) {
 	const s = Math.sin(step);
 	const bob = Math.abs(s) * 0.04;
 	const lift = Math.sin(swing * Math.PI);
-	set(J.pelvis, 0, 0.95 + bob, 0);
-	set(J.neck, 0, 1.52 + bob, -0.1 - lean);
-	set(J.headTop, 0.03, 1.81 + bob, -0.18 - lean * 1.4);
-	set(J.lShoulder, -0.24, 1.47 + bob, -0.08 - lean);
-	set(J.rShoulder, 0.24, 1.47 + bob, -0.08 - lean);
-	set(J.lHand, -0.22, 1.4 + s * 0.06 + lift * 0.4, -0.68 - lean + lift * 0.15);
-	set(J.rHand, 0.22, 1.4 - s * 0.06 + lift * 0.4, -0.68 - lean + lift * 0.15);
+	const fx = flinch.x;
+	const fz = flinch.z;
+	// the upper body is thrown furthest, the head snapping past it
+	const up = Math.hypot(fx, fz) * 0.12;
+	set(J.pelvis, fx * 0.06, 0.95 + bob, fz * 0.06);
+	set(J.neck, fx * 0.22, 1.52 + bob - up, -0.1 - lean + fz * 0.26);
+	set(J.headTop, 0.03 + fx * 0.36, 1.81 + bob - up, -0.18 - lean * 1.4 + fz * 0.42);
+	set(J.lShoulder, -0.24 + fx * 0.2, 1.47 + bob - up, -0.08 - lean + fz * 0.24);
+	set(J.rShoulder, 0.24 + fx * 0.2, 1.47 + bob - up, -0.08 - lean + fz * 0.24);
+	set(
+		J.lHand,
+		-0.22 + fx * 0.1,
+		1.4 + s * 0.06 + lift * 0.4 + up * 2,
+		-0.68 - lean + lift * 0.15 + fz * 0.3
+	);
+	set(
+		J.rHand,
+		0.22 + fx * 0.1,
+		1.4 - s * 0.06 + lift * 0.4 + up * 2,
+		-0.68 - lean + lift * 0.15 + fz * 0.3
+	);
 	set(J.lHip, -0.12, 0.95 + bob, 0);
 	set(J.rHip, 0.12, 0.95 + bob, 0);
 	set(J.lFoot, -0.13, 0.04 + Math.max(0, s) * 0.12, -s * 0.32);
@@ -163,7 +180,6 @@ export function zombiePose(
 	toWorld(out, pose, x, y, z, yaw);
 }
 
-// Another player: upright with a gun held out, or downed, propped on one arm.
 // How another player is holding themselves, each 0 to 1 and eased, so the
 // body moves between poses rather than snapping. reload and knife run through
 // their motion; pitch is where they look, up positive.

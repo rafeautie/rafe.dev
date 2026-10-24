@@ -20,7 +20,8 @@ import {
 	SLIDE,
 	STAND,
 	ZOMBIE_ATTACKING,
-	ZOMBIE_RISING
+	ZOMBIE_RISING,
+	ZOMBIE_STAGGER
 } from './protocol';
 import {
 	BREAK,
@@ -99,6 +100,8 @@ type HostZombie = {
 	windup: number; // counting down to a swing, or 0
 	cooldown: number;
 	stray: number;
+	// knocked back by a hit, slowed until this runs out
+	stagger: number;
 };
 
 export type Send = (to: string, message: HostMessage) => void;
@@ -306,6 +309,9 @@ export class HostGame {
 		// a downed player can still shoot; the dead cannot
 		if (p.state === 'dead') return;
 		z.hp -= Math.min(m.damage, 20000);
+		// a knife or a heavy gun holds them up longer
+		const heavy = m.knife === true || (Number.isFinite(m.force) && m.force >= 9);
+		z.stagger = Math.max(z.stagger, heavy ? ZOMBIE.staggerHeavy : ZOMBIE.stagger);
 		this.award(p, m.knife === true ? POINTS.knife : m.head === true ? POINTS.headshot : POINTS.hit);
 		if (z.hp > 0) return;
 		p.kills++;
@@ -484,6 +490,7 @@ export class HostGame {
 				continue;
 			}
 			z.cooldown = Math.max(0, z.cooldown - dt);
+			z.stagger = Math.max(0, z.stagger - dt);
 			let nearest: HostPlayer | null = null;
 			let nearestD = Infinity;
 			for (const p of targets) {
@@ -543,7 +550,8 @@ export class HostGame {
 			const n = Math.hypot(dx, dz) || 1;
 			// stop short of the player rather than walking into them
 			const stopAt = Math.max(0, nearestD - ZOMBIE.reach * 0.7);
-			const step = Math.min(ZOMBIE.speeds[z.speed] * dt, stopAt);
+			const slowed = z.stagger > 0 ? ZOMBIE.staggerSlow : 1;
+			const step = Math.min(ZOMBIE.speeds[z.speed] * slowed * dt, stopAt);
 			[z.x, z.z] = this.blocking.move(z.x, z.z, (dx / n) * step, (dz / n) * step, ZOMBIE.radius);
 			z.yaw = turnToward(z.yaw, Math.atan2(-dx, -dz), dt * 8);
 		}
@@ -587,7 +595,8 @@ export class HostGame {
 			rise: ZOMBIE.rise,
 			windup: 0,
 			cooldown: 0,
-			stray: 0
+			stray: 0,
+			stagger: 0
 		});
 		return true;
 	}
@@ -641,7 +650,9 @@ export class HostGame {
 			r2(z.z),
 			r2(z.yaw),
 			z.speed,
-			(z.windup > 0 ? ZOMBIE_ATTACKING : 0) | (z.rise > 0 ? ZOMBIE_RISING : 0)
+			(z.windup > 0 ? ZOMBIE_ATTACKING : 0) |
+				(z.rise > 0 ? ZOMBIE_RISING : 0) |
+				(z.stagger > 0 ? ZOMBIE_STAGGER : 0)
 		]);
 		return {
 			t: 'snap',

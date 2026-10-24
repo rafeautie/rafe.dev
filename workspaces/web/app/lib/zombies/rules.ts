@@ -53,10 +53,30 @@ export const ZOMBIE = {
 	windup: 0.45,
 	cooldown: 1.1,
 	rise: 1.2,
-	maxAlive: 24
+	maxAlive: 24,
+	// a hit knocks a zombie back and slows it this long (longer for a knife
+	// or a shotgun), to this share of its speed
+	stagger: 0.18,
+	staggerHeavy: 0.4,
+	staggerSlow: 0.3
 };
 
 export const BREAK = { first: 4, between: 10 };
+
+// Perks, bought from machines and lost when downed. Each is one bit of a
+// player's perks.
+export type PerkId = 'jugg' | 'speed' | 'tap' | 'revive';
+export const PERKS: Record<PerkId, { bit: number; name: string; cost: number; what: string }> = {
+	jugg: { bit: 1, name: 'Juggernog', cost: 2500, what: 'Takes more hits to go down' },
+	speed: { bit: 2, name: 'Speed Cola', cost: 3000, what: 'Reloads twice as fast' },
+	tap: { bit: 4, name: 'Double Tap', cost: 2000, what: 'Fires a third faster' },
+	revive: { bit: 8, name: 'Quick Revive', cost: 1500, what: 'Revives teammates twice as fast' }
+};
+export const PERK_IDS = Object.keys(PERKS) as PerkId[];
+// health with Juggernog
+export const JUGG_HEALTH = 250;
+export const DOUBLE_TAP_RATE = 1.33;
+export const SPEED_COLA_RATE = 2;
 
 export function zombieHealth(round: number): number {
 	if (round < 10) return 150 + 100 * (round - 1);

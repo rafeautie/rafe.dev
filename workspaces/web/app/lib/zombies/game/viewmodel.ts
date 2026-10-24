@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WEAPONS, type WeaponId } from '../weapons';
+import { WEAPONS, type ReloadStyle, type WeaponId } from '../weapons';
 
 // The gun in the player's hands, and the knife. Plain dark boxes, drawn over
 // the world, that kick, sway behind the mouse, bob with each step, drop for
@@ -17,6 +17,11 @@ const KICK_DAMP = 22;
 export type ViewState = {
 	ads: number;
 	reload: number;
+	reloadStyle: ReloadStyle;
+	// the magazine pulled out, 0 to 1
+	magOut: number;
+	// a jolt as a shell goes in or a slide is let go, 0 to 1
+	pulse: number;
 	swap: number;
 	moving: number;
 	downed: boolean;
@@ -40,6 +45,7 @@ export class ViewModel {
 	private barrel: THREE.Mesh;
 	private grip: THREE.Mesh;
 	private sight: THREE.Mesh;
+	private mag: THREE.Mesh;
 	private flash: THREE.Mesh;
 	private light: THREE.PointLight;
 	private knife: THREE.Mesh;
@@ -50,6 +56,7 @@ export class ViewModel {
 	private knifeTime = -1;
 	private bobTime = 0;
 	private weapon: WeaponId | null = null;
+	private magHome = new THREE.Vector3();
 
 	constructor() {
 		const dark = new THREE.MeshLambertMaterial({ color: '#2f2f2f' });
@@ -60,6 +67,7 @@ export class ViewModel {
 		this.grip = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.12, 0.06), darker);
 		this.grip.rotation.x = 0.25;
 		this.sight = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.02, 0.02), darker);
+		this.mag = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), darker);
 		this.flash = new THREE.Mesh(
 			new THREE.PlaneGeometry(0.16, 0.16),
 			new THREE.MeshBasicMaterial({
@@ -72,7 +80,7 @@ export class ViewModel {
 		);
 		this.flash.visible = false;
 		this.light = new THREE.PointLight('#fff1d0', 0, 8, 2);
-		this.gun.add(this.body, this.barrel, this.grip, this.sight, this.flash, this.light);
+		this.gun.add(this.body, this.barrel, this.grip, this.sight, this.mag, this.flash, this.light);
 		this.knife = new THREE.Mesh(
 			new THREE.BoxGeometry(0.025, 0.035, 0.3),
 			new THREE.MeshLambertMaterial({ color: '#8c8c8c' })
@@ -95,6 +103,23 @@ export class ViewModel {
 		this.barrel.position.set(0, 0.012, -len - (len * 0.4 + 0.05) / 2 + 0.05);
 		this.grip.position.set(0, -0.08, -0.02);
 		this.sight.position.set(0, 0.048, -len * 0.4);
+		// a pistol's magazine is in the grip; a long gun's in front of it
+		const w = WEAPONS[id];
+		const style = w.reloadStyle;
+		this.mag.visible =
+			style === 'mag' || style === 'pistol' || style === 'cell' || style === 'belt';
+		if (style === 'pistol') this.mag.scale.set(0.035, 0.1, 0.045);
+		else if (style === 'belt') this.mag.scale.set(0.09, 0.08, 0.1);
+		else if (style === 'cell') this.mag.scale.set(0.05, 0.05, 0.08);
+		else this.mag.scale.set(0.035, 0.11, 0.05);
+		this.magHome.set(
+			style === 'belt' ? 0.06 : 0,
+			style === 'pistol' ? -0.1 : -0.09,
+			style === 'pistol' ? -0.02 : -len * 0.35
+		);
+		this.mag.position.copy(this.magHome);
+		(this.flash.material as THREE.MeshBasicMaterial).color.set(w.tracer ?? '#fff3d6');
+		this.light.color.set(w.tracer ?? '#fff1d0');
 		const muzzle = -len - len * 0.4 - 0.02;
 		this.flash.position.set(0, 0.012, muzzle);
 		this.light.position.set(0, 0.05, muzzle);
@@ -134,8 +159,18 @@ export class ViewModel {
 			Math.sin(this.bobTime * 1.6) * 0.0025 * steady -
 			this.kick * 0.012;
 		pos.z += this.kick * (0.05 - s.ads * 0.02);
-		// lowered for a reload or a swap, and for a landing
-		const dip = Math.sin(Math.min(1, s.reload) * Math.PI) * 0.6 + s.swap;
+		// each kind of gun is reloaded its own way; a is how far into the
+		// motion it is, easing in and out
+		const a = s.reload > 0 ? Math.sin(Math.min(1, s.reload) * Math.PI) : 0;
+		const r = reloadMotion(s.reloadStyle, a, s.pulse);
+		pos.x += r.x;
+		pos.y += r.y;
+		pos.z += r.z;
+		this.mag.position.copy(this.magHome);
+		this.mag.position.y -= s.magOut * 0.3;
+		this.mag.position.x -= s.magOut * 0.05;
+		// lowered for a swap, and for a landing
+		const dip = s.swap;
 		pos.y -= dip * 0.18 + s.dip * 0.35;
 		// held low and across the body at a sprint
 		pos.x -= s.sprint * 0.07;
@@ -145,9 +180,9 @@ export class ViewModel {
 		if (s.downed) pos.x += 0.04;
 		this.gun.position.copy(pos);
 		this.gun.rotation.set(
-			kick * 0.12 - dip * 0.5 - s.dip * 0.8 - s.sprint * 0.4 + this.sway.y * 2 * steady,
-			s.sprint * 0.75 + this.sway.x * 2 * steady,
-			(s.downed ? 0.25 : 0) + s.sprint * 0.35 + s.slide * 0.3 + s.crouch * 0.04
+			kick * 0.12 - dip * 0.5 - s.dip * 0.8 - s.sprint * 0.4 + this.sway.y * 2 * steady + r.rx,
+			s.sprint * 0.75 + this.sway.x * 2 * steady + r.ry,
+			(s.downed ? 0.25 : 0) + s.sprint * 0.35 + s.slide * 0.3 + s.crouch * 0.04 + r.rz
 		);
 
 		this.flashTime -= dt;
@@ -169,4 +204,44 @@ export class ViewModel {
 			if (t >= 1) this.knifeTime = -1;
 		}
 	}
+}
+
+// How the gun moves through a reload, by kind: a magazine gun rolled over to
+// swap it, a shotgun tipped up to feed shells, a break-action opened nose
+// down, a machine gun lifted to lay in a belt. a runs 0 to 1 and back over
+// the reload; pulse is a shell or a slide's jolt.
+function reloadMotion(style: ReloadStyle, a: number, pulse: number) {
+	const m = { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 };
+	switch (style) {
+		case 'mag':
+		case 'cell':
+			m.y = -a * 0.06;
+			m.rx = a * 0.15;
+			m.rz = a * 0.45;
+			break;
+		case 'pistol':
+			m.y = -a * 0.05;
+			m.rx = a * 0.25;
+			m.rz = a * 0.2;
+			break;
+		case 'shells':
+			m.x = -a * 0.04;
+			m.y = -a * 0.05;
+			m.rx = a * 0.25;
+			m.rz = a * 0.7;
+			break;
+		case 'break':
+			m.y = -a * 0.04;
+			m.rx = -a * 0.7;
+			break;
+		case 'belt':
+			m.y = a * 0.03;
+			m.rx = a * 0.3;
+			m.rz = a * 0.3;
+			break;
+	}
+	// a shell or slide: knocked back a touch, nose kicking up
+	m.z += pulse * 0.025;
+	m.rx += pulse * 0.08;
+	return m;
 }

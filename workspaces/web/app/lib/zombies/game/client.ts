@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Blocking, buildMap, type GameMap } from '../map';
+import { Blocking, CELL, buildMap, cellIndex, cellOf, type GameMap } from '../map';
 import type {
 	GameStats,
 	HostMessage,
@@ -19,13 +19,15 @@ import {
 	SLIDE,
 	STAND,
 	ZOMBIE_ATTACKING,
-	ZOMBIE_RISING
+	ZOMBIE_RISING,
+	ZOMBIE_STAGGER
 } from '../protocol';
-import { PLAYER, ZOMBIE } from '../rules';
+import { DOUBLE_TAP_RATE, PERKS, PLAYER, SPEED_COLA_RATE, ZOMBIE } from '../rules';
 import type { Session } from '../session';
 import { settings } from '../settings';
-import { KNIFE, WEAPONS, ammoCost, type WeaponId } from '../weapons';
-import { Sound } from './audio';
+import { KNIFE, WEAPONS, ammoCost, type ReloadStyle, type Weapon, type WeaponId } from '../weapons';
+import { Sound, type ReloadPart } from './audio';
+import { Effects } from './effects';
 import { HeldGun } from './heldgun';
 import {
 	Body,
@@ -50,8 +52,6 @@ const INTERP_DELAY = 110; // ms
 const SEND_EVERY = 1 / 30;
 const HUD_EVERY = 0.05;
 const MOUSE_SPEED = 0.0022;
-// how much narrower the view gets when aiming down sights
-const ADS_ZOOM = 20;
 // recoil: how fast each shot's climb comes on, how long it holds after the
 // last shot, how fast it's brought back down, the most it can build to, and
 // the spring for the jolt
@@ -59,6 +59,42 @@ const RECOIL = { climb: 30, hold: 0.09, recover: 7, most: 0.3, punchStiff: 260, 
 // a moment after a sprint before the gun is back up and can fire
 const SPRINT_OUT = 0.18;
 const RAGDOLL_LIFE = 12;
+// how long the mark showing where a hit came from stays, ms
+const DANGER_TIME = 1600;
+// a gun loaded a shell at a time: a moment to start, one shell after another,
+// and a moment to rack it at the end
+const SHELL_START = 0.3;
+const SHELL_END = 0.3;
+const shellTime = (w: Weapon) => w.reload / w.mag;
+// the sound of each step of a reload, at its share of the way through
+const RELOAD_PARTS: Record<ReloadStyle, [number, ReloadPart][]> = {
+	mag: [
+		[0.25, 'out'],
+		[0.65, 'in'],
+		[0.85, 'slide']
+	],
+	pistol: [
+		[0.2, 'out'],
+		[0.6, 'in'],
+		[0.85, 'slide']
+	],
+	cell: [
+		[0.3, 'out'],
+		[0.7, 'in']
+	],
+	break: [
+		[0.15, 'open'],
+		[0.5, 'shell'],
+		[0.85, 'close']
+	],
+	belt: [
+		[0.12, 'open'],
+		[0.3, 'out'],
+		[0.6, 'in'],
+		[0.85, 'close']
+	],
+	shells: []
+};
 const MAX_RAGDOLLS = 20;
 
 const ZOMBIE_COLORS = { skin: '#5d5d5d', shirt: '#3b3b3b', pants: '#2c2c2c' };
@@ -97,6 +133,9 @@ export type HudState = {
 	hits: number;
 	kills: number;
 	hurts: number;
+	// which way recent hits came from: degrees clockwise from straight ahead,
+	// and how much is left of each, 1 to 0
+	danger: { id: number; angle: number; left: number }[];
 	pops: { id: number; amount: number }[];
 	locked: boolean;
 	// whether the mouse has been captured yet this game, so the first
@@ -122,6 +161,11 @@ type ZombieView = {
 	seen: number;
 	groan: number;
 	speed: number;
+	// a jolt away from the last hit, 0 to 1, and which way it pushed
+	flinch: number;
+	flinchX: number;
+	flinchZ: number;
+	flinchAt: number;
 };
 
 type OtherView = {
@@ -138,8 +182,6 @@ type OtherView = {
 	// eased toward what the host last said, so they move between poses
 	pose: Posture;
 };
-
-type Particle = { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number };
 
 export class GameClient {
 	private renderer: THREE.WebGLRenderer;
@@ -161,7 +203,16 @@ export class GameClient {
 	private downedSlot: Slot | null = null;
 	private fireWait = 0;
 	private reloadLeft = 0;
+	// how long this reload takes in all, and how many shells are in so far
+	// for a gun loaded a shell at a time
+	private reloadTotal = 1;
+	private shellsIn = 0;
+	// a jolt as a shell goes in or the pump is racked, 0 to 1
+	private pulse = 0;
 	private swapLeft = 0;
+	private swapTotal = 0.45;
+	// perks, as PERKS bits, from the host
+	private perks = 0;
 	private knifeWait = 0;
 	private ads = 0;
 	private triggerWasDown = false;
@@ -188,13 +239,16 @@ export class GameClient {
 	// the player is pointing; the target is where it's heading
 	private recoil = { pitch: 0, yaw: 0, target: 0, side: 0, since: 0, punch: 0, punchV: 0 };
 	private hint: HudState['hint'] = null;
+	// where recent hits came from, for the marks round the crosshair
+	private danger: { id: number; x: number; z: number; at: number }[] = [];
+	private dangerId = 0;
 
 	private snaps: { at: number; snap: Snapshot; zombies: Map<number, ZombieSnap> }[] = [];
 	private zombies = new Map<number, ZombieView>();
 	private gone = new Set<number>();
 	private ragdolls: Ragdoll[] = [];
 	private others = new Map<string, OtherView>();
-	private particles: Particle[] = [];
+	private effects = new Effects(this.dynamic);
 
 	private keys = new Set<string>();
 	private pressed = new Set<string>();
@@ -385,6 +439,13 @@ export class GameClient {
 			case 'hurt':
 				this.sound.hurt();
 				this.hud = { ...this.hud, hurts: this.hud.hurts + 1 };
+				if (Array.isArray(m.from))
+					this.danger.push({
+						id: ++this.dangerId,
+						x: m.from[0],
+						z: m.from[1],
+						at: performance.now()
+					});
 				break;
 			case 'points':
 				this.hud = {
@@ -415,6 +476,7 @@ export class GameClient {
 				this.world.closeDoors();
 				for (const z of this.zombies.values()) z.body.dispose();
 				this.zombies.clear();
+				this.effects.clear();
 				for (const r of this.ragdolls) r.body.dispose();
 				this.ragdolls = [];
 				this.phase = 'break';
@@ -448,12 +510,12 @@ export class GameClient {
 					reserve: WEAPONS.m1911.mag * 3
 				};
 				this.reloadLeft = 0;
-				this.swapLeft = 0.45;
+				this.raise(WEAPONS.m1911);
 				this.me.vy = 0;
 				this.me.y = 0;
 			} else if (mine.state === 'alive' && was === 'downed') {
 				this.downedSlot = null;
-				this.swapLeft = 0.45;
+				this.raise(WEAPONS[this.slot().weapon]);
 			}
 		}
 	}
@@ -473,7 +535,7 @@ export class GameClient {
 			this.current = this.slots.length - 1;
 		} else this.slots[this.current] = slot;
 		this.reloadLeft = 0;
-		this.swapLeft = 0.45;
+		this.raise(w);
 	}
 
 	private resetLoadout() {
@@ -556,7 +618,7 @@ export class GameClient {
 		}
 
 		this.drawOthers(dt, now);
-		this.updateParticles(dt);
+		this.effects.update(dt);
 		this.world.update(dt);
 		this.placeCamera(dt, now);
 		this.render();
@@ -710,7 +772,15 @@ export class GameClient {
 		this.crouchNow += ((this.crouched ? 1 : 0) - this.crouchNow) * ease;
 		this.slideNow += ((this.slideLeft > 0 ? 1 : 0) - this.slideNow) * ease;
 		this.sprintNow += ((this.sprinting() && speed > PLAYER.walk ? 1 : 0) - this.sprintNow) * ease;
-		if (me.ground && this.slideLeft <= 0) this.stride += this.speedNow * dt * 1.75;
+		if (me.ground && this.slideLeft <= 0) {
+			const before = this.stride;
+			this.stride += this.speedNow * dt * 1.75;
+			if (Math.floor(this.stride / Math.PI) !== Math.floor(before / Math.PI) && !downed)
+				this.sound.footstep(
+					'tile',
+					Math.min(1, this.speedNow / PLAYER.sprint) * (this.crouched ? 0.45 : 1)
+				);
+		}
 		this.dip *= Math.exp(-dt * 9);
 	}
 
@@ -743,14 +813,8 @@ export class GameClient {
 		const aiming = active && !dead && this.buttons.has(2) && !sprinting && this.swapLeft <= 0;
 		this.ads += ((aiming ? 1 : 0) - this.ads) * Math.min(1, dt * 12);
 
-		if (this.reloadLeft > 0) {
-			this.reloadLeft -= dt;
-			if (this.reloadLeft <= 0) {
-				const take = Math.min(weapon.mag - slot.mag, slot.reserve);
-				slot.mag += take;
-				slot.reserve -= take;
-			}
-		}
+		this.pulse = Math.max(0, this.pulse - dt * 6);
+		if (this.reloadLeft > 0) this.reloading(dt, weapon, slot);
 		if (dead || !active) {
 			this.triggerWasDown = false;
 			this.view.update(dt, this.viewState(weapon));
@@ -768,7 +832,7 @@ export class GameClient {
 		if (swap >= 0 && swap !== this.current && this.slots[swap] && !this.downedSlot) {
 			this.current = swap;
 			this.reloadLeft = 0;
-			this.swapLeft = 0.45;
+			this.raise(WEAPONS[this.slots[swap].weapon]);
 		}
 
 		// reload
@@ -797,10 +861,22 @@ export class GameClient {
 		// fire
 		const trigger = this.buttons.has(0);
 		const wants = trigger && (weapon.auto || !this.triggerWasDown);
+		// a gun loaded a shell at a time can stop loading to shoot
+		if (
+			wants &&
+			weapon.reloadStyle === 'shells' &&
+			this.reloadLeft > 0 &&
+			slot.mag > 0 &&
+			!this.triggerWasDown
+		) {
+			this.reloadLeft = 0;
+			this.fireWait = Math.max(this.fireWait, 0.12);
+		}
 		if (wants && !busy && this.reloadLeft <= 0 && this.fireWait <= 0 && this.sprintOut <= 0) {
 			if (slot.mag > 0) {
 				slot.mag--;
-				this.fireWait = 60 / weapon.rpm;
+				const rate = this.perks & PERKS.tap.bit ? DOUBLE_TAP_RATE : 1;
+				this.fireWait = 60 / (weapon.rpm * rate);
 				this.fire(weapon);
 			} else if (slot.reserve > 0) this.startReload(weapon);
 			else if (!this.triggerWasDown) this.sound.empty();
@@ -815,8 +891,11 @@ export class GameClient {
 	private viewState(weapon: (typeof WEAPONS)[WeaponId]): ViewState {
 		return {
 			ads: this.ads,
-			reload: this.reloadLeft > 0 ? 1 - this.reloadLeft / weapon.reload : 0,
-			swap: Math.sin((this.swapLeft / 0.45) * Math.PI) * 0.8,
+			reload: this.reloadLeft > 0 ? 1 - this.reloadLeft / this.reloadTotal : 0,
+			reloadStyle: weapon.reloadStyle,
+			magOut: this.magOut(weapon),
+			pulse: this.pulse,
+			swap: Math.sin((this.swapLeft / this.swapTotal) * Math.PI) * 0.8,
 			moving: this.me.ground ? this.speedNow : 0,
 			downed: this.life === 'downed',
 			sprint: this.sprintNow,
@@ -829,9 +908,70 @@ export class GameClient {
 		};
 	}
 
-	private startReload(weapon: (typeof WEAPONS)[WeaponId]) {
-		this.reloadLeft = weapon.reload;
-		this.sound.reload();
+	private startReload(weapon: Weapon) {
+		const slot = this.slot();
+		const speed = this.perks & PERKS.speed.bit ? SPEED_COLA_RATE : 1;
+		if (weapon.reloadStyle === 'shells') {
+			const shells = Math.min(weapon.mag - slot.mag, slot.reserve);
+			this.reloadTotal = (SHELL_START + shells * shellTime(weapon) + SHELL_END) / speed;
+		} else this.reloadTotal = weapon.reload / speed;
+		this.reloadLeft = this.reloadTotal;
+		this.shellsIn = 0;
+	}
+
+	// A reload under way: the sounds of each step as it reaches them, shells
+	// going in one by one, and the gun filled at the end.
+	private reloading(dt: number, weapon: Weapon, slot: Slot) {
+		const before = 1 - this.reloadLeft / this.reloadTotal;
+		this.reloadLeft -= dt;
+		const after = Math.min(1, 1 - this.reloadLeft / this.reloadTotal);
+		if (weapon.reloadStyle === 'shells') {
+			const speed = this.perks & PERKS.speed.bit ? SPEED_COLA_RATE : 1;
+			const elapsed = after * this.reloadTotal * speed;
+			const due = Math.floor((elapsed - SHELL_START) / shellTime(weapon)) + 1;
+			while (this.shellsIn < due && slot.mag < weapon.mag && slot.reserve > 0) {
+				this.shellsIn++;
+				slot.mag++;
+				slot.reserve--;
+				this.pulse = 1;
+				this.sound.reloadPart('shell');
+			}
+			if (this.reloadLeft <= 0) {
+				this.pulse = 1;
+				this.sound.reloadPart('pump');
+			}
+			return;
+		}
+		for (const [at, part] of RELOAD_PARTS[weapon.reloadStyle]) {
+			if (before < at && after >= at) {
+				this.sound.reloadPart(part);
+				if (part === 'slide' || part === 'close') this.pulse = 1;
+			}
+		}
+		if (this.reloadLeft <= 0) {
+			const take = Math.min(weapon.mag - slot.mag, slot.reserve);
+			slot.mag += take;
+			slot.reserve -= take;
+		}
+	}
+
+	// how far the magazine is out of the gun, 0 to 1, for the hands to show
+	private magOut(weapon: Weapon) {
+		if (this.reloadLeft <= 0) return 0;
+		const parts = RELOAD_PARTS[weapon.reloadStyle];
+		const out = parts.find(([, p]) => p === 'out')?.[0];
+		const back = parts.find(([, p]) => p === 'in')?.[0];
+		if (out === undefined || back === undefined) return 0;
+		const t = 1 - this.reloadLeft / this.reloadTotal;
+		if (t < out - 0.08 || t > back) return 0;
+		return Math.min(1, (t - (out - 0.08)) / 0.08) * Math.min(1, (back - t) / 0.06);
+	}
+
+	// a gun brought up, after a swap or a buy
+	private raise(weapon: Weapon) {
+		this.swapTotal = weapon.swap;
+		this.swapLeft = weapon.swap;
+		this.sound.raise();
 	}
 
 	private forward(out: THREE.Vector3) {
@@ -851,7 +991,10 @@ export class GameClient {
 			(1 - this.ads * 0.8) *
 			(this.speedNow > 1 ? 1.4 : 1) *
 			(this.me.ground ? 1 : 2);
-		const hits = new Map<number, { damage: number; head: boolean; point: THREE.Vector3 }>();
+		const hits = new Map<
+			number,
+			{ damage: number; head: boolean; point: THREE.Vector3; dir: THREE.Vector3 }
+		>();
 		const dir = new THREE.Vector3();
 		for (let i = 0; i < weapon.pellets; i++) {
 			const angle = Math.random() * Math.PI * 2;
@@ -863,18 +1006,29 @@ export class GameClient {
 				.normalize();
 			const hit = this.trace(origin, dir, weapon.range);
 			if (hit.zombie === null) {
-				if (hit.t < weapon.range)
-					this.puff(origin.clone().addScaledVector(dir, hit.t), '#9a9a9a', 3);
+				// a hole and a puff of dust where it met a wall or the floor
+				if (hit.t < weapon.range) {
+					const at = origin.clone().addScaledVector(dir, hit.t);
+					const normal = this.normalAt(at, dir);
+					this.effects.dust(at, normal);
+					if (!this.onDoor(at, dir)) this.effects.decal(at, normal, 'hole');
+				}
 				continue;
 			}
-			const prior = hits.get(hit.zombie) ?? { damage: 0, head: false, point: new THREE.Vector3() };
+			const prior = hits.get(hit.zombie) ?? {
+				damage: 0,
+				head: false,
+				point: new THREE.Vector3(),
+				dir: new THREE.Vector3()
+			};
 			prior.damage += weapon.damage * (hit.head ? weapon.headshot : 1);
 			prior.head ||= hit.head;
 			prior.point.copy(origin).addScaledVector(dir, hit.t);
+			prior.dir.copy(dir);
 			hits.set(hit.zombie, prior);
 		}
 		for (const [zombie, h] of hits) {
-			this.puff(h.point, '#6e2a2a', h.head ? 7 : 4);
+			this.bleed(zombie, h.point, h.dir, h.head ? 1.6 : 1, weapon.force);
 			this.session.post({
 				t: 'hit',
 				zombie,
@@ -965,7 +1119,7 @@ export class GameClient {
 			this.me.vx += fx * 6;
 			this.me.vz += fz * 6;
 		}
-		this.puff(new THREE.Vector3(z.x, 1.3, z.z), '#6e2a2a', 5);
+		this.bleed(target, new THREE.Vector3(z.x, 1.3, z.z), new THREE.Vector3(fx, 0.1, fz), 1.2, 9);
 		this.sound.hit(false);
 		this.hud = { ...this.hud, hits: this.hud.hits + 1 };
 		this.session.post({
@@ -1066,6 +1220,7 @@ export class GameClient {
 		const { a, b, alpha } = frame;
 
 		// zombies
+		let steps = 0;
 		for (const [id, zb] of b.zombies) {
 			if (this.gone.has(id)) continue;
 			const za = a.zombies.get(id) ?? zb;
@@ -1085,7 +1240,11 @@ export class GameClient {
 					riseStart: zb[5] & ZOMBIE_RISING ? now : -Infinity,
 					seen: now,
 					groan: 2 + Math.random() * 6,
-					speed: zb[4]
+					speed: zb[4],
+					flinch: 0,
+					flinchX: 0,
+					flinchZ: 0,
+					flinchAt: 0
 				};
 				this.zombies.set(id, view);
 			}
@@ -1097,6 +1256,7 @@ export class GameClient {
 			view.x = x;
 			view.z = z;
 			view.seen = now;
+			const stepBefore = view.step;
 			view.step += moved * 4.4;
 			view.swing =
 				zb[5] & ZOMBIE_ATTACKING
@@ -1104,12 +1264,37 @@ export class GameClient {
 					: Math.max(0, view.swing - dt * 3);
 			const rising = Math.max(0, 1 - (now - view.riseStart) / (ZOMBIE.rise * 1000));
 			const lean = [0, 0.1, 0.2][view.speed] ?? 0;
-			zombiePose(view.body.joints, x, -1.9 * rising, z, yaw, view.step, view.swing, lean);
+			// someone else's hit, seen from the host: a jolt straight back
+			if (zb[5] & ZOMBIE_STAGGER && view.flinch < 0.2 && now - view.flinchAt > 400) {
+				view.flinch = 0.6;
+				view.flinchX = Math.sin(yaw);
+				view.flinchZ = Math.cos(yaw);
+				view.flinchAt = now;
+			}
+			view.flinch = Math.max(0, view.flinch - dt * 4);
+			// the push, turned into the zombie's own frame
+			const c = Math.cos(yaw);
+			const s = Math.sin(yaw);
+			const push = view.flinch * view.flinch * (3 - 2 * view.flinch);
+			zombiePose(view.body.joints, x, -1.9 * rising, z, yaw, view.step, view.swing, lean, {
+				x: (view.flinchX * c - view.flinchZ * s) * push,
+				z: (view.flinchX * s + view.flinchZ * c) * push
+			});
 			view.body.place();
+			const far = Math.hypot(x - this.me.x, z - this.me.z);
 			view.groan -= dt;
 			if (view.groan <= 0) {
 				view.groan = 4 + Math.random() * 8;
-				this.sound.groan(1 - Math.hypot(x - this.me.x, z - this.me.z) / 22);
+				if (far < 30) this.sound.groan({ x, y: 1.6, z });
+			}
+			// footfalls, from the nearer ones
+			if (
+				Math.floor(view.step / Math.PI) !== Math.floor(stepBefore / Math.PI) &&
+				far < 14 &&
+				steps < 3
+			) {
+				steps++;
+				this.sound.zombieStep({ x, y: 0.1, z }, [0.35, 0.6, 0.85][view.speed] ?? 0.5);
 			}
 		}
 		// zombies the host no longer sends, and that did not die on screen
@@ -1197,7 +1382,12 @@ export class GameClient {
 		pose.knife = Math.min(1, pose.knife + dt / 0.28);
 		// steps keep time with how fast they're really going, and stop in a slide
 		const moved = Math.hypot(x - view.x, z - view.z);
-		if (pose.slide < 0.5 && !(pb.flags & POSE_AIR)) view.step += moved * 3;
+		if (pose.slide < 0.5 && !(pb.flags & POSE_AIR) && !downed) {
+			const before = view.step;
+			view.step += moved * 3;
+			if (Math.floor(view.step / Math.PI) !== Math.floor(before / Math.PI))
+				this.sound.footstep('tile', 0.4 + pose.sprint * 0.4 - pose.crouch * 0.25, { x, y, z });
+		}
 		view.x = x;
 		view.z = z;
 		const visible = pb.state !== 'dead';
@@ -1222,8 +1412,7 @@ export class GameClient {
 		view.gun.update(dt);
 		if (pb.shots !== view.shots) {
 			view.shots = pb.shots;
-			const d = Math.hypot(x - this.me.x, z - this.me.z);
-			this.sound.shot(pb.weapon, Math.max(0.08, 1 - d / 40) * 0.6);
+			this.sound.shot(pb.weapon, { x, y: y + 1.4, z });
 			const range = WEAPONS[pb.weapon].range;
 			view.gun.fire(this.trace(view.gun.muzzlePoint, view.gun.aim, range).t);
 		}
@@ -1237,6 +1426,20 @@ export class GameClient {
 		this.sound.hit(true);
 		this.hud = { ...this.hud, kills: this.hud.kills + 1 };
 		const j: Joints = view.body.joints;
+		const along = new THREE.Vector3(...dir).normalize();
+		if (head) {
+			// the head goes, in a burst
+			view.body.meshes[HEAD].visible = false;
+			this.effects.headPop(new THREE.Vector3().fromArray(j, J.headTop * 3), along);
+			this.sound.headPop();
+		}
+		// and a pool where they drop
+		this.effects.decal(
+			new THREE.Vector3(view.x + along.x * 0.6, 0, view.z + along.z * 0.6),
+			UP,
+			'blood',
+			1.6
+		);
 		const v = new Float32Array(j.length);
 		for (let i = 0; i < 11; i++) {
 			const struck =
@@ -1252,41 +1455,53 @@ export class GameClient {
 		this.ragdolls.push(new Ragdoll(view.body, v));
 	}
 
-	private puff(at: THREE.Vector3, color: string, count: number) {
-		for (let i = 0; i < count; i++) {
-			const mesh =
-				this.particles.length > 80
-					? this.particles.shift()!.mesh
-					: new THREE.Mesh(PARTICLE, new THREE.MeshBasicMaterial({ color, transparent: true }));
-			(mesh.material as THREE.MeshBasicMaterial).color.set(color);
-			mesh.position.copy(at);
-			mesh.scale.setScalar(0.5 + Math.random());
-			this.dynamic.add(mesh);
-			this.particles.push({
-				mesh,
-				vx: (Math.random() - 0.5) * 2.5,
-				vy: Math.random() * 2.5,
-				vz: (Math.random() - 0.5) * 2.5,
-				life: 0.35 + Math.random() * 0.3
-			});
+	// Blood where a zombie was hit, a mark on whatever is behind it, and the
+	// zombie flinching away from the shot, all straight away rather than once
+	// the host hears of it.
+	private bleed(id: number, at: THREE.Vector3, dir: THREE.Vector3, amount: number, force: number) {
+		this.effects.blood(at, dir, amount);
+		const behind = this.surface(at, dir, 3);
+		if (behind.t < 3 && !behind.door) {
+			const spot = at.clone().addScaledVector(dir, behind.t);
+			this.effects.decal(spot, behind.normal, 'blood', 0.6 + amount * 0.25);
+		}
+		const z = this.zombies.get(id);
+		if (z) {
+			z.flinch = Math.min(1, z.flinch + 0.45 + force * 0.05);
+			z.flinchX = dir.x;
+			z.flinchZ = dir.z;
+			z.flinchAt = performance.now();
 		}
 	}
 
-	private updateParticles(dt: number) {
-		this.particles = this.particles.filter((p) => {
-			p.life -= dt;
-			if (p.life <= 0) {
-				p.mesh.removeFromParent();
-				(p.mesh.material as THREE.Material).dispose();
-				return false;
-			}
-			p.vy -= 9 * dt;
-			p.mesh.position.x += p.vx * dt;
-			p.mesh.position.y = Math.max(0.02, p.mesh.position.y + p.vy * dt);
-			p.mesh.position.z += p.vz * dt;
-			(p.mesh.material as THREE.MeshBasicMaterial).opacity = Math.min(1, p.life * 3);
-			return true;
-		});
+	// The first wall or floor along a ray, ignoring zombies.
+	private surface(o: THREE.Vector3, d: THREE.Vector3, range: number) {
+		const flat = Math.hypot(d.x, d.z);
+		let t = flat > 1e-6 ? this.blocking.ray(o.x, o.z, d.x, d.z, range * flat) / flat : range;
+		if (d.y < 0) t = Math.min(t, -o.y / d.y);
+		const at = o.clone().addScaledVector(d, t);
+		return { t, normal: this.normalAt(at, d), door: this.onDoor(at, d) };
+	}
+
+	// whether a point a ray struck is on a door, which marks shouldn't stick
+	// to since it opens
+	private onDoor(at: THREE.Vector3, d: THREE.Vector3) {
+		const cx = cellOf(at.x + d.x * 0.05);
+		const cz = cellOf(at.z + d.z * 0.05);
+		return at.y > 0.03 && (this.map.doorAt[cellIndex(cx, cz)] ?? -1) >= 0;
+	}
+
+	// Which way the surface faces where a ray struck it: up for the floor,
+	// otherwise out of whichever face of the wall cell it crossed.
+	private normalAt(at: THREE.Vector3, d: THREE.Vector3) {
+		if (at.y < 0.03) return new THREE.Vector3(0, 1, 0);
+		const fx = at.x / CELL - Math.floor(at.x / CELL);
+		const fz = at.z / CELL - Math.floor(at.z / CELL);
+		const toX = Math.min(fx, 1 - fx);
+		const toZ = Math.min(fz, 1 - fz);
+		return toX < toZ
+			? new THREE.Vector3(-Math.sign(d.x) || 1, 0, 0)
+			: new THREE.Vector3(0, 0, -Math.sign(d.z) || 1);
 	}
 
 	private placeCamera(dt: number, now: number) {
@@ -1322,7 +1537,10 @@ export class GameClient {
 				this.roll + r.punch
 			);
 		}
-		const fov = settings.get().fov - ADS_ZOOM * this.ads + this.sprintNow * 5 + this.slideNow * 4;
+		const ears = this.camera.position;
+		this.sound.listen(ears.x, ears.y, ears.z, me.yaw);
+		const zoom = WEAPONS[this.slot().weapon].adsZoom;
+		const fov = settings.get().fov - zoom * this.ads + this.sprintNow * 5 + this.slideNow * 4;
 		if (Math.abs(this.camera.fov - fov) > 0.01) {
 			this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 14);
 			this.camera.updateProjectionMatrix();
@@ -1352,6 +1570,7 @@ export class GameClient {
 			hits: 0,
 			kills: 0,
 			hurts: 0,
+			danger: [],
 			pops: [],
 			locked: false,
 			played: false,
@@ -1360,6 +1579,25 @@ export class GameClient {
 			isHost: this.session.state.isHost,
 			area: ''
 		};
+	}
+
+	private dangerMarks(): HudState['danger'] {
+		const now = performance.now();
+		this.danger = this.danger.filter((d) => now - d.at < DANGER_TIME);
+		const fx = -Math.sin(this.me.yaw);
+		const fz = -Math.cos(this.me.yaw);
+		return this.danger.map((d) => {
+			const dx = d.x - this.me.x;
+			const dz = d.z - this.me.z;
+			const ahead = dx * fx + dz * fz;
+			// right is forward turned a quarter clockwise
+			const side = dx * -fz + dz * fx;
+			return {
+				id: d.id,
+				angle: (Math.atan2(side, ahead) * 180) / Math.PI,
+				left: 1 - (now - d.at) / DANGER_TIME
+			};
+		});
 	}
 
 	private publishHud() {
@@ -1404,7 +1642,8 @@ export class GameClient {
 			played: this.played,
 			held: latest?.held ?? false,
 			stats: this.stats,
-			area: this.map.roomName(this.me.x, this.me.z)
+			area: this.map.roomName(this.me.x, this.me.z),
+			danger: this.dangerMarks()
 		};
 		for (const l of this.hudListeners) l();
 	}
@@ -1420,7 +1659,9 @@ const BODY_CAPSULES: [number, number, number][] = [
 
 // scratch, for where another player's right hand is
 const hand = new THREE.Vector3();
-const PARTICLE = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+const UP = new THREE.Vector3(0, 1, 0);
+// the head's box, among a body's meshes
+const HEAD = 1;
 
 function lerpAngle(a: number, b: number, t: number) {
 	let d = b - a;
