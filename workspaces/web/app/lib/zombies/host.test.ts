@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { HostGame, TICK } from './host';
-import { Blocking, buildMap, cellIndex, cellOf } from './map';
+import { Blocking, WINDOW_BOARDS, buildMap, cellIndex, cellOf } from './map';
 import type { HostMessage, PlayerMessage, Snapshot } from './protocol';
 import { CROUCH, POSE_ADS, POSE_PAUSED, POSE_SPRINT, STAND } from './protocol';
-import { BREAK, POINTS, START_POINTS, zombieCount } from './rules';
+import {
+	BOX,
+	BREAK,
+	JUGG_HEALTH,
+	PERKS,
+	POINTS,
+	POWERUP,
+	START_POINTS,
+	WINDOW,
+	ZOMBIE,
+	zombieCount
+} from './rules';
 import { WEAPONS } from './weapons';
 
 function setup(players = 1) {
@@ -284,5 +295,125 @@ describe('host game', () => {
 		expect(game.addPlayer('p0', 'again')).toBe(true);
 		expect(snap().players).toHaveLength(1);
 		expect(snap().players[0].points).toBe(42);
+	});
+
+	// what a test reaches into the host for
+	type Inside = {
+		players: Map<
+			string,
+			{ x: number; z: number; points: number; perks: number; hp: number; state: string }
+		>;
+		zombies: Map<number, { x: number; z: number; window: unknown; hp: number }>;
+		windows: number[];
+		drops: { id: number; kind: string; x: number; z: number; left: number }[];
+		addZombie(x: number, z: number, window: unknown): void;
+		down(p: unknown): void;
+	};
+
+	it('sends zombies in through a window, a board at a time', () => {
+		const { game, run } = setup();
+		const g = game as unknown as Inside;
+		game.start();
+		run(BREAK.first + 0.1);
+		g.zombies.clear();
+		const w = game.map.windows[0];
+		g.addZombie(w.x - w.nx * 2.6, w.z - w.nz * 2.6, w);
+		run(ZOMBIE.rise + 1.2 / ZOMBIE.speeds[0] + WINDOW.tearTime + 0.3);
+		expect(g.windows[0]).toBeLessThan(WINDOW_BOARDS);
+		run(WINDOW.tearTime * WINDOW_BOARDS + WINDOW.climbTime + 0.5);
+		expect(g.windows[0]).toBe(0);
+		const z = [...g.zombies.values()][0];
+		expect(z.window).toBeNull();
+		// it ends up on the inside of the wall
+		const into = (z.x - w.x) * w.nx + (z.z - w.z) * w.nz;
+		expect(into).toBeGreaterThan(1);
+	});
+
+	it('pays for nailing boards back, one at a time', () => {
+		const { game, run } = setup();
+		const g = game as unknown as Inside;
+		game.start();
+		run(BREAK.first + 0.1);
+		const w = game.map.windows[0];
+		g.windows[0] = 2;
+		Object.assign(g.players.get('p0')!, { x: w.x + w.nx * 1.3, z: w.z + w.nz * 1.3 });
+		const before = g.players.get('p0')!.points;
+		game.handle('p0', { t: 'repair', window: 0 });
+		game.handle('p0', { t: 'repair', window: 0 });
+		expect(g.windows[0]).toBe(3);
+		run(WINDOW.repairTime);
+		game.handle('p0', { t: 'repair', window: 0 });
+		expect(g.windows[0]).toBe(4);
+		expect(g.players.get('p0')!.points).toBe(before + WINDOW.repairPoints * 2);
+	});
+
+	it('picks up power-ups: Double Points pays double and a Nuke clears the room', () => {
+		const { game, run, sent } = setup();
+		const g = game as unknown as Inside;
+		game.start();
+		run(BREAK.first + 3);
+		const p = g.players.get('p0')!;
+		g.drops.push({ id: 1, kind: 'double', x: p.x, z: p.z, left: 20 });
+		run(0.1);
+		expect(sent.some((m) => m.m.t === 'powerup' && m.m.kind === 'double')).toBe(true);
+		const [id] = [...g.zombies.keys()];
+		const points = p.points;
+		game.handle('p0', {
+			t: 'hit',
+			zombie: id,
+			damage: 1,
+			head: false,
+			knife: false,
+			dir: [0, 0, 1],
+			force: 1
+		});
+		expect(p.points).toBe(points + POINTS.hit * 2);
+
+		expect(g.zombies.size).toBeGreaterThan(0);
+		g.drops.push({ id: 2, kind: 'nuke', x: p.x, z: p.z, left: 20 });
+		const before = p.points;
+		run(0.1);
+		expect(g.zombies.size).toBe(0);
+		expect(p.points).toBe(before + POWERUP.nukePoints * 2);
+	});
+
+	it('spins the Mystery Box for a gun the player does not have, for them alone', () => {
+		const { game, run, sent } = setup(2);
+		const g = game as unknown as Inside;
+		game.start();
+		const box = game.map.machines.find((m) => m.kind === 'box')!;
+		const p = g.players.get('p0')!;
+		Object.assign(p, { x: box.x + box.nx * 1.2, z: box.z + box.nz * 1.2, points: 2000 });
+		game.handle('p0', { t: 'buyBox', have: ['m1911', 'mp5'] });
+		expect(p.points).toBe(2000 - BOX.cost);
+		expect((game.snapshot() as Snapshot).box).toMatchObject({ state: 'rolling', weapon: null });
+		run(BOX.roll + 0.1);
+		const offer = (game.snapshot() as Snapshot).box;
+		expect(offer.state).toBe('offering');
+		expect(['m1911', 'mp5']).not.toContain(offer.weapon);
+		game.handle('p1', { t: 'takeBox' });
+		expect(sent.some((m) => m.to === 'p1' && m.m.t === 'grant')).toBe(false);
+		game.handle('p0', { t: 'takeBox' });
+		expect(
+			sent.some((m) => m.to === 'p0' && m.m.t === 'grant' && m.m.weapon === offer.weapon)
+		).toBe(true);
+	});
+
+	it('sells perks at their machines, and takes them away on going down', () => {
+		const { game } = setup();
+		const g = game as unknown as Inside;
+		game.start();
+		const jugg = game.map.machines.find((m) => m.kind === 'jugg')!;
+		const p = g.players.get('p0')!;
+		Object.assign(p, { x: jugg.x + jugg.nx * 1.2, z: jugg.z + jugg.nz * 1.2, points: 5000 });
+		game.handle('p0', { t: 'buyPerk', perk: 'jugg' });
+		expect(p.perks & PERKS.jugg.bit).toBeTruthy();
+		expect(p.hp).toBe(JUGG_HEALTH);
+		expect(p.points).toBe(5000 - PERKS.jugg.cost);
+		// too far from the Speed Cola machine
+		game.handle('p0', { t: 'buyPerk', perk: 'speed' });
+		expect(p.perks & PERKS.speed.bit).toBeFalsy();
+		g.down(p);
+		expect(p.perks).toBe(0);
 	});
 });

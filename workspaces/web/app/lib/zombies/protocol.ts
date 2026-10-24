@@ -1,3 +1,4 @@
+import type { PerkId } from './rules';
 import type { WeaponId } from './weapons';
 
 // Messages between the host's game and each player, over WebRTC data
@@ -27,6 +28,7 @@ export type PlayerSnap = {
 	knifes: number; // the same, for the knife
 	stance: Stance;
 	flags: number; // POSE_* below, so others can be drawn as they are
+	perks: number; // PERKS bits
 };
 
 export type Stance = 0 | 1 | 2; // standing, crouching, sliding
@@ -41,12 +43,31 @@ export const POSE_RELOAD = 4;
 export const POSE_PAUSED = 8;
 export const POSE_AIR = 16;
 
-// [id, x, z, yaw, speed class, flags]; see ZOMBIE_* below
-export type ZombieSnap = [number, number, number, number, number, number];
+// [id, x, z, yaw, speed class, flags, health, height off the floor]; see
+// ZOMBIE_* below. Health lets a player's own shots show a kill straight away;
+// height is for climbing in through a window.
+export type ZombieSnap = [number, number, number, number, number, number, number, number];
 export const ZOMBIE_ATTACKING = 1;
 export const ZOMBIE_RISING = 2;
 // knocked back by a hit, and slowed for a moment
 export const ZOMBIE_STAGGER = 4;
+// pulling boards off a window, and climbing in through it
+export const ZOMBIE_TEARING = 8;
+export const ZOMBIE_CLIMBING = 16;
+
+export type PowerupKind = 'ammo' | 'instakill' | 'double' | 'nuke' | 'carpenter';
+export const POWERUP_KINDS: PowerupKind[] = ['ammo', 'instakill', 'double', 'nuke', 'carpenter'];
+
+// a power-up on the floor, waiting to be picked up
+export type DropSnap = { id: number; kind: PowerupKind; x: number; z: number; left: number };
+
+// the Mystery Box: shut, picking a gun, or holding one out for whoever paid
+export type BoxSnap = {
+	state: 'idle' | 'rolling' | 'offering';
+	weapon: WeaponId | null;
+	by: string | null;
+	left: number;
+};
 
 export type Snapshot = {
 	t: 'snap';
@@ -58,6 +79,12 @@ export type Snapshot = {
 	held: boolean; // everyone is paused, so the game is too
 	players: PlayerSnap[];
 	zombies: ZombieSnap[];
+	windows: number[]; // boards left on each window
+	drops: DropSnap[];
+	// seconds left on each power-up running for everyone
+	instakill: number;
+	double: number;
+	box: BoxSnap;
 };
 
 // Totals for one player over a whole game, for the game over screen.
@@ -113,6 +140,10 @@ export type HostMessage =
 	| { t: 'respawn'; x: number; z: number }
 	| { t: 'round'; round: number }
 	| { t: 'over'; round: number; stats: GameStats }
+	// a power-up picked up, by someone, for everyone
+	| { t: 'powerup'; kind: PowerupKind; by: string }
+	// a perk bought from a machine
+	| { t: 'perk'; perk: PerkId }
 	| { t: 'stats'; stats: GameStats }
 	| { t: 'restart' };
 
@@ -145,6 +176,12 @@ export type PlayerMessage =
 	  }
 	| { t: 'buyWeapon'; wall: number; owned: boolean }
 	| { t: 'buyDoor'; door: number }
+	// one board back on a window, while F is held at it
+	| { t: 'repair'; window: number }
+	// the guns already held, so the box offers something new
+	| { t: 'buyBox'; have: WeaponId[] }
+	| { t: 'takeBox' }
+	| { t: 'buyPerk'; perk: PerkId }
 	| { t: 'start' }
 	// the numbers so far, for the pause screen
 	| { t: 'stats' }
