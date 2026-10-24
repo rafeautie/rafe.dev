@@ -95,6 +95,10 @@ export type Layout = {
 	names: { at: Pt; name: string }[];
 	// canopies and awnings: a roof on posts, drawn only
 	canopies: { poly: Pt[]; height: number }[];
+	// rainwater lying on the ground, `size` across, drawn only
+	puddles: { at: Pt; size: number; rot: number }[];
+	// overhead lines strung from pole to pole, drawn only
+	wires: Pt[][];
 };
 
 // A street-aligned frame: s runs along the street, t across it, positive t
@@ -682,7 +686,26 @@ export const LAYOUT: Layout = {
 		{ at: E2.at(9, 18), name: 'Gas Station' },
 		{ at: W.at(-23, 24), name: 'Backyards' }
 	],
-	canopies: [{ poly: box(...E1.at(14, 18), 13, 8, E1.angle), height: 4.6 }]
+	canopies: [{ poly: box(...E1.at(14, 18), 13, 8, E1.angle), height: 4.6 }],
+	puddles: [
+		{ at: [46, 73.5], size: 3.4, rot: 10 },
+		{ at: [59.6, 64.3], size: 2.2, rot: 60 },
+		{ at: [39.5, 70], size: 1.8, rot: 0 },
+		{ at: W.at(-14, 2.2), size: 2.8, rot: W.angle },
+		{ at: W.at(-24, -3), size: 2, rot: W.angle + 40 },
+		{ at: [51, 46.8], size: 2.6, rot: 20 },
+		{ at: E1.at(5, 1.5), size: 3, rot: E1.angle },
+		{ at: E2.at(14, -3), size: 2.4, rot: E2.angle + 30 },
+		{ at: [46.2, 33.5], size: 1.8, rot: 90 },
+		{ at: E1.at(16, -24), size: 3.6, rot: E1.angle + 15 },
+		{ at: E1.at(14, 11), size: 2.4, rot: 0 },
+		{ at: W.at(-15.5, -12), size: 1.6, rot: 0 },
+		{ at: W.at(-23.5, 36), size: 2.2, rot: 30 }
+	],
+	wires: [
+		[[47.6, 31], E1.at(3, -11), E1.at(24.5, -11.5), E2.at(1.5, 10), [62.3, 77]],
+		[W.at(-30.2, 20), W.at(-16.8, 32.5)]
+	]
 };
 
 // Short dashes along a line.

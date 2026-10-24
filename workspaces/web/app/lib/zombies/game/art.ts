@@ -71,7 +71,15 @@ export type Surface = {
 export type Art = {
 	surfaces: Record<SurfaceName, Surface>;
 	props: Record<PropName, THREE.Object3D>;
+	// the evening sky all round, as a picture and as the light it throws
+	sky: THREE.Texture;
 };
+
+// How the sky is turned, so its sunset sits where the sun light comes from
+// (west, a little south: see the sun in buildWorld).
+export const SKY_TURN = new THREE.Euler(0, (-120 * Math.PI) / 180, 0);
+// how strongly the sky lights the surfaces that reflect it
+const SKY_LIGHT = 0.7;
 
 let loading: Promise<Art | null> | null = null;
 
@@ -95,7 +103,12 @@ async function load(): Promise<Art> {
 		if (color) t.colorSpace = THREE.SRGBColorSpace;
 		return t;
 	};
-	const [surfaces, props] = await Promise.all([
+	const [sky, surfaces, props] = await Promise.all([
+		textures.loadAsync(`${BASE}sky.webp`).then((t) => {
+			t.mapping = THREE.EquirectangularReflectionMapping;
+			t.colorSpace = THREE.SRGBColorSpace;
+			return t;
+		}),
 		Promise.all(
 			SURFACES.map(async (name) => {
 				const [color, normal, arm] = await Promise.all([
@@ -116,30 +129,51 @@ async function load(): Promise<Art> {
 			})
 		)
 	]);
+	// the props' own materials pick up the sky too
+	for (const [, prop] of props)
+		prop.traverse((o) => {
+			const material = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+			if (material?.isMeshStandardMaterial) underSky(material, sky);
+		});
 	return {
 		surfaces: Object.fromEntries(surfaces) as Record<SurfaceName, Surface>,
-		props: Object.fromEntries(props) as Record<PropName, THREE.Object3D>
+		props: Object.fromEntries(props) as Record<PropName, THREE.Object3D>,
+		sky
 	};
+}
+
+// Lights a material with the sky: a faint reflection of it, and its colour
+// in the shade. Only standard materials take it, so the plain look and the
+// characters stay as they are.
+export function underSky<T extends THREE.MeshStandardMaterial>(material: T, sky: THREE.Texture) {
+	material.envMap = sky;
+	material.envMapIntensity = SKY_LIGHT;
+	material.envMapRotation = SKY_TURN;
+	return material;
 }
 
 // A material for a surface, with the texture repeating every `tile` metres
 // on geometry whose UVs are in metres (see metreUVs).
-export function surfaceMaterial(s: Surface, tile: number, tint = '#ffffff') {
+export function surfaceMaterial(art: Art, name: SurfaceName, tile: number, tint = '#ffffff') {
+	const s = art.surfaces[name];
 	const at = (t: THREE.Texture) => {
 		const c = t.clone();
 		c.repeat.set(1 / tile, 1 / tile);
 		return c;
 	};
-	return new THREE.MeshStandardMaterial({
-		color: tint,
-		map: at(s.color),
-		normalMap: at(s.normal),
-		aoMap: at(s.arm),
-		roughnessMap: at(s.arm),
-		metalnessMap: at(s.arm),
-		metalness: 1,
-		roughness: 1
-	});
+	return underSky(
+		new THREE.MeshStandardMaterial({
+			color: tint,
+			map: at(s.color),
+			normalMap: at(s.normal),
+			aoMap: at(s.arm),
+			roughnessMap: at(s.arm),
+			metalnessMap: at(s.arm),
+			metalness: 1,
+			roughness: 1
+		}),
+		art.sky
+	);
 }
 
 // Stretches a box's UVs so one unit is one metre on every face, so a texture
