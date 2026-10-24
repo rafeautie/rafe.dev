@@ -145,6 +145,7 @@ export const SOLID_PROPS: Partial<Record<string, { l: number; w: number; porous:
 	shelf: { l: 2.4, w: 0.8, porous: false },
 	crate: { l: 1.2, w: 0.55, porous: true },
 	barrel: { l: 0.6, w: 0.6, porous: true },
+	fire: { l: 0.6, w: 0.6, porous: true },
 	generator: { l: 1, w: 0.7, porous: true },
 	hydrant: { l: 0.35, w: 0.35, porous: true },
 	utility_box: { l: 1, w: 0.5, porous: true },

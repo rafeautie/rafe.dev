@@ -36,8 +36,14 @@ export function Game({ session, onLeave }: { session: Session; onLeave: () => vo
 	}, [session]);
 
 	return (
-		<div className="fixed inset-0 overflow-hidden bg-[#ececec] select-none">
+		<div className="fixed inset-0 overflow-hidden bg-[#0e0b0d] select-none">
 			<canvas ref={canvas} className="block h-full w-full" onClick={() => client?.lock()} />
+			{!client && (
+				<div className="absolute inset-0 flex flex-col items-center justify-center gap-3 font-archivo tracking-[0.3em] text-white/70 uppercase font-stretch-75%">
+					<p className="animate-pulse text-xl font-semibold">Loading</p>
+					<p className="text-xs tracking-[0.25em] text-white/40">The town, the dead, the guns</p>
+				</div>
+			)}
 			{client && <Hud client={client} onLeave={onLeave} />}
 		</div>
 	);

@@ -1,14 +1,15 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { modelLoader } from './art';
 import { J, newJoints, type Figure, type Joints, type Posture } from './rig';
 
 // Real characters, in place of the boxes. Every model shares one skeleton
 // (Mixamo's), so every animation plays on every one. The game still thinks in
 // the eleven joints of rig.ts: each frame they are read off the bones, so hits
 // land where the model is, and when a body drops the ragdoll moves the joints
-// and the bones are turned to follow them.
+// and the bones are turned to follow them. A zombie's joints are read by the
+// game after it has brought the whole scene's matrices up to date (see
+// GameClient.update), so the bones are only worked out once a frame.
 
 const BASE = '/zombies/models/';
 export const SURVIVORS = ['brian', 'louise', 'bryce', 'elizabeth', 'swat'] as const;
@@ -44,7 +45,7 @@ export function loadCast(): Promise<Cast | null> {
 }
 
 async function load(): Promise<Cast> {
-	const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+	const loader = modelLoader();
 	const names = [...SURVIVORS, ...ZOMBIES];
 	const [anims, ...gltfs] = await Promise.all([
 		loader.loadAsync(BASE + 'animations.glb'),
@@ -234,15 +235,19 @@ class Layer {
 	// ones were still fading, and the gap shows as the bare T-pose.
 	update(dt: number, scale = 1) {
 		const step = this.fade > 0 ? dt / this.fade : 1;
-		this.playing = this.playing.filter((p) => {
+		// in place, since this runs for every layer of every body every frame
+		let total = 0;
+		let kept = 0;
+		for (const p of this.playing) {
 			p.weight += Math.max(-step, Math.min(step, p.target - p.weight));
 			if (p.weight <= 0 && p.target === 0) {
 				p.action.stop();
-				return false;
+				continue;
 			}
-			return true;
-		});
-		const total = this.playing.reduce((sum, p) => sum + p.weight, 0);
+			this.playing[kept++] = p;
+			total += p.weight;
+		}
+		this.playing.length = kept;
 		for (const p of this.playing) p.action.setEffectiveWeight((p.weight / (total || 1)) * scale);
 	}
 
@@ -383,13 +388,35 @@ export class Character implements Figure {
 		}
 	}
 
-	// reads the joints off the bones
-	private read() {
-		this.root.updateMatrixWorld(true);
+	// Reads the joints off the bones. The bones' world matrices are brought up
+	// to date first unless the caller has already done so for the whole scene,
+	// which saves doing every body's twice a frame.
+	read(fresh = true) {
+		if (fresh) this.root.updateMatrixWorld(true);
 		for (const [joint, key] of JOINT_BONES) {
-			this.bones[key].getWorldPosition(v);
+			v.setFromMatrixPosition(this.bones[key].matrixWorld);
 			v.toArray(this.joints, joint * 3);
 		}
+	}
+
+	// Where the eyes are, worked out from the joints: up the head from the
+	// neck and a little forward of the face, the way the body is facing.
+	// Hands each eye to `put`.
+	eyes(put: (x: number, y: number, z: number) => void) {
+		const j = this.joints;
+		v.fromArray(j, J.neck * 3);
+		up.fromArray(j, J.headTop * 3).sub(v);
+		const head = up.length() || 0.25;
+		up.divideScalar(head);
+		side.fromArray(j, J.lShoulder * 3).sub(w.fromArray(j, J.rShoulder * 3));
+		side.addScaledVector(up, -side.dot(up)).normalize();
+		fwd.crossVectors(side, up).normalize();
+		w.copy(v)
+			.addScaledVector(up, head * 0.62)
+			.addScaledVector(fwd, head * 0.34);
+		const across = head * 0.13;
+		put(w.x + side.x * across, w.y + side.y * across, w.z + side.z * across);
+		put(w.x - side.x * across, w.y - side.y * across, w.z - side.z * across);
 	}
 
 	zombie(
@@ -437,7 +464,7 @@ export class Character implements Figure {
 		if (s.hit) this.overlay('z_hit', 0.08, { once: true, restart: true })!.timeScale = 2;
 		else if (this.over.current && isDone(this.over.current, 0.55)) this.overlay(null, 0.3);
 		this.advance(dt, s.x, s.y, s.z, s.yaw);
-		this.read();
+		// the joints are read later, once the scene's matrices are up to date
 	}
 
 	player(

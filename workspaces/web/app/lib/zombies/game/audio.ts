@@ -460,9 +460,59 @@ export class Sound {
 		this.tone(523, 0.3, 0.2, 'square', 262);
 	}
 
+	// a new round: a growl rising out of the ground and dying away, the way
+	// the games this is after announce one
 	round() {
-		this.tone(110, 1.6, 0.5, 'sawtooth', 98);
-		this.tone(55, 1.8, 0.5, 'sine', 50);
+		const { ctx, master } = this;
+		if (!ctx || !master) return;
+		const now = ctx.currentTime;
+		const filter = ctx.createBiquadFilter();
+		filter.type = 'lowpass';
+		filter.Q.value = 5;
+		filter.frequency.setValueAtTime(110, now);
+		filter.frequency.exponentialRampToValueAtTime(1100, now + 1.5);
+		filter.frequency.exponentialRampToValueAtTime(80, now + 2.9);
+		const g = ctx.createGain();
+		g.gain.setValueAtTime(0.0001, now);
+		g.gain.exponentialRampToValueAtTime(0.55, now + 0.6);
+		g.gain.setValueAtTime(0.55, now + 1.7);
+		g.gain.exponentialRampToValueAtTime(0.001, now + 3);
+		filter.connect(g).connect(master);
+		const voices: [number, OscillatorType][] = [
+			[55, 'sawtooth'],
+			[55.8, 'sawtooth'],
+			[82.4, 'square'],
+			[27.5, 'sine']
+		];
+		for (const [freq, type] of voices) {
+			const osc = ctx.createOscillator();
+			osc.type = type;
+			osc.frequency.setValueAtTime(freq, now);
+			osc.frequency.linearRampToValueAtTime(freq * 1.06, now + 3);
+			osc.connect(filter);
+			osc.start(now);
+			osc.stop(now + 3.1);
+		}
+		// and the rasp of a throat under it
+		this.burst({ freq: 260, q: 0.5, decay: 2.4, gain: 0.22, type: 'lowpass', delay: 0.3 });
+	}
+
+	// the last zombie of a round down: three falling notes and a low swell
+	roundEnd() {
+		const notes: [number, number][] = [
+			[392, 0],
+			[330, 0.32],
+			[262, 0.64]
+		];
+		for (const [freq, delay] of notes)
+			this.tone(freq, 0.9, 0.16, 'triangle', freq * 0.985, undefined, delay);
+		this.tone(65, 2, 0.35, 'sine', 48, undefined, 0.64);
+	}
+
+	// two low thumps, for a player close to going down; strength 0 to 1
+	heartbeat(strength: number) {
+		for (const delay of [0, 0.17])
+			this.tone(60, 0.16, 0.5 * strength, 'sine', 36, undefined, delay);
 	}
 
 	close() {
