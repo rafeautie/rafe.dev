@@ -58,8 +58,13 @@ describe('map', () => {
 		const blocking = new Blocking(map);
 		const s = map.playerSpawns[0];
 		const [x] = blocking.move(s.x, s.z, -40, 0, 0.35);
-		// stopped by the spawn room's west wall, not through it
-		expect(x).toBeGreaterThan(26);
+		// stopped by the diner's side door, not through it
+		expect(x).toBeGreaterThan(37);
+		expect(x).toBeLessThan(38);
+		// and through it once it's bought
+		blocking.open[map.doors.findIndex((d) => d.x === 37)] = true;
+		const [through] = blocking.move(s.x, s.z, -40, 0, 0.35);
+		expect(through).toBeLessThan(30);
 	});
 });
 
@@ -260,9 +265,9 @@ describe('host game', () => {
 		Object.assign(p.players.get('p1')!, { state: 'downed', bleed: 30, hp: 0 });
 		game.handle('p0', {
 			t: 'me',
-			x: 35.5,
+			x: 50,
 			y: 0,
-			z: 37,
+			z: 64.8,
 			yaw: 0,
 			pitch: 0,
 			weapon: 'm1911',

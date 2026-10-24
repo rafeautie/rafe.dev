@@ -1,17 +1,17 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
-	CELL,
-	SIZE,
-	WALL_HEIGHT,
+	COLS,
+	ROWS,
 	WINDOW_BOARDS,
-	WORLD,
-	centerOf,
+	type Door,
 	type GameMap,
 	type Machine,
 	type Window
 } from '../map';
+import type { Finish, GroundKind, Layout, PropKind, Pt, WallKind } from '../layout';
 import type { BoxSnap } from '../protocol';
-import { metreUVs, surfaceMaterial, type Art, type PropName, type SurfaceName } from './art';
+import { surfaceMaterial, type Art, type PropName, type SurfaceName } from './art';
 import { BOX, PERKS, type PerkId } from '../rules';
 import { WEAPONS, ammoCost, type WeaponId } from '../weapons';
 import { VIEW_LAYER } from './viewmodel';
@@ -46,6 +46,14 @@ export type World = {
 	update(dt: number): void;
 };
 
+const WORLD_X = COLS;
+const WORLD_Z = ROWS;
+const SILL = 0.9;
+const LINTEL = 2.1;
+const DOOR_TOP = 2.3;
+const ROOM_WALL = 0.3;
+const FACADE = 0.25; // how deep a building's walls are drawn, inward
+
 function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void) {
 	const canvas = document.createElement('canvas');
 	canvas.width = w;
@@ -57,133 +65,363 @@ function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D)
 	return texture;
 }
 
+// A seeded random, so the town looks the same for everyone.
+function seeded(seed: number) {
+	return () => {
+		seed = (seed * 16807) % 2147483647;
+		return seed / 2147483647;
+	};
+}
+
+// ---- materials ---------------------------------------------------------------
+
+type Materials = {
+	finish: Record<Finish, THREE.Material>;
+	inner: THREE.Material;
+	ground: Record<GroundKind, THREE.Material>;
+	roof: THREE.Material;
+	shingle: THREE.Material;
+	ceiling: THREE.Material;
+	trim: THREE.Material;
+	concrete: THREE.Material;
+	wood: THREE.Material;
+	metal: THREE.Material;
+	shutter: THREE.Material;
+	dark: THREE.Material;
+	paint: THREE.Material;
+	hedge: THREE.Material;
+	leaves: THREE.Material;
+	glass: THREE.Material;
+	glassLit: THREE.Material;
+	chainlink: THREE.Material;
+};
+
+function materials(art: Art | null): Materials {
+	const plain = (color: string) => new THREE.MeshLambertMaterial({ color });
+	const s = (name: SurfaceName, tile: number, tint?: string) =>
+		art ? surfaceMaterial(art.surfaces[name], tile, tint) : null;
+	const pick = (m: THREE.Material | null, color: string) => m ?? plain(color);
+	const ground = (
+		name: SurfaceName,
+		tile: number,
+		tint: string | undefined,
+		color: string,
+		layer: number
+	) => {
+		const m = pick(s(name, tile, tint), color);
+		m.polygonOffset = true;
+		m.polygonOffsetFactor = -layer;
+		m.polygonOffsetUnits = -layer;
+		return m;
+	};
+	return {
+		finish: {
+			brick: pick(s('wall_brick', 2.5, '#b8998a'), '#efefef'),
+			brick_red: pick(s('wall_redbrick', 2.2, '#c9a89a'), '#ececec'),
+			plaster: pick(s('wall_plaster', 3, '#e6cfaa'), '#f4f4f4'),
+			concrete: pick(s('wall_concrete', 3), '#e9e9e9'),
+			siding: pick(s('wall_siding', 2.5, '#e4eef2'), '#f2f2f2'),
+			metal: pick(s('wall_metal', 2.5, '#c4bcb0'), '#e4e4e4')
+		},
+		inner: pick(s('wall_plaster', 3, '#e8dfcf'), '#f6f6f6'),
+		ground: {
+			dirt: ground('ground_dirt', 4, '#a89a88', PALETTE.floor, 0),
+			asphalt: ground('ground_asphalt', 4, '#b9b3a8', '#d0d0d0', 2),
+			sidewalk: ground('ground_sidewalk', 2.4, '#b8b2a6', '#dedede', 1),
+			concrete: ground('ground_concrete', 4, '#b3ada3', '#dadada', 1),
+			grass: ground('ground_grass', 3, '#8a9070', '#d9d9d9', 3),
+			tile: ground('floor_checker', 1.6, '#cfc8bb', '#e2e2e2', 4)
+		},
+		roof: pick(s('roof_flat', 3, '#8a8580'), '#e0e0e0'),
+		shingle: pick(s('roof_shingle', 2.5, '#9a9590'), '#dcdcdc'),
+		ceiling: plain(art ? '#4a4540' : '#f0f0f0'),
+		trim: plain(art ? '#3d3a36' : '#e6e6e6'),
+		concrete: pick(s('wall_concrete', 2), '#e8e8e8'),
+		wood: pick(s('planks', 1.2, '#b8a48a'), '#c9b9a3'),
+		metal: pick(s('rusty_metal', 1.5), PALETTE.door),
+		shutter: pick(s('shutter', 2.4, '#b0aaa0'), '#e2e2e2'),
+		dark: new THREE.MeshBasicMaterial({ color: art ? '#07080a' : '#bdbdbd' }),
+		paint: new THREE.MeshLambertMaterial({
+			color: art ? '#d9d2b0' : '#bdbdbd',
+			transparent: true,
+			opacity: 0.6,
+			polygonOffset: true,
+			polygonOffsetFactor: -6,
+			polygonOffsetUnits: -6
+		}),
+		hedge: art
+			? new THREE.MeshStandardMaterial({
+					color: '#4f6136',
+					map: art.surfaces.ground_grass.color,
+					roughness: 1,
+					flatShading: true
+				})
+			: plain('#dcdcdc'),
+		leaves: new THREE.MeshStandardMaterial({
+			color: art ? '#3e4a2c' : '#d6d6d6',
+			roughness: 1,
+			flatShading: true
+		}),
+		glass: new THREE.MeshStandardMaterial({
+			color: art ? '#1b2129' : '#cfcfcf',
+			roughness: 0.25,
+			metalness: 0.6
+		}),
+		glassLit: new THREE.MeshStandardMaterial({
+			color: '#2a2016',
+			emissive: art ? '#ffb46a' : '#000000',
+			emissiveIntensity: 0.9,
+			roughness: 0.4
+		}),
+		chainlink: new THREE.MeshStandardMaterial({
+			map: chainlinkTexture(),
+			color: art ? '#b9bec4' : '#9a9a9a',
+			metalness: 0.6,
+			roughness: 0.5,
+			alphaTest: 0.5,
+			side: THREE.DoubleSide
+		})
+	};
+}
+
+// A diamond mesh of wire, repeating every 10 cm.
+function chainlinkTexture() {
+	const t = canvasTexture(64, 64, (g) => {
+		g.clearRect(0, 0, 64, 64);
+		g.strokeStyle = '#fff';
+		g.lineWidth = 3;
+		g.beginPath();
+		g.moveTo(0, 32);
+		g.lineTo(32, 0);
+		g.lineTo(64, 32);
+		g.lineTo(32, 64);
+		g.closePath();
+		g.stroke();
+	});
+	t.wrapS = t.wrapT = THREE.RepeatWrapping;
+	t.repeat.set(1 / 0.1, 1 / 0.1);
+	return t;
+}
+
+// ---- geometry helpers ------------------------------------------------------
+
+// Static geometry, gathered by material and merged at the end into one mesh
+// each, so the town draws in a few dozen calls.
+class Batch {
+	private parts = new Map<THREE.Material, THREE.BufferGeometry[]>();
+	add(material: THREE.Material, geometry: THREE.BufferGeometry) {
+		const list = this.parts.get(material) ?? [];
+		list.push(geometry.index ? geometry.toNonIndexed() : geometry);
+		this.parts.set(material, list);
+	}
+	flush(root: THREE.Object3D, { shadows = true } = {}) {
+		for (const [material, list] of this.parts) {
+			for (const g of list) {
+				for (const name of Object.keys(g.attributes))
+					if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
+			}
+			const merged = mergeGeometries(list, false);
+			if (!merged) continue;
+			const mesh = new THREE.Mesh(merged, material);
+			mesh.castShadow = shadows && !(material as THREE.MeshBasicMaterial).isMeshBasicMaterial;
+			mesh.receiveShadow = true;
+			mesh.matrixAutoUpdate = false;
+			root.add(mesh);
+		}
+		this.parts.clear();
+	}
+}
+
+// A box standing on a wall line: `len` along the line from a, `h` tall from y,
+// `t` thick, pushed `off` along the line's left normal. UVs are in metres,
+// running on along the wall from `u`, so pieces of one wall line up.
+function wallBox(
+	a: Pt,
+	b: Pt,
+	s0: number,
+	s1: number,
+	y0: number,
+	y1: number,
+	t: number,
+	off: number
+): THREE.BufferGeometry {
+	const len = s1 - s0;
+	const h = y1 - y0;
+	const g = new THREE.BoxGeometry(len, h, t);
+	const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+	const pos = g.getAttribute('position') as THREE.BufferAttribute;
+	// faces in order +x, -x, +y, -y, +z, -z, four corners each
+	for (let i = 0; i < uv.count; i++) {
+		const face = Math.floor(i / 4);
+		const x = pos.getX(i) + len / 2 + s0;
+		const y = pos.getY(i) + h / 2 + y0;
+		const z = pos.getZ(i);
+		if (face >= 4) uv.setXY(i, face === 4 ? x : -x, y);
+		else if (face >= 2) uv.setXY(i, x, z);
+		else uv.setXY(i, z, y);
+	}
+	const dx = b[0] - a[0];
+	const dz = b[1] - a[1];
+	const L = Math.hypot(dx, dz);
+	const ux = dx / L;
+	const uz = dz / L;
+	const mid = (s0 + s1) / 2;
+	g.rotateY(-Math.atan2(dz, dx));
+	g.translate(a[0] + ux * mid - uz * off, y0 + h / 2, a[1] + uz * mid + ux * off);
+	return g;
+}
+
+// A flat polygon at height y, facing up (or down), UVs in metres.
+function flat(poly: Pt[], y: number, down = false): THREE.BufferGeometry {
+	const shape = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z)));
+	const g = new THREE.ShapeGeometry(shape);
+	g.rotateX(-Math.PI / 2);
+	g.translate(0, y, 0);
+	if (down) {
+		// the triangles turned over, to face down
+		const idx = g.index!;
+		for (let i = 0; i < idx.count; i += 3) {
+			const t = idx.getX(i);
+			idx.setX(i, idx.getX(i + 2));
+			idx.setX(i + 2, t);
+		}
+		g.computeVertexNormals();
+	}
+	return g;
+}
+
+const signedArea = (poly: Pt[]) =>
+	poly.reduce((sum, [x, z], i) => {
+		const [nx, nz] = poly[(i + 1) % poly.length];
+		return sum + x * nz - nx * z;
+	}, 0) / 2;
+
+// A polygon's edges, each with the unit normal pointing out of it.
+function outline(poly: Pt[]) {
+	// in x-right, z-down, a positive area runs clockwise on screen and the
+	// left normal points in
+	const flip = signedArea(poly) > 0 ? -1 : 1;
+	return poly.map((a, i) => {
+		const b = poly[(i + 1) % poly.length];
+		const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+		const nx = (-(b[1] - a[1]) / len) * flip;
+		const nz = ((b[0] - a[0]) / len) * flip;
+		// left of a to b is the normal the wall builder pushes along
+		return { a, b, len, nx, nz, outLeft: flip > 0 };
+	});
+}
+
+// A gap in a wall: where along it (s0 to s1) and how high (y0 to y1).
+type Hole = { s0: number; s1: number; y0: number; y1: number };
+
+// The doors, windows and openings lying along a wall line.
+function holesIn(a: Pt, b: Pt, layout: Layout, height: number): Hole[] {
+	const dx = b[0] - a[0];
+	const dz = b[1] - a[1];
+	const len = Math.hypot(dx, dz);
+	const ux = dx / len;
+	const uz = dz / len;
+	const out: Hole[] = [];
+	const take = ([p, q]: Pt[], y0: number, y1: number) => {
+		const off = (v: Pt) => Math.abs((v[0] - a[0]) * -uz + (v[1] - a[1]) * ux);
+		if (off(p) > 0.12 || off(q) > 0.12) return;
+		const s0 = (p[0] - a[0]) * ux + (p[1] - a[1]) * uz;
+		const s1 = (q[0] - a[0]) * ux + (q[1] - a[1]) * uz;
+		const lo = Math.max(0, Math.min(s0, s1));
+		const hi = Math.min(len, Math.max(s0, s1));
+		if (hi - lo > 0.05) out.push({ s0: lo, s1: hi, y0, y1: Math.min(y1, height) });
+	};
+	for (const d of layout.doors) take(d.at, 0, d.kind === 'door' ? DOOR_TOP : Infinity);
+	for (const w of layout.windows) take(w, SILL, LINTEL);
+	for (const o of layout.openings) take(o, 0, height > 3 ? Math.min(height - 0.6, 3) : Infinity);
+	return out.sort((p, q) => p.s0 - q.s0);
+}
+
+// A wall from a to b with its holes left open: full-height pieces between
+// the holes, and pieces under and over each.
+function wallWithHoles(
+	batch: Batch,
+	material: THREE.Material,
+	a: Pt,
+	b: Pt,
+	holes: Hole[],
+	height: number,
+	t: number,
+	off: number
+) {
+	const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+	let s = 0;
+	for (const hole of holes) {
+		if (hole.s0 > s + 0.01) batch.add(material, wallBox(a, b, s, hole.s0, 0, height, t, off));
+		if (hole.y0 > 0.01) batch.add(material, wallBox(a, b, hole.s0, hole.s1, 0, hole.y0, t, off));
+		if (hole.y1 < height - 0.01)
+			batch.add(material, wallBox(a, b, hole.s0, hole.s1, hole.y1, height, t, off));
+		s = Math.max(s, hole.s1);
+	}
+	if (len > s + 0.01) batch.add(material, wallBox(a, b, s, len, 0, height, t, off));
+}
+
+// ---- the world -------------------------------------------------------------
+
 export function buildWorld(map: GameMap, art: Art | null = null): World {
 	const root = new THREE.Group();
+	const layout = map.layout;
 	const sky = art ? DUSK.sky : PALETTE.sky;
+	const m = materials(art);
+	const batch = new Batch();
+	const random = seeded(11);
+	const lights: { light: THREE.PointLight; base: number; flicker: number }[] = [];
 
-	if (art) {
-		buildGround(root, map, art);
-		root.add(skyDome());
-	} else {
-		// one tile per cell
-		const tile = canvasTexture(128, 128, (g) => {
-			g.fillStyle = PALETTE.floor;
-			g.fillRect(0, 0, 128, 128);
-			g.strokeStyle = PALETTE.floorLine;
-			g.lineWidth = 2;
-			g.strokeRect(1, 1, 126, 126);
-		});
-		tile.wrapS = tile.wrapT = THREE.RepeatWrapping;
-		tile.repeat.set(SIZE, SIZE);
-		const floor = new THREE.Mesh(
-			new THREE.PlaneGeometry(WORLD, WORLD),
-			new THREE.MeshLambertMaterial({ map: tile })
-		);
-		floor.rotation.x = -Math.PI / 2;
-		floor.position.set(WORLD / 2, 0, WORLD / 2);
-		floor.receiveShadow = true;
-		root.add(floor);
-	}
-
-	// walls and pillars, one box per cell, each room in its own finish;
-	// windows and machines are drawn on their own
-	const own = new Set([...map.windows.map((w) => w.cell), ...map.machines.map((m) => m.cell)]);
-	const byFinish = new Map<THREE.Material, number[]>();
-	const plainWall = new THREE.MeshLambertMaterial({ color: PALETTE.wall });
-	const finishes = art ? wallFinishes(art) : null;
-	for (let c = 0; c < SIZE * SIZE; c++) {
-		if (!map.solid[c] || own.has(c)) continue;
-		const cx = c % SIZE;
-		const cy = Math.floor(c / SIZE);
-		// the backs of brick buildings all round the edge, concrete walls
-		// between the yards, and each yard's own pillars and fences
-		const edge = cx === 0 || cy === 0 || cx === SIZE - 1 || cy === SIZE - 1;
-		const divider = cx % SPAN === 0 || cy % SPAN === 0;
-		const material = !finishes
-			? plainWall
-			: edge
-				? finishes.wall_brick!
-				: divider
-					? finishes.wall_concrete!
-					: (finishes[ROOM_FINISH[map.roomName(centerOf(cx), centerOf(cy))]] ??
-						finishes.wall_concrete!);
-		if (!byFinish.has(material)) byFinish.set(material, []);
-		byFinish.get(material)!.push(c);
-	}
-	const wallBox = metreUVs(new THREE.BoxGeometry(CELL, WALL_HEIGHT, CELL));
-	const m = new THREE.Matrix4();
-	for (const [material, cells] of byFinish) {
-		const walls = new THREE.InstancedMesh(wallBox, material, cells.length);
-		cells.forEach((c, i) => {
-			m.makeTranslation(
-				((c % SIZE) + 0.5) * CELL,
-				WALL_HEIGHT / 2,
-				(Math.floor(c / SIZE) + 0.5) * CELL
-			);
-			walls.setMatrixAt(i, m);
-		});
-		walls.castShadow = true;
-		walls.receiveShadow = true;
-		root.add(walls);
-	}
-
-	if (art) {
-		scatterProps(root, map, art);
-	}
-
-	// doors, with their price on both faces
-	const metal = art ? surfaceMaterial(art.surfaces.rusty_metal, 1.5) : null;
-	const doors = map.doors.map((door) => {
-		const label = canvasTexture(256, 256, (g) => {
-			if (!metal) {
-				g.fillStyle = PALETTE.door;
-				g.fillRect(0, 0, 256, 256);
-			}
-			// stencilled on the metal, or printed on the plain door
-			g.fillStyle = metal ? DUSK.chalk : '#f5f5f5';
-			g.textAlign = 'center';
-			g.textBaseline = 'middle';
-			g.font = `${metal ? 700 : 500} 64px ${FONT}`;
-			g.fillText(String(door.cost), 128, 118);
-			g.font = `${metal ? 700 : 500} 26px ${FONT}`;
-			g.fillText('DOOR', 128, 172);
-		});
-		const plain = metal ?? new THREE.MeshLambertMaterial({ color: PALETTE.door });
-		const face = metal ?? new THREE.MeshLambertMaterial({ map: label });
-		const depth = 0.4;
-		const geometry = metreUVs(
-			door.alongX
-				? new THREE.BoxGeometry(CELL, WALL_HEIGHT, depth)
-				: new THREE.BoxGeometry(depth, WALL_HEIGHT, CELL)
-		);
-		// box faces: +x, -x, +y, -y, +z, -z
-		const materials = door.alongX
-			? [plain, plain, plain, plain, face, face]
-			: [face, face, plain, plain, plain, plain];
-		const mesh = new THREE.Mesh(geometry, materials);
-		mesh.position.set(door.x, WALL_HEIGHT / 2, door.z);
-		mesh.castShadow = mesh.receiveShadow = true;
-		if (metal) {
-			// the price on a decal each side, since the metal itself repeats
-			const decal = new THREE.MeshBasicMaterial({
-				map: label,
-				transparent: true,
-				depthWrite: false,
-				opacity: 0.85
-			});
-			for (const side of [1, -1]) {
-				const plane = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), decal);
-				const out = depth / 2 + 0.01;
-				plane.position.set(door.alongX ? 0 : side * out, 0.1, door.alongX ? side * out : 0);
-				plane.rotation.y = door.alongX ? (side > 0 ? 0 : Math.PI) : (side * Math.PI) / 2;
-				mesh.add(plane);
-			}
-		}
-		root.add(mesh);
-		return { mesh, opening: -1 };
+	// the ground, each layer a hair above the last
+	layout.ground.forEach((g, i) => {
+		batch.add(m.ground[g.kind], flat(g.poly, 0.0005 * i));
 	});
+	for (const [a, b] of layout.paint) {
+		const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+		const g = new THREE.PlaneGeometry(len, 0.14);
+		g.rotateX(-Math.PI / 2);
+		g.rotateY(-Math.atan2(b[1] - a[1], b[0] - a[0]));
+		g.translate((a[0] + b[0]) / 2, 0.012, (a[1] + b[1]) / 2);
+		batch.add(m.paint, g);
+	}
+	// kerbs along the road
+	for (const line of layout.curbs) {
+		for (let i = 0; i < line.length - 1; i++) {
+			const [a, b] = [line[i], line[i + 1]];
+			const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+			batch.add(m.concrete, wallBox(a, b, -0.1, len + 0.1, 0, 0.1, 0.22, 0));
+		}
+	}
 
-	// wall guns, drawn in chalk
+	for (const b of layout.buildings) buildBuilding(batch, b, layout, m, random, art);
+	for (const room of layout.rooms) lights.push(...buildRoom(root, batch, room, layout, m, art));
+	for (const w of layout.walls) buildWall(root, batch, w.kind, w.line, layout, m, art, random);
+	for (const c of layout.canopies) {
+		const roof = new THREE.ExtrudeGeometry(
+			new THREE.Shape(c.poly.map(([x, z]) => new THREE.Vector2(x, -z))),
+			{ depth: 0.5, bevelEnabled: false }
+		);
+		roof.rotateX(-Math.PI / 2);
+		roof.translate(0, c.height, 0);
+		batch.add(m.finish.metal, roof);
+		// lit from under
+		const under = flat(c.poly, c.height - 0.01, true);
+		batch.add(m.glassLit, under);
+		const lamp = new THREE.PointLight('#e8f0ff', art ? 6 : 0, 14, 1.6);
+		const [cx, cz] = centroid(c.poly);
+		lamp.position.set(cx, c.height - 0.6, cz);
+		root.add(lamp);
+		lights.push({ light: lamp, base: lamp.intensity, flicker: 0.04 });
+	}
+
+	if (art) placeProps(root, batch, layout, art, m, random);
+	else placePlainProps(batch, layout, m);
+	batch.flush(root);
+	if (art) root.add(skyline(random), outskirts(map, m, random));
+
+	const doors = map.doors.map((d) => buildDoor(root, d, m, art));
+
+	// wall guns, drawn in chalk on the wall's face
 	for (const wall of map.wallBuys) {
 		const weapon = WEAPONS[wall.weapon];
 		const texture = canvasTexture(512, 256, (g) => {
@@ -208,12 +446,13 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 			new THREE.PlaneGeometry(1.8, 0.9),
 			new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false })
 		);
-		plane.position.set(wall.x + wall.nx * 0.01, 1.55, wall.z + wall.nz * 0.01);
-		plane.lookAt(wall.x + wall.nx, 1.55, wall.z + wall.nz);
+		const face = faceDepth(layout, wall.x, wall.z) + 0.015;
+		plane.position.set(wall.x + wall.nx * face, 1.55, wall.z + wall.nz * face);
+		plane.lookAt(wall.x + wall.nx * 2, 1.55, wall.z + wall.nz * 2);
 		root.add(plane);
 	}
 
-	const windows = map.windows.map((w) => buildWindow(root, w, art));
+	const windows = map.windows.map((w) => buildWindow(root, w, art, faceDepth(layout, w.x, w.z)));
 	let box: ReturnType<typeof buildBox> | null = null;
 	for (const machine of map.machines) {
 		if (machine.kind === 'box') box = buildBox(root, machine, art);
@@ -221,34 +460,37 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 	}
 
 	const ambient = art
-		? new THREE.HemisphereLight('#9aaacb', '#6a5848', 2.6)
+		? new THREE.HemisphereLight('#8f9fc4', '#6a5a48', 3)
 		: new THREE.HemisphereLight('#ffffff', '#9a9a9a', 1.6);
 	root.add(ambient);
 	const sun = art
-		? new THREE.DirectionalLight('#ffb27a', 2.4)
+		? new THREE.DirectionalLight('#ffad72', 2.6)
 		: new THREE.DirectionalLight('#ffffff', 1.5);
-	// with the art, a low sun setting off to one side
-	if (art) sun.position.set(WORLD / 2 + 40, 24, WORLD / 2 + 26);
-	else sun.position.set(WORLD / 2 + 20, 40, WORLD / 2 + 12);
-	sun.target.position.set(WORLD / 2, 0, WORLD / 2);
+	// with the art, a low sun setting off to the west
+	const cx = WORLD_X / 2;
+	const cz = WORLD_Z / 2;
+	if (art) sun.position.set(cx - 60, 30, cz + 24);
+	else sun.position.set(cx + 20, 50, cz + 12);
+	sun.target.position.set(cx, 0, cz);
 	sun.castShadow = true;
 	sun.shadow.mapSize.set(2048, 2048);
-	const half = WORLD / 2 + 4;
+	const half = Math.max(WORLD_X, WORLD_Z) / 2 + 8;
 	Object.assign(sun.shadow.camera, {
 		left: -half,
 		right: half,
 		top: half,
 		bottom: -half,
 		near: 1,
-		far: 120
+		far: 180
 	});
-	sun.shadow.bias = -0.0005;
+	sun.shadow.bias = -0.0004;
 	// the gun in hand is drawn in its own pass and needs the same light
 	ambient.layers.enable(VIEW_LAYER);
 	sun.layers.enable(VIEW_LAYER);
-	sun.shadow.normalBias = 0.02;
+	sun.shadow.normalBias = 0.03;
 	root.add(sun, sun.target);
 
+	let clock = 0;
 	return {
 		root,
 		sky,
@@ -260,7 +502,7 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 			for (const door of doors) {
 				door.opening = -1;
 				door.mesh.visible = true;
-				door.mesh.position.y = WALL_HEIGHT / 2;
+				door.mesh.position.y = 0;
 			}
 		},
 		setBoards(index, boards) {
@@ -270,259 +512,739 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 			box?.set(state);
 		},
 		update(dt) {
+			clock += dt;
 			for (const w of windows) w.update(dt);
 			box?.update(dt);
 			for (const door of doors) {
 				if (door.opening < 0 || !door.mesh.visible) continue;
 				door.opening += dt;
-				const t = Math.min(1, door.opening / 0.7);
-				door.mesh.position.y = WALL_HEIGHT / 2 - t * t * (WALL_HEIGHT + 0.1);
+				const t = Math.min(1, door.opening / 0.8);
+				door.mesh.position.y = -t * t * (door.height + 0.1);
 				if (t >= 1) door.mesh.visible = false;
 			}
+			// tired lights buzz and dip
+			for (const l of lights) {
+				if (!l.flicker) continue;
+				const n = Math.sin(clock * 23 + l.base) * Math.sin(clock * 7.3) * Math.sin(clock * 1.7 + 2);
+				l.light.intensity = l.base * (n > 0.85 - l.flicker * 4 ? 0.25 : 1);
+			}
 		}
 	};
 }
 
-// a flat plane whose UVs are in metres
-function metrePlane(width: number, height: number) {
-	const geometry = new THREE.PlaneGeometry(width, height);
-	const uv = geometry.getAttribute('uv') as THREE.BufferAttribute;
-	for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * width, uv.getY(i) * height);
-	return geometry;
+const centroid = (poly: Pt[]): Pt => [
+	poly.reduce((s, p) => s + p[0], 0) / poly.length,
+	poly.reduce((s, p) => s + p[1], 0) / poly.length
+];
+
+// Whether a point lies on the outline of one of these polygons.
+const onOutline = (polys: { poly: Pt[] }[], x: number, z: number) =>
+	polys.some((p) => outline(p.poly).some(({ a, b }) => pointLine(x, z, a, b) < 0.12));
+
+// How far a wall's face stands off its line, at a point on it: a building's
+// face is its outline, other walls are thick both ways.
+function faceDepth(layout: Layout, x: number, z: number) {
+	if (onOutline(layout.rooms, x, z)) return ROOM_WALL / 2;
+	return onOutline(layout.buildings, x, z) ? 0 : 0.15;
 }
 
-// what each yard's pillars and fences are made of
-const ROOM_FINISH: Record<string, SurfaceName> = {
-	Lab: 'wall_plaster',
-	Office: 'wall_plaster',
-	Spawn: 'wall_concrete',
-	Courtyard: 'fence',
-	Yard: 'fence',
-	Depot: 'fence',
-	Garage: 'wall_brick',
-	Warehouse: 'wall_brick',
-	Power: 'wall_concrete'
-};
-
-function wallFinishes(art: Art) {
-	return {
-		wall_concrete: surfaceMaterial(art.surfaces.wall_concrete, CELL),
-		wall_plaster: surfaceMaterial(art.surfaces.wall_plaster, CELL),
-		wall_brick: surfaceMaterial(art.surfaces.wall_brick, CELL, '#b8998a'),
-		fence: surfaceMaterial(art.surfaces.fence, CELL)
-	} as Partial<Record<SurfaceName, THREE.Material>>;
+function pointLine(x: number, z: number, a: Pt, b: Pt) {
+	const dx = b[0] - a[0];
+	const dz = b[1] - a[1];
+	const l2 = dx * dx + dz * dz;
+	const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l2));
+	return Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t);
 }
 
-// a room's cells plus the wall on one side; three rooms to a side
-const SPAN = (SIZE - 1) / 3;
+// ---- buildings and rooms --------------------------------------------------
 
-// yards on dirt rather than asphalt
-const DIRT = new Set(['Courtyard', 'Yard', 'Depot']);
-const ROOM = (SPAN - 1) * CELL;
-
-// Asphalt everywhere, with the dirt yards laid over it.
-function buildGround(root: THREE.Object3D, map: GameMap, art: Art) {
-	const asphalt = new THREE.Mesh(
-		metrePlane(WORLD, WORLD),
-		surfaceMaterial(art.surfaces.ground_asphalt, 4, '#c9c3b8')
-	);
-	asphalt.rotation.x = -Math.PI / 2;
-	asphalt.position.set(WORLD / 2, 0, WORLD / 2);
-	asphalt.receiveShadow = true;
-	root.add(asphalt);
-	const dirt = surfaceMaterial(art.surfaces.ground_dirt, 4);
-	dirt.polygonOffset = true;
-	dirt.polygonOffsetFactor = -1;
-	for (let row = 0; row < 3; row++) {
-		for (let col = 0; col < 3; col++) {
-			const x = (col * SPAN + 1) * CELL + ROOM / 2;
-			const z = (row * SPAN + 1) * CELL + ROOM / 2;
-			if (!DIRT.has(map.roomName(x, z))) continue;
-			const patch = new THREE.Mesh(metrePlane(ROOM, ROOM), dirt);
-			patch.rotation.x = -Math.PI / 2;
-			patch.position.set(x, 0.002, z);
-			patch.receiveShadow = true;
-			root.add(patch);
+function buildBuilding(
+	batch: Batch,
+	b: Layout['buildings'][number],
+	layout: Layout,
+	m: Materials,
+	random: () => number,
+	art: Art | null
+) {
+	const finish = m.finish[b.finish];
+	const edges = outline(b.poly);
+	const gable = b.roof === 'gable' && b.poly.length === 4;
+	edges.forEach(({ a, b: q, len, outLeft }, i) => {
+		// the facade sits just inside the outline
+		const off = (outLeft ? -1 : 1) * (FACADE / 2);
+		const holes = holesIn(a, q, layout, b.height);
+		wallWithHoles(batch, finish, a, q, holes, b.height, FACADE, off);
+		// a parapet round a flat roof
+		if (!gable)
+			batch.add(m.trim, wallBox(a, q, -0.05, len + 0.05, b.height, b.height + 0.12, 0.34, off));
+		// windows up the front, a storey every 3.2 m, some lit, some boarded
+		const out = outLeft ? 1 : -1;
+		if (b.height > 5 && len > 3.5) {
+			const count = Math.floor((len - 1.6) / 3.1);
+			const start = (len - (count - 1) * 3.1) / 2;
+			for (let floor = 1; 3.2 * floor + 2.4 < b.height - 0.4; floor++) {
+				for (let k = 0; k < count; k++) {
+					const s = start + k * 3.1;
+					const y = 3.2 * floor + 0.8;
+					const r = random();
+					const glass = r < 0.16 ? m.glassLit : r < 0.26 ? m.wood : m.glass;
+					batch.add(
+						m.trim,
+						wallBox(a, q, s - 0.68, s + 0.68, y - 0.08, y + 1.68, 0.06, out * 0.03)
+					);
+					batch.add(glass, wallBox(a, q, s - 0.6, s + 0.6, y, y + 1.6, 0.04, out * 0.05));
+				}
+			}
 		}
-	}
-}
-
-// A dusk sky: deep blue overhead, a warm glow low down where the sun set.
-function skyDome() {
-	const texture = canvasTexture(4, 256, (g) => {
-		const sky = g.createLinearGradient(0, 0, 0, 256);
-		sky.addColorStop(0, '#141a2b');
-		sky.addColorStop(0.42, '#2c3550');
-		sky.addColorStop(0.5, '#7a5a55');
-		sky.addColorStop(0.53, '#c47e52');
-		sky.addColorStop(0.6, '#2a2624');
-		sky.addColorStop(1, '#1a1716');
-		g.fillStyle = sky;
-		g.fillRect(0, 0, 4, 256);
+		// the ground floor: shutters on shop fronts, doors along the motel,
+		// dark or boarded windows elsewhere
+		if (b.sign === 'MOTEL' && i === 0) {
+			for (let s = 2.2; s < len - 1; s += 4.3) {
+				if (holes.some((h) => h.s0 < s + 0.7 && h.s1 > s - 0.7)) continue;
+				batch.add(m.trim, wallBox(a, q, s - 0.56, s + 0.56, 0, 2.2, 0.06, out * 0.03));
+				batch.add(m.metal, wallBox(a, q, s - 0.48, s + 0.48, 0, 2.12, 0.04, out * 0.05));
+			}
+		} else if (!b.sign && b.height > 5 && len > 3.5) {
+			const count = Math.floor((len - 1.6) / 3.1);
+			const start = (len - (count - 1) * 3.1) / 2;
+			for (let k = 0; k < count; k++) {
+				const s = start + k * 3.1;
+				if (holes.some((h) => h.s0 < s + 1.2 && h.s1 > s - 1.2)) continue;
+				const glass = random() < 0.5 ? m.wood : m.glass;
+				batch.add(m.trim, wallBox(a, q, s - 0.68, s + 0.68, 0.82, 2.38, 0.06, out * 0.03));
+				batch.add(glass, wallBox(a, q, s - 0.6, s + 0.6, 0.9, 2.3, 0.04, out * 0.05));
+			}
+		}
+		if (b.sign && b.sign !== 'MOTEL' && i === 0 && b.height < 9) {
+			for (let s = 0.8; s + 2.6 < len - 0.6; s += 3.3) {
+				if (holes.some((h) => h.s0 < s + 2.8 && h.s1 > s - 0.2)) continue;
+				batch.add(m.shutter, wallBox(a, q, s, s + 2.6, 0.05, 2.6, 0.06, out * 0.03));
+				batch.add(m.trim, wallBox(a, q, s - 0.1, s + 2.7, 2.6, 2.85, 0.16, out * 0.07));
+			}
+		}
 	});
-	const dome = new THREE.Mesh(
-		new THREE.SphereGeometry(140, 32, 16),
-		new THREE.MeshBasicMaterial({
-			map: texture,
-			side: THREE.BackSide,
-			fog: false,
-			depthWrite: false
-		})
-	);
-	dome.position.set(WORLD / 2, 0, WORLD / 2);
-	dome.renderOrder = -1;
-	return dome;
-}
-
-// A street lamp's light, painted on the ground under it.
-function lampPool() {
-	return new THREE.Mesh(
-		new THREE.PlaneGeometry(8, 8),
-		new THREE.MeshBasicMaterial({
-			map: canvasTexture(128, 128, (g) => {
-				const glow = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-				glow.addColorStop(0, 'rgba(255,196,120,0.42)');
-				glow.addColorStop(0.45, 'rgba(255,180,100,0.14)');
-				glow.addColorStop(1, 'rgba(255,170,90,0)');
-				g.fillStyle = glow;
-				g.fillRect(0, 0, 128, 128);
-			}),
-			transparent: true,
-			depthWrite: false,
-			blending: THREE.AdditiveBlending
-		})
-	);
-}
-
-const ROOM_PROPS: Record<string, PropName[]> = {
-	Lab: ['wheelchair_01', 'cardboard_box_01', 'metal_trash_can', 'steel_frame_shelves_02'],
-	Courtyard: ['concrete_road_barrier', 'barrel_01', 'old_tyre', 'trashbag'],
-	Garage: ['old_tyre', 'barrel_01', 'portable_generator', 'steel_frame_shelves_02', 'power_box_01'],
-	Office: ['cardboard_box_01', 'metal_trash_can', 'steel_frame_shelves_02', 'trashbag'],
-	Spawn: ['old_military_crate', 'barrel_01', 'cardboard_box_01', 'trashbag'],
-	Warehouse: ['steel_frame_shelves_02', 'old_military_crate', 'cardboard_box_01', 'barrel_01'],
-	Depot: ['old_military_crate', 'barrel_01', 'concrete_road_barrier', 'cardboard_box_01'],
-	Yard: ['concrete_road_barrier', 'old_tyre', 'trashbag', 'barrel_01'],
-	Power: ['portable_generator', 'power_box_01', 'barrel_01', 'metal_trash_can']
-};
-// props hung on the wall rather than stood on the floor, and how high
-const ON_WALL: Partial<Record<PropName, number>> = { power_box_01: 1.3 };
-// props that come as a pair, of which one is used
-const ONE_OF: Partial<Record<PropName, string>> = {
-	metal_trash_can: 'metal_trash_can_rust',
-	old_military_crate: '_a'
-};
-
-// Dresses each room with props stood against its walls, kept clear of
-// windows, doors, guns, machines and spawns. They're scenery: nothing bumps
-// into them.
-function scatterProps(root: THREE.Object3D, map: GameMap, art: Art) {
-	const keepClear: [number, number][] = [
-		...map.windows.map((w) => [w.x, w.z] as [number, number]),
-		...map.doors.map((d) => [d.x, d.z] as [number, number]),
-		...map.machines.map((m) => [m.x, m.z] as [number, number]),
-		...map.wallBuys.map((w) => [w.x, w.z] as [number, number]),
-		...map.spawns.map((s) => [s.x, s.z] as [number, number]),
-		...map.playerSpawns.map((s) => [s.x, s.z] as [number, number])
-	];
-	const shapes = new Map<PropName, { object: THREE.Object3D; size: THREE.Vector3 }>();
-	const shape = (name: PropName) => {
-		let found = shapes.get(name);
-		if (!found) {
-			let object = art.props[name];
-			const part = ONE_OF[name];
-			if (part) {
-				// keep the parts of one of the pair, moved to the middle
-				const keep = object.clone();
-				keep.traverse((o) => {
-					if ((o as THREE.Mesh).isMesh && !o.name.includes(part)) o.visible = false;
-				});
-				keep.updateMatrixWorld(true);
-				const box = new THREE.Box3();
-				keep.traverse((o) => {
-					if ((o as THREE.Mesh).isMesh && o.visible) box.expandByObject(o);
-				});
-				const centre = box.getCenter(new THREE.Vector3());
-				const wrap = new THREE.Group();
-				keep.position.set(-centre.x, 0, -centre.z);
-				wrap.add(keep);
-				object = wrap;
-			}
-			const box = new THREE.Box3();
-			object.updateMatrixWorld(true);
-			object.traverse((o) => {
-				if ((o as THREE.Mesh).isMesh && o.visible) box.expandByObject(o);
-			});
-			found = { object, size: box.getSize(new THREE.Vector3()) };
-			shapes.set(name, found);
+	if (gable) {
+		batch.add(m.shingle, gableRoof(b.poly, b.height));
+	} else {
+		batch.add(m.roof, flat(b.poly, b.height + 0.01));
+		// a unit or two humming on the roof
+		if (art && b.height > 4.5) {
+			const [cx, cz] = centroid(b.poly);
+			const ac = new THREE.BoxGeometry(1.4, 1, 1);
+			ac.translate(cx + (random() - 0.5) * 3, b.height + 0.5, cz + (random() - 0.5) * 3);
+			batch.add(m.finish.metal, ac);
 		}
-		return found;
+	}
+	if (b.sign) batch.add(signMaterial(b.sign, art), signGeometry(edges[0], b.height));
+}
+
+// A pitched roof over a rectangle, its ridge along the longer side.
+function gableRoof(poly: Pt[], h: number): THREE.BufferGeometry {
+	let [p0, p1, p2, p3] = poly;
+	if (Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) < Math.hypot(p2[0] - p1[0], p2[1] - p1[1]))
+		[p0, p1, p2, p3] = [p1, p2, p3, p0];
+	const over = 0.4;
+	const rise = 2;
+	const mid = (a: Pt, b: Pt): Pt => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+	// push the eaves out a little
+	const grow = (p: Pt, c: Pt): Pt => {
+		const dx = p[0] - c[0];
+		const dz = p[1] - c[1];
+		const l = Math.hypot(dx, dz);
+		return [p[0] + (dx / l) * over, p[1] + (dz / l) * over];
 	};
-	const sides: [number, number][] = [
-		[1, 0],
-		[-1, 0],
-		[0, 1],
-		[0, -1]
+	const c = centroid(poly);
+	const [a, b, cc, d] = [p0, p1, p2, p3].map((p) => grow(p, c));
+	const r0 = mid(a, d);
+	const r1 = mid(b, cc);
+	const v = (p: Pt, y: number) => [p[0], y, p[1]];
+	const tris = [
+		// two slopes
+		[v(a, h), v(b, h), v(r1, h + rise)],
+		[v(a, h), v(r1, h + rise), v(r0, h + rise)],
+		[v(cc, h), v(d, h), v(r0, h + rise)],
+		[v(cc, h), v(r0, h + rise), v(r1, h + rise)],
+		// gable ends
+		[v(d, h), v(a, h), v(r0, h + rise)],
+		[v(b, h), v(cc, h), v(r1, h + rise)]
 	];
-	let seed = 7;
-	const random = () => {
-		seed = (seed * 16807) % 2147483647;
-		return seed / 2147483647;
-	};
-	const taken: [number, number][] = [];
-	const lit = new Set<string>();
-	for (let cy = 0; cy < SIZE; cy++) {
-		for (let cx = 0; cx < SIZE; cx++) {
-			const c = cy * SIZE + cx;
-			if (map.solid[c] || map.doorAt[c] >= 0) continue;
-			const x = centerOf(cx);
-			const z = centerOf(cy);
-			// a wall on one side, into which the prop backs
-			const wall = sides.find(
-				([dx, dz]) =>
-					map.solid[(cy + dz) * SIZE + cx + dx] && map.windowAt[(cy + dz) * SIZE + cx + dx] < 0
-			);
-			if (!wall) continue;
-			if (keepClear.some(([kx, kz]) => Math.hypot(kx - x, kz - z) < CELL * 1.6)) continue;
-			if (taken.some(([tx, tz]) => Math.hypot(tx - x, tz - z) < CELL * 2)) continue;
-			if (random() > 0.55) continue;
-			const room = map.roomName(x, z);
-			const names = ROOM_PROPS[room];
-			if (!names) continue;
-			// every yard gets a street lamp first
-			if (!lit.has(room)) {
-				lit.add(room);
-				placeLamp(root, art, x, z, wall);
-				taken.push([x, z]);
-				continue;
+	const pos: number[] = [];
+	const uv: number[] = [];
+	for (const tri of tris) {
+		// face up and out whichever way the corners came in
+		const [p, q, r] = tri;
+		const n = new THREE.Vector3()
+			.subVectors(new THREE.Vector3(...q), new THREE.Vector3(...p))
+			.cross(new THREE.Vector3().subVectors(new THREE.Vector3(...r), new THREE.Vector3(...p)));
+		const centre = new THREE.Vector3((p[0] + q[0] + r[0]) / 3, 0, (p[2] + q[2] + r[2]) / 3);
+		const outward = new THREE.Vector3(centre.x - c[0], 1, centre.z - c[1]);
+		const ordered = n.dot(outward) >= 0 ? [p, q, r] : [p, r, q];
+		for (const corner of ordered) {
+			pos.push(...corner);
+			uv.push(corner[0] + corner[2] * 0.3, corner[1] * 1.4 + corner[2] * 0.2);
+		}
+	}
+	const g = new THREE.BufferGeometry();
+	g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+	g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+	g.computeVertexNormals();
+	return g;
+}
+
+function signMaterial(text: string, art: Art | null) {
+	const neon = art && text !== 'APARTMENTS';
+	const texture = canvasTexture(1024, 256, (g) => {
+		g.fillStyle = art ? '#1c1a18' : '#e6e6e6';
+		g.fillRect(0, 0, 1024, 256);
+		g.strokeStyle = art ? '#3a352e' : '#cfcfcf';
+		g.lineWidth = 10;
+		g.strokeRect(5, 5, 1014, 246);
+		g.textAlign = 'center';
+		g.textBaseline = 'middle';
+		g.font = `700 150px ${FONT}`;
+		if (neon) {
+			g.shadowColor = text === 'DINER' ? '#ff4a5a' : text === 'MOTEL' ? '#4ae0ff' : '#ffb84a';
+			g.shadowBlur = 30;
+		}
+		g.fillStyle = !art
+			? PALETTE.ink
+			: neon
+				? text === 'DINER'
+					? '#ffd0d4'
+					: text === 'MOTEL'
+						? '#d4f6ff'
+						: '#ffe6c0'
+				: '#d8cdb8';
+		g.fillText(text, 512, 136, 960);
+	});
+	return new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
+}
+
+// A sign board on a building's front, up by its roof line.
+function signGeometry(edge: ReturnType<typeof outline>[number], height: number) {
+	const width = Math.min(edge.len * 0.7, 7);
+	const tall = width / 4;
+	const g = new THREE.PlaneGeometry(width, tall);
+	const y = Math.min(height - tall / 2 - 0.4, 4.6);
+	const mx = (edge.a[0] + edge.b[0]) / 2 + edge.nx * 0.08;
+	const mz = (edge.a[1] + edge.b[1]) / 2 + edge.nz * 0.08;
+	g.rotateY(Math.atan2(edge.nx, edge.nz));
+	g.translate(mx, y, mz);
+	return g;
+}
+
+// A room: walls round its outline with doors and windows cut out, plaster
+// inside, a ceiling, a roof, and its lights.
+function buildRoom(
+	root: THREE.Object3D,
+	batch: Batch,
+	room: Layout['rooms'][number],
+	layout: Layout,
+	m: Materials,
+	art: Art | null
+) {
+	const edges = outline(room.poly);
+	const ceiling = Math.min(room.height - 0.5, 4.2);
+	for (const { a, b, len, outLeft } of edges) {
+		const holes = holesIn(a, b, layout, room.height);
+		const out = outLeft ? 1 : -1;
+		// the outer half in the building's finish, the inner half plastered
+		wallWithHoles(
+			batch,
+			m.finish[room.finish],
+			a,
+			b,
+			holes,
+			room.height,
+			ROOM_WALL / 2,
+			(out * ROOM_WALL) / 4
+		);
+		wallWithHoles(
+			batch,
+			m.inner,
+			a,
+			b,
+			holes.map((h) => ({ ...h, y1: Math.min(h.y1, ceiling) })),
+			ceiling,
+			ROOM_WALL / 2,
+			(-out * ROOM_WALL) / 4
+		);
+		batch.add(m.trim, wallBox(a, b, -0.15, len + 0.15, room.height, room.height + 0.15, 0.4, 0));
+		// skirting and a dado rail inside
+		batch.add(m.trim, wallBox(a, b, 0, len, 0, 0.12, 0.03, -out * (ROOM_WALL / 2 + 0.015)));
+	}
+	batch.add(m.ceiling, flat(room.poly, ceiling, true));
+	batch.add(m.roof, flat(room.poly, room.height + 0.01));
+	if (room.sign) batch.add(signMaterial(room.sign, art), signGeometry(edges[0], room.height + 1.6));
+	// strip lights down the middle, and one light for the room
+	const [cx, cz] = centroid(room.poly);
+	const strip = new THREE.BoxGeometry(1.4, 0.06, 0.18);
+	const angle = Math.atan2(edges[0].b[1] - edges[0].a[1], edges[0].b[0] - edges[0].a[0]);
+	for (const off of [-3, 0, 3]) {
+		const g = strip.clone();
+		g.rotateY(-angle);
+		g.translate(cx + Math.cos(angle) * off, ceiling - 0.04, cz + Math.sin(angle) * off);
+		batch.add(m.glassLit, g);
+	}
+	const light = new THREE.PointLight(room.floor === 'tile' ? '#ffe2b8' : '#dfe8ff', 9, 16, 1.4);
+	light.position.set(cx, ceiling - 0.4, cz);
+	root.add(light);
+	return [{ light, base: light.intensity, flicker: room.sign === 'DINER' ? 0.1 : 0 }];
+}
+
+// ---- walls and fences ------------------------------------------------------
+
+const WALL_HEIGHTS: Record<WallKind, number> = {
+	brick: 2.6,
+	lowwall: 1.1,
+	fence: 1.9,
+	chainlink: 2.4,
+	hedge: 1.7,
+	debris: 1.2
+};
+
+function buildWall(
+	root: THREE.Object3D,
+	batch: Batch,
+	kind: WallKind,
+	line: Pt[],
+	layout: Layout,
+	m: Materials,
+	art: Art | null,
+	random: () => number
+) {
+	const h = WALL_HEIGHTS[kind];
+	for (let i = 0; i < line.length - 1; i++) {
+		const [a, b] = [line[i], line[i + 1]];
+		const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+		if (len < 0.01) continue;
+		const holes = holesIn(a, b, layout, h);
+		const solidRuns = runs(len, holes);
+		if (kind === 'brick' || kind === 'lowwall') {
+			wallWithHoles(batch, m.finish.brick, a, b, holes, h, 0.3, 0);
+			for (const [s0, s1] of solidRuns)
+				batch.add(m.concrete, wallBox(a, b, s0 - 0.02, s1 + 0.02, h, h + 0.08, 0.38, 0));
+		} else if (kind === 'fence') {
+			for (const [s0, s1] of solidRuns) {
+				batch.add(m.wood, wallBox(a, b, s0, s1, 0.05, h, 0.04, 0));
+				for (let s = s0; s <= s1 + 0.01; s += Math.max(0.5, (s1 - s0) / Math.ceil((s1 - s0) / 2.2)))
+					batch.add(m.wood, wallBox(a, b, s - 0.05, s + 0.05, 0, h + 0.06, 0.1, 0.07));
+				batch.add(m.wood, wallBox(a, b, s0, s1, h * 0.25, h * 0.25 + 0.09, 0.04, 0.05));
+				batch.add(m.wood, wallBox(a, b, s0, s1, h * 0.8, h * 0.8 + 0.09, 0.04, 0.05));
 			}
-			const name = names[Math.floor(random() * names.length)];
-			const { object, size } = shape(name);
-			const prop = object.clone();
-			// its long side along the wall, its back against it
-			const [wx, wz] = wall;
-			const across = size.x >= size.z;
-			const depth = across ? size.z : size.x;
-			const facing = Math.atan2(-wx, -wz) + (across ? 0 : Math.PI / 2);
-			const back = CELL / 2 - depth / 2 - 0.04;
-			const height = ON_WALL[name] ?? 0;
-			prop.position.set(x + wx * back, height, z + wz * back);
-			prop.rotation.y = facing + (height ? 0 : (random() - 0.5) * 0.3);
-			root.add(prop);
-			taken.push([x, z]);
+		} else if (kind === 'chainlink') {
+			for (const [s0, s1] of solidRuns) {
+				batch.add(m.chainlink, wallBox(a, b, s0, s1, 0.04, h - 0.05, 0.005, 0));
+				batch.add(m.metal, wallBox(a, b, s0, s1, h - 0.06, h, 0.05, 0));
+				const posts = Math.max(1, Math.ceil((s1 - s0) / 2.5));
+				for (let k = 0; k <= posts; k++) {
+					const s = s0 + ((s1 - s0) * k) / posts;
+					batch.add(m.metal, wallBox(a, b, s - 0.03, s + 0.03, 0, h + 0.05, 0.06, 0));
+				}
+			}
+		} else if (kind === 'hedge') {
+			for (const [s0, s1] of solidRuns) {
+				for (let s = s0; s < s1; s += 0.7) {
+					const top = h + (random() - 0.5) * 0.3;
+					const g = new THREE.IcosahedronGeometry(0.62, 1);
+					g.scale(1.1, top / 1.25, 1);
+					g.translate(0, top / 2, 0);
+					const dx = b[0] - a[0];
+					const dz = b[1] - a[1];
+					const k = Math.min(1, (s + 0.35) / len);
+					g.translate(
+						a[0] + dx * k + (random() - 0.5) * 0.15,
+						0,
+						a[1] + dz * k + (random() - 0.5) * 0.15
+					);
+					batch.add(m.hedge, g);
+				}
+			}
+		} else if (kind === 'debris') {
+			for (const [s0, s1] of solidRuns) debrisPile(root, batch, a, b, s0, s1, m, art, random);
 		}
 	}
 }
 
-// A street lamp against a wall, its arm reaching out over the yard, its bulb
-// lit and its light on the ground below.
-function placeLamp(
+// The solid stretches of a wall between its holes, for ones whose holes
+// run full height.
+function runs(len: number, holes: Hole[]): [number, number][] {
+	const out: [number, number][] = [];
+	let s = 0;
+	for (const h of holes) {
+		if (h.s0 > s + 0.01) out.push([s, h.s0]);
+		s = Math.max(s, h.s1);
+	}
+	if (len > s + 0.01) out.push([s, len]);
+	return out;
+}
+
+// Barriers, crates and tyres heaped along a line.
+function debrisPile(
 	root: THREE.Object3D,
+	batch: Batch,
+	a: Pt,
+	b: Pt,
+	s0: number,
+	s1: number,
+	m: Materials,
+	art: Art | null,
+	random: () => number
+) {
+	const dx = b[0] - a[0];
+	const dz = b[1] - a[1];
+	const len = Math.hypot(dx, dz);
+	const ux = dx / len;
+	const uz = dz / len;
+	const angle = Math.atan2(dz, dx);
+	for (let s = s0 + 0.8; s < s1 - 0.4; s += 1.55) {
+		const x = a[0] + ux * s + (random() - 0.5) * 0.25 * -uz;
+		const z = a[1] + uz * s + (random() - 0.5) * 0.25 * ux;
+		if (art) {
+			const name: PropName = random() < 0.5 ? 'concrete_road_barrier' : 'concrete_road_barrier_02';
+			const p = fitted(art, name).clone();
+			p.position.set(x, 0, z);
+			p.rotation.y = -angle + (random() - 0.5) * 0.25;
+			root.add(p);
+			if (random() < 0.35) {
+				const extra = fitted(art, random() < 0.5 ? 'old_tyre' : 'barrel_01').clone();
+				extra.position.set(x + -uz * (random() < 0.5 ? 0.6 : -0.6), 0, z + ux * 0.6);
+				extra.rotation.y = random() * 6;
+				root.add(extra);
+			}
+		} else {
+			const g = new THREE.BoxGeometry(1.5, 0.85, 0.6);
+			g.rotateY(-angle);
+			g.translate(x, 0.425, z);
+			batch.add(m.concrete, g);
+		}
+	}
+}
+
+// ---- doors -----------------------------------------------------------------
+
+function buildDoor(root: THREE.Object3D, door: Door, m: Materials, art: Art | null) {
+	const [a, b] = [door.a, door.b];
+	const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+	const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
+	const mesh = new THREE.Group();
+	root.add(mesh);
+	const holder = new THREE.Group();
+	holder.position.set(door.x, 0, door.z);
+	holder.rotation.y = -angle;
+	mesh.add(holder);
+	const height = door.kind === 'door' ? DOOR_TOP : door.kind === 'gate' ? 2.3 : 1.5;
+	const label = canvasTexture(256, 256, (g) => {
+		if (!art) {
+			g.fillStyle = PALETTE.door;
+			g.fillRect(0, 0, 256, 256);
+		}
+		g.fillStyle = art ? DUSK.chalk : '#f5f5f5';
+		g.textAlign = 'center';
+		g.textBaseline = 'middle';
+		g.font = `${art ? 700 : 500} 64px ${FONT}`;
+		g.fillText(String(door.cost), 128, 118);
+		g.font = `${art ? 700 : 500} 26px ${FONT}`;
+		g.fillText(door.kind === 'debris' ? 'CLEAR' : door.kind === 'gate' ? 'GATE' : 'DOOR', 128, 172);
+	});
+	const add = (geometry: THREE.BufferGeometry, material: THREE.Material) => {
+		const part = new THREE.Mesh(geometry, material);
+		part.castShadow = part.receiveShadow = true;
+		holder.add(part);
+		return part;
+	};
+	if (door.kind === 'door') {
+		add(new THREE.BoxGeometry(len, height, 0.12).translate(0, height / 2, 0), m.metal);
+	} else if (door.kind === 'gate') {
+		add(
+			new THREE.BoxGeometry(len - 0.1, height - 0.1, 0.01).translate(0, height / 2, 0),
+			m.chainlink
+		);
+		for (const [w, h, x, y] of [
+			[len, 0.06, 0, height - 0.03],
+			[len, 0.06, 0, 0.08],
+			[0.06, height, -len / 2 + 0.03, height / 2],
+			[0.06, height, len / 2 - 0.03, height / 2],
+			[len, 0.04, 0, height / 2]
+		])
+			add(new THREE.BoxGeometry(w, h, 0.06).translate(x, y, 0), m.metal);
+	} else {
+		// a heap of junk blocking the way, cleared when bought
+		const r = seeded(door.index + 3);
+		if (art) {
+			for (let k = 0; k < 3; k++) {
+				const piece = fitted(art, k === 1 ? 'old_military_crate' : 'concrete_road_barrier').clone();
+				piece.position.set((k - 1) * (len / 3), k === 1 ? 0.85 : 0, (r() - 0.5) * 0.3);
+				piece.rotation.y = (r() - 0.5) * 0.4;
+				holder.add(piece);
+			}
+			const tyre = fitted(art, 'old_tyre').clone();
+			tyre.position.set(len / 2 - 0.3, 0, 0.5);
+			holder.add(tyre);
+		} else {
+			add(new THREE.BoxGeometry(len, height, 0.6).translate(0, height / 2, 0), m.concrete);
+		}
+	}
+	// the price on a plate each side
+	const plate = new THREE.MeshBasicMaterial({
+		map: label,
+		transparent: true,
+		depthWrite: false,
+		opacity: 0.9
+	});
+	for (const side of [1, -1]) {
+		const p = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), plate);
+		const depth = door.kind === 'debris' ? 0.45 : 0.08;
+		p.position.set(0, door.kind === 'debris' ? 1.1 : 1.35, side * depth);
+		p.rotation.y = side > 0 ? 0 : Math.PI;
+		holder.add(p);
+	}
+	return { mesh, opening: -1, height: height + (door.kind === 'debris' ? 0.9 : 0) };
+}
+
+// ---- props -------------------------------------------------------------------
+
+// How each kind of prop is drawn from the models: which model, the share of
+// it to keep, and how to stand it.
+const PROP_MODELS: Partial<
+	Record<PropKind, { name: PropName; part?: string; half?: 1 | -1; scale?: number; turn?: number }>
+> = {
+	car: { name: 'covered_car', turn: Math.PI / 2 },
+	dumpster: { name: 'metal_trash_can', part: 'rust', scale: 1.15 },
+	barrier: { name: 'concrete_road_barrier' },
+	shrub: { name: 'shrub_02', scale: 0.32 },
+	hydrant: { name: 'fire_hydrant', half: -1 },
+	bench: { name: 'painted_wooden_bench' },
+	barrel: { name: 'barrel_01' },
+	crate: { name: 'wooden_crate_02', turn: Math.PI / 2 },
+	pallet_rack: { name: 'steel_frame_shelves_03' },
+	aircon: { name: 'exterior_aircon_unit', part: 'rusted' },
+	utility_box: { name: 'utility_box_02' },
+	trash_can: { name: 'metal_trash_can', part: 'rust' },
+	trashbag: { name: 'trashbag' },
+	tyre: { name: 'old_tyre' },
+	box: { name: 'cardboard_box_01' },
+	generator: { name: 'portable_generator' },
+	table: { name: 'wooden_table_03' },
+	shelf: { name: 'steel_frame_shelves_03' }
+};
+
+const fittedCache = new WeakMap<Art, Map<string, THREE.Object3D>>();
+
+// A model stood on the ground, centred on its footprint, optionally cut
+// down to one part (or one half) of the file.
+function fitted(art: Art, name: PropName, opts: { part?: string; half?: 1 | -1 } = {}) {
+	let cache = fittedCache.get(art);
+	if (!cache) fittedCache.set(art, (cache = new Map()));
+	const key = `${name}|${opts.part ?? ''}|${opts.half ?? 0}`;
+	let found = cache.get(key);
+	if (found) return found;
+	const model = art.props[name].clone();
+	model.updateMatrixWorld(true);
+	if (opts.part || opts.half) {
+		model.traverse((o) => {
+			const mesh = o as THREE.Mesh;
+			if (!mesh.isMesh) return;
+			if (opts.part && !o.name.includes(opts.part) && !mesh.parent?.name.includes(opts.part))
+				o.visible = false;
+			if (opts.half) {
+				const c = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
+				if (Math.sign(c.x) !== opts.half) o.visible = false;
+			}
+		});
+	}
+	const box = new THREE.Box3();
+	model.traverse((o) => {
+		if ((o as THREE.Mesh).isMesh && o.visible) box.expandByObject(o);
+	});
+	if (box.isEmpty()) model.traverse((o) => (o.visible = true));
+	const c = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
+	model.position.set(-c.x, -(box.isEmpty() ? 0 : box.min.y), -c.z);
+	found = new THREE.Group().add(model);
+	cache.set(key, found);
+	return found;
+}
+
+function placeProps(
+	root: THREE.Object3D,
+	batch: Batch,
+	layout: Layout,
 	art: Art,
+	m: Materials,
+	random: () => number
+) {
+	for (const prop of layout.props) {
+		const [x, z] = prop.at;
+		const rot = (-prop.rot * Math.PI) / 180;
+		const spec = PROP_MODELS[prop.kind];
+		if (spec) {
+			const p = new THREE.Group();
+			const model = fitted(art, spec.name, spec).clone();
+			model.rotation.y = spec.turn ?? 0;
+			if (spec.scale) model.scale.setScalar(spec.scale);
+			p.add(model);
+			p.position.set(x, 0, z);
+			p.rotation.y = rot + (prop.kind === 'shrub' ? random() * 6 : 0);
+			root.add(p);
+			if (prop.kind === 'table') {
+				for (const side of [1, -1]) {
+					const chair = fitted(art, 'painted_wooden_chair_01').clone();
+					chair.position.set(0, 0, side * 0.62);
+					chair.rotation.y = side > 0 ? Math.PI : 0;
+					p.add(chair);
+				}
+			}
+			continue;
+		}
+		if (prop.kind === 'lamp') placeLamp(root, art, x, z, prop.rot);
+		else if (prop.kind === 'tree') tree(batch, x, z, random, m);
+		else if (prop.kind === 'pine') pine(batch, x, z, random, m);
+		else if (prop.kind === 'pole') pole(batch, x, z, m);
+		else if (prop.kind === 'post') {
+			batch.add(m.trim, new THREE.BoxGeometry(0.4, 4.6, 0.4).translate(x, 2.3, z));
+		} else if (prop.kind === 'pump') pump(root, x, z, rot, art, m);
+		else if (prop.kind === 'truck') truck(batch, x, z, rot, m);
+		else if (prop.kind === 'counter') {
+			const g = new THREE.BoxGeometry(2.4, 1.05, 0.8);
+			g.rotateY(rot);
+			g.translate(x, 0.525, z);
+			batch.add(m.wood, g);
+			const top = new THREE.BoxGeometry(2.5, 0.06, 0.9);
+			top.rotateY(rot);
+			top.translate(x, 1.08, z);
+			batch.add(m.trim, top);
+		}
+	}
+	// manhole covers down the road
+	for (const [a, b] of layout.paint.filter((_, i) => i % 7 === 3)) {
+		const cover = fitted(art, 'water_manhole_cover').clone();
+		cover.position.set((a[0] + b[0]) / 2 + 1.4, 0.01, (a[1] + b[1]) / 2 + 0.9);
+		root.add(cover);
+	}
+}
+
+// Without the art, the props that matter for cover are drawn as plain blocks.
+function placePlainProps(batch: Batch, layout: Layout, m: Materials) {
+	for (const prop of layout.props) {
+		const [x, z] = prop.at;
+		const size =
+			prop.kind === 'car'
+				? [4.3, 1.3, 1.85]
+				: prop.kind === 'truck'
+					? [6.5, 2.8, 2.4]
+					: prop.kind === 'dumpster'
+						? [1.9, 1.2, 1.1]
+						: null;
+		if (!size) continue;
+		const g = new THREE.BoxGeometry(size[0], size[1], size[2]);
+		g.rotateY((-prop.rot * Math.PI) / 180);
+		g.translate(x, size[1] / 2, z);
+		batch.add(m.finish.concrete, g);
+	}
+}
+
+// A broad, scruffy tree: a trunk, and a few lumps of leaves on branches.
+function tree(batch: Batch, x: number, z: number, random: () => number, m: Materials) {
+	const h = 3.4 + random() * 1.2;
+	batch.add(m.wood, new THREE.CylinderGeometry(0.12, 0.22, h, 7).translate(x, h / 2, z));
+	for (let k = 0; k < 6; k++) {
+		const a = random() * Math.PI * 2;
+		const r = 0.6 + random() * 1.3;
+		const y = 3.6 + random() * 1.8;
+		const branch = new THREE.CylinderGeometry(0.05, 0.09, r + 0.6, 5);
+		branch.rotateZ(Math.PI / 2 - 0.6);
+		branch.rotateY(-a);
+		branch.translate(x + Math.cos(a) * r * 0.45, y - 0.8, z + Math.sin(a) * r * 0.45);
+		batch.add(m.wood, branch);
+		const blob = new THREE.IcosahedronGeometry(1 + random() * 0.7, 1);
+		const pos = blob.getAttribute('position') as THREE.BufferAttribute;
+		for (let i = 0; i < pos.count; i++)
+			pos.setXYZ(
+				i,
+				pos.getX(i) * (0.85 + random() * 0.3),
+				pos.getY(i) * 0.75,
+				pos.getZ(i) * (0.85 + random() * 0.3)
+			);
+		blob.translate(x + Math.cos(a) * r, y, z + Math.sin(a) * r);
+		batch.add(m.leaves, blob);
+	}
+}
+
+// A dark fir: cones stacked on a trunk.
+function pine(batch: Batch, x: number, z: number, random: () => number, m: Materials) {
+	batch.add(m.wood, new THREE.CylinderGeometry(0.1, 0.18, 2, 6).translate(x, 1, z));
+	const h = 6 + random() * 2;
+	for (let k = 0; k < 4; k++) {
+		const r = 2 - k * 0.42;
+		const cone = new THREE.ConeGeometry(r, h * 0.36, 8);
+		cone.rotateY(random() * 3);
+		cone.translate(x, 1.4 + k * h * 0.17 + h * 0.18, z);
+		batch.add(m.leaves, cone);
+	}
+}
+
+// A wooden utility pole with its cross-arm.
+function pole(batch: Batch, x: number, z: number, m: Materials) {
+	batch.add(m.wood, new THREE.CylinderGeometry(0.13, 0.17, 8.5, 8).translate(x, 4.25, z));
+	batch.add(m.wood, new THREE.BoxGeometry(2.2, 0.14, 0.14).translate(x, 7.6, z));
+	for (const dx of [-0.9, -0.3, 0.3, 0.9])
+		batch.add(m.trim, new THREE.CylinderGeometry(0.04, 0.05, 0.22, 6).translate(x + dx, 7.79, z));
+}
+
+// A petrol pump: a cabinet with a lit display.
+function pump(
+	root: THREE.Object3D,
 	x: number,
 	z: number,
-	[wx, wz]: [number, number]
+	rot: number,
+	art: Art | null,
+	m: Materials
 ) {
+	const g = new THREE.Group();
+	g.position.set(x, 0, z);
+	g.rotation.y = rot;
+	const island = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.18, 0.9), m.concrete);
+	island.position.y = 0.09;
+	const body = new THREE.Mesh(
+		new THREE.BoxGeometry(1, 1.7, 0.5),
+		new THREE.MeshStandardMaterial({ color: art ? '#8c2a22' : '#d0d0d0', roughness: 0.6 })
+	);
+	body.position.y = 1.03;
+	const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.3), m.glassLit);
+	screen.position.set(0, 1.45, 0.26);
+	const back = screen.clone();
+	back.position.z = -0.26;
+	back.rotation.y = Math.PI;
+	island.castShadow = body.castShadow = true;
+	g.add(island, body, screen, back);
+	root.add(g);
+}
+
+// A box truck's trailer, left where it stopped.
+function truck(batch: Batch, x: number, z: number, rot: number, m: Materials) {
+	const box = new THREE.BoxGeometry(6.5, 2.6, 2.4);
+	box.translate(0, 1.6, 0);
+	box.rotateY(rot);
+	box.translate(x, 0, z);
+	batch.add(m.finish.metal, box);
+	for (const [dx, dz] of [
+		[-2.2, 1],
+		[-2.2, -1],
+		[2.4, 1],
+		[2.4, -1]
+	]) {
+		const wheel = new THREE.CylinderGeometry(0.42, 0.42, 0.3, 12);
+		wheel.rotateX(Math.PI / 2);
+		wheel.translate(dx, 0.42, dz);
+		wheel.rotateY(rot);
+		wheel.translate(x, 0, z);
+		batch.add(m.trim, wheel);
+	}
+}
+
+// A street lamp, its arm reaching out toward `deg` (0 east, 90 south), its
+// bulb lit and its light on the ground below.
+function placeLamp(root: THREE.Object3D, art: Art, x: number, z: number, deg: number) {
 	const lamp = art.props.street_lamp_01.clone();
 	let bulb: THREE.Object3D | null = null;
 	lamp.traverse((o) => {
@@ -541,62 +1263,199 @@ function placeLamp(
 	lamp.updateMatrixWorld(true);
 	const head = new THREE.Box3().setFromObject(bulb ?? lamp).getCenter(new THREE.Vector3());
 	const flip = head.x < 0 ? Math.PI : 0;
-	// local +x turned to point out of the wall
-	lamp.rotation.y = Math.atan2(wz, -wx) + flip;
-	const back = CELL / 2 - 0.25;
-	lamp.position.set(x + wx * back, 0, z + wz * back);
+	// local +x turned to point along deg
+	lamp.rotation.y = (-deg * Math.PI) / 180 + flip;
+	lamp.position.set(x, 0, z);
 	root.add(lamp);
 	lamp.updateMatrixWorld(true);
 	const at = new THREE.Box3().setFromObject(bulb ?? lamp).getCenter(new THREE.Vector3());
 	const pool = lampPool();
 	pool.rotation.x = -Math.PI / 2;
-	pool.position.set(at.x, 0.02, at.z);
+	pool.position.set(at.x, 0.03, at.z);
 	root.add(pool);
 }
 
-const wood = new THREE.MeshLambertMaterial({ color: '#8a6a4a' });
-const woodDark = new THREE.MeshLambertMaterial({ color: '#6b4f35' });
-const frame = new THREE.MeshLambertMaterial({ color: PALETTE.wall });
-const OPENING = 1.2; // wide
-const SILL = 0.9;
-const LINTEL = 2.1;
+// A street lamp's light, painted on the ground under it.
+function lampPool() {
+	return new THREE.Mesh(
+		new THREE.PlaneGeometry(9, 9),
+		new THREE.MeshBasicMaterial({
+			map: canvasTexture(128, 128, (g) => {
+				const glow = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+				glow.addColorStop(0, 'rgba(255,196,120,0.42)');
+				glow.addColorStop(0.45, 'rgba(255,180,100,0.14)');
+				glow.addColorStop(1, 'rgba(255,170,90,0)');
+				g.fillStyle = glow;
+				g.fillRect(0, 0, 128, 128);
+			}),
+			transparent: true,
+			depthWrite: false,
+			blending: THREE.AdditiveBlending
+		})
+	);
+}
 
-// A window: the wall with a hole in it, and boards nailed across the inside
-// that zombies pull off and players nail back. Built facing into the room
-// (local +z), so the same pieces work in any wall.
-export function buildWindow(root: THREE.Object3D, w: Window, art: Art | null = null) {
+// ---- the skyline beyond the map ------------------------------------------
+
+// Blocks of town filling the ground between the map and the skyline, kept
+// clear of anywhere players go and of the rooms zombies climb out of.
+function outskirts(map: GameMap, m: Materials, random: () => number) {
+	const reach = new Set([0]);
+	for (let grew = true; grew; ) {
+		grew = false;
+		for (const d of map.doors)
+			if (reach.has(d.areas[0]) !== reach.has(d.areas[1])) {
+				d.areas.forEach((a) => reach.add(a));
+				grew = true;
+			}
+	}
+	const clear = (x0: number, z0: number, x1: number, z1: number) => {
+		for (let z = Math.floor(z0); z < z1; z++)
+			for (let x = Math.floor(x0); x < x1; x++) {
+				if (x < 0 || z < 0 || x >= COLS || z >= ROWS) continue;
+				if (reach.has(map.area[z * COLS + x])) return false;
+			}
+		return !map.windows.some((w) => w.x > x0 - 4 && w.x < x1 + 4 && w.z > z0 - 4 && w.z < z1 + 4);
+	};
+	const batch = new Batch();
+	const group = new THREE.Group();
+	const finishes = [m.finish.brick, m.finish.brick_red, m.finish.concrete, m.finish.plaster];
+	const step = 11;
+	for (let z = -40; z < ROWS + 40; z += step) {
+		for (let x = -40; x < COLS + 40; x += step) {
+			const w = step - 1 - random() * 2;
+			const d = step - 1 - random() * 2;
+			if (!clear(x - 2.5, z - 2.5, x + w + 2.5, z + d + 2.5)) continue;
+			const h = 6 + random() * 9;
+			const poly: Pt[] = [
+				[x, z],
+				[x + w, z],
+				[x + w, z + d],
+				[x, z + d]
+			];
+			for (const { a, b } of outline(poly)) {
+				batch.add(
+					finishes[Math.floor(random() * finishes.length)],
+					wallBox(a, b, 0, Math.hypot(b[0] - a[0], b[1] - a[1]), 0, h, 0.3, 0)
+				);
+				for (let y = 3.6; y < h - 1.5; y += 3.2)
+					for (let s = 1.5; s < Math.hypot(b[0] - a[0], b[1] - a[1]) - 1.5; s += 3) {
+						const glass = random() < 0.12 ? m.glassLit : m.glass;
+						batch.add(glass, wallBox(a, b, s - 0.55, s + 0.55, y, y + 1.5, 0.4, 0));
+					}
+			}
+			batch.add(m.roof, flat(poly, h));
+		}
+	}
+	batch.flush(group, { shadows: false });
+	return group;
+}
+
+// Dark blocks of town all round, out past where anyone can go, with a few
+// windows still lit. They're drawn without the haze, so they stand against
+// the sky.
+function skyline(random: () => number) {
+	const group = new THREE.Group();
+	const windows = canvasTexture(256, 256, (g) => {
+		g.fillStyle = '#000';
+		g.fillRect(0, 0, 256, 256);
+		const r = seeded(5);
+		for (let y = 0; y < 8; y++)
+			for (let x = 0; x < 8; x++) {
+				if (r() > 0.13) continue;
+				g.fillStyle = r() < 0.5 ? '#ffb86a' : '#d8e4ff';
+				g.fillRect(x * 32 + 9, y * 32 + 8, 14, 18);
+			}
+	});
+	windows.wrapS = windows.wrapT = THREE.RepeatWrapping;
+	const material = new THREE.MeshLambertMaterial({
+		color: '#16151a',
+		emissive: '#ffffff',
+		emissiveMap: windows,
+		emissiveIntensity: 0.55,
+		fog: false
+	});
+	const parts: THREE.BufferGeometry[] = [];
+	const cx = WORLD_X / 2;
+	const cz = WORLD_Z / 2;
+	for (let k = 0; k < 90; k++) {
+		const a = (k / 90) * Math.PI * 2 + random() * 0.05;
+		// out past the map's corners
+		const ring = 92 + random() * 40;
+		const x = cx + Math.cos(a) * ring;
+		const z = cz + Math.sin(a) * ring * 0.95;
+		const w = 8 + random() * 14;
+		const d = 8 + random() * 10;
+		const h = 8 + random() * 26;
+		const g = new THREE.BoxGeometry(w, h, d);
+		// windows a storey apart, whatever the block's size
+		const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+		const pos = g.getAttribute('position') as THREE.BufferAttribute;
+		for (let i = 0; i < uv.count; i++) {
+			const face = Math.floor(i / 4);
+			const along = face < 2 ? pos.getZ(i) : pos.getX(i);
+			// roofs on an unlit corner of the windows
+			if (face === 2 || face === 3) uv.setXY(i, 0.01, 0.01);
+			else uv.setXY(i, (along + w) / 12.8, (pos.getY(i) + h / 2) / 12.8);
+		}
+		g.rotateY(-a);
+		g.translate(x, h / 2, z);
+		parts.push(g.toNonIndexed());
+	}
+	const merged = mergeGeometries(parts);
+	if (merged) group.add(new THREE.Mesh(merged, material));
+	return group;
+}
+
+// ---- windows, the box and perks -------------------------------------------
+
+const ONE = new THREE.Vector3(1, 1, 1);
+
+// A window: a frame in the wall's hole, boards nailed across the inside that
+// zombies pull off and players nail back, and dark behind. Built facing into
+// the area (local +z); `face` is how far the wall's inside face is from its
+// line.
+export function buildWindow(root: THREE.Object3D, w: Window, art: Art | null = null, face = 0.15) {
 	const group = new THREE.Group();
 	group.position.set(w.x, 0, w.z);
 	group.rotation.y = Math.atan2(w.nx, w.nz);
-	const post = (CELL - OPENING) / 2;
-	const pieces: [number, number, number, number, number][] = [
-		// [width, height, x, y]: the sill, the lintel, and a post each side
-		[CELL, SILL, 0, SILL / 2, 0],
-		[CELL, WALL_HEIGHT - LINTEL, 0, (WALL_HEIGHT + LINTEL) / 2, 0],
-		[post, LINTEL - SILL, -(OPENING + post) / 2, (SILL + LINTEL) / 2, 0],
-		[post, LINTEL - SILL, (OPENING + post) / 2, (SILL + LINTEL) / 2, 0]
-	];
-	const wall = art ? surfaceMaterial(art.surfaces.wall_concrete, CELL) : frame;
+	const width = w.width;
+	const frame = new THREE.MeshLambertMaterial({ color: art ? '#3a3027' : PALETTE.wall });
 	const boardFaces = art
 		? [
 				surfaceMaterial(art.surfaces.planks, 1.2),
 				surfaceMaterial(art.surfaces.planks, 1.2, '#b8a48a')
 			]
-		: [woodDark, wood];
-	for (const [width, height, x, y] of pieces) {
-		const mesh = new THREE.Mesh(metreUVs(new THREE.BoxGeometry(width, height, CELL)), wall);
-		mesh.position.set(x, y, 0);
-		mesh.castShadow = mesh.receiveShadow = true;
+		: [
+				new THREE.MeshLambertMaterial({ color: '#6b4f35' }),
+				new THREE.MeshLambertMaterial({ color: '#8a6a4a' })
+			];
+	const depth = face * 2 + 0.25;
+	for (const [fw, fh, x, y] of [
+		[width + 0.16, 0.1, 0, SILL],
+		[width + 0.16, 0.1, 0, LINTEL],
+		[0.08, LINTEL - SILL, -width / 2, (SILL + LINTEL) / 2],
+		[0.08, LINTEL - SILL, width / 2, (SILL + LINTEL) / 2]
+	]) {
+		const mesh = new THREE.Mesh(new THREE.BoxGeometry(fw, fh, depth), frame);
+		mesh.position.set(x, y, face - depth / 2 + 0.02);
 		group.add(mesh);
 	}
-	const plank = metreUVs(new THREE.BoxGeometry(OPENING + 0.35, 0.17, 0.06));
+	// the dark room behind
+	const back = new THREE.Mesh(
+		new THREE.BoxGeometry(width, LINTEL - SILL, 1.4),
+		new THREE.MeshBasicMaterial({ color: art ? '#050506' : '#cfcfcf', side: THREE.BackSide })
+	);
+	back.position.set(0, (SILL + LINTEL) / 2, face - depth - 0.7 + 0.02);
+	group.add(back);
+	const plank = new THREE.BoxGeometry(width + 0.3, 0.17, 0.06);
 	const boards = Array.from({ length: WINDOW_BOARDS }, (_, i) => {
 		const mesh = new THREE.Mesh(plank, boardFaces[i % 2]);
 		const home = {
 			y: SILL + 0.12 + i * ((LINTEL - SILL - 0.24) / (WINDOW_BOARDS - 1)),
 			tilt: (i % 2 ? 1 : -1) * (0.12 + ((i * 37) % 5) * 0.03)
 		};
-		mesh.position.set(0, home.y, CELL / 2 + 0.04);
+		mesh.position.set(0, home.y, face + 0.04);
 		mesh.rotation.z = home.tilt;
 		mesh.castShadow = true;
 		group.add(mesh);
@@ -613,7 +1472,7 @@ export function buildWindow(root: THREE.Object3D, w: Window, art: Art | null = n
 				const b = boards[i];
 				b.falling = -1;
 				b.mesh.visible = true;
-				b.mesh.position.set(0, b.home.y, CELL / 2 + 0.04);
+				b.mesh.position.set(0, b.home.y, face + 0.04);
 				b.mesh.rotation.set(0, 0, b.home.tilt);
 				b.mesh.scale.setScalar(1.15);
 			}
@@ -626,7 +1485,7 @@ export function buildWindow(root: THREE.Object3D, w: Window, art: Art | null = n
 				b.falling += dt;
 				const t = b.falling;
 				// pulled outward through the window, then dropped
-				b.mesh.position.z = CELL / 2 + 0.04 - t * 2.2;
+				b.mesh.position.z = face + 0.04 - t * 2.2;
 				b.mesh.position.y = b.home.y + t * 0.6 - t * t * 4;
 				b.mesh.rotation.x = t * 3;
 				if (t > 0.6) {
@@ -637,8 +1496,6 @@ export function buildWindow(root: THREE.Object3D, w: Window, art: Art | null = n
 		}
 	};
 }
-
-const ONE = new THREE.Vector3(1, 1, 1);
 
 // The Mystery Box: a crate on the floor that opens when paid, spins
 // through guns, and holds one up for whoever paid.
@@ -776,10 +1633,10 @@ export function buildPerk(root: THREE.Object3D, m: Machine, perk: PerkId) {
 		face,
 		body
 	]);
-	cabinet.position.set(0, 1.1, -0.3);
+	cabinet.position.set(0, 1.1, 0);
 	cabinet.castShadow = true;
 	const light = new THREE.PointLight(color, 3, 4, 2);
-	light.position.set(0, 1.6, 0.6);
+	light.position.set(0, 1.6, 0.9);
 	group.add(cabinet, light);
 	root.add(group);
 }
