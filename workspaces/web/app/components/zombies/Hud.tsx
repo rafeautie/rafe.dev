@@ -52,6 +52,14 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				</Panel>
 			)}
 
+			{/* the host dropped out, or this player lost them for a moment */}
+			{hud.reconnecting && !over && (
+				<Panel className="absolute top-[30%] left-1/2 flex -translate-x-1/2 flex-col items-center gap-1 px-6 py-4 text-center">
+					<p className="animate-pulse text-xl tracking-tight">Reconnecting</p>
+					<p className="text-sm text-muted-foreground">Your Points and Guns Are Kept</p>
+				</Panel>
+			)}
+
 			{/* which way each recent hit came from */}
 			{hud.danger.map((d) => (
 				<div

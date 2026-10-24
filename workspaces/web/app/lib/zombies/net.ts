@@ -7,6 +7,9 @@ import { LOBBY_PATH, type SignalDown, type SignalUp } from './signal';
 // that drops what arrives late.
 
 const CONNECT_TIMEOUT = 15_000;
+// a connection that stops answering is given up on after this long, rather
+// than the browser's own half a minute or so, so a closed tab is noticed soon
+const SILENT_FOR = 3000;
 const RECONNECT_DELAY = 2000;
 // skip a snapshot rather than queue it behind a slow connection
 const MAX_BUFFERED = 64 * 1024;
@@ -130,6 +133,11 @@ export class HostNet {
 		};
 		pc.onconnectionstatechange = () => {
 			if (pc.connectionState === 'failed' || pc.connectionState === 'closed') this.drop(id);
+			else if (pc.connectionState === 'disconnected') {
+				setTimeout(() => {
+					if (pc.connectionState === 'disconnected') this.drop(id);
+				}, SILENT_FOR);
+			}
 		};
 		setTimeout(() => {
 			if (!peer.open) this.drop(id);
@@ -166,6 +174,15 @@ export class HostNet {
 	send(id: string, message: HostMessage) {
 		const peer = this.peers.get(id);
 		if (peer?.open) sendOn(peer.channels, message, RELIABLE(message));
+	}
+
+	// lets go of a peer straight away, as when its player has come back on a
+	// new connection
+	kick(id: string) {
+		const peer = this.peers.get(id);
+		if (!peer) return;
+		this.peers.delete(id);
+		peer.pc.close();
 	}
 
 	// turns a peer away when the game is full, telling it why first
@@ -245,6 +262,11 @@ export class PeerNet {
 			};
 			pc.onconnectionstatechange = () => {
 				if (pc.connectionState === 'failed') this.fail('lost');
+				else if (pc.connectionState === 'disconnected') {
+					setTimeout(() => {
+						if (pc.connectionState === 'disconnected') this.fail('lost');
+					}, SILENT_FOR);
+				}
 			};
 			await pc.setRemoteDescription(data.sdp);
 			await pc.setLocalDescription(await pc.createAnswer());
