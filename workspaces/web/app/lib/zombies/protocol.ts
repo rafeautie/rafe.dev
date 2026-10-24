@@ -46,6 +46,8 @@ export const POSE_ADS = 2;
 export const POSE_RELOAD = 4;
 export const POSE_PAUSED = 8;
 export const POSE_AIR = 16;
+// their connection dropped, and the game is keeping their place
+export const POSE_AWAY = 32;
 
 // [id, x, z, yaw, speed class, flags, health, height off the floor]; see
 // ZOMBIE_* below. Health lets a player's own shots show a kill straight away;

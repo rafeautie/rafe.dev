@@ -27,6 +27,7 @@ import {
 	CROUCH,
 	POSE_ADS,
 	POSE_AIR,
+	POSE_AWAY,
 	POSE_PAUSED,
 	POSE_RELOAD,
 	POSE_SPRINT,
@@ -1048,7 +1049,7 @@ export class HostGame {
 			shots: p.shots,
 			knifes: p.knifes,
 			stance: p.stance,
-			flags: p.flags | (p.paused || p.away ? POSE_PAUSED : 0),
+			flags: p.flags | (p.away ? POSE_AWAY : p.paused ? POSE_PAUSED : 0),
 			perks: p.perks
 		}));
 		const zombies: ZombieSnap[] = [...this.zombies.values()].map((z) => [
