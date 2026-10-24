@@ -80,9 +80,9 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 				<Link href="/">rafe</Link>
 				zombies
 			</SlashNav>
-			{/* boxed in like the tiles elsewhere on the site, the controls in a card of their
-			    own beside it at the same size, or below it on a narrow screen */}
-			<div className="mx-auto mt-16 grid max-w-sm gap-4 sm:mt-24 md:max-w-3xl md:grid-cols-2">
+			{/* boxed in like the tiles elsewhere on the site, with the controls and
+			    settings in a card of their own below, each only as tall as it needs */}
+			<div className="mx-auto mt-16 flex max-w-sm flex-col gap-4 sm:mt-24">
 				<div className={CARD}>
 					{!session || !state || closed ? (
 						<Start

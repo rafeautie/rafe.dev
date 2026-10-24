@@ -15,6 +15,7 @@ import type { Session } from '../session';
 import { settings } from '../settings';
 import { KNIFE, WEAPONS, ammoCost, type WeaponId } from '../weapons';
 import { Sound } from './audio';
+import { HeldGun } from './heldgun';
 import { Body, J, Ragdoll, playerPose, rayCapsule, zombiePose, type Joints } from './rig';
 import { PALETTE, buildWorld, type World } from './scene';
 import { VIEW_LAYER, ViewModel } from './viewmodel';
@@ -96,6 +97,7 @@ type ZombieView = {
 
 type OtherView = {
 	body: Body;
+	gun: HeldGun;
 	label: THREE.Sprite;
 	step: number;
 	x: number;
@@ -540,8 +542,9 @@ export class GameClient {
 		me.vx += (tx - me.vx) * blend;
 		me.vz += (tz - me.vz) * blend;
 		[me.x, me.z] = this.blocking.move(me.x, me.z, me.vx * dt, me.vz * dt, PLAYER.radius);
-		// zombies are solid: they can box a player in
-		for (const z of this.zombies.values()) {
+		// zombies are solid: they can box a player in. A downed player crawls
+		// under them instead, or they would shove the player around.
+		for (const z of downed ? [] : this.zombies.values()) {
 			const dx = me.x - z.x;
 			const dz = me.z - z.z;
 			const d = Math.hypot(dx, dz);
@@ -963,6 +966,7 @@ export class GameClient {
 			if (!view) {
 				view = {
 					body: new Body(this.dynamic, PLAYER_COLORS),
+					gun: new HeldGun(this.dynamic),
 					label: nameLabel(pb.name),
 					step: 0,
 					x: pb.x,
@@ -972,11 +976,12 @@ export class GameClient {
 				this.dynamic.add(view.label);
 				this.others.set(pb.id, view);
 			}
-			this.drawOther(view, pa, pb, alpha);
+			this.drawOther(view, pa, pb, alpha, dt);
 		}
 		for (const [id, view] of this.others) {
 			if (seen.has(id)) continue;
 			view.body.dispose();
+			view.gun.dispose();
 			view.label.removeFromParent();
 			view.label.material.map?.dispose();
 			view.label.material.dispose();
@@ -984,7 +989,7 @@ export class GameClient {
 		}
 	}
 
-	private drawOther(view: OtherView, pa: PlayerSnap, pb: PlayerSnap, alpha: number) {
+	private drawOther(view: OtherView, pa: PlayerSnap, pb: PlayerSnap, alpha: number, dt: number) {
 		const x = pa.x + (pb.x - pa.x) * alpha;
 		const y = pa.y + (pb.y - pa.y) * alpha;
 		const z = pa.z + (pb.z - pa.z) * alpha;
@@ -998,10 +1003,16 @@ export class GameClient {
 		playerPose(view.body.joints, x, y, z, yaw, view.step, pb.state === 'downed');
 		view.body.place();
 		view.label.position.set(x, y + (pb.state === 'downed' ? 1.2 : 2.25), z);
+		const pitch = pa.pitch + (pb.pitch - pa.pitch) * alpha;
+		view.gun.setWeapon(pb.weapon);
+		view.gun.place(hand.fromArray(view.body.joints, J.rHand * 3), yaw, pitch, visible);
+		view.gun.update(dt);
 		if (pb.shots !== view.shots) {
 			view.shots = pb.shots;
 			const d = Math.hypot(x - this.me.x, z - this.me.z);
 			this.sound.shot(pb.weapon, Math.max(0.08, 1 - d / 40) * 0.6);
+			const range = WEAPONS[pb.weapon].range;
+			view.gun.fire(this.trace(view.gun.muzzlePoint, view.gun.aim, range).t);
 		}
 	}
 
@@ -1168,6 +1179,8 @@ const BODY_CAPSULES: [number, number, number][] = [
 	[J.rShoulder, J.rHand, 0.08]
 ];
 
+// scratch, for where another player's right hand is
+const hand = new THREE.Vector3();
 const PARTICLE = new THREE.BoxGeometry(0.05, 0.05, 0.05);
 
 function lerpAngle(a: number, b: number, t: number) {

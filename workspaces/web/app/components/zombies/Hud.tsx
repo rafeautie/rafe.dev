@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { Button } from '~/components/ui/button';
 import type { GameClient, HudState } from '~/lib/zombies/game/client';
 import type { GameStats } from '~/lib/zombies/protocol';
@@ -277,7 +277,7 @@ function Stats({ stats, you }: { stats: GameStats; you?: string }) {
 	);
 }
 
-const STATS_WIDTH = 'w-[min(40rem,calc(100vw-2rem))]';
+const STATS_WIDTH = 'w-[min(48rem,calc(100vw-2rem))]';
 
 function GameOver({
 	hud,
@@ -305,8 +305,8 @@ function GameOver({
 	);
 }
 
-// Its own component so it opens on the pause screen each time, not wherever it
-// was left. The game's numbers so far sit in a card beside it.
+// The pause screen: the menu and the settings side by side, with the game's
+// numbers so far in a card below, as wide as the two together.
 function PauseMenu({
 	hud,
 	client,
@@ -316,29 +316,9 @@ function PauseMenu({
 	client: GameClient;
 	onLeave: () => void;
 }) {
-	const [view, setView] = useState<'pause' | 'settings'>('pause');
-
-	// ESC steps back out of Settings. On the pause screen itself it can't
-	// resume: browsers only capture the mouse after a click or another key.
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === 'Escape' && view === 'settings') setView('pause');
-		};
-		window.addEventListener('keydown', onKey);
-		return () => window.removeEventListener('keydown', onKey);
-	}, [view]);
-
 	return (
 		<Overlay>
-			{view === 'settings' ? (
-				<Box>
-					<p className="text-2xl tracking-tight">Settings</p>
-					<SettingsForm className="mt-3 w-80" />
-					<Button className="mt-4" onClick={() => setView('pause')}>
-						Back
-					</Button>
-				</Box>
-			) : (
+			<div className={cn('grid gap-4 md:grid-cols-2', STATS_WIDTH)}>
 				<Box>
 					<p className="text-2xl tracking-tight">Paused</p>
 					<p className="text-sm text-muted-foreground">
@@ -347,33 +327,35 @@ function PauseMenu({
 							: 'The game keeps going for everyone else'}
 					</p>
 					<Controls className="mt-2 w-full" />
-					<div className="mt-3 flex gap-2">
+					<div className="mt-auto flex gap-2 pt-3">
 						<Button onClick={() => client.lock()}>Play</Button>
-						<Button variant="outline" onClick={() => setView('settings')}>
-							Settings
-						</Button>
 						<Button variant="outline" onClick={onLeave}>
 							Leave
 						</Button>
 					</div>
 				</Box>
-			)}
-			<Box className={STATS_WIDTH}>
-				<p className="text-2xl tracking-tight">Stats</p>
-				<p className="mb-4 text-sm text-muted-foreground">
-					{hud.round ? `Round ${hud.round} so far` : 'Nothing yet, the first round is coming'}
-				</p>
-				{hud.stats && <Stats stats={hud.stats} you={hud.players.find((p) => p.you)?.id} />}
-			</Box>
+				<Box>
+					<p className="text-2xl tracking-tight">Settings</p>
+					<SettingsForm className="mt-3 w-full" />
+				</Box>
+				<Box className="md:col-span-2">
+					<p className="text-2xl tracking-tight">Stats</p>
+					<p className="mb-4 text-sm text-muted-foreground">
+						{hud.round ? `Round ${hud.round} so far` : 'Nothing yet, the first round is coming'}
+					</p>
+					{hud.stats && <Stats stats={hud.stats} you={hud.players.find((p) => p.you)?.id} />}
+				</Box>
+			</div>
 		</Overlay>
 	);
 }
 
-// Dims and blurs the game behind one or more boxes.
+// Dims and blurs the game behind one or more boxes, centred, and scrolling
+// rather than cut off when they're taller than the window.
 function Overlay({ children }: { children: React.ReactNode }) {
 	return (
-		<div className="pointer-events-auto absolute inset-0 flex flex-wrap content-center items-stretch justify-center gap-4 overflow-y-auto bg-background/40 p-4 backdrop-blur-sm">
-			{children}
+		<div className="pointer-events-auto absolute inset-0 flex overflow-y-auto bg-background/40 p-4 backdrop-blur-sm">
+			<div className="m-auto flex flex-wrap justify-center gap-4">{children}</div>
 		</div>
 	);
 }
