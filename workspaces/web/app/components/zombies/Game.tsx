@@ -16,6 +16,9 @@ export function Game({ session, onLeave }: { session: Session; onLeave: () => vo
 			if (cancelled || !canvas.current) return;
 			game = new GameClient(canvas.current, session);
 			game.start();
+			// straight into the game: the click on Start Game still counts, so
+			// the mouse can be captured without another one
+			game.lock();
 			setClient(game);
 			// for poking at the game from the console while developing
 			if (import.meta.env.DEV) Object.assign(window, { zombies: game });

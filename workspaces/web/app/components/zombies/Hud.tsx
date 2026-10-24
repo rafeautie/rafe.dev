@@ -1,7 +1,10 @@
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Button } from '~/components/ui/button';
+import { Slider } from '~/components/ui/slider';
+import { Switch } from '~/components/ui/switch';
 import type { GameClient } from '~/lib/zombies/game/client';
 import { PLAYER } from '~/lib/zombies/rules';
+import { RANGES, settings, type Settings } from '~/lib/zombies/settings';
 import { cn } from '~/lib/utils';
 import { Controls } from './Zombies';
 
@@ -14,7 +17,9 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 	const hud = useSyncExternalStore(client.subscribe, client.getHud);
 	const hurt = Math.max(0, 1 - hud.hp / PLAYER.health);
 	const over = hud.phase === 'over';
-	const paused = !hud.locked && !over;
+	// before the mouse is first captured there is nothing to pause, just a click to start
+	const waiting = !hud.locked && !hud.played && !over;
+	const paused = !hud.locked && hud.played && !over;
 
 	return (
 		<div className="pointer-events-none absolute inset-0 font-medium text-foreground tabular-nums">
@@ -156,19 +161,13 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				)}
 			</div>
 
-			{paused && (
-				<Card>
-					<p className="text-2xl tracking-tight">Paused</p>
-					<p className="text-sm text-muted-foreground">The game keeps going for everyone else</p>
-					<Controls className="mt-2 w-full" />
-					<div className="mt-3 flex gap-2">
-						<Button onClick={() => client.lock()}>Play</Button>
-						<Button variant="outline" onClick={onLeave}>
-							Leave
-						</Button>
-					</div>
-				</Card>
+			{waiting && (
+				<Panel className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-6 px-3.5 py-2 text-sm">
+					Click to Play
+				</Panel>
 			)}
+
+			{paused && <PauseMenu client={client} onLeave={onLeave} />}
 
 			{over && (
 				<Card>
@@ -192,6 +191,93 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 					</div>
 				</Card>
 			)}
+		</div>
+	);
+}
+
+// Its own component so it opens on the pause screen each time, not wherever it
+// was left.
+function PauseMenu({ client, onLeave }: { client: GameClient; onLeave: () => void }) {
+	const [view, setView] = useState<'pause' | 'settings'>('pause');
+
+	if (view === 'settings') {
+		return (
+			<Card>
+				<p className="text-2xl tracking-tight">Settings</p>
+				<SettingsForm />
+				<div className="mt-4 flex w-full gap-2">
+					<Button onClick={() => setView('pause')}>Back</Button>
+					<Button variant="ghost" className="ml-auto" onClick={() => settings.reset()}>
+						Reset to Defaults
+					</Button>
+				</div>
+			</Card>
+		);
+	}
+	return (
+		<Card>
+			<p className="text-2xl tracking-tight">Paused</p>
+			<p className="text-sm text-muted-foreground">The game keeps going for everyone else</p>
+			<Controls className="mt-2 w-full" />
+			<div className="mt-3 flex gap-2">
+				<Button onClick={() => client.lock()}>Play</Button>
+				<Button variant="outline" onClick={() => setView('settings')}>
+					Settings
+				</Button>
+				<Button variant="outline" onClick={onLeave}>
+					Leave
+				</Button>
+			</div>
+		</Card>
+	);
+}
+
+const PERCENT = (v: number) => `${Math.round(v * 100)}%`;
+
+const SLIDERS: {
+	key: keyof typeof RANGES;
+	label: string;
+	format: (v: number) => string;
+}[] = [
+	{ key: 'volume', label: 'Volume', format: (v) => String(v) },
+	{ key: 'sensitivity', label: 'Mouse Sensitivity', format: (v) => v.toFixed(2) },
+	{ key: 'aimSensitivity', label: 'Aim Sensitivity', format: PERCENT },
+	{ key: 'fov', label: 'Field of View', format: (v) => `${v}°` }
+];
+
+function SettingsForm() {
+	const current = useSyncExternalStore(settings.subscribe, settings.get);
+	const set = (patch: Partial<Settings>) => settings.set(patch);
+
+	return (
+		<div className="mt-3 flex w-80 flex-col gap-4 text-sm">
+			{SLIDERS.map(({ key, label, format }) => (
+				<div key={key} className="flex flex-col gap-1.5">
+					<div className="flex justify-between">
+						<span className="text-muted-foreground">{label}</span>
+						<span>{format(current[key])}</span>
+					</div>
+					<Slider
+						{...RANGES[key]}
+						value={current[key]}
+						onValueChange={(value) => set({ [key]: value })}
+						aria-label={label}
+					/>
+				</div>
+			))}
+			<div className="flex items-center justify-between">
+				<span id="invert-look" className="text-muted-foreground">
+					Invert Look
+				</span>
+				<Switch
+					aria-labelledby="invert-look"
+					checked={current.invertY}
+					onCheckedChange={(checked) => set({ invertY: checked })}
+				/>
+			</div>
+			<p className="text-[0.8125rem] text-muted-foreground">
+				Aim sensitivity is a share of mouse sensitivity, used while aiming down sights.
+			</p>
 		</div>
 	);
 }

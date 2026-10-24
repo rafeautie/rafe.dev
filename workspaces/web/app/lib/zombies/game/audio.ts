@@ -17,6 +17,13 @@ export class Sound {
 	private ctx: AudioContext | null = null;
 	private master: GainNode | null = null;
 	private noise: AudioBuffer | null = null;
+	private volume = 0.5;
+
+	// 0 to 1, from the player's settings
+	setVolume(volume: number) {
+		this.volume = volume * 0.7;
+		if (this.master) this.master.gain.value = this.volume;
+	}
 
 	// Browsers only allow sound after a click or key press.
 	unlock() {
@@ -27,7 +34,7 @@ export class Sound {
 		const ctx = new AudioContext();
 		this.ctx = ctx;
 		this.master = ctx.createGain();
-		this.master.gain.value = 0.5;
+		this.master.gain.value = this.volume;
 		this.master.connect(ctx.destination);
 		const length = ctx.sampleRate;
 		this.noise = ctx.createBuffer(1, length, ctx.sampleRate);

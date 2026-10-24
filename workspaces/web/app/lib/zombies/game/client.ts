@@ -4,6 +4,7 @@ import type { HostMessage, LifeState, Phase, PlayerSnap, Snapshot, ZombieSnap } 
 import { ZOMBIE_ATTACKING, ZOMBIE_RISING } from '../protocol';
 import { PLAYER, ZOMBIE } from '../rules';
 import type { Session } from '../session';
+import { settings } from '../settings';
 import { KNIFE, WEAPONS, ammoCost, type WeaponId } from '../weapons';
 import { Sound } from './audio';
 import { Body, J, Ragdoll, playerPose, rayCapsule, zombiePose, type Joints } from './rig';
@@ -19,8 +20,8 @@ const INTERP_DELAY = 110; // ms
 const SEND_EVERY = 1 / 30;
 const HUD_EVERY = 0.05;
 const MOUSE_SPEED = 0.0022;
-const FOV = 75;
-const ADS_FOV = 55;
+// how much narrower the view gets when aiming down sights
+const ADS_ZOOM = 20;
 const RAGDOLL_LIFE = 12;
 const MAX_RAGDOLLS = 20;
 
@@ -60,6 +61,9 @@ export type HudState = {
 	hurts: number;
 	pops: { id: number; amount: number }[];
 	locked: boolean;
+	// whether the mouse has been captured yet this game, so the first
+	// click-to-play prompt isn't mistaken for a pause
+	played: boolean;
 	isHost: boolean;
 	area: string;
 };
@@ -92,7 +96,7 @@ type Particle = { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: nu
 export class GameClient {
 	private renderer: THREE.WebGLRenderer;
 	private scene = new THREE.Scene();
-	private camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 200);
+	private camera = new THREE.PerspectiveCamera(settings.get().fov, 1, 0.05, 200);
 	private map: GameMap;
 	private blocking: Blocking;
 	private world: World;
@@ -142,6 +146,7 @@ export class GameClient {
 	private frame = 0;
 	private last = 0;
 	private disposers: (() => void)[] = [];
+	private played = false;
 
 	constructor(
 		private canvas: HTMLCanvasElement,
@@ -174,6 +179,10 @@ export class GameClient {
 		this.hud = this.makeHud();
 		session.listen((m) => this.receive(m));
 		this.bindInput();
+		this.sound.setVolume(settings.get().volume / 100);
+		this.disposers.push(
+			settings.subscribe(() => this.sound.setVolume(settings.get().volume / 100))
+		);
 		this.resize();
 	}
 
@@ -217,7 +226,8 @@ export class GameClient {
 	lock() {
 		this.sound.unlock();
 		if (this.phase === 'over') return;
-		void this.canvas.requestPointerLock();
+		// refused without a recent click, which leaves the click-to-play prompt up
+		this.canvas.requestPointerLock()?.catch(() => {});
 	}
 
 	restart() {
@@ -261,7 +271,7 @@ export class GameClient {
 			if (!locked()) {
 				this.keys.clear();
 				this.buttons.clear();
-			}
+			} else this.played = true;
 			this.publishHud();
 		});
 		on(window, 'resize', () => this.resize());
@@ -414,8 +424,10 @@ export class GameClient {
 	private update(dt: number, now: number) {
 		const active = document.pointerLockElement === this.canvas && this.phase !== 'over';
 		if (active) {
-			this.me.yaw -= this.look.x * MOUSE_SPEED * (1 - this.ads * 0.4);
-			this.me.pitch -= this.look.y * MOUSE_SPEED * (1 - this.ads * 0.4);
+			const { sensitivity, aimSensitivity, invertY } = settings.get();
+			const speed = MOUSE_SPEED * sensitivity * (1 + (aimSensitivity - 1) * this.ads);
+			this.me.yaw -= this.look.x * speed;
+			this.me.pitch -= this.look.y * speed * (invertY ? -1 : 1);
 			this.me.pitch = Math.max(-1.45, Math.min(1.45, this.me.pitch));
 		}
 		this.look.x = this.look.y = 0;
@@ -1036,7 +1048,7 @@ export class GameClient {
 			this.camera.position.set(me.x, me.y + eye + bob, me.z);
 			this.camera.rotation.set(me.pitch, me.yaw, this.life === 'downed' ? 0.12 : 0);
 		}
-		const fov = FOV + (ADS_FOV - FOV) * this.ads + (this.sprinting() ? 4 : 0);
+		const fov = settings.get().fov - ADS_ZOOM * this.ads + (this.sprinting() ? 4 : 0);
 		if (Math.abs(this.camera.fov - fov) > 0.01) {
 			this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 14);
 			this.camera.updateProjectionMatrix();
@@ -1068,6 +1080,7 @@ export class GameClient {
 			hurts: 0,
 			pops: [],
 			locked: false,
+			played: false,
 			isHost: this.session.state.isHost,
 			area: ''
 		};
@@ -1107,6 +1120,7 @@ export class GameClient {
 			hint: this.hint,
 			note: performance.now() < this.noteUntil ? this.hud.note : null,
 			locked: document.pointerLockElement === this.canvas,
+			played: this.played,
 			area: this.map.roomName(this.me.x, this.me.z)
 		};
 		for (const l of this.hudListeners) l();
