@@ -1,8 +1,9 @@
-import { CheckIcon } from 'lucide-react';
+import { CheckIcon, SettingsIcon } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { Button } from '~/components/ui/button';
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '~/components/ui/dialog';
 import { Input } from '~/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { REFUSALS } from '~/lib/zombies/net';
@@ -81,28 +82,50 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 				zombies
 			</SlashNav>
 			{/* boxed in like the tiles elsewhere on the site, with the controls and
-			    settings in a card of their own below, each only as tall as it needs */}
-			<div className="mx-auto mt-16 flex max-w-sm flex-col gap-4 sm:mt-24">
-				<div className={CARD}>
-					{!session || !state || closed ? (
-						<Start
-							name={name}
-							setName={setName}
-							joinCode={joinCode}
-							error={shownError}
-							onHost={() => begin(true)}
-							onJoin={() => begin(false)}
-						/>
-					) : state.status === 'connecting' ? (
-						<p className="text-sm font-medium text-muted-foreground">
-							{state.isHost ? 'Opening a Lobby' : `Joining Lobby ${state.code}`}
-						</p>
-					) : (
-						<Lobby session={session} onLeave={leave} />
-					)}
-				</div>
-				{/* controls and settings share the second card, one at a time */}
-				<Tabs defaultValue="controls" className={`${CARD} gap-4`}>
+			    settings a click away in a window of their own */}
+			<div className={`relative mx-auto mt-16 max-w-sm sm:mt-24 ${CARD}`}>
+				<ControlsAndSettings />
+				{!session || !state || closed ? (
+					<Start
+						name={name}
+						setName={setName}
+						joinCode={joinCode}
+						error={shownError}
+						onHost={() => begin(true)}
+						onJoin={() => begin(false)}
+					/>
+				) : state.status === 'connecting' ? (
+					<p className="text-sm font-medium text-muted-foreground">
+						{state.isHost ? 'Opening a Lobby' : `Joining Lobby ${state.code}`}
+					</p>
+				) : (
+					<Lobby session={session} onLeave={leave} />
+				)}
+			</div>
+		</div>
+	);
+}
+
+// The cog in the card's corner, and the window it opens: controls and
+// settings, one tab at a time.
+function ControlsAndSettings() {
+	return (
+		<Dialog>
+			<DialogTrigger
+				render={
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						className="absolute top-4 right-4 text-muted-foreground"
+						aria-label="Controls and Settings"
+					/>
+				}
+			>
+				<SettingsIcon />
+			</DialogTrigger>
+			<DialogContent className="p-6 sm:max-w-sm">
+				<DialogTitle className="sr-only">Controls and Settings</DialogTitle>
+				<Tabs defaultValue="controls" className="gap-4">
 					<TabsList variant="line" className="-ml-1.5">
 						<TabsTrigger value="controls" className="text-lg tracking-tight">
 							Controls
@@ -118,8 +141,8 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 						<SettingsForm />
 					</TabsContent>
 				</Tabs>
-			</div>
-		</div>
+			</DialogContent>
+		</Dialog>
 	);
 }
 
