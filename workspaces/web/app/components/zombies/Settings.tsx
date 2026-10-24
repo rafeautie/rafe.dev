@@ -2,7 +2,7 @@ import { useId, useSyncExternalStore } from 'react';
 import { Button } from '~/components/ui/button';
 import { Slider } from '~/components/ui/slider';
 import { Switch } from '~/components/ui/switch';
-import { RANGES, settings, type Settings } from '~/lib/zombies/settings';
+import { RANGES, SHADOW_LEVELS, settings, type Settings } from '~/lib/zombies/settings';
 import { cn } from '~/lib/utils';
 
 // The player's settings, the same on the lobby page and in the pause menu.
@@ -18,8 +18,11 @@ const SLIDERS: {
 	{ key: 'volume', label: 'Volume', format: (v) => String(v) },
 	{ key: 'sensitivity', label: 'Mouse Sensitivity', format: (v) => v.toFixed(2) },
 	{ key: 'aimSensitivity', label: 'Aim Sensitivity', format: PERCENT },
-	{ key: 'fov', label: 'Field of View', format: (v) => `${v}°` }
+	{ key: 'fov', label: 'Field of View', format: (v) => `${v}°` },
+	{ key: 'renderScale', label: 'Render Scale', format: (v) => `${v}%` }
 ];
+
+const SHADOW_LABELS = { off: 'Off', low: 'Low', high: 'High' } as const;
 
 export function SettingsForm({ className }: { className?: string }) {
 	const current = useSyncExternalStore(settings.subscribe, settings.get);
@@ -43,6 +46,23 @@ export function SettingsForm({ className }: { className?: string }) {
 				</div>
 			))}
 			<div className="flex items-center justify-between">
+				<span className="text-muted-foreground">Shadows</span>
+				<div className="flex gap-1" role="radiogroup" aria-label="Shadows">
+					{SHADOW_LEVELS.map((level) => (
+						<Button
+							key={level}
+							size="xs"
+							role="radio"
+							aria-checked={current.shadows === level}
+							variant={current.shadows === level ? 'default' : 'outline'}
+							onClick={() => set({ shadows: level })}
+						>
+							{SHADOW_LABELS[level]}
+						</Button>
+					))}
+				</div>
+			</div>
+			<div className="flex items-center justify-between">
 				<span id={invertId} className="text-muted-foreground">
 					Invert Look
 				</span>
@@ -53,7 +73,8 @@ export function SettingsForm({ className }: { className?: string }) {
 				/>
 			</div>
 			<p className="text-[0.8125rem] text-muted-foreground">
-				Aim sensitivity is a share of mouse sensitivity, used while aiming down sights.
+				Aim sensitivity is a share of mouse sensitivity, used while aiming down sights. A lower
+				render scale and softer shadows are the quickest ways to a smoother game.
 			</p>
 			<Button variant="outline" className="self-start" onClick={() => settings.reset()}>
 				Reset to Defaults

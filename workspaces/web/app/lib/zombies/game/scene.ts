@@ -1,14 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import {
-	COLS,
-	ROWS,
-	WINDOW_BOARDS,
-	type Door,
-	type GameMap,
-	type Machine,
-	type Window
-} from '../map';
+import { COLS, ROWS, WINDOW_BOARDS, type Door, type GameMap, type Machine } from '../map';
 import type { Finish, GroundKind, Layout, PropKind, Pt, WallKind } from '../layout';
 import type { BoxSnap } from '../protocol';
 import {
@@ -20,6 +12,7 @@ import {
 	type SurfaceName
 } from './art';
 import { BOX, PERKS, type PerkId } from '../rules';
+import type { Shadows } from '../settings';
 import { WEAPONS, ammoCost, type WeaponId } from '../weapons';
 import { VIEW_LAYER } from './viewmodel';
 
@@ -56,10 +49,19 @@ export type World = {
 	setBoards(index: number, boards: number): void;
 	setBox(box: BoxSnap): void;
 	update(dt: number): void;
+	// keeps the shadow map centred on the player
+	follow(x: number, z: number): void;
+	setShadows(quality: Shadows): void;
 };
 
 const WORLD_X = COLS;
 const WORLD_Z = ROWS;
+// the shadow map covers a square this far each way round the player, rather
+// than the whole map, so each of its texels is a few centimetres across
+const SHADOW_HALF = 36;
+const SUN_DISTANCE = 70;
+const ORIGIN = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
 const SILL = 0.9;
 const LINTEL = 2.1;
 const DOOR_TOP = 2.3;
@@ -416,6 +418,10 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 	const batch = new Batch();
 	const random = seeded(11);
 	const lights: { light: THREE.PointLight; base: number; flicker: number }[] = [];
+	// props and the like, placed as objects of their own and gathered into
+	// instances once they're all down (see instanceStatics)
+	const statics = new THREE.Group();
+	root.add(statics);
 
 	// the ground, each layer a hair above the last
 	layout.ground.forEach((g, i) => {
@@ -440,7 +446,7 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 
 	for (const b of layout.buildings) buildBuilding(batch, b, layout, m, random, art);
 	for (const room of layout.rooms) lights.push(...buildRoom(root, batch, room, layout, m, art));
-	for (const w of layout.walls) buildWall(root, batch, w.kind, w.line, layout, m, art, random);
+	for (const w of layout.walls) buildWall(statics, batch, w.kind, w.line, layout, m, art, random);
 	for (const c of layout.canopies) {
 		const roof = new THREE.ExtrudeGeometry(
 			new THREE.Shape(c.poly.map(([x, z]) => new THREE.Vector2(x, -z))),
@@ -459,14 +465,18 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 		lights.push({ light: lamp, base: lamp.intensity, flicker: 0.04 });
 	}
 
-	if (art) placeProps(root, batch, layout, art, m, random);
+	const fires: Fire[] = [];
+	if (art) placeProps(statics, batch, layout, art, m, random, fires);
 	else placePlainProps(batch, layout, m);
 	if (art) {
 		puddles(batch, layout, m, random);
 		litter(batch, layout, m, random);
 		wires(root, layout);
 	}
+	const lava = art ? lavaCracks(root, layout, random) : null;
+	const windows = buildWindows(root, batch, map, layout, art);
 	batch.flush(root);
+	instanceStatics(statics);
 	if (art) root.add(skyline(random), outskirts(map, m, random), stars(random));
 
 	const doors = map.doors.map((d) => buildDoor(root, d, m, art));
@@ -502,7 +512,6 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 		root.add(plane);
 	}
 
-	const windows = map.windows.map((w) => buildWindow(root, w, art, faceDepth(layout, w.x, w.z)));
 	let box: ReturnType<typeof buildBox> | null = null;
 	for (const machine of map.machines) {
 		if (machine.kind === 'box') box = buildBox(root, machine, art);
@@ -519,28 +528,42 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 		? new THREE.DirectionalLight('#ffad72', 2.6)
 		: new THREE.DirectionalLight('#ffffff', 1.5);
 	// with the art, a low sun setting off to the west
-	const cx = WORLD_X / 2;
-	const cz = WORLD_Z / 2;
-	if (art) sun.position.set(cx - 60, 30, cz + 24);
-	else sun.position.set(cx + 20, 50, cz + 12);
-	sun.target.position.set(cx, 0, cz);
+	const sunDir = (art ? new THREE.Vector3(-60, 30, 24) : new THREE.Vector3(20, 50, 12)).normalize();
 	sun.castShadow = true;
 	sun.shadow.mapSize.set(2048, 2048);
-	const half = Math.max(WORLD_X, WORLD_Z) / 2 + 8;
 	Object.assign(sun.shadow.camera, {
-		left: -half,
-		right: half,
-		top: half,
-		bottom: -half,
+		left: -SHADOW_HALF,
+		right: SHADOW_HALF,
+		top: SHADOW_HALF,
+		bottom: -SHADOW_HALF,
 		near: 1,
-		far: 180
+		far: SUN_DISTANCE * 2 + 40
 	});
+	sun.shadow.camera.updateProjectionMatrix();
 	sun.shadow.bias = -0.0004;
 	// the gun in hand is drawn in its own pass and needs the same light
 	ambient.layers.enable(VIEW_LAYER);
 	sun.layers.enable(VIEW_LAYER);
 	sun.shadow.normalBias = 0.03;
 	root.add(sun, sun.target);
+	// the light's own frame, so its target can be snapped to the shadow
+	// map's texels: moved freely, the shadows' edges would crawl with every
+	// step the player took
+	const sunFrame = new THREE.Quaternion().setFromRotationMatrix(
+		new THREE.Matrix4().lookAt(sunDir, ORIGIN, UP)
+	);
+	const sunFrameBack = sunFrame.clone().invert();
+	const snap = new THREE.Vector3();
+	const follow = (x: number, z: number) => {
+		const texel = (2 * SHADOW_HALF) / sun.shadow.mapSize.width;
+		snap.set(x, 0, z).applyQuaternion(sunFrameBack);
+		snap.x = Math.round(snap.x / texel) * texel;
+		snap.y = Math.round(snap.y / texel) * texel;
+		snap.applyQuaternion(sunFrame);
+		sun.target.position.copy(snap);
+		sun.position.copy(snap).addScaledVector(sunDir, SUN_DISTANCE);
+	};
+	follow(WORLD_X / 2, WORLD_Z / 2);
 
 	let clock = 0;
 	return {
@@ -563,15 +586,17 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 			}
 		},
 		setBoards(index, boards) {
-			windows[index]?.setBoards(boards);
+			windows.setBoards(index, boards);
 		},
 		setBox(state) {
 			box?.set(state);
 		},
 		update(dt) {
 			clock += dt;
-			for (const w of windows) w.update(dt);
+			windows.update(dt);
 			box?.update(dt);
+			lava?.update(dt);
+			for (const f of fires) burn(f, dt, clock);
 			for (const door of doors) {
 				if (door.opening < 0 || !door.mesh.visible) continue;
 				door.opening += dt;
@@ -585,8 +610,105 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 				const n = Math.sin(clock * 23 + l.base) * Math.sin(clock * 7.3) * Math.sin(clock * 1.7 + 2);
 				l.light.intensity = l.base * (n > 0.85 - l.flicker * 4 ? 0.25 : 1);
 			}
+		},
+		follow,
+		setShadows(quality) {
+			sun.castShadow = quality !== 'off';
+			const size = quality === 'high' ? 2048 : 1024;
+			if (sun.shadow.mapSize.width === size) return;
+			sun.shadow.mapSize.set(size, size);
+			// thrown away so it's made again at the new size
+			sun.shadow.map?.dispose();
+			sun.shadow.map = null;
 		}
 	};
+}
+
+// Gathers the props into instances: every mesh drawn from the same geometry
+// with the same material becomes one draw call however many times it stands
+// nearby. Thirty barrels, say, were thirty calls, and thirty more for their
+// shadows. They're gathered by patch of town rather than all together, since
+// one instanced mesh is drawn whole or not at all: gathered across the whole
+// map, every barrel would be drawn whenever any one was in view.
+const INSTANCE_PATCH = 20;
+function instanceStatics(group: THREE.Group) {
+	group.updateMatrixWorld(true);
+	const alike = new Map<string, THREE.Mesh[]>();
+	const at = new THREE.Vector3();
+	group.traverse((o) => {
+		const mesh = o as THREE.Mesh;
+		if (!mesh.isMesh || (mesh as THREE.InstancedMesh).isInstancedMesh) return;
+		if (Array.isArray(mesh.material)) return;
+		// a part of a model turned off (see fitted) stays off
+		for (let p: THREE.Object3D | null = mesh; p && p !== group; p = p.parent)
+			if (!p.visible) return;
+		at.setFromMatrixPosition(mesh.matrixWorld);
+		const patch = `${Math.floor(at.x / INSTANCE_PATCH)},${Math.floor(at.z / INSTANCE_PATCH)}`;
+		const key = `${mesh.geometry.uuid}|${mesh.material.uuid}|${patch}`;
+		const list = alike.get(key) ?? [];
+		list.push(mesh);
+		alike.set(key, list);
+	});
+	for (const list of alike.values()) {
+		if (list.length < 2) continue;
+		const first = list[0];
+		const instanced = new THREE.InstancedMesh(first.geometry, first.material, list.length);
+		list.forEach((mesh, i) => instanced.setMatrixAt(i, mesh.matrixWorld));
+		instanced.castShadow = first.castShadow;
+		instanced.receiveShadow = first.receiveShadow;
+		instanced.matrixAutoUpdate = false;
+		instanced.computeBoundingSphere();
+		group.add(instanced);
+		for (const mesh of list) mesh.removeFromParent();
+	}
+	pruneEmpty(group);
+}
+
+// Takes out the empty groups under an object, which would otherwise still
+// be walked every frame.
+function pruneEmpty(root: THREE.Object3D) {
+	const prune = (o: THREE.Object3D) => {
+		for (const child of [...o.children]) prune(child);
+		if (o !== root && o.children.length === 0 && o.type === 'Group') o.removeFromParent();
+	};
+	prune(root);
+}
+
+// Merges everything under an object into one mesh per material, keeping its
+// place under the object, so something made of a dozen pieces that moves
+// as one (a door) is drawn in a couple of calls.
+const local = new THREE.Matrix4();
+function mergeParts(holder: THREE.Object3D) {
+	holder.updateMatrixWorld(true);
+	const back = holder.matrixWorld.clone().invert();
+	const alike = new Map<
+		string,
+		{ material: THREE.Material; parts: THREE.BufferGeometry[]; shadow: boolean }
+	>();
+	const meshes: THREE.Mesh[] = [];
+	holder.traverse((o) => {
+		if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+	});
+	for (const mesh of meshes) {
+		mesh.removeFromParent();
+		if (Array.isArray(mesh.material) || !mesh.visible) continue;
+		const g = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+		g.applyMatrix4(local.multiplyMatrices(back, mesh.matrixWorld));
+		// only alike geometry merges, so each set is kept to one shape of data
+		const key = `${mesh.material.uuid}|${Object.keys(g.attributes).sort().join()}`;
+		const entry = alike.get(key) ?? { material: mesh.material, parts: [], shadow: mesh.castShadow };
+		entry.parts.push(g);
+		alike.set(key, entry);
+	}
+	for (const { material, parts, shadow } of alike.values()) {
+		const merged = mergeGeometries(parts, false);
+		if (!merged) continue;
+		const mesh = new THREE.Mesh(merged, material);
+		mesh.castShadow = shadow;
+		mesh.receiveShadow = true;
+		holder.add(mesh);
+	}
+	pruneEmpty(holder);
 }
 
 const centroid = (poly: Pt[]): Pt => [
@@ -1056,6 +1178,7 @@ function buildDoor(root: THREE.Object3D, door: Door, m: Materials, art: Art | nu
 		p.rotation.y = side > 0 ? 0 : Math.PI;
 		holder.add(p);
 	}
+	mergeParts(holder);
 	return { mesh, opening: -1, height: height + (door.kind === 'debris' ? 0.9 : 0) };
 }
 
@@ -1128,11 +1251,18 @@ function placeProps(
 	layout: Layout,
 	art: Art,
 	m: Materials,
-	random: () => number
+	random: () => number,
+	fires: Fire[]
 ) {
 	for (const prop of layout.props) {
 		const [x, z] = prop.at;
 		const rot = (-prop.rot * Math.PI) / 180;
+		if (prop.kind === 'fire') {
+			// the flames and the light go above the props, which are gathered
+			// into instances; the barrel itself is one of them
+			fire(root.parent ?? root, root, art, x, z, fires);
+			continue;
+		}
 		const spec = PROP_MODELS[prop.kind];
 		if (spec) {
 			const p = new THREE.Group();
@@ -1191,7 +1321,9 @@ function placePlainProps(batch: Batch, layout: Layout, m: Materials) {
 					? [6.5, 2.8, 2.4]
 					: prop.kind === 'dumpster'
 						? [1.9, 1.2, 1.1]
-						: null;
+						: prop.kind === 'fire'
+							? [0.6, 0.9, 0.6]
+							: null;
 		if (!size) continue;
 		const g = new THREE.BoxGeometry(size[0], size[1], size[2]);
 		g.rotateY((-prop.rot * Math.PI) / 180);
@@ -1370,6 +1502,7 @@ function stars(random: () => number) {
 }
 
 // A petrol pump: a cabinet with a lit display.
+const PUMP_BODY = new Map<string, THREE.Material>();
 function pump(
 	root: THREE.Object3D,
 	x: number,
@@ -1383,10 +1516,15 @@ function pump(
 	g.rotation.y = rot;
 	const island = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.18, 0.9), m.concrete);
 	island.position.y = 0.09;
-	const body = new THREE.Mesh(
-		new THREE.BoxGeometry(1, 1.7, 0.5),
-		new THREE.MeshStandardMaterial({ color: art ? '#8c2a22' : '#d0d0d0', roughness: 0.6 })
-	);
+	// one material between every pump, so they draw as one
+	const paint = art ? '#8c2a22' : '#d0d0d0';
+	let shell = PUMP_BODY.get(paint);
+	if (!shell)
+		PUMP_BODY.set(
+			paint,
+			(shell = new THREE.MeshStandardMaterial({ color: paint, roughness: 0.6 }))
+		);
+	const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1.7, 0.5), shell);
 	body.position.y = 1.03;
 	const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.3), m.glassLit);
 	screen.position.set(0, 1.45, 0.26);
@@ -1443,6 +1581,9 @@ function truck(batch: Batch, x: number, z: number, rot: number, m: Materials) {
 
 // A street lamp, its arm reaching out toward `deg` (0 east, 90 south), its
 // bulb lit and its light on the ground below.
+// the lit glass, one for every lamp rather than one each, so the lamps
+// can be drawn together
+const LIT_GLASS = new Map<string, THREE.MeshStandardMaterial>();
 function placeLamp(root: THREE.Object3D, art: Art, x: number, z: number, deg: number) {
 	const lamp = art.props.street_lamp_01.clone();
 	let bulb: THREE.Object3D | null = null;
@@ -1451,9 +1592,13 @@ function placeLamp(root: THREE.Object3D, art: Art, x: number, z: number, deg: nu
 		if (!mesh.isMesh) return;
 		const mat = mesh.material as THREE.MeshStandardMaterial;
 		if (/bulb|glass/.test(mat.name)) {
-			const lit = mat.clone();
-			lit.emissive.set('#ffc98a');
-			lit.emissiveIntensity = 3;
+			let lit = LIT_GLASS.get(mat.uuid);
+			if (!lit) {
+				lit = mat.clone();
+				lit.emissive.set('#ffc98a');
+				lit.emissiveIntensity = 3;
+				LIT_GLASS.set(mat.uuid, lit);
+			}
 			mesh.material = lit;
 			if (/bulb/.test(mat.name)) bulb = mesh;
 		}
@@ -1474,11 +1619,13 @@ function placeLamp(root: THREE.Object3D, art: Art, x: number, z: number, deg: nu
 	root.add(pool);
 }
 
-// A street lamp's light, painted on the ground under it.
+// A street lamp's light, painted on the ground under it. Every pool shares
+// one picture and one square of geometry, so they're drawn together.
+let pool: { geometry: THREE.PlaneGeometry; material: THREE.MeshBasicMaterial } | null = null;
 function lampPool() {
-	return new THREE.Mesh(
-		new THREE.PlaneGeometry(9, 9),
-		new THREE.MeshBasicMaterial({
+	pool ??= {
+		geometry: new THREE.PlaneGeometry(9, 9),
+		material: new THREE.MeshBasicMaterial({
 			map: canvasTexture(128, 128, (g) => {
 				const glow = g.createRadialGradient(64, 64, 0, 64, 64, 64);
 				glow.addColorStop(0, 'rgba(255,196,120,0.42)');
@@ -1491,7 +1638,171 @@ function lampPool() {
 			depthWrite: false,
 			blending: THREE.AdditiveBlending
 		})
-	);
+	};
+	return new THREE.Mesh(pool.geometry, pool.material);
+}
+
+// ---- fire and lava -----------------------------------------------------------
+
+// A barrel burning away: flames licking over its rim, and its light on
+// everything round it.
+type Fire = { flames: THREE.Sprite[]; light: THREE.PointLight; seed: number; top: number };
+
+let flameMaterial: THREE.SpriteMaterial | null = null;
+function fire(
+	root: THREE.Object3D,
+	statics: THREE.Object3D,
+	art: Art,
+	x: number,
+	z: number,
+	fires: Fire[]
+) {
+	const barrel = fitted(art, 'barrel_01').clone();
+	barrel.position.set(x, 0, z);
+	barrel.rotation.y = x * 3;
+	statics.add(barrel);
+	barrel.updateMatrixWorld(true);
+	const top = new THREE.Box3().setFromObject(barrel).max.y;
+	flameMaterial ??= new THREE.SpriteMaterial({
+		map: canvasTexture(64, 96, (g) => {
+			const glow = g.createRadialGradient(32, 60, 0, 32, 48, 48);
+			glow.addColorStop(0, 'rgba(255,245,200,1)');
+			glow.addColorStop(0.25, 'rgba(255,170,60,0.9)');
+			glow.addColorStop(0.6, 'rgba(255,80,10,0.35)');
+			glow.addColorStop(1, 'rgba(255,40,0,0)');
+			g.fillStyle = glow;
+			g.fillRect(0, 0, 64, 96);
+		}),
+		transparent: true,
+		depthWrite: false,
+		blending: THREE.AdditiveBlending,
+		toneMapped: false
+	});
+	const flames = [0, 1, 2].map(() => {
+		const s = new THREE.Sprite(flameMaterial!);
+		s.position.set(x, top, z);
+		s.renderOrder = 3;
+		root.add(s);
+		return s;
+	});
+	const light = new THREE.PointLight('#ff8a30', 6, 9, 1.6);
+	light.position.set(x, top + 0.5, z);
+	root.add(light);
+	fires.push({ flames, light, seed: x + z, top });
+}
+
+// the flames flicker and climb, and the light with them
+function burn(f: Fire, dt: number, clock: number) {
+	const t = clock + f.seed;
+	f.flames.forEach((s, i) => {
+		const flick = 0.5 + 0.12 * Math.sin(t * 13 + i * 2.1) + 0.06 * Math.sin(t * 31 + i);
+		s.scale.set(flick * 0.75, flick * 1.25 + 0.12 * Math.sin(t * 17 + i * 0.9), 1);
+		s.position.y = f.top + 0.2 + i * 0.16 + 0.07 * Math.sin(t * 9 + i * 1.7);
+		s.position.x += (Math.sin(t * 23 + i) * 0.02 - (s.position.x - f.light.position.x)) * 0.5;
+		s.position.z += (Math.cos(t * 19 + i) * 0.02 - (s.position.z - f.light.position.z)) * 0.5;
+	});
+	f.light.intensity = 5.5 + 1.6 * Math.sin(t * 21) * Math.sin(t * 7.3);
+}
+
+// Cracks in the ground with fire under them, the way the town in Black Ops
+// 2 is split by lava: a scorched patch, glowing fissures, and a pulse of
+// light over them. All of them are two draw calls.
+function lavaCracks(root: THREE.Object3D, layout: Layout, random: () => number) {
+	if (!layout.lava.length) return null;
+	const cracks = canvasTexture(256, 256, (g) => {
+		g.clearRect(0, 0, 256, 256);
+		const scorch = g.createRadialGradient(128, 128, 10, 128, 128, 120);
+		scorch.addColorStop(0, 'rgba(12,8,8,0.92)');
+		scorch.addColorStop(0.7, 'rgba(12,8,8,0.6)');
+		scorch.addColorStop(1, 'rgba(12,8,8,0)');
+		g.fillStyle = scorch;
+		g.fillRect(0, 0, 256, 256);
+		g.lineCap = 'round';
+		g.lineJoin = 'round';
+		// fissures wandering out from the middle to the edges, branching as
+		// they go: the glow round each first, then the fire in it, then its
+		// white-hot core
+		const walk = (x: number, y: number, a: number, width: number, steps: number) => {
+			for (let k = 0; k < steps && width > 0.8; k++) {
+				const nx = x + Math.cos(a) * (7 + random() * 9);
+				const ny = y + Math.sin(a) * (7 + random() * 9);
+				for (const [color, w, blur] of [
+					['rgba(255,80,0,0.85)', width * 3.2, 18],
+					['rgba(255,150,40,1)', width * 1.3, 4],
+					['rgba(255,240,200,0.95)', width * 0.5, 0]
+				] as const) {
+					g.strokeStyle = color;
+					g.lineWidth = w;
+					g.shadowColor = '#ff4a00';
+					g.shadowBlur = blur;
+					g.beginPath();
+					g.moveTo(x, y);
+					g.lineTo(nx, ny);
+					g.stroke();
+				}
+				x = nx;
+				y = ny;
+				a += (random() - 0.5) * 1;
+				if (random() < 0.25)
+					walk(x, y, a + (random() - 0.5) * 2.4, width * 0.6, 5 + Math.floor(random() * 6));
+				width *= 0.95;
+			}
+		};
+		const arms = 6 + Math.floor(random() * 3);
+		for (let i = 0; i < arms; i++)
+			walk(128, 128, (i / arms) * Math.PI * 2 + random() * 0.5, 5, 11 + Math.floor(random() * 6));
+	});
+	const material = new THREE.MeshBasicMaterial({
+		map: cracks,
+		transparent: true,
+		depthWrite: false,
+		toneMapped: false,
+		polygonOffset: true,
+		polygonOffsetFactor: -8,
+		polygonOffsetUnits: -8
+	});
+	const glowMaterial = new THREE.MeshBasicMaterial({
+		map: canvasTexture(64, 64, (g) => {
+			const glow = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+			glow.addColorStop(0, 'rgba(255,120,30,0.5)');
+			glow.addColorStop(0.5, 'rgba(255,80,10,0.18)');
+			glow.addColorStop(1, 'rgba(255,60,0,0)');
+			g.fillStyle = glow;
+			g.fillRect(0, 0, 64, 64);
+		}),
+		transparent: true,
+		depthWrite: false,
+		blending: THREE.AdditiveBlending,
+		toneMapped: false
+	});
+	const crackParts: THREE.BufferGeometry[] = [];
+	const glowParts: THREE.BufferGeometry[] = [];
+	for (const { at, size, rot } of layout.lava) {
+		const place = (g: THREE.BufferGeometry, s: number, y: number) =>
+			g
+				.scale(s, s, 1)
+				.rotateX(-Math.PI / 2)
+				.rotateY((-rot * Math.PI) / 180)
+				.translate(at[0], y, at[1]);
+		crackParts.push(place(new THREE.PlaneGeometry(1, 1), size, 0.016));
+		glowParts.push(place(new THREE.PlaneGeometry(1, 1), size * 1.7, 0.02));
+	}
+	const crackMesh = new THREE.Mesh(mergeGeometries(crackParts)!, material);
+	const glowMesh = new THREE.Mesh(mergeGeometries(glowParts)!, glowMaterial);
+	crackMesh.renderOrder = 1;
+	glowMesh.renderOrder = 2;
+	crackMesh.matrixAutoUpdate = glowMesh.matrixAutoUpdate = false;
+	root.add(crackMesh, glowMesh);
+	let clock = 0;
+	return {
+		update(dt: number) {
+			clock += dt;
+			// a slow breathing, with a flicker over it
+			const pulse = 0.5 + 0.5 * Math.sin(clock * 1.3) * Math.sin(clock * 0.37 + 1);
+			glowMaterial.opacity = 0.55 + pulse * 0.45 + 0.08 * Math.sin(clock * 11);
+			material.opacity = 0.9 + pulse * 0.1;
+		}
+	};
 }
 
 // ---- the skyline beyond the map ------------------------------------------
@@ -1606,85 +1917,147 @@ function skyline(random: () => number) {
 
 // ---- windows, the box and perks -------------------------------------------
 
-const ONE = new THREE.Vector3(1, 1, 1);
+const dummy = new THREE.Object3D();
 
-// A window: a frame in the wall's hole, boards nailed across the inside that
-// zombies pull off and players nail back, and dark behind. Built facing into
-// the area (local +z); `face` is how far the wall's inside face is from its
-// line.
-export function buildWindow(root: THREE.Object3D, w: Window, art: Art | null = null, face = 0.15) {
-	const group = new THREE.Group();
-	group.position.set(w.x, 0, w.z);
-	group.rotation.y = Math.atan2(w.nx, w.nz);
-	const width = w.width;
+// a board on a window: which instanced mesh and slot draws it, the window's
+// frame in the world, where it sits at rest, and what it's doing
+type Board = {
+	mesh: THREE.InstancedMesh;
+	slot: number;
+	frame: THREE.Matrix4;
+	width: number;
+	face: number;
+	y: number;
+	tilt: number;
+	// seconds since it was pulled off, or -1
+	falling: number;
+	// a swell as it's nailed back on, 1 to 0
+	pop: number;
+	shown: boolean;
+};
+
+// The windows: a frame in each wall's hole with dark behind it, and boards
+// nailed across the inside that zombies pull off and players nail back.
+// The frames and the dark never move, so they join the static batch; the
+// boards are two instanced meshes (one for each face of plank) across
+// every window, a couple of draw calls for the whole town's boards where
+// each was a call of its own, and another for its shadow. Each is built
+// facing into its area (local +z), its wall's inside face `face` off the
+// wall's line.
+function buildWindows(
+	root: THREE.Object3D,
+	batch: Batch,
+	map: GameMap,
+	layout: Layout,
+	art: Art | null
+) {
 	const frame = new THREE.MeshLambertMaterial({ color: art ? '#3a3027' : PALETTE.wall });
-	const boardFaces = art
+	const back = new THREE.MeshBasicMaterial({
+		color: art ? '#050506' : '#cfcfcf',
+		side: THREE.BackSide
+	});
+	const faces = art
 		? [surfaceMaterial(art, 'planks', 1.2), surfaceMaterial(art, 'planks', 1.2, '#b8a48a')]
 		: [
 				new THREE.MeshLambertMaterial({ color: '#6b4f35' }),
 				new THREE.MeshLambertMaterial({ color: '#8a6a4a' })
 			];
-	const depth = face * 2 + 0.25;
-	for (const [fw, fh, x, y] of [
-		[width + 0.16, 0.1, 0, SILL],
-		[width + 0.16, 0.1, 0, LINTEL],
-		[0.08, LINTEL - SILL, -width / 2, (SILL + LINTEL) / 2],
-		[0.08, LINTEL - SILL, width / 2, (SILL + LINTEL) / 2]
-	]) {
-		const mesh = new THREE.Mesh(new THREE.BoxGeometry(fw, fh, depth), frame);
-		mesh.position.set(x, y, face - depth / 2 + 0.02);
-		group.add(mesh);
-	}
-	// the dark room behind
-	const back = new THREE.Mesh(
-		new THREE.BoxGeometry(width, LINTEL - SILL, 1.4),
-		new THREE.MeshBasicMaterial({ color: art ? '#050506' : '#cfcfcf', side: THREE.BackSide })
-	);
-	back.position.set(0, (SILL + LINTEL) / 2, face - depth - 0.7 + 0.02);
-	group.add(back);
-	const plank = new THREE.BoxGeometry(width + 0.3, 0.17, 0.06);
-	const boards = Array.from({ length: WINDOW_BOARDS }, (_, i) => {
-		const mesh = new THREE.Mesh(plank, boardFaces[i % 2]);
-		const home = {
-			y: SILL + 0.12 + i * ((LINTEL - SILL - 0.24) / (WINDOW_BOARDS - 1)),
-			tilt: (i % 2 ? 1 : -1) * (0.12 + ((i * 37) % 5) * 0.03)
-		};
-		mesh.position.set(0, home.y, face + 0.04);
-		mesh.rotation.z = home.tilt;
-		mesh.castShadow = true;
-		group.add(mesh);
-		// falling: seconds since it came off, or -1
-		return { mesh, home, falling: -1 };
+	const plank = new THREE.BoxGeometry(1, 0.17, 0.06);
+	const perFace = Math.max(1, Math.ceil((map.windows.length * WINDOW_BOARDS) / 2));
+	const meshes = faces.map((material) => {
+		const mesh = new THREE.InstancedMesh(plank, material, perFace);
+		mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+		mesh.castShadow = mesh.receiveShadow = true;
+		mesh.frustumCulled = false;
+		mesh.matrixAutoUpdate = false;
+		root.add(mesh);
+		return mesh;
 	});
-	root.add(group);
-	let shown = WINDOW_BOARDS;
+	const place = (b: Board) => {
+		// pulled outward through the window and dropped, or at rest
+		const t = Math.max(0, b.falling);
+		dummy.position.set(0, b.y + t * 0.6 - t * t * 4, b.face + 0.04 - t * 2.2);
+		dummy.rotation.set(t * 3, 0, b.tilt);
+		const s = b.shown ? 1 + b.pop * 0.15 : 0;
+		dummy.scale.set(b.width * s, s, s);
+		dummy.updateMatrix();
+		dummy.matrix.premultiply(b.frame);
+		b.mesh.setMatrixAt(b.slot, dummy.matrix);
+		b.mesh.instanceMatrix.needsUpdate = true;
+	};
+	const slots = [0, 0];
+	const windows = map.windows.map((w) => {
+		const face = faceDepth(layout, w.x, w.z);
+		const at = new THREE.Matrix4().makeRotationY(Math.atan2(w.nx, w.nz)).setPosition(w.x, 0, w.z);
+		const width = w.width;
+		const depth = face * 2 + 0.25;
+		for (const [fw, fh, x, y] of [
+			[width + 0.16, 0.1, 0, SILL],
+			[width + 0.16, 0.1, 0, LINTEL],
+			[0.08, LINTEL - SILL, -width / 2, (SILL + LINTEL) / 2],
+			[0.08, LINTEL - SILL, width / 2, (SILL + LINTEL) / 2]
+		]) {
+			batch.add(
+				frame,
+				new THREE.BoxGeometry(fw, fh, depth)
+					.translate(x, y, face - depth / 2 + 0.02)
+					.applyMatrix4(at)
+			);
+		}
+		// the dark room behind
+		batch.add(
+			back,
+			new THREE.BoxGeometry(width, LINTEL - SILL, 1.4)
+				.translate(0, (SILL + LINTEL) / 2, face - depth - 0.7 + 0.02)
+				.applyMatrix4(at)
+		);
+		const boards = Array.from({ length: WINDOW_BOARDS }, (_, i): Board => {
+			const b: Board = {
+				mesh: meshes[i % 2],
+				slot: slots[i % 2]++,
+				frame: at,
+				width: width + 0.3,
+				face,
+				y: SILL + 0.12 + i * ((LINTEL - SILL - 0.24) / (WINDOW_BOARDS - 1)),
+				tilt: (i % 2 ? 1 : -1) * (0.12 + ((i * 37) % 5) * 0.03),
+				falling: -1,
+				pop: 0,
+				shown: true
+			};
+			place(b);
+			return b;
+		});
+		return { boards, shown: WINDOW_BOARDS };
+	});
 	return {
-		setBoards(n: number) {
+		setBoards(index: number, n: number) {
+			const w = windows[index];
+			if (!w) return;
 			// a board pulled off falls out of the frame; one put back pops in
-			for (let i = n; i < shown; i++) boards[i].falling = 0;
-			for (let i = shown; i < n; i++) {
-				const b = boards[i];
+			for (let i = n; i < w.shown; i++) w.boards[i].falling = 0;
+			for (let i = w.shown; i < n; i++) {
+				const b = w.boards[i];
 				b.falling = -1;
-				b.mesh.visible = true;
-				b.mesh.position.set(0, b.home.y, face + 0.04);
-				b.mesh.rotation.set(0, 0, b.home.tilt);
-				b.mesh.scale.setScalar(1.15);
+				b.shown = true;
+				b.pop = 1;
+				place(b);
 			}
-			shown = n;
+			w.shown = n;
 		},
 		update(dt: number) {
-			for (const b of boards) {
-				b.mesh.scale.lerp(ONE, Math.min(1, dt * 12));
-				if (b.falling < 0) continue;
-				b.falling += dt;
-				const t = b.falling;
-				// pulled outward through the window, then dropped
-				b.mesh.position.z = face + 0.04 - t * 2.2;
-				b.mesh.position.y = b.home.y + t * 0.6 - t * t * 4;
-				b.mesh.rotation.x = t * 3;
-				if (t > 0.6) {
-					b.mesh.visible = false;
-					b.falling = -1;
+			for (const w of windows) {
+				for (const b of w.boards) {
+					if (b.pop > 0) {
+						b.pop = Math.max(0, b.pop - dt * 6);
+						place(b);
+					}
+					if (b.falling < 0) continue;
+					b.falling += dt;
+					if (b.falling > 0.6) {
+						b.falling = -1;
+						b.shown = false;
+					}
+					place(b);
 				}
 			}
 		}
@@ -1705,11 +2078,37 @@ export function buildBox(root: THREE.Object3D, m: Machine, art: Art | null = nul
 	gun.visible = false;
 	const light = new THREE.PointLight('#ffe7a8', 0, 5, 2);
 	light.position.set(0, 1.4, 0.2);
-	group.add(base, hinge, gun, light);
+	// the beam of light that stands over the box, so it can be found from
+	// across the map, as in the games this is after
+	const beam = new THREE.Mesh(
+		new THREE.CylinderGeometry(0.1, 0.42, 44, 10, 1, true).translate(0, 22.3, 0),
+		new THREE.MeshBasicMaterial({
+			map: canvasTexture(8, 128, (g) => {
+				const fade = g.createLinearGradient(0, 0, 0, 128);
+				fade.addColorStop(0, 'rgba(255,255,255,0)');
+				fade.addColorStop(0.7, 'rgba(255,255,255,0.35)');
+				fade.addColorStop(1, 'rgba(255,255,255,0.9)');
+				g.fillStyle = fade;
+				g.fillRect(0, 0, 8, 128);
+			}),
+			color: '#9cc6ff',
+			transparent: true,
+			opacity: 0.5,
+			depthWrite: false,
+			blending: THREE.AdditiveBlending,
+			side: THREE.DoubleSide,
+			fog: false,
+			toneMapped: false
+		})
+	);
+	beam.position.set(0, 0.3, 0.1);
+	beam.renderOrder = 3;
+	group.add(base, hinge, gun, light, beam);
 	root.add(group);
 	let state: BoxSnap = { state: 'idle', weapon: null, by: null, left: 0 };
 	let open = 0;
 	let spin = 0;
+	let clock = 0;
 	const ids = Object.keys(WEAPONS) as WeaponId[];
 	const show = (id: WeaponId) => gun.scale.set(WEAPONS[id].length * 1.4 + 0.1, 0.1, 0.08);
 	return {
@@ -1717,11 +2116,15 @@ export function buildBox(root: THREE.Object3D, m: Machine, art: Art | null = nul
 			state = next;
 		},
 		update(dt: number) {
+			clock += dt;
 			const opening = state.state !== 'idle';
 			open += ((opening ? 1 : 0) - open) * Math.min(1, dt * 6);
 			hinge.rotation.x = -open * 1.6;
 			light.intensity = open * 4;
 			gun.visible = open > 0.3;
+			// the beam breathes, and dims while the box is open
+			(beam.material as THREE.MeshBasicMaterial).opacity =
+				(0.42 + 0.1 * Math.sin(clock * 1.7)) * (1 - open * 0.6);
 			if (state.state === 'rolling') {
 				// rises out of the box, flicking through guns, slowing as it goes
 				spin += dt * (2 + state.left * 4);
@@ -1788,49 +2191,103 @@ function crateFrom(art: Art) {
 	return { base: model as THREE.Object3D, hinge };
 }
 
-// A perk machine: a tall cabinet in the perk's colour, its name and price on
-// the front, lit from within.
+// A perk machine, the way the games this is after have them: a tall vending
+// cabinet in the perk's colour on a dark plinth, its lit front showing a
+// bottle, the perk's name and its price, neon down its edges, and its own
+// light spilling out of it.
 export function buildPerk(root: THREE.Object3D, m: Machine, perk: PerkId) {
 	const group = new THREE.Group();
 	group.position.set(m.x, 0, m.z);
 	group.rotation.y = Math.atan2(m.nx, m.nz);
-	const color = PERKS[perk].color;
-	const body = new THREE.MeshLambertMaterial({ color });
 	const info = PERKS[perk];
-	const face = new THREE.MeshLambertMaterial({
-		emissive: color,
-		emissiveIntensity: 0.35,
-		map: canvasTexture(256, 512, (g) => {
-			g.fillStyle = color;
-			g.fillRect(0, 0, 256, 512);
-			g.fillStyle = 'rgba(255,255,255,0.9)';
-			g.fillRect(20, 40, 216, 230);
-			g.fillStyle = color;
-			g.textAlign = 'center';
-			g.textBaseline = 'middle';
-			const words = info.name.toUpperCase().split(' ');
-			g.font = `700 ${words.length > 1 ? 44 : 38}px ${FONT}`;
-			words.forEach((word, i) => g.fillText(word, 128, 155 + (i - (words.length - 1) / 2) * 52));
-			g.fillStyle = '#f5f5f5';
-			g.font = `600 48px ${FONT}`;
-			g.fillText(String(info.cost), 128, 340);
-			g.font = `500 22px ${FONT}`;
-			g.fillText(info.what.toUpperCase(), 128, 400, 220);
-		})
+	const color = info.color;
+	const body = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.3 });
+	const dark = new THREE.MeshStandardMaterial({ color: '#17141a', roughness: 0.7 });
+	const front = canvasTexture(256, 512, (g) => {
+		// the cabinet's colour behind everything, darker at the foot
+		const shade = g.createLinearGradient(0, 0, 0, 512);
+		shade.addColorStop(0, color);
+		shade.addColorStop(1, '#141214');
+		g.fillStyle = shade;
+		g.fillRect(0, 0, 256, 512);
+		g.textAlign = 'center';
+		g.textBaseline = 'middle';
+		// the name across the top, in light
+		g.fillStyle = 'rgba(0,0,0,0.45)';
+		g.fillRect(0, 0, 256, 96);
+		g.fillStyle = '#fff4dc';
+		g.shadowColor = '#fff1c0';
+		g.shadowBlur = 14;
+		const words = info.name.toUpperCase().split(' ');
+		g.font = `800 ${words.length > 1 ? 34 : 40}px ${FONT}`;
+		words.forEach((word, i) => g.fillText(word, 128, 48 + (i - (words.length - 1) / 2) * 38, 236));
+		g.shadowBlur = 0;
+		// the lit panel with the bottle on it
+		g.fillStyle = '#f6efe0';
+		g.beginPath();
+		g.roundRect(22, 112, 212, 250, 10);
+		g.fill();
+		g.fillStyle = color;
+		g.beginPath();
+		g.moveTo(116, 136);
+		g.lineTo(140, 136);
+		g.lineTo(140, 176);
+		g.quadraticCurveTo(170, 190, 170, 230);
+		g.lineTo(170, 322);
+		g.quadraticCurveTo(170, 340, 152, 340);
+		g.lineTo(104, 340);
+		g.quadraticCurveTo(86, 340, 86, 322);
+		g.lineTo(86, 230);
+		g.quadraticCurveTo(86, 190, 116, 176);
+		g.closePath();
+		g.fill();
+		g.fillStyle = 'rgba(255,255,255,0.28)';
+		g.fillRect(96, 200, 10, 120);
+		g.fillStyle = '#f6efe0';
+		g.fillRect(96, 244, 64, 46);
+		g.fillStyle = color;
+		g.font = `800 30px ${FONT}`;
+		g.fillText(info.short, 128, 268);
+		// the price, and what it does
+		g.fillStyle = '#fff4dc';
+		g.font = `700 54px ${FONT}`;
+		g.fillText(String(info.cost), 128, 410);
+		g.fillStyle = 'rgba(255,244,220,0.75)';
+		g.font = `500 20px ${FONT}`;
+		g.fillText(info.what.toUpperCase(), 128, 468, 232);
 	});
-	face.map!.colorSpace = THREE.SRGBColorSpace;
-	const cabinet = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.2, 0.9), [
+	const face = new THREE.MeshLambertMaterial({
+		map: front,
+		emissiveMap: front,
+		emissive: '#ffffff',
+		emissiveIntensity: 0.75
+	});
+	// box faces: +x, -x, +y, -y, +z, -z
+	const cabinet = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.3, 0.9), [
 		body,
 		body,
 		body,
-		body,
+		dark,
 		face,
 		body
 	]);
-	cabinet.position.set(0, 1.1, 0);
+	cabinet.position.set(0, 1.35, 0);
 	cabinet.castShadow = true;
-	const light = new THREE.PointLight(color, 3, 4, 2);
-	light.position.set(0, 1.6, 0.9);
-	group.add(cabinet, light);
+	const plinth = new THREE.Mesh(new THREE.BoxGeometry(1.16, 0.2, 0.96), dark);
+	plinth.position.y = 0.1;
+	plinth.castShadow = true;
+	// neon down each edge of the front and along the top
+	const neon = new THREE.MeshBasicMaterial({
+		color: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.45),
+		toneMapped: false
+	});
+	const strips = mergeGeometries([
+		new THREE.BoxGeometry(0.04, 2.1, 0.04).translate(-0.53, 1.35, 0.46),
+		new THREE.BoxGeometry(0.04, 2.1, 0.04).translate(0.53, 1.35, 0.46),
+		new THREE.BoxGeometry(1.1, 0.04, 0.04).translate(0, 2.48, 0.46)
+	])!;
+	const light = new THREE.PointLight(color, 3.5, 4.5, 2);
+	light.position.set(0, 1.5, 0.9);
+	group.add(cabinet, plinth, new THREE.Mesh(strips, neon), light);
 	root.add(group);
 }

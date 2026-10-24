@@ -1,10 +1,9 @@
 import '@fontsource-variable/archivo/standard.css';
 import '@fontsource/rubik-dirt';
-import { useSyncExternalStore } from 'react';
-import { Button } from '~/components/ui/button';
+import { useSyncExternalStore, type ComponentProps } from 'react';
 import type { GameClient, HudState } from '~/lib/zombies/game/client';
 import type { GameStats } from '~/lib/zombies/protocol';
-import { PERKS } from '~/lib/zombies/rules';
+import { PERKS, type PerkId } from '~/lib/zombies/rules';
 import { cn } from '~/lib/utils';
 import { SettingsForm } from './Settings';
 import { Controls } from './Zombies';
@@ -15,22 +14,30 @@ const NUMBER = new Intl.NumberFormat('en-US');
 const PLAYER_COLORS = ['#f4f1ea', '#6cb6ff', '#ffd24d', '#7ee08a'];
 // the round, scrawled in blood
 const BLOOD = '#b3141c';
+// the gold of a power-up, and of whatever the menus pick out
+const GOLD = '#e8b84a';
 // white text that stays readable over a bright sky or a dark wall
 const SHADOW = '[text-shadow:0_1px_2px_rgb(0_0_0/0.9),0_0_12px_rgb(0_0_0/0.5)]';
+const CHALK = "font-[family-name:'Rubik_Dirt'] font-normal tracking-normal normal-case";
 
 // Everything drawn over the game, in the style of the games it's after: no
 // boxes in the corners, just condensed capitals with a shadow, the round in a
-// rough red scrawl, and dark bands behind prompts, with numbers that do not
-// jump as they change. The menus are dark cards.
+// rough red scrawl (tally marks for the first five, as in Black Ops 2), the
+// points beside it, perks above it, the gun and its ammo opposite, and
+// power-ups along the bottom. Prompts sit on dark bands. The menus are dark
+// panels picked out in gold.
 export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => void }) {
 	const hud = useSyncExternalStore(client.subscribe, client.getHud);
 	const hurt = Math.max(0, 1 - hud.hp / hud.maxHp);
 	const over = hud.phase === 'over';
+	const downed = hud.life === 'downed';
 	// before the mouse is first captured there is nothing to pause, just a click to start
 	const waiting = !hud.locked && !hud.played && !over;
 	const paused = !hud.locked && hud.played && !over;
 	const pausedCount = hud.players.filter((p) => p.paused).length;
 	const awayCount = hud.players.filter((p) => p.away).length;
+	const lowAmmo = hud.mag > 0 && hud.mag <= Math.max(1, Math.round(hud.magSize * 0.25));
+	const inPlay = hud.life !== 'dead' && !over;
 
 	return (
 		<div
@@ -39,15 +46,28 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				SHADOW
 			)}
 		>
-			{/* damage: the edges close in as health drops */}
+			{/* the edges always a little dark, like a lens, and the colour
+			    drained while downed */}
+			<div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgb(0_0_0/0.45)_125%)]" />
+			{downed && !over && (
+				<div className="absolute inset-0 backdrop-brightness-[0.78] backdrop-grayscale-[0.8]" />
+			)}
+
+			{/* damage: the edges close in as health drops, and throb when it's low */}
 			<div
 				className="absolute inset-0 transition-opacity duration-300"
 				style={{
-					opacity: hud.life === 'downed' ? 0.9 : hurt * 0.85,
+					opacity: downed ? 0.55 : hurt * 0.85,
 					background:
 						'radial-gradient(ellipse at center, transparent 45%, color-mix(in oklch, var(--destructive) 35%, black 20%) 130%)'
 				}}
 			/>
+			{hurt > 0.5 && !downed && inPlay && (
+				<div
+					className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgb(160_10_20/0.55)_110%)]"
+					style={{ animation: `zombies-pulse ${1.1 - (hurt - 0.5)}s ease-in-out infinite` }}
+				/>
+			)}
 			<div
 				key={`hurt-${hud.hurts}`}
 				className={cn(
@@ -79,6 +99,20 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				</Panel>
 			)}
 
+			{/* a new round, called out over everything for a moment */}
+			{hud.round > 0 && !over && (
+				<div
+					key={`splash-${hud.round}`}
+					className="absolute top-[18%] left-0 flex w-full flex-col items-center"
+					style={{ animation: 'zombies-round 3.6s ease-out forwards' }}
+				>
+					<p className="text-sm tracking-[0.45em] text-white/80">Round</p>
+					<p className={cn(CHALK, 'text-[7rem] leading-none')} style={{ color: BLOOD }}>
+						{hud.round}
+					</p>
+				</div>
+			)}
+
 			{/* which way each recent hit came from */}
 			{hud.danger.map((d) => (
 				<div
@@ -90,10 +124,11 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				</div>
 			))}
 
-			{/* crosshair, with a mark for each hit */}
-			{hud.life !== 'dead' && !over && (
+			{/* crosshair: four ticks that open as the player moves and shoots and
+			    close down the sights, with a mark for each hit */}
+			{inPlay && (
 				<div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-					<div className="size-1.5 rounded-full bg-white shadow-[0_0_0_1px_rgb(0_0_0/0.35)]" />
+					<Crosshair spread={hud.spread} ads={hud.ads} />
 					<div
 						key={`hit-${hud.hits}`}
 						className={cn(
@@ -115,6 +150,18 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				</div>
 			)}
 
+			{/* the gun running dry, just under the crosshair */}
+			{inPlay && !hud.reloading && hud.life === 'alive' && (hud.mag === 0 || lowAmmo) && (
+				<p
+					className={cn(
+						'absolute top-[56%] left-1/2 -translate-x-1/2 text-sm tracking-[0.3em]',
+						hud.mag === 0 ? 'animate-pulse text-red-400' : 'text-amber-300/90'
+					)}
+				>
+					{hud.mag === 0 ? (hud.reserve > 0 ? 'Reload' : 'No Ammo') : 'Low Ammo'}
+				</p>
+			)}
+
 			{/* what can be bought or done here */}
 			<div className="absolute top-[62%] left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
 				{hud.hint && (
@@ -132,25 +179,29 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 					</Panel>
 				)}
 				{hud.note && (
-					<Panel
+					<div
+						key={hud.note.text}
 						className={cn(
 							'px-12 py-1.5',
-							hud.note.warning ? 'text-base text-red-400' : 'text-lg tracking-[0.15em]'
+							hud.note.warning
+								? 'text-base text-red-400'
+								: 'text-3xl tracking-[0.2em] [text-shadow:0_0_18px_rgb(232_184_74/0.6),0_2px_3px_rgb(0_0_0/0.9)]'
 						)}
+						style={{
+							color: hud.note.warning ? undefined : GOLD,
+							animation: hud.note.warning ? undefined : 'zombies-flash 0.5s ease-out both'
+						}}
 					>
 						{hud.note.text}
-					</Panel>
+					</div>
 				)}
 			</div>
 
 			{/* downed or dead */}
 			{hud.life !== 'alive' && !over && (
 				<Panel className="absolute top-[24%] left-1/2 flex min-w-72 -translate-x-1/2 flex-col items-center gap-1 px-14 py-3 text-center">
-					<p
-						className="font-[family-name:'Rubik_Dirt'] text-5xl font-normal tracking-normal normal-case"
-						style={{ color: BLOOD }}
-					>
-						{hud.life === 'downed' ? 'Downed' : 'You Bled Out'}
+					<p className={cn(CHALK, 'text-5xl')} style={{ color: BLOOD }}>
+						{downed ? 'Downed' : 'You Bled Out'}
 					</p>
 					<p className="text-sm text-white/75">
 						{hud.life === 'dead'
@@ -165,72 +216,43 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 				</Panel>
 			)}
 
-			{/* power-ups running, top middle */}
+			{/* power-ups running, along the bottom */}
 			{(hud.instakill > 0 || hud.double > 0) && !over && (
-				<div className="absolute top-14 left-1/2 flex -translate-x-1/2 gap-2">
-					{hud.instakill > 0 && <Boost label="Insta-Kill" left={hud.instakill} />}
-					{hud.double > 0 && <Boost label="Double Points" left={hud.double} />}
+				<div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 gap-5">
+					{hud.instakill > 0 && <Boost kind="instakill" left={hud.instakill} />}
+					{hud.double > 0 && <Boost kind="double" left={hud.double} />}
 				</div>
 			)}
 
-			{/* perks held, above the round */}
-			{hud.perks.length > 0 && (
-				<div className="absolute bottom-[8.5rem] left-5 flex gap-2">
-					{hud.perks.map((perk) => (
-						<span
-							key={perk}
-							title={PERKS[perk].name}
-							className="flex size-9 items-center justify-center rounded-full text-xs font-bold text-white ring-2 ring-black/50 [text-shadow:none]"
-							style={{
-								background: `radial-gradient(circle at 35% 30%, color-mix(in oklch, ${PERKS[perk].color} 70%, white), ${PERKS[perk].color} 55%, color-mix(in oklch, ${PERKS[perk].color} 60%, black))`
-							}}
-						>
-							{PERKS[perk].short}
-						</span>
-					))}
-				</div>
-			)}
-
-			{/* round, bottom left */}
-			<div className="absolute bottom-5 left-5 flex flex-col">
-				<p
-					key={`round-${hud.round}`}
-					className="animate-in font-[family-name:'Rubik_Dirt'] text-8xl leading-[0.85] font-normal tracking-normal duration-1000 fade-in"
-					style={{ color: BLOOD }}
-				>
-					{hud.round || '–'}
-				</p>
-				<p className="mt-1 text-sm text-white/75">
-					{hud.phase === 'break'
-						? hud.round
-							? `Next Round in ${hud.timer}`
-							: `Starting in ${hud.timer}`
-						: `${hud.left} Left`}
-				</p>
-			</div>
-
-			{/* points and ammo, bottom right */}
-			<div className="absolute right-5 bottom-5 flex flex-col items-end gap-2">
-				<div>
-					<ul className="flex flex-col items-end gap-0.5 text-base">
+			{/* the round, the points beside it, and the perks above, bottom left */}
+			<div className="absolute bottom-5 left-5 flex flex-col gap-2">
+				{hud.perks.length > 0 && (
+					<div className="flex gap-1.5">
+						{hud.perks.map((perk) => (
+							<PerkIcon key={perk} perk={perk} />
+						))}
+					</div>
+				)}
+				<div className="flex items-end gap-5">
+					<div className="flex flex-col">
+						<RoundMark round={hud.round} />
+						<p className="mt-1 text-xs tracking-[0.2em] text-white/60">
+							{hud.phase === 'break'
+								? hud.round
+									? `Next Round in ${hud.timer}`
+									: `Starting in ${hud.timer}`
+								: `${hud.left} Left`}
+						</p>
+					</div>
+					<ul className="mb-5 flex flex-col gap-0.5">
 						{hud.players.map((p, i) => (
 							<li key={p.id} className="relative flex items-baseline gap-3">
-								{p.you &&
-									hud.pops.map((pop) => (
-										<span
-											key={pop.id}
-											className={cn(
-												'absolute right-full mr-7 animate-out duration-1000 fill-mode-forwards fade-out slide-out-to-top-3',
-												pop.amount < 0 ? 'text-red-400' : 'text-amber-200'
-											)}
-										>
-											{pop.amount > 0 ? '+' : '−'}
-											{Math.abs(pop.amount)}
-										</span>
-									))}
-								{(p.paused || p.away) && (
-									<span className="text-xs text-white/55">{p.away ? 'Away' : 'Paused'}</span>
-								)}
+								<span
+									className={cn('min-w-16 text-left', p.you ? 'text-2xl' : 'text-lg')}
+									style={{ color: PLAYER_COLORS[i % PLAYER_COLORS.length] }}
+								>
+									{NUMBER.format(p.points)}
+								</span>
 								<span
 									className={cn(
 										'text-sm text-white/60 normal-case',
@@ -239,38 +261,58 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 								>
 									{p.name}
 								</span>
-								<span
-									className={cn('min-w-16 text-right', p.you ? 'text-2xl' : 'text-lg')}
-									style={{ color: PLAYER_COLORS[i % PLAYER_COLORS.length] }}
-								>
-									{NUMBER.format(p.points)}
-								</span>
+								{(p.paused || p.away) && (
+									<span className="text-xs text-white/55">{p.away ? 'Away' : 'Paused'}</span>
+								)}
+								{p.you &&
+									hud.pops.map((pop) => (
+										<span
+											key={pop.id}
+											className={cn(
+												'absolute left-full ml-3 animate-out duration-1000 fill-mode-forwards fade-out slide-out-to-top-3',
+												pop.amount < 0 ? 'text-red-400' : 'text-amber-200'
+											)}
+										>
+											{pop.amount > 0 ? '+' : '−'}
+											{Math.abs(pop.amount)}
+										</span>
+									))}
 							</li>
 						))}
 					</ul>
 				</div>
-				{hud.life !== 'dead' && (
-					<div className="flex flex-col items-end border-r-2 pr-3" style={{ borderColor: BLOOD }}>
-						<p
-							className={cn(
-								'text-sm tracking-[0.2em] text-white/75',
-								hud.reloading && 'animate-pulse'
-							)}
-						>
-							{hud.reloading ? 'Reloading' : hud.weapon}
-						</p>
-						<p className="font-bold">
-							<span className={cn('text-5xl leading-none', hud.mag === 0 && 'text-red-500')}>
-								{hud.mag}
-							</span>
-							<span className="text-2xl text-white/55"> / {hud.reserve}</span>
-						</p>
-					</div>
-				)}
 			</div>
 
+			{/* the gun and its ammo, bottom right */}
+			{hud.life !== 'dead' && (
+				<div
+					className="absolute right-5 bottom-5 flex flex-col items-end border-r-2 pr-3"
+					style={{ borderColor: BLOOD }}
+				>
+					<p
+						className={cn(
+							'text-sm tracking-[0.2em] text-white/75',
+							hud.reloading && 'animate-pulse'
+						)}
+					>
+						{hud.reloading ? 'Reloading' : hud.weapon}
+					</p>
+					<p className="font-bold">
+						<span
+							className={cn(
+								'text-5xl leading-none',
+								hud.mag === 0 ? 'text-red-500' : lowAmmo && 'text-amber-300'
+							)}
+						>
+							{hud.mag}
+						</span>
+						<span className="text-2xl text-white/55"> / {hud.reserve}</span>
+					</p>
+				</div>
+			)}
+
 			{waiting && (
-				<Panel className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-6 px-12 py-1.5 text-base">
+				<Panel className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-6 px-12 py-1.5 text-base tracking-[0.25em]">
 					Click to Play
 				</Panel>
 			)}
@@ -279,6 +321,94 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 
 			{over && <GameOver hud={hud} client={client} onLeave={onLeave} />}
 		</div>
+	);
+}
+
+// The round: tally marks scratched up for the first five, the way the games
+// this is after count them, then a number.
+function RoundMark({ round }: { round: number }) {
+	if (round < 1 || round > 5) {
+		return (
+			<p
+				key={`round-${round}`}
+				className={cn(CHALK, 'animate-in text-8xl leading-[0.85] duration-1000 fade-in')}
+				style={{ color: BLOOD }}
+			>
+				{round || '–'}
+			</p>
+		);
+	}
+	return (
+		<svg
+			key={`round-${round}`}
+			viewBox="0 0 110 100"
+			className="h-20 w-auto animate-in duration-1000 fade-in"
+			stroke={BLOOD}
+			strokeWidth="9"
+			strokeLinecap="round"
+			fill="none"
+		>
+			{Array.from({ length: Math.min(4, round) }, (_, i) => (
+				<path
+					key={i}
+					d={`M${16 + i * 22} ${10 + (i % 2) * 3} q ${i % 2 ? 3 : -3} 42 ${i % 2 ? -1 : 2} 80`}
+				/>
+			))}
+			{round === 5 && <path d="M4 72 Q 50 48 98 22" strokeWidth="8" />}
+		</svg>
+	);
+}
+
+// Four ticks round the middle, opening with `spread` and fading away as the
+// player looks down the sights.
+function Crosshair({ spread, ads }: { spread: number; ads: number }) {
+	const gap = 5 + spread * 16;
+	const tick =
+		'absolute bg-white shadow-[0_0_0_1px_rgb(0_0_0/0.5)] transition-transform duration-75';
+	return (
+		<div className="relative size-0 transition-opacity" style={{ opacity: 1 - ads }}>
+			<div className="absolute -top-px -left-px size-0.5 rounded-full bg-white" />
+			<div
+				className={cn(tick, 'h-2 w-0.5 -translate-x-1/2')}
+				style={{ transform: `translate(-50%, ${-gap - 8}px)` }}
+			/>
+			<div className={cn(tick, 'h-2 w-0.5')} style={{ transform: `translate(-50%, ${gap}px)` }} />
+			<div
+				className={cn(tick, 'h-0.5 w-2')}
+				style={{ transform: `translate(${-gap - 8}px, -50%)` }}
+			/>
+			<div className={cn(tick, 'h-0.5 w-2')} style={{ transform: `translate(${gap}px, -50%)` }} />
+		</div>
+	);
+}
+
+const PERK_GLYPHS: Record<PerkId, string> = {
+	// a shield, a bolt, two rounds, a cross
+	jugg: 'M12 3 L19 6 V12 C19 16.5 16 19.5 12 21 C8 19.5 5 16.5 5 12 V6 Z',
+	speed: 'M13 2 L5 13 H11 L10 22 L19 10 H13 Z',
+	tap: 'M8 3 C9.5 3 10 4.5 10 6 V18 H6 V6 C6 4.5 6.5 3 8 3 Z M16 3 C17.5 3 18 4.5 18 6 V18 H14 V6 C14 4.5 14.5 3 16 3 Z',
+	revive: 'M9 3 H15 V9 H21 V15 H15 V21 H9 V15 H3 V9 H9 Z'
+};
+
+// A perk, as a small square badge in its colour with a glyph on it.
+function PerkIcon({ perk }: { perk: PerkId }) {
+	const { color, name } = PERKS[perk];
+	return (
+		<span
+			title={name}
+			className="flex size-9 items-center justify-center rounded-sm ring-1 ring-black/60 [text-shadow:none]"
+			style={{
+				background: `linear-gradient(160deg, color-mix(in oklch, ${color} 75%, white), ${color} 50%, color-mix(in oklch, ${color} 55%, black))`,
+				boxShadow: `0 0 10px color-mix(in oklch, ${color} 60%, transparent)`
+			}}
+		>
+			<svg
+				viewBox="0 0 24 24"
+				className="size-6 fill-white/95 drop-shadow-[0_1px_1px_rgb(0_0_0/0.6)]"
+			>
+				<path d={PERK_GLYPHS[perk]} />
+			</svg>
+		</span>
 	);
 }
 
@@ -327,7 +457,7 @@ function Stats({ stats, you }: { stats: GameStats; you?: string }) {
 					<p className="mt-5 text-sm">By Round</p>
 					<div className="mt-1.5 max-h-56 w-full overflow-y-auto">
 						<table className="w-full text-sm">
-							<thead className="sticky top-0 bg-background text-muted-foreground">
+							<thead className="sticky top-0 bg-[#0e0b0d] text-muted-foreground">
 								<tr>
 									<th className="pb-1.5 text-left font-medium">Round</th>
 									<th className={HEAD}>Time</th>
@@ -387,7 +517,8 @@ function Stats({ stats, you }: { stats: GameStats; you?: string }) {
 }
 
 const STATS_WIDTH = 'w-[min(48rem,calc(100vw-2rem))]';
-const HEADING = 'font-archivo text-3xl font-bold tracking-wide uppercase font-stretch-75%';
+const HEADING =
+	'font-archivo text-3xl font-bold tracking-[0.12em] uppercase font-stretch-75% leading-none';
 
 function GameOver({
 	hud,
@@ -400,18 +531,20 @@ function GameOver({
 }) {
 	return (
 		<Card className={STATS_WIDTH}>
-			<p className={HEADING} style={{ color: BLOOD }}>
+			<p className={cn(CHALK, 'text-6xl leading-none')} style={{ color: BLOOD }}>
 				Game Over
 			</p>
-			<p className="mb-4 text-sm text-muted-foreground">
+			<p className="mt-1 mb-5 text-sm tracking-[0.2em] text-muted-foreground uppercase">
 				{hud.round === 1 ? 'You Survived 1 Round' : `You Survived ${hud.round} Rounds`}
 			</p>
 			{hud.stats && <Stats stats={hud.stats} you={hud.players.find((p) => p.you)?.id} />}
-			<div className="mt-4 flex gap-2">
-				{hud.isHost && <Button onClick={() => client.restart()}>Play Again</Button>}
-				<Button variant="outline" onClick={onLeave}>
-					Leave
-				</Button>
+			<div className="mt-5 flex gap-2">
+				{hud.isHost && (
+					<MenuButton primary onClick={() => client.restart()}>
+						Play Again
+					</MenuButton>
+				)}
+				<MenuButton onClick={onLeave}>Leave</MenuButton>
 			</div>
 		</Card>
 	);
@@ -425,7 +558,7 @@ function pausedLine(paused: number, away: number, players: number) {
 }
 
 // The pause screen: the menu and the settings side by side, with the game's
-// numbers so far in a card below, as wide as the two together.
+// numbers so far in a panel below, as wide as the two together.
 function PauseMenu({
 	hud,
 	client,
@@ -440,7 +573,7 @@ function PauseMenu({
 			<div className={cn('grid gap-4 md:grid-cols-2', STATS_WIDTH)}>
 				<Box>
 					<p className={HEADING}>Paused</p>
-					<p className="text-sm text-muted-foreground">
+					<p className="mt-1 text-sm text-muted-foreground">
 						{hud.players.length < 2
 							? 'The game is paused'
 							: hud.held
@@ -453,12 +586,12 @@ function PauseMenu({
 										hud.players.length
 									)}. The game keeps going until everyone is`}
 					</p>
-					<Controls className="mt-2 w-full" />
-					<div className="mt-auto flex gap-2 pt-3">
-						<Button onClick={() => client.lock()}>Play</Button>
-						<Button variant="outline" onClick={onLeave}>
-							Leave
-						</Button>
+					<Controls className="mt-3 w-full" />
+					<div className="mt-auto flex gap-2 pt-4">
+						<MenuButton primary onClick={() => client.lock()}>
+							Resume
+						</MenuButton>
+						<MenuButton onClick={onLeave}>Leave</MenuButton>
 					</div>
 				</Box>
 				<Box>
@@ -467,7 +600,7 @@ function PauseMenu({
 				</Box>
 				<Box className="md:col-span-2">
 					<p className={HEADING}>Stats</p>
-					<p className="mb-4 text-sm text-muted-foreground">
+					<p className="mt-1 mb-4 text-sm text-muted-foreground">
 						{hud.round ? `Round ${hud.round} so far` : 'Nothing yet, the first round is coming'}
 					</p>
 					{hud.stats && <Stats stats={hud.stats} you={hud.players.find((p) => p.you)?.id} />}
@@ -477,23 +610,25 @@ function PauseMenu({
 	);
 }
 
-// Dims and blurs the game behind one or more boxes, centred, and scrolling
+// Dims and blurs the game behind one or more panels, centred, and scrolling
 // rather than cut off when they're taller than the window.
 function Overlay({ children }: { children: React.ReactNode }) {
 	return (
-		<div className="dark pointer-events-auto absolute inset-0 flex overflow-y-auto bg-black/55 p-4 font-sans font-medium tracking-normal text-foreground normal-case font-stretch-100% backdrop-blur-sm [text-shadow:none]">
+		<div className="dark pointer-events-auto absolute inset-0 flex overflow-y-auto bg-black/60 p-4 font-sans font-medium tracking-normal text-foreground normal-case font-stretch-100% backdrop-blur-sm [text-shadow:none]">
 			<div className="m-auto flex flex-wrap justify-center gap-4">{children}</div>
 		</div>
 	);
 }
 
+// A menu panel: near black, square cornered, with a line of gold along the top.
 function Box({ children, className }: { children: React.ReactNode; className?: string }) {
 	return (
 		<div
 			className={cn(
-				'flex min-w-72 flex-col items-start gap-1 rounded-xl border border-white/10 bg-neutral-950/85 p-6 shadow-2xl',
+				'flex min-w-72 flex-col items-start rounded-sm border border-white/10 bg-[#0e0b0d]/92 p-6 shadow-[0_24px_60px_rgb(0_0_0/0.6)]',
 				className
 			)}
+			style={{ borderTop: `2px solid ${GOLD}` }}
 		>
 			{children}
 		</div>
@@ -505,6 +640,27 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
 		<Overlay>
 			<Box className={className}>{children}</Box>
 		</Overlay>
+	);
+}
+
+// A menu's button: condensed capitals, gold when it's the one to press.
+function MenuButton({
+	primary,
+	className,
+	...props
+}: ComponentProps<'button'> & { primary?: boolean }) {
+	return (
+		<button
+			type="button"
+			className={cn(
+				'cursor-pointer border px-5 py-2 font-archivo text-sm font-semibold tracking-[0.2em] uppercase font-stretch-75% transition-colors focus-visible:outline-2 focus-visible:outline-offset-2',
+				primary
+					? 'border-[#e8b84a]/70 text-[#f3d27a] hover:bg-[#e8b84a]/15 hover:text-white focus-visible:outline-[#e8b84a]'
+					: 'border-white/20 text-white/75 hover:border-white/60 hover:text-white focus-visible:outline-white/60',
+				className
+			)}
+			{...props}
+		/>
 	);
 }
 
@@ -523,16 +679,33 @@ function Panel({ className, children }: { className?: string; children: React.Re
 	);
 }
 
-function Boost({ label, left }: { label: string; left: number }) {
+// A power-up running: its badge, a skull for Insta-Kill and a 2 for Double
+// Points, with the seconds left, flashing as they run out.
+function Boost({ kind, left }: { kind: 'instakill' | 'double'; left: number }) {
+	const ending = left <= 5;
 	return (
-		<Panel
-			className={cn(
-				'px-8 py-1 text-base tracking-[0.15em] text-amber-300',
-				left <= 5 && 'animate-pulse text-red-400'
-			)}
-		>
-			{label} <span className="text-white/70 tabular-nums">{left}</span>
-		</Panel>
+		<div className={cn('flex flex-col items-center gap-1', ending && 'animate-pulse')}>
+			<span
+				className="flex size-11 items-center justify-center rounded-full ring-2 [text-shadow:none]"
+				style={{
+					background: `radial-gradient(circle at 35% 30%, #fff1c0, ${GOLD} 55%, #8a6318)`,
+					boxShadow: `0 0 14px color-mix(in oklch, ${GOLD} 70%, transparent)`,
+					borderColor: ending ? '#ff6b5b' : 'transparent',
+					['--tw-ring-color' as string]: ending ? '#ff6b5b' : 'rgb(0 0 0 / 0.6)'
+				}}
+			>
+				{kind === 'instakill' ? (
+					<svg viewBox="0 0 24 24" className="size-7 fill-[#1a1208]">
+						<path d="M12 2a8 8 0 0 0-8 8c0 2.7 1.3 5 3.3 6.4V20a2 2 0 0 0 2 2h5.4a2 2 0 0 0 2-2v-3.6C18.7 15 20 12.7 20 10a8 8 0 0 0-8-8Zm-3 9.5A1.8 1.8 0 1 1 9 8a1.8 1.8 0 0 1 0 3.5Zm6 0A1.8 1.8 0 1 1 15 8a1.8 1.8 0 0 1 0 3.5ZM10 19v-2h1.5v2Zm2.5 0v-2H14v2Z" />
+					</svg>
+				) : (
+					<span className="text-2xl font-black text-[#1a1208]">×2</span>
+				)}
+			</span>
+			<span className={cn('text-sm tracking-[0.15em]', ending ? 'text-red-300' : 'text-amber-200')}>
+				{left}
+			</span>
+		</div>
 	);
 }
 

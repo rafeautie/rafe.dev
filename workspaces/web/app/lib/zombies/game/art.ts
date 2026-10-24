@@ -93,18 +93,40 @@ export function loadArt(): Promise<Art | null> {
 	return loading;
 }
 
+// Loads a picture as a texture. Where the browser can, the picture is
+// decoded off the main thread, so a dozen big textures arriving at once
+// don't freeze the lobby. Bitmaps come already the right way up, so the
+// texture is told not to flip them again.
+export async function loadTexture(url: string): Promise<THREE.Texture> {
+	if (typeof createImageBitmap !== 'function') return new THREE.TextureLoader().loadAsync(url);
+	const bitmap = await new THREE.ImageBitmapLoader()
+		.setOptions({ imageOrientation: 'flipY', premultiplyAlpha: 'none' })
+		.loadAsync(url);
+	const t = new THREE.Texture(bitmap);
+	t.flipY = false;
+	t.needsUpdate = true;
+	return t;
+}
+
+// A model loader whose mesh decoding runs on worker threads, as many as
+// there are spare cores, so the models unpack in parallel.
+export function modelLoader() {
+	// eslint-disable-next-line react-hooks/rules-of-hooks -- a setting on the decoder, not a hook
+	MeshoptDecoder.useWorkers(Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1)));
+	return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+}
+
 async function load(): Promise<Art> {
-	const textures = new THREE.TextureLoader();
-	const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+	const loader = modelLoader();
 	const texture = async (name: string, color: boolean) => {
-		const t = await textures.loadAsync(`${BASE}${name}.webp`);
+		const t = await loadTexture(`${BASE}${name}.webp`);
 		t.wrapS = t.wrapT = THREE.RepeatWrapping;
 		t.anisotropy = 8;
 		if (color) t.colorSpace = THREE.SRGBColorSpace;
 		return t;
 	};
 	const [sky, surfaces, props] = await Promise.all([
-		textures.loadAsync(`${BASE}sky.webp`).then((t) => {
+		loadTexture(`${BASE}sky.webp`).then((t) => {
 			t.mapping = THREE.EquirectangularReflectionMapping;
 			t.colorSpace = THREE.SRGBColorSpace;
 			return t;

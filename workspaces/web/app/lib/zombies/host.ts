@@ -62,6 +62,8 @@ import { MAX_PLAYERS } from './signal';
 import { BOX_WEAPONS, WEAPONS, ammoCost, type WeaponId } from './weapons';
 
 export const TICK = 1 / 30;
+// how often the host hands everyone a copy of the game, in case it leaves
+export const SAVE_EVERY = 2000;
 const SNAPSHOT_EVERY = 2; // ticks, so 15 a second
 const FLOW_EVERY = 0.25; // seconds
 const CHASE_SIGHT = 14; // zombies walk straight at a player they can see this close
@@ -1099,6 +1101,32 @@ export class HostGame {
 	private broadcast(message: HostMessage) {
 		for (const id of this.players.keys()) this.send(id, message);
 	}
+}
+
+// Runs a game in real time, by the player `me`, and every couple of seconds
+// hands `onSave` a copy of it for the others to carry on from. On a timer, not
+// animation frames, so the game keeps going when the host's tab is in the
+// background (if slowly: browsers hold background timers to about once a
+// second), and so it can run in a worker (host.worker.ts), which has no
+// frames. Returns a function that stops it.
+export function drive(game: HostGame, me: string, onSave: (save: GameSave) => void): () => void {
+	let last = performance.now();
+	const timer = setInterval(() => {
+		const now = performance.now();
+		// after a long hold, catch up by a second at most rather than racing
+		// through everything that was missed
+		let elapsed = Math.min(1, (now - last) / 1000);
+		last = now;
+		while (elapsed >= TICK * 0.5) {
+			game.tick(Math.min(TICK, elapsed));
+			elapsed -= TICK;
+		}
+	}, TICK * 1000);
+	const saver = setInterval(() => onSave(game.save(me)), SAVE_EVERY);
+	return () => {
+		clearInterval(timer);
+		clearInterval(saver);
+	};
 }
 
 function turnToward(from: number, to: number, max: number): number {

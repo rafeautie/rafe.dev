@@ -1,7 +1,6 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import type { WeaponId } from '../weapons';
+import { loadTexture, modelLoader } from './art';
 
 // The guns and the hands that hold them: Quaternius' low-poly guns, dressed
 // in scanned wood and worn metal from Poly Haven, and arms in a sleeve and
@@ -74,10 +73,9 @@ export function loadGuns(): Promise<Kit | null> {
 type Set3 = { color: THREE.Texture; normal: THREE.Texture; arm: THREE.Texture };
 
 async function load(): Promise<Kit> {
-	const textures = new THREE.TextureLoader();
-	const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+	const loader = modelLoader();
 	const texture = async (name: string, color: boolean) => {
-		const t = await textures.loadAsync(`${BASE}${name}.webp`);
+		const t = await loadTexture(`${BASE}${name}.webp`);
 		t.wrapS = t.wrapT = THREE.RepeatWrapping;
 		t.anisotropy = 4;
 		if (color) t.colorSpace = THREE.SRGBColorSpace;

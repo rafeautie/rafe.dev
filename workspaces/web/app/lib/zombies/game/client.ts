@@ -80,7 +80,13 @@ const MOUSE_SPEED = 0.0022;
 const RECOIL = { climb: 30, hold: 0.09, recover: 7, most: 0.3, punchStiff: 260, punchDamp: 18 };
 // a moment after a sprint before the gun is back up and can fire
 const SPRINT_OUT = 0.18;
-const RAGDOLL_LIFE = 12;
+// bodies lie where they fell this long, then sink away; each one is a whole
+// skinned character to draw, so not too many
+const RAGDOLL_LIFE = 9;
+// the heart thuds once health is below this share, faster the lower it gets
+const HEART_BELOW = 0.5;
+// a body this far off the player is left undrawn when out of view
+const BODY_REACH = 2.4;
 // how long the mark showing where a hit came from stays, ms
 const DANGER_TIME = 1600;
 // a gun loaded a shell at a time: a moment to start, one shell after another,
@@ -117,7 +123,7 @@ const RELOAD_PARTS: Record<ReloadStyle, [number, ReloadPart][]> = {
 	],
 	shells: []
 };
-const MAX_RAGDOLLS = 20;
+const MAX_RAGDOLLS = 14;
 
 const ZOMBIE_COLORS = { skin: '#5d5d5d', shirt: '#3b3b3b', pants: '#2c2c2c' };
 const PLAYER_COLORS = { skin: '#bdbdbd', shirt: '#8f8f8f', pants: '#6f6f6f' };
@@ -151,8 +157,14 @@ export type HudState = {
 	reviving: number;
 	weapon: string;
 	mag: number;
+	// how many the magazine holds, for a low ammo warning
+	magSize: number;
 	reserve: number;
 	reloading: boolean;
+	// aiming down the sights, 0 to 1, and how far the crosshair should open
+	// for moving, jumping and shooting, 0 to 1
+	ads: number;
+	spread: number;
 	players: HudPlayer[];
 	hint: { text: string; muted: boolean; progress?: number } | null;
 	note: { text: string; warning: boolean } | null;
@@ -311,7 +323,13 @@ export class GameClient {
 	private hud: HudState;
 	private hudListeners = new Set<() => void>();
 	private hudWait = 0;
+	private heartWait = 0;
 	private sendWait = 0;
+	// the view's frustum this frame, for leaving bodies out of view undrawn
+	private frustum = new THREE.Frustum();
+	private projView = new THREE.Matrix4();
+	private bodySphere = new THREE.Sphere(new THREE.Vector3(), BODY_REACH);
+	private putEye = (x: number, y: number, z: number) => this.effects.eye(x, y, z);
 	private noteUntil = 0;
 	private popId = 0;
 	private frame = 0;
@@ -338,11 +356,13 @@ export class GameClient {
 		session.doors.forEach((open, i) => (this.blocking.open[i] = open));
 
 		this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-		this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 		this.renderer.shadowMap.enabled = true;
 		this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 		// cleared by hand, so the gun's pass can draw over the world's
 		this.renderer.autoClear = false;
+		// the scene's matrices are brought up to date once a frame, by hand
+		// (see update), rather than by each of the two render passes
+		this.scene.matrixWorldAutoUpdate = false;
 		this.world = buildWorld(this.map, art);
 		this.world.dress(this.scene);
 		this.blocking.open.forEach((open, i) => open && this.world.openDoor(i));
@@ -363,10 +383,27 @@ export class GameClient {
 		session.listen((m) => this.receive(m));
 		this.bindInput();
 		this.sound.setVolume(settings.get().volume / 100);
-		this.disposers.push(
-			settings.subscribe(() => this.sound.setVolume(settings.get().volume / 100))
-		);
+		this.applyGraphics();
 		this.resize();
+		this.disposers.push(
+			settings.subscribe(() => {
+				this.sound.setVolume(settings.get().volume / 100);
+				this.applyGraphics();
+			})
+		);
+	}
+
+	// the settings that change what's drawn: how many pixels, and whether
+	// and how finely the sun casts shadows
+	private applyGraphics() {
+		const { renderScale, shadows } = settings.get();
+		const ratio = Math.min(window.devicePixelRatio, 2) * (renderScale / 100);
+		if (Math.abs(this.renderer.getPixelRatio() - ratio) > 1e-3) {
+			this.renderer.setPixelRatio(ratio);
+			this.resize();
+		}
+		this.renderer.shadowMap.enabled = shadows !== 'off';
+		this.world.setShadows(shadows);
 	}
 
 	// Has the graphics card build every shader the game will need before it
@@ -389,6 +426,7 @@ export class GameClient {
 		// and two real frames, for the shadows' own shaders: three.js draws a
 		// frame's shadows with the lights of the frame before, so only the
 		// second matches what every frame after it will need
+		this.scene.updateMatrixWorld();
 		this.render();
 		this.render();
 		for (const body of warmers) body.root.visible = false;
@@ -627,6 +665,8 @@ export class GameClient {
 		}
 		this.snaps.push({ at: performance.now(), snap, zombies });
 		if (this.snaps.length > 30) this.snaps.shift();
+		// the last of a round's zombies down
+		if (last?.snap.phase === 'playing' && snap.phase === 'break') this.sound.roundEnd();
 		this.phase = snap.phase;
 		this.syncWorld(snap, last?.snap);
 		const mine = snap.players.find((p) => p.id === this.session.state.you);
@@ -811,9 +851,15 @@ export class GameClient {
 		this.drawOthers(dt, now);
 		this.effects.update(dt);
 		this.world.update(dt);
+		this.world.follow(this.me.x, this.me.z);
 		this.placeCamera(dt, now);
+		// everything is where it will be drawn: one pass over the scene's
+		// matrices, then the bodies are read off them, then the frame
+		this.scene.updateMatrixWorld();
+		this.readBodies();
 		this.render();
 
+		this.heartbeat(dt);
 		this.pressed.clear();
 		this.wheel = 0;
 		this.hudWait -= dt;
@@ -823,9 +869,45 @@ export class GameClient {
 		}
 	}
 
+	// With the scene's matrices up to date: every zombie's joints are read
+	// off its bones, its eyes are lit where its head is, and a body out of
+	// view is left undrawn, shadows and all.
+	private readBodies() {
+		const camera = this.camera;
+		this.projView.copy(camera.matrixWorld).invert().premultiply(camera.projectionMatrix);
+		this.frustum.setFromProjectionMatrix(this.projView);
+		const sphere = this.bodySphere;
+		this.effects.beginEyes();
+		for (const view of this.zombies.values()) {
+			if (!(view.body instanceof Character)) continue;
+			view.body.read(false);
+			sphere.center.fromArray(view.body.joints, J.pelvis * 3);
+			view.body.root.visible = this.frustum.intersectsSphere(sphere);
+			if (view.body.root.visible) view.body.eyes(this.putEye);
+		}
+		for (const r of this.ragdolls) {
+			if (!(r.body instanceof Character)) continue;
+			sphere.center.fromArray(r.body.joints, J.pelvis * 3);
+			r.body.root.visible = this.frustum.intersectsSphere(sphere);
+		}
+		this.effects.endEyes();
+	}
+
+	// a heart thudding harder and faster the nearer the player is to going down
+	private heartbeat(dt: number) {
+		this.heartWait -= dt;
+		if (this.heartWait > 0 || this.life !== 'alive') return;
+		const share = this.hp / this.hud.maxHp;
+		if (share >= HEART_BELOW) return;
+		const low = 1 - share / HEART_BELOW;
+		this.heartWait = 1.1 - low * 0.5;
+		this.sound.heartbeat(0.4 + low * 0.6);
+	}
+
 	// The world first, then the gun on a cleared depth buffer, so nothing in
 	// the world (zombies included, which are transparent and drawn late) can
-	// cover it. The shadows from the first pass are reused for the second.
+	// cover it. The shadows from the first pass are reused for the second,
+	// and neither pass walks the scene's matrices again (see update).
 	private render() {
 		const { renderer, scene, camera } = this;
 		renderer.clear();
@@ -1521,6 +1603,8 @@ export class GameClient {
 					flinchAt: 0
 				};
 				this.zombies.set(id, view);
+				// earth flies as one claws its way up out of the ground
+				if (zb[5] & ZOMBIE_RISING) this.effects.dirt(rise.set(x, 0.05, z));
 			}
 			const moved = Math.hypot(x - view.x, z - view.z);
 			if (dt > 0) {
@@ -1903,8 +1987,11 @@ export class GameClient {
 			reviving: 0,
 			weapon: '',
 			mag: 0,
+			magSize: 1,
 			reserve: 0,
 			reloading: false,
+			ads: 0,
+			spread: 0,
 			players: [],
 			hint: null,
 			note: null,
@@ -1954,6 +2041,20 @@ export class GameClient {
 		const revivingTarget = this.reviving
 			? latest?.players.find((p) => p.id === this.reviving)
 			: null;
+		// the crosshair opens for running, jumping and shooting, and closes
+		// down the sights
+		const spread =
+			Math.min(
+				1,
+				Math.max(
+					0,
+					(Math.min(1, this.speedNow / PLAYER.sprint) * 0.7 +
+						(this.me.ground ? 0 : 0.6) +
+						this.recoil.target * 4) *
+						(1 - this.crouchNow * 0.3)
+				)
+			) *
+			(1 - this.ads);
 		this.hud = {
 			...this.hud,
 			phase: this.phase,
@@ -1967,8 +2068,11 @@ export class GameClient {
 			reviving: revivingTarget?.revive ?? 0,
 			weapon: WEAPONS[slot.weapon].name,
 			mag: slot.mag,
+			magSize: WEAPONS[slot.weapon].mag,
 			reserve: slot.reserve,
 			reloading: this.reloadLeft > 0,
+			ads: this.ads,
+			spread,
 			players: (latest?.players ?? []).map((p) => ({
 				id: p.id,
 				name: p.name,
@@ -2011,8 +2115,9 @@ const BODY_CAPSULES: [number, number, number][] = [
 	[J.rShoulder, J.rHand, 0.08]
 ];
 
-// scratch, for where another player's right hand is
+// scratch, for where another player's right hand is, and where a zombie rises
 const hand = new THREE.Vector3();
+const rise = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 // which zombie a zombie looks like: mostly the two walkers, now and then a brute
 function zombieModel(id: number) {
@@ -2061,32 +2166,98 @@ const POWERUP_NAMES: Record<PowerupKind, string> = {
 	carpenter: 'Carpenter'
 };
 
-const DROP_LOOK: Record<PowerupKind, { color: string; text: string }> = {
-	ammo: { color: '#3f8f4f', text: 'AMMO' },
-	instakill: { color: '#e8e8e8', text: 'KILL' },
-	double: { color: '#d4a62a', text: '×2' },
-	nuke: { color: '#b53a2e', text: 'NUKE' },
-	carpenter: { color: '#8a6a4a', text: 'FIX' }
+// the green glow every power-up has in the games this is after
+const DROP_GLOW = '#2f9a3f';
+
+// what each power-up looks like, drawn on the faces of its block: an ammo
+// box, a skull, a 2, a bomb, a hammer
+const DROP_GLYPHS: Record<PowerupKind, (g: CanvasRenderingContext2D) => void> = {
+	ammo(g) {
+		g.fillRect(28, 46, 72, 50);
+		g.fillStyle = DROP_GLOW;
+		for (const x of [40, 58, 76]) {
+			g.beginPath();
+			g.roundRect(x, 52, 12, 38, 4);
+			g.fill();
+		}
+		g.fillStyle = '#ffffff';
+		g.fillRect(28, 38, 72, 8);
+	},
+	instakill(g) {
+		g.beginPath();
+		g.arc(64, 56, 30, Math.PI, 0);
+		g.lineTo(94, 72);
+		g.quadraticCurveTo(94, 86, 80, 88);
+		g.lineTo(80, 100);
+		g.lineTo(48, 100);
+		g.lineTo(48, 88);
+		g.quadraticCurveTo(34, 86, 34, 72);
+		g.closePath();
+		g.fill();
+		g.fillStyle = DROP_GLOW;
+		for (const x of [52, 76]) {
+			g.beginPath();
+			g.arc(x, 62, 8, 0, Math.PI * 2);
+			g.fill();
+		}
+		g.fillRect(60, 76, 8, 10);
+		for (const x of [54, 70]) g.fillRect(x, 90, 4, 10);
+	},
+	double(g) {
+		g.font = `800 72px "Geist Variable", system-ui, sans-serif`;
+		g.textAlign = 'center';
+		g.textBaseline = 'middle';
+		g.fillText('×2', 64, 68);
+	},
+	nuke(g) {
+		g.beginPath();
+		g.arc(60, 76, 32, 0, Math.PI * 2);
+		g.fill();
+		g.fillRect(70, 32, 14, 20);
+		g.strokeStyle = '#ffffff';
+		g.lineWidth = 6;
+		g.beginPath();
+		g.moveTo(80, 34);
+		g.quadraticCurveTo(96, 22, 100, 10);
+		g.stroke();
+		g.fillStyle = '#ffd24d';
+		g.beginPath();
+		g.arc(102, 10, 7, 0, Math.PI * 2);
+		g.fill();
+	},
+	carpenter(g) {
+		g.save();
+		g.translate(64, 64);
+		g.rotate(-0.6);
+		g.fillRect(-8, -14, 16, 64);
+		g.beginPath();
+		g.roundRect(-34, -38, 68, 28, 6);
+		g.fill();
+		g.restore();
+	}
 };
 
-// a power-up on the floor: a glowing block with what it is on every side
+// a power-up on the floor: a block glowing green, with what it is on every
+// side
 function dropMesh(kind: PowerupKind) {
-	const look = DROP_LOOK[kind];
 	const canvas = document.createElement('canvas');
 	canvas.width = canvas.height = 128;
 	const g = canvas.getContext('2d')!;
-	g.fillStyle = look.color;
+	const shade = g.createRadialGradient(64, 64, 10, 64, 64, 90);
+	shade.addColorStop(0, '#5ad36a');
+	shade.addColorStop(1, '#1d5f28');
+	g.fillStyle = shade;
 	g.fillRect(0, 0, 128, 128);
-	g.fillStyle = kind === 'instakill' ? '#1a1a1a' : '#ffffff';
-	g.font = `700 ${look.text.length > 2 ? 34 : 60}px "Geist Variable", system-ui, sans-serif`;
-	g.textAlign = 'center';
-	g.textBaseline = 'middle';
-	g.fillText(look.text, 64, 68);
+	g.strokeStyle = 'rgba(255,255,255,0.5)';
+	g.lineWidth = 6;
+	g.strokeRect(3, 3, 122, 122);
+	g.fillStyle = '#ffffff';
+	DROP_GLYPHS[kind](g);
 	const texture = new THREE.CanvasTexture(canvas);
 	texture.colorSpace = THREE.SRGBColorSpace;
 	const mesh = new THREE.Mesh(
 		DROP_BOX,
-		new THREE.MeshLambertMaterial({ map: texture, emissive: look.color, emissiveIntensity: 0.6 })
+		new THREE.MeshLambertMaterial({ map: texture, emissive: DROP_GLOW, emissiveIntensity: 0.7 })
 	);
 	mesh.castShadow = true;
 	return mesh;

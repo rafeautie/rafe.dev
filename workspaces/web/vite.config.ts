@@ -8,7 +8,8 @@ import { markdown } from './plugins/markdown';
 
 // Vite emits every worker it has built into each environment's output, so the
 // server build would carry the chess worker and its model runtime
-// (lib/chess/ai.worker.ts) as Worker modules. Only the browser runs them.
+// (lib/chess/ai.worker.ts) and the zombies host's game (lib/zombies/
+// host.worker.ts) as Worker modules. Only the browser runs them.
 const workersClientOnly: Plugin = {
 	name: 'workers-client-only',
 	applyToEnvironment: (environment) => environment.name === 'ssr',
@@ -16,7 +17,7 @@ const workersClientOnly: Plugin = {
 		order: 'post',
 		handler(_, bundle) {
 			for (const file of Object.keys(bundle)) {
-				if (/^assets\/(ai\.worker-|ort-wasm)/.test(file)) delete bundle[file];
+				if (/^assets\/(ai\.worker-|host\.worker-|ort-wasm)/.test(file)) delete bundle[file];
 			}
 		}
 	}

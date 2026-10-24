@@ -44,7 +44,9 @@ export type PropKind =
 	| 'generator'
 	| 'table'
 	| 'counter'
-	| 'shelf';
+	| 'shelf'
+	// a barrel with a fire burning in it
+	| 'fire';
 
 // A solid block: nobody goes in. Windows on its walls open onto a dark room
 // that zombies climb out of.
@@ -97,6 +99,9 @@ export type Layout = {
 	canopies: { poly: Pt[]; height: number }[];
 	// rainwater lying on the ground, `size` across, drawn only
 	puddles: { at: Pt; size: number; rot: number }[];
+	// cracks in the ground with fire glowing under them, `size` across,
+	// drawn only
+	lava: { at: Pt; size: number; rot: number }[];
 	// overhead lines strung from pole to pole, drawn only
 	wires: Pt[][];
 };
@@ -473,6 +478,11 @@ export const LAYOUT: Layout = {
 		part(MOTEL_A, MOTEL_B, 0.8, 0.86),
 		// the kitchen, from the diner
 		part(DINER_BACK_W, [LOT_W, 72], 0.45, 0.55),
+		// and from the kitchen onto the lot, past the dumpster
+		[
+			[LOT_W, 77.6],
+			[LOT_W, 79.1]
+		],
 		// the apartments
 		W.seg(-25, -14, -25, -12.5),
 		W.seg(-21, -31, -19.5, -31),
@@ -549,6 +559,7 @@ export const LAYOUT: Layout = {
 		{ kind: 'dumpster', at: [40.5, 79.2], rot: 6.6 },
 		{ kind: 'lamp', at: [45, 58.8], rot: 90 },
 		{ kind: 'lamp', at: [62.2, 74], rot: 180 },
+		{ kind: 'fire', at: [42.4, 76.6], rot: 0 },
 		{ kind: 'trash_can', at: [53.8, 81.6], rot: 0 },
 		{ kind: 'trashbag', at: [41.9, 79.8], rot: 20 },
 		{ kind: 'aircon', at: [44.4, 80.5], rot: 6.6 },
@@ -573,7 +584,7 @@ export const LAYOUT: Layout = {
 		{ kind: 'dumpster', at: [31, 30.6], rot: 1.5 },
 		{ kind: 'dumpster', at: [57.5, 26.4], rot: -24.6 },
 		{ kind: 'pole', at: [47.6, 31], rot: 0 },
-		{ kind: 'barrel', at: [27, 30.2], rot: 0 },
+		{ kind: 'fire', at: [27, 30.2], rot: 0 },
 		{ kind: 'trashbag', at: [46.9, 40.8], rot: 0 },
 		{ kind: 'trashbag', at: [32.6, 30.1], rot: 40 },
 		{ kind: 'crate', at: [61.2, 23.9], rot: -25 },
@@ -596,6 +607,7 @@ export const LAYOUT: Layout = {
 		{ kind: 'shrub', at: W.at(-16.5, 9.5), rot: 0 },
 		{ kind: 'shrub', at: W.at(-30, 22), rot: 0 },
 		{ kind: 'generator', at: W.at(-23, 25), rot: W.angle },
+		{ kind: 'fire', at: W.at(-26.5, 34), rot: 0 },
 		{ kind: 'tyre', at: W.at(-28, 37.5), rot: 0 },
 		{ kind: 'trash_can', at: W.at(-16, 23), rot: 0 },
 		{ kind: 'trash_can', at: W.at(-16, 21.6), rot: 0 },
@@ -610,7 +622,7 @@ export const LAYOUT: Layout = {
 		{ kind: 'truck', at: E1.at(8, -19), rot: E1.angle + 78 },
 		{ kind: 'crate', at: E1.at(20, -28.6), rot: E1.angle },
 		{ kind: 'crate', at: E1.at(21.5, -27.2), rot: E1.angle + 8 },
-		{ kind: 'barrel', at: E1.at(24.6, -9), rot: 0 },
+		{ kind: 'fire', at: E1.at(24.6, -9), rot: 0 },
 		{ kind: 'barrel', at: E1.at(24.2, -10.2), rot: 0 },
 		{ kind: 'pallet_rack', at: E1.at(8, -36.5), rot: E1.angle + 90 },
 		{ kind: 'pallet_rack', at: E1.at(8, -41.5), rot: E1.angle + 90 },
@@ -701,6 +713,20 @@ export const LAYOUT: Layout = {
 		{ at: E1.at(14, 11), size: 2.4, rot: 0 },
 		{ at: W.at(-15.5, -12), size: 1.6, rot: 0 },
 		{ at: W.at(-23.5, 36), size: 2.2, rot: 30 }
+	],
+	// the ground split open along the street and across the lot, the fire
+	// under the town showing through
+	lava: [
+		{ at: [44.5, 48.2], size: 5.2, rot: 25 },
+		{ at: [59, 52.6], size: 3.6, rot: -40 },
+		{ at: W.at(-13, 1.5), size: 4.6, rot: W.angle + 10 },
+		{ at: E1.at(9, 1.8), size: 4.2, rot: E1.angle - 20 },
+		{ at: E2.at(5, -1.5), size: 3.2, rot: E2.angle + 50 },
+		{ at: [53.5, 74.5], size: 4, rot: 70 },
+		{ at: [46, 63.5], size: 2.6, rot: 0 },
+		{ at: [47, 36.5], size: 2.4, rot: 15 },
+		{ at: E1.at(15, -22), size: 3.4, rot: 35 },
+		{ at: W.at(-21, -16), size: 2.2, rot: 0 }
 	],
 	wires: [
 		[[47.6, 31], E1.at(3, -11), E1.at(24.5, -11.5), E2.at(1.5, 10), [62.3, 77]],

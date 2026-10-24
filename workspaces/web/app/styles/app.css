@@ -352,6 +352,56 @@
 	}
 }
 
+/* The /zombies HUD (components/zombies/Hud.tsx): the round coming up over
+   the middle of the screen, the pulse round the edges when health is low,
+   and a power-up's name flashing up. */
+@keyframes zombies-round {
+	0% {
+		opacity: 0;
+		transform: scale(1.35);
+		filter: blur(6px);
+	}
+	12% {
+		opacity: 1;
+		transform: scale(1);
+		filter: blur(0);
+	}
+	72% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+		transform: scale(0.97);
+	}
+}
+
+@keyframes zombies-pulse {
+	0%,
+	100% {
+		opacity: 0.3;
+	}
+	50% {
+		opacity: 0.9;
+	}
+}
+
+@keyframes zombies-flash {
+	0% {
+		opacity: 0;
+		transform: scale(0.8);
+	}
+	15% {
+		opacity: 1;
+		transform: scale(1.08);
+	}
+	30% {
+		transform: scale(1);
+	}
+	100% {
+		opacity: 1;
+	}
+}
+
 /* The /chess page (components/chess): a gray board and gray pieces, with one
    accent, Tailwind's blue-500, for everything that is highlighted or can be pressed. The
    pieces' own grays live in their SVGs (assets/chess/pieces). */
