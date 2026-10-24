@@ -19,6 +19,7 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 	// before the mouse is first captured there is nothing to pause, just a click to start
 	const waiting = !hud.locked && !hud.played && !over;
 	const paused = !hud.locked && hud.played && !over;
+	const pausedCount = hud.players.filter((p) => p.paused).length;
 
 	return (
 		<div className="pointer-events-none absolute inset-0 font-medium text-foreground tabular-nums">
@@ -43,6 +44,13 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 			<Panel className="absolute top-5 left-5 px-3 py-1.5 text-sm text-muted-foreground">
 				{hud.area}
 			</Panel>
+
+			{/* who's on the pause screen, when playing with others */}
+			{hud.players.length > 1 && pausedCount > 0 && !paused && !over && (
+				<Panel className="absolute top-5 left-1/2 -translate-x-1/2 px-3 py-1.5 text-sm text-muted-foreground">
+					{pausedLine(pausedCount, hud.players.length)}
+				</Panel>
+			)}
 
 			{/* crosshair, with a mark for each hit */}
 			{hud.life !== 'dead' && !over && (
@@ -135,6 +143,11 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 											{Math.abs(pop.amount)}
 										</span>
 									))}
+								{p.paused && (
+									<span className="text-xs tracking-wide text-muted-foreground uppercase">
+										Paused
+									</span>
+								)}
 								<span
 									className={cn('text-muted-foreground', p.state !== 'alive' && 'line-through')}
 								>
@@ -305,6 +318,10 @@ function GameOver({
 	);
 }
 
+function pausedLine(paused: number, players: number) {
+	return `${paused} of ${players} Paused`;
+}
+
 // The pause screen: the menu and the settings side by side, with the game's
 // numbers so far in a card below, as wide as the two together.
 function PauseMenu({
@@ -322,9 +339,14 @@ function PauseMenu({
 				<Box>
 					<p className="text-2xl tracking-tight">Paused</p>
 					<p className="text-sm text-muted-foreground">
-						{hud.held
-							? 'Everyone is paused, so the game is too'
-							: 'The game keeps going for everyone else'}
+						{hud.players.length < 2
+							? 'The game is paused'
+							: hud.held
+								? `All ${hud.players.length} Paused, so the game is too`
+								: `${pausedLine(
+										Math.max(1, hud.players.filter((p) => p.paused).length),
+										hud.players.length
+									)}. The game keeps going until everyone is`}
 					</p>
 					<Controls className="mt-2 w-full" />
 					<div className="mt-auto flex gap-2 pt-3">
