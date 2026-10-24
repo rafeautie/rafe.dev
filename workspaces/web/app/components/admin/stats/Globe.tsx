@@ -54,15 +54,21 @@ const BY_CODE = new Map(COUNTRIES.map((entry) => [entry.code, entry]));
 // states and provinces, a file per country, loaded when first needed
 const REGION_FILES = import.meta.glob<Topology>('./globe/regions/*.json', { import: 'default' });
 const regionCache = new Map<string, RegionShape[] | null>();
-const loading = new Set<string>();
+// what to call when each file still on its way arrives
+const loading = new Map<string, (() => void)[]>();
 function loadRegions(code: string, done: () => void) {
-	if (regionCache.has(code) || loading.has(code)) return;
+	if (regionCache.has(code)) return;
+	const waiting = loading.get(code);
+	if (waiting) {
+		waiting.push(done);
+		return;
+	}
 	const load = REGION_FILES[`./globe/regions/${code}.json`];
 	if (!load) {
 		regionCache.set(code, null);
 		return;
 	}
-	loading.add(code);
+	loading.set(code, [done]);
 	load()
 		.then((topology) => {
 			const { features } = feature(topology, topology.objects.regions as never) as unknown as {
@@ -72,9 +78,34 @@ function loadRegions(code: string, done: () => void) {
 		})
 		.catch(() => regionCache.set(code, null))
 		.finally(() => {
+			const calls = loading.get(code) ?? [];
 			loading.delete(code);
-			done();
+			for (const call of calls) call();
 		});
+}
+
+// Loads states ahead of time, one country at a time while the page is idle,
+// so zooming in does not wait on them.
+const idle = (then: () => void) =>
+	'requestIdleCallback' in window ? requestIdleCallback(then) : setTimeout(then, 50);
+const queued: string[] = [];
+let preloading = false;
+function preload(codes: string[]) {
+	for (const code of codes) {
+		if (!regionCache.has(code) && !loading.has(code) && !queued.includes(code)) queued.push(code);
+	}
+	if (preloading) return;
+	const next = () => {
+		const code = queued.shift();
+		preloading = !!code;
+		if (!code) return;
+		idle(() => {
+			loadRegions(code, next);
+			// already there, or no file for it
+			if (!loading.has(code)) next();
+		});
+	};
+	next();
 }
 
 const LEVELS = ['Countries', 'States and provinces', 'Cities'];
@@ -84,8 +115,8 @@ const ALTITUDES = [1.5, 0.75, 0.22];
 const NEAR = 0.45;
 
 // the countries close to the middle of the view
-function nearTo(lat: number, lng: number) {
-	return COUNTRIES.filter((entry) => geoDistance([lng, lat], entry.center) < NEAR).map(
+function nearTo(lat: number, lng: number, within = NEAR) {
+	return COUNTRIES.filter((entry) => geoDistance([lng, lat], entry.center) < within).map(
 		(entry) => entry.code
 	);
 }
@@ -249,6 +280,9 @@ export function Globe({
 	// whether the pointer is over the globe: globe.gl can report a hover
 	// from where it last saw the pointer, after it has left
 	const insideRef = useRef(false);
+	// how far the land is faded in, 0 to 1, when moving between levels
+	const fadeRef = useRef({ value: 1, frame: 0 });
+	const drawnLevelRef = useRef<number | null>(null);
 	// where a filter turned the globe to, kept when the level changes with it
 	const aimRef = useRef<{ lat: number; lng: number; ms: number } | null>(null);
 
@@ -303,6 +337,7 @@ export function Globe({
 		if (!box) return;
 		const still = window.matchMedia('(prefers-reduced-motion: reduce)');
 		const materials = materialsRef.current;
+		const fade = fadeRef.current;
 		const globe = new GlobeGl(box, { rendererConfig: { alpha: true, antialias: true } })
 			.backgroundColor('rgba(0,0,0,0)')
 			.showAtmosphere(false)
@@ -332,6 +367,12 @@ export function Globe({
 		};
 		controls.addEventListener('end', look);
 		look();
+		// while the globe turns on its own, load the states coming into view
+		const ahead = setInterval(() => {
+			if (levelRef.current > 0) return;
+			const { lat, lng } = globe.pointOfView();
+			preload(nearTo(lat, lng, NEAR * 1.6));
+		}, 2000);
 
 		// scroll and pinch step a level at a time
 		let lastStep = 0;
@@ -412,6 +453,8 @@ export function Globe({
 			themeChange.disconnect();
 			scheme.removeEventListener('change', onScheme);
 			controls.removeEventListener('end', look);
+			clearInterval(ahead);
+			cancelAnimationFrame(fade.frame);
 			box.removeEventListener('wheel', onWheel);
 			box.removeEventListener('touchstart', onTouchStart);
 			box.removeEventListener('touchmove', onTouchMove);
@@ -436,6 +479,9 @@ export function Globe({
 			level === 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const aim = aimRef.current;
 		aimRef.current = null;
+		// the globe may have turned on its own since the view was last set
+		const { lat, lng } = aim ?? globe.pointOfView();
+		setNear(nearTo(lat, lng));
 		globe.pointOfView(
 			aim
 				? { lat: aim.lat, lng: aim.lng, altitude: ALTITUDES[level] }
@@ -444,6 +490,15 @@ export function Globe({
 		);
 		setTip(null);
 	}, [level]);
+
+	// the states of the countries with the most visitors, and the city
+	// heatmap, made ahead of time
+	useEffect(() => {
+		preload(countries.slice(0, 10).map((row) => row.key));
+	}, [countries]);
+	useEffect(() => {
+		if (cities.length) idle(() => heatmap(cities));
+	}, [cities]);
 
 	// load the states of countries in view, once close enough to see them
 	useEffect(() => {
@@ -481,7 +536,8 @@ export function Globe({
 					new MeshBasicMaterial({
 						color: `rgb(${r},${g},${b})`,
 						transparent: true,
-						opacity: rounded
+						opacity: rounded * fadeRef.current.value,
+						userData: { opacity: rounded }
 					})
 			);
 		};
@@ -500,45 +556,88 @@ export function Globe({
 		// at the city level the shapes are a backdrop for the heatmap
 		const shapesHover = level < 2;
 
-		globe
-			.globeMaterial(sea)
-			.polygonsData(areas)
-			.polygonGeoJsonGeometry('geometry')
-			.polygonCapMaterial((area) =>
-				material(level === 2 ? Math.min(shade(area as Area), 0.25) : shade(area as Area))
-			)
-			.polygonStrokeColor((area) => (chosen(area as Area) ? ink(0.9) : paper))
-			.polygonAltitude((area) => altitude(area as Area))
-			.onPolygonHover((area) => {
-				if (!shapesHover) return;
-				hovered = (area as Area | null) ?? null;
-				globe.polygonAltitude((item) => altitude(item as Area));
-				box.style.cursor = hovered?.value ? 'pointer' : '';
-				setTip(
-					insideRef.current && hovered ? { label: hovered.label, visitors: hovered.visitors } : null
-				);
-			})
-			.onPolygonClick((area) => {
-				const picked = area as Area;
-				if (shapesHover && picked.value) onPickRef.current(picked.key, picked.value);
-			});
+		// fades the land out, swaps in the next level's shapes, and fades it in
+		const fade = fadeRef.current;
+		const fadeTo = (target: number, ms: number, then?: () => void) => {
+			cancelAnimationFrame(fade.frame);
+			const from = fade.value;
+			const start = performance.now();
+			const tick = () => {
+				const t = Math.min(1, (performance.now() - start) / ms);
+				fade.value = from + (target - from) * t;
+				for (const each of materialsRef.current.values()) {
+					if (each.userData.opacity !== undefined) {
+						each.opacity = each.userData.opacity * fade.value;
+					}
+				}
+				if (t < 1) fade.frame = requestAnimationFrame(tick);
+				else then?.();
+			};
+			tick();
+		};
+		let cancelled = false;
+		const draw = () => {
+			if (cancelled) return;
+			const moved = drawnLevelRef.current !== null && drawnLevelRef.current !== level;
+			drawnLevelRef.current = level;
+			drawShapes();
+			if (moved) fadeTo(1, 300);
+		};
+		const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		if (drawnLevelRef.current !== null && drawnLevelRef.current !== level && !still) {
+			fadeTo(0, 150, draw);
+		} else {
+			if (fade.value < 1 && still) fadeTo(1, 0);
+			draw();
+		}
 
-		// a small flat dot on each city, to name and choose it
-		globe
-			.labelsData(level === 2 ? cities : [])
-			.labelLat('lat')
-			.labelLng('lng')
-			.labelText(() => '')
-			.labelSize(0)
-			.labelAltitude(0.016)
-			.labelDotRadius(0.12)
-			.labelColor((city) => ((city as CityRow).key === active.city ? ink(1) : ink(0.7)))
-			.onLabelHover((city) => {
-				const row = city as CityRow | null;
-				box.style.cursor = row ? 'pointer' : '';
-				setTip(insideRef.current && row ? { label: row.label, visitors: row.visitors } : null);
-			})
-			.onLabelClick((city) => onPickRef.current('city', (city as CityRow).key));
+		function drawShapes() {
+			if (!globe || !box) return;
+			globe
+				.globeMaterial(sea)
+				.polygonsData(areas)
+				.polygonGeoJsonGeometry('geometry')
+				.polygonCapMaterial((area) =>
+					material(level === 2 ? Math.min(shade(area as Area), 0.25) : shade(area as Area))
+				)
+				.polygonStrokeColor((area) => (chosen(area as Area) ? ink(0.9) : paper))
+				.polygonAltitude((area) => altitude(area as Area))
+				.onPolygonHover((area) => {
+					if (!shapesHover) return;
+					hovered = (area as Area | null) ?? null;
+					globe.polygonAltitude((item) => altitude(item as Area));
+					box.style.cursor = hovered?.value ? 'pointer' : '';
+					setTip(
+						insideRef.current && hovered
+							? { label: hovered.label, visitors: hovered.visitors }
+							: null
+					);
+				})
+				.onPolygonClick((area) => {
+					const picked = area as Area;
+					if (shapesHover && picked.value) onPickRef.current(picked.key, picked.value);
+				});
+
+			// a small flat dot on each city, to name and choose it
+			globe
+				.labelsData(level === 2 ? cities : [])
+				.labelLat('lat')
+				.labelLng('lng')
+				.labelText(() => '')
+				.labelSize(0)
+				.labelAltitude(0.016)
+				.labelDotRadius(0.12)
+				.labelColor((city) => ((city as CityRow).key === active.city ? ink(1) : ink(0.7)))
+				.onLabelHover((city) => {
+					const row = city as CityRow | null;
+					box.style.cursor = row ? 'pointer' : '';
+					setTip(insideRef.current && row ? { label: row.label, visitors: row.visitors } : null);
+				})
+				.onLabelClick((city) => onPickRef.current('city', (city as CityRow).key));
+		}
+		return () => {
+			cancelled = true;
+		};
 	}, [areas, cities, level, active.country, active.region, active.city, theme]);
 
 	// cities as a heatmap: each city's visitors spread over the land around
@@ -556,13 +655,23 @@ export function Globe({
 		texture.colorSpace = SRGBColorSpace;
 		texture.anisotropy = 4;
 		const geometry = new SphereGeometry(globe.getGlobeRadius() * 1.014, 180, 90);
-		const material = new MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false });
+		const material = new MeshBasicMaterial({
+			map: texture,
+			transparent: true,
+			depthWrite: false,
+			opacity: fadeRef.current.value,
+			userData: { opacity: 1 }
+		});
+		// fades in with the land
+		const materials = materialsRef.current;
+		materials.set('heatmap', material);
 		const layer = new Mesh(geometry, material);
 		// the way globe.gl turns its own globe, so the map lines up
 		layer.rotation.y = -Math.PI / 2;
 		globe.customLayerData([{}]).customThreeObject(() => layer);
 		return () => {
 			globe.customLayerData([]);
+			if (materials.get('heatmap') === material) materials.delete('heatmap');
 			geometry.dispose();
 			material.dispose();
 			texture.dispose();
