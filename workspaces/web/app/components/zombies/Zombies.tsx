@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { loadArt } from '~/lib/zombies/game/art';
 import { loadSounds } from '~/lib/zombies/game/audio';
 import { loadCast } from '~/lib/zombies/game/character';
+import { loadGuns } from '~/lib/zombies/game/guns';
 import { REFUSALS } from '~/lib/zombies/net';
 import { Session } from '~/lib/zombies/session';
 import { MAX_PLAYERS, isLobbyCode } from '~/lib/zombies/signal';
@@ -53,12 +54,13 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 	);
 
 	useEffect(() => () => session?.close(), [session]);
-	// the characters, the world's art and the sounds download while players
+	// the characters, the world's art, the guns and the sounds download while players
 	// gather in the lobby
 	useEffect(() => {
 		if (!session) return;
 		void loadCast();
 		void loadArt();
+		void loadGuns();
 		void loadSounds();
 	}, [session]);
 

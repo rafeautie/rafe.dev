@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { WEAPONS, type WeaponId } from '../weapons';
+import type { Kit } from './guns';
 
 // Another player's gun, held out in their right hand and pointed where they
 // look, with a flash at the muzzle and a streak to where the shot went each
-// time they fire.
+// time they fire. The real gun when the models are loaded, else a box.
 
 const FLASH_TIME = 0.06;
 const TRACER_TIME = 0.08;
@@ -21,9 +22,15 @@ export class HeldGun {
 	private weapon: WeaponId | null = null;
 	private length = 0;
 	private muzzle = new THREE.Vector3();
+	// where the muzzle is from the hand, before the gun is turned
+	private tip = new THREE.Vector3();
 	private dir = new THREE.Vector3();
+	private model: THREE.Object3D | null = null;
 
-	constructor(parent: THREE.Object3D) {
+	constructor(
+		parent: THREE.Object3D,
+		private kit: Kit | null = null
+	) {
 		this.body.castShadow = true;
 		this.gun.rotation.order = 'YXZ';
 		this.flash = new THREE.Mesh(
@@ -55,6 +62,17 @@ export class HeldGun {
 		this.body.scale.set(0.07, 0.09, this.length);
 		this.body.position.set(0, 0, -this.length / 2);
 		this.flash.position.set(0, 0, -this.length - 0.08);
+		this.tip.set(0, 0, -this.length - 0.05);
+		if (this.kit) {
+			const model = this.kit.guns[id];
+			this.model?.removeFromParent();
+			this.model = model.gun.clone();
+			this.gun.add(this.model);
+			this.body.visible = false;
+			this.length = -model.muzzle.z;
+			this.flash.position.copy(model.muzzle);
+			this.tip.copy(model.muzzle);
+		}
 		const tint = WEAPONS[id].tracer ?? '#fff6e0';
 		(this.tracer.material as THREE.MeshBasicMaterial).color.set(tint);
 		(this.flash.material as THREE.MeshBasicMaterial).color.set(WEAPONS[id].tracer ?? '#fff3d6');
@@ -67,7 +85,7 @@ export class HeldGun {
 		this.gun.position.copy(hand);
 		this.gun.rotation.set(pitch, yaw, roll);
 		this.dir.set(0, 0, -1).applyEuler(this.gun.rotation);
-		this.muzzle.copy(hand).addScaledVector(this.dir, this.length + 0.05);
+		this.muzzle.copy(this.tip).applyEuler(this.gun.rotation).add(hand);
 	}
 
 	get muzzlePoint() {

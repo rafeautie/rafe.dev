@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadArt } from '~/lib/zombies/game/art';
 import { loadCast } from '~/lib/zombies/game/character';
+import { loadGuns } from '~/lib/zombies/game/guns';
 import { GameClient } from '~/lib/zombies/game/client';
 import type { Session } from '~/lib/zombies/session';
 import { Hud } from './Hud';
@@ -15,17 +16,19 @@ export function Game({ session, onLeave }: { session: Session; onLeave: () => vo
 		let cancelled = false;
 		// the wall drawings and name tags are drawn in Geist, so wait for it,
 		// and for the characters (begun in the lobby, so usually here already)
-		void Promise.all([loadCast(), loadArt(), document.fonts.ready]).then(([cast, art]) => {
-			if (cancelled || !canvas.current) return;
-			game = new GameClient(canvas.current, session, cast, art);
-			game.start();
-			// straight into the game: the click on Start Game still counts, so
-			// the mouse can be captured without another one
-			game.lock();
-			setClient(game);
-			// for poking at the game from the console while developing
-			if (import.meta.env.DEV) Object.assign(window, { zombies: game });
-		});
+		void Promise.all([loadCast(), loadArt(), loadGuns(), document.fonts.ready]).then(
+			([cast, art, guns]) => {
+				if (cancelled || !canvas.current) return;
+				game = new GameClient(canvas.current, session, cast, art, guns);
+				game.start();
+				// straight into the game: the click on Start Game still counts, so
+				// the mouse can be captured without another one
+				game.lock();
+				setClient(game);
+				// for poking at the game from the console while developing
+				if (import.meta.env.DEV) Object.assign(window, { zombies: game });
+			}
+		);
 		return () => {
 			cancelled = true;
 			game?.dispose();

@@ -47,6 +47,7 @@ import { KNIFE, WEAPONS, ammoCost, type ReloadStyle, type Weapon, type WeaponId 
 import { Sound, type ReloadPart } from './audio';
 import { Character, SURVIVORS, ZOMBIES, type Cast } from './character';
 import { Effects } from './effects';
+import { type Kit } from './guns';
 import { HeldGun } from './heldgun';
 import {
 	Body,
@@ -230,7 +231,7 @@ export class GameClient {
 	private map: GameMap;
 	private blocking: Blocking;
 	private world: World;
-	private view = new ViewModel();
+	private view: ViewModel;
 	private sound = new Sound();
 	private dynamic = new THREE.Group();
 
@@ -326,8 +327,11 @@ export class GameClient {
 		// the characters and their animations; without them, boxes
 		private cast: Cast | null = null,
 		// the world's textures and props; without them, plain
-		art: Art | null = null
+		art: Art | null = null,
+		// the guns and the hands that hold them; without them, boxes
+		private guns: Kit | null = null
 	) {
+		this.view = new ViewModel(guns);
 		this.map = buildMap();
 		this.blocking = new Blocking(this.map);
 		session.doors.forEach((open, i) => (this.blocking.open[i] = open));
@@ -1594,7 +1598,7 @@ export class GameClient {
 						: new Body(this.dynamic, PLAYER_COLORS),
 					vx: 0,
 					vz: 0,
-					gun: new HeldGun(this.dynamic),
+					gun: new HeldGun(this.dynamic, this.guns),
 					label: nameLabel(pb.name),
 					badge: badge('PAUSED'),
 					away: badge('AWAY'),
