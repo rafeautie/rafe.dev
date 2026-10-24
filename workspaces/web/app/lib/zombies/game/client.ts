@@ -317,6 +317,7 @@ export class GameClient {
 	private frame = 0;
 	private last = 0;
 	private disposers: (() => void)[] = [];
+	private disposed = false;
 	private played = false;
 	private stats: GameStats | null = null;
 	private statsWait = 0;
@@ -368,7 +369,38 @@ export class GameClient {
 		this.resize();
 	}
 
+	// Has the graphics card build every shader the game will need before it
+	// starts: each kind of zombie and survivor is drawn once, out of sight
+	// under the ground, and kept hidden after so its shaders aren't freed when
+	// the last of its kind is gone. Otherwise each is built the first time
+	// one appears, and the game stops for a fifth of a second.
+	private async warmUp() {
+		if (!this.cast) return;
+		const warmers = [...this.cast.models.keys()].map((name) => {
+			const body = new Character(this.dynamic, this.cast!, name);
+			body.root.position.set(this.me.x, -20, this.me.z);
+			return body;
+		});
+		try {
+			await this.renderer.compileAsync(this.scene, this.camera);
+		} catch {
+			// built when first drawn instead
+		}
+		// and two real frames, for the shadows' own shaders: three.js draws a
+		// frame's shadows with the lights of the frame before, so only the
+		// second matches what every frame after it will need
+		this.render();
+		this.render();
+		for (const body of warmers) body.root.visible = false;
+	}
+
 	start() {
+		void this.warmUp().then(() => {
+			if (!this.disposed) this.loop();
+		});
+	}
+
+	private loop() {
 		this.last = performance.now();
 		const loop = (now: number) => {
 			this.frame = requestAnimationFrame(loop);
@@ -380,6 +412,7 @@ export class GameClient {
 	}
 
 	dispose() {
+		this.disposed = true;
 		cancelAnimationFrame(this.frame);
 		this.session.listen(null);
 		for (const d of this.disposers) d();

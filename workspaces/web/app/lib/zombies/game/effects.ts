@@ -67,6 +67,17 @@ export class Effects {
 	constructor(private parent: THREE.Object3D) {
 		this.bloodMark = splatTexture('rgba(92, 22, 22, 0.85)', true);
 		this.holeMark = splatTexture('rgba(40, 40, 40, 0.75)', false);
+		// a chip and a mark that are never drawn and never thrown away, far
+		// below the ground: while they last, the shaders every chip and mark
+		// share are kept, rather than built again after each lull in firing
+		for (const material of [
+			new THREE.MeshBasicMaterial({ color: BLOOD, transparent: true }),
+			new THREE.MeshBasicMaterial({ map: this.holeMark, transparent: true, depthWrite: false })
+		]) {
+			const keep = new THREE.Mesh(CHUNK, material);
+			keep.position.y = -1000;
+			parent.add(keep);
+		}
 	}
 
 	// a spray of blood where a zombie was hit, thrown along the shot
