@@ -73,6 +73,8 @@ export type HudPlayer = {
 	kills: number;
 	state: LifeState;
 	you: boolean;
+	// on the pause screen
+	paused: boolean;
 };
 
 export type HudState = {
@@ -1389,7 +1391,12 @@ export class GameClient {
 				points: p.points,
 				kills: p.kills,
 				state: p.state,
-				you: p.id === you
+				you: p.id === you,
+				// your own straight away, rather than once the host hears of it
+				paused:
+					p.id === you
+						? this.played && document.pointerLockElement !== this.canvas
+						: (p.flags & POSE_PAUSED) !== 0
 			})),
 			hint: this.hint,
 			note: performance.now() < this.noteUntil ? this.hud.note : null,
