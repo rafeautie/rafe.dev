@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HostGame, TICK } from './host';
 import { Blocking, WINDOW_BOARDS, buildMap, cellIndex, cellOf } from './map';
 import type { HostMessage, PlayerMessage, Snapshot } from './protocol';
-import { CROUCH, POSE_ADS, POSE_PAUSED, POSE_SPRINT, STAND } from './protocol';
+import { CROUCH, POSE_ADS, POSE_AWAY, POSE_PAUSED, POSE_SPRINT, STAND } from './protocol';
 import {
 	BOX,
 	BREAK,
@@ -449,7 +449,8 @@ describe('host game', () => {
 		run(5);
 		// still in the game, shown as away, and not what zombies chase
 		const away = (game.snapshot() as Snapshot).players.find((p) => p.id === 'p1')!;
-		expect(away.flags & POSE_PAUSED).toBeTruthy();
+		expect(away.flags & POSE_AWAY).toBeTruthy();
+		expect(away.flags & POSE_PAUSED).toBeFalsy();
 		sent.length = 0;
 		expect(game.addPlayer('p1', 'back')).toBe(true);
 		const welcome = sent.find((m) => m.to === 'p1' && m.m.t === 'welcome')?.m;
@@ -486,7 +487,7 @@ describe('host game', () => {
 			['p1', 888],
 			['p0', 777]
 		]);
-		expect(after.players[1].flags & POSE_PAUSED).toBeTruthy();
+		expect(after.players[1].flags & POSE_AWAY).toBeTruthy();
 		// and it keeps running
 		for (let t = 0; t < 2; t += TICK) next.tick();
 		expect((next.snapshot() as Snapshot).phase).toBe('playing');
