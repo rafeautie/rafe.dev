@@ -128,16 +128,22 @@ function middleOf(shape: Shape): [number, number] | null {
 	return biggest ? geoCentroid(biggest) : null;
 }
 
-// a theme colour (oklch and all) as the rgb the 3D scene understands
+// a theme colour (oklch and all) as the rgb the 3D scene understands.
+// Reading a canvas back can wait on the GPU, so each colour is read once.
+const RGB = new Map<string, number[]>();
 function rgbOf(css: string) {
+	let found = RGB.get(css);
+	if (found) return found;
 	const canvas = document.createElement('canvas');
 	canvas.width = canvas.height = 1;
-	const context = canvas.getContext('2d');
+	const context = canvas.getContext('2d', { willReadFrequently: true });
 	if (!context) return [0, 0, 0];
 	context.fillStyle = css;
 	context.fillRect(0, 0, 1, 1);
 	const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
-	return [r, g, b];
+	found = [r, g, b];
+	RGB.set(css, found);
+	return found;
 }
 
 // how far each city's visitors spread, in degrees: about 60km
@@ -150,9 +156,12 @@ const TURBO = Array.from({ length: 256 }, (_, i) =>
 	// 'rgb(r, g, b)'
 	(interpolateTurbo(i / 255).match(/\d+/g) ?? []).map(Number)
 );
+const HEATMAPS = new WeakMap<CityRow[], HTMLCanvasElement>();
 function heatmap(cities: CityRow[]) {
-	const width = 4096;
-	const height = 2048;
+	const made = HEATMAPS.get(cities);
+	if (made) return made;
+	const width = 2048;
+	const height = 1024;
 	const perDegree = width / 360;
 	const sum = new Float32Array(width * height);
 	const reach = Math.ceil(SPREAD * 4 * perDegree);
@@ -191,11 +200,15 @@ function heatmap(cities: CityRow[]) {
 		image.data[i * 4 + 3] = 255 * Math.cbrt(t) * Math.min(1, t / 0.05);
 	}
 	context.putImageData(image, 0, 0);
+	HEATMAPS.set(cities, canvas);
 	return canvas;
 }
 
 // One shape on the globe: a country, or a state of one.
 type Area = {
+	// the same for a shape every time, so globe.gl keeps what it built for
+	// it rather than building it again
+	__id: string;
 	key: FilterKey;
 	// what choosing it filters by; empty when nobody visited
 	value: string;
@@ -232,6 +245,10 @@ export function Globe({
 	const [theme, setTheme] = useState(0);
 	const onPickRef = useRef(onPick);
 	const levelRef = useRef(level);
+	const materialsRef = useRef(new Map<string, MeshBasicMaterial>());
+	// whether the pointer is over the globe: globe.gl can report a hover
+	// from where it last saw the pointer, after it has left
+	const insideRef = useRef(false);
 	// where a filter turned the globe to, kept when the level changes with it
 	const aimRef = useRef<{ lat: number; lng: number; ms: number } | null>(null);
 
@@ -254,6 +271,7 @@ export function Globe({
 			if (!shapes) {
 				const visitors = counts.get(code) ?? 0;
 				list.push({
+					__id: code,
 					key: 'country',
 					value: visitors ? code : '',
 					label: countryName(code),
@@ -266,6 +284,7 @@ export function Globe({
 			shapes.forEach((region, index) => {
 				const rows = matched.get(index) ?? [];
 				list.push({
+					__id: `${code}-${index}`,
 					key: 'region',
 					value: rows[0]?.key ?? '',
 					label: rows[0]?.label ?? region.properties.name,
@@ -283,14 +302,17 @@ export function Globe({
 		const box = boxRef.current;
 		if (!box) return;
 		const still = window.matchMedia('(prefers-reduced-motion: reduce)');
+		const materials = materialsRef.current;
 		const globe = new GlobeGl(box, { rendererConfig: { alpha: true, antialias: true } })
 			.backgroundColor('rgba(0,0,0,0)')
 			.showAtmosphere(false)
 			.showGraticules(false)
-			.polygonSideColor(() => 'rgba(0,0,0,0)')
+			.polygonSideColor(() => '')
 			.polygonsTransitionDuration(0)
 			.pointOfView({ lat: 25, lng: 10, altitude: ALTITUDES[0] });
 		globeRef.current = globe;
+		// checking each new shader for errors stalls the page while it compiles
+		globe.renderer().debug.checkShaderErrors = import.meta.env.DEV;
 		const controls = globe.controls();
 		controls.enableZoom = false;
 		controls.autoRotate = !still.matches;
@@ -356,9 +378,11 @@ export function Globe({
 			}
 		};
 		const onEnter = () => {
+			insideRef.current = true;
 			controls.autoRotate = false;
 		};
 		const onLeave = () => {
+			insideRef.current = false;
 			controls.autoRotate = levelRef.current === 0 && !still.matches;
 			setTip(null);
 		};
@@ -395,6 +419,8 @@ export function Globe({
 			box.removeEventListener('pointerenter', onEnter);
 			box.removeEventListener('pointerleave', onLeave);
 			globe._destructor();
+			for (const material of materials.values()) material.dispose();
+			materials.clear();
 			box.replaceChildren();
 			globeRef.current = null;
 		};
@@ -435,26 +461,34 @@ export function Globe({
 		const [pr, pg, pb] = rgbOf(style.getPropertyValue('--background').trim() || '#fff');
 		const ink = (alpha: number) => `rgba(${r},${g},${b},${alpha})`;
 		const paper = `rgb(${pr},${pg},${pb})`;
-		const flat = new Map<number, MeshBasicMaterial>();
+		// Materials are kept between draws: a new one costs a shader compile,
+		// which is what made changing level slow.
+		const flat = materialsRef.current;
+		const made = (key: string, make: () => MeshBasicMaterial) => {
+			let found = flat.get(key);
+			if (!found) {
+				found = make();
+				flat.set(key, found);
+			}
+			return found;
+		};
 		// flat colour, unlit, so the globe reads like the rest of the page
 		const material = (alpha: number) => {
 			const rounded = Math.round(alpha * 100) / 100;
-			let made = flat.get(rounded);
-			if (!made) {
-				made = new MeshBasicMaterial({
-					color: `rgb(${r},${g},${b})`,
-					transparent: true,
-					opacity: rounded
-				});
-				flat.set(rounded, made);
-			}
-			return made;
+			return made(
+				`${r},${g},${b},${rounded}`,
+				() =>
+					new MeshBasicMaterial({
+						color: `rgb(${r},${g},${b})`,
+						transparent: true,
+						opacity: rounded
+					})
+			);
 		};
 		// the sea, a touch darker than the page so the globe's edge shows
 		const mix = (p: number, i: number) => Math.round(p + (i - p) * 0.04);
-		const sea = new MeshBasicMaterial({
-			color: `rgb(${mix(pr, r)},${mix(pg, g)},${mix(pb, b)})`
-		});
+		const seaColour = `rgb(${mix(pr, r)},${mix(pg, g)},${mix(pb, b)})`;
+		const sea = made(seaColour, () => new MeshBasicMaterial({ color: seaColour }));
 		const max = Math.max(1, ...areas.map((area) => area.visitors));
 		const shade = (area: Area) => (area.visitors ? 0.15 + (area.visitors / max) * 0.75 : 0.07);
 		const chosen = (area: Area) =>
@@ -480,7 +514,9 @@ export function Globe({
 				hovered = (area as Area | null) ?? null;
 				globe.polygonAltitude((item) => altitude(item as Area));
 				box.style.cursor = hovered?.value ? 'pointer' : '';
-				setTip(hovered && { label: hovered.label, visitors: hovered.visitors });
+				setTip(
+					insideRef.current && hovered ? { label: hovered.label, visitors: hovered.visitors } : null
+				);
 			})
 			.onPolygonClick((area) => {
 				const picked = area as Area;
@@ -500,13 +536,9 @@ export function Globe({
 			.onLabelHover((city) => {
 				const row = city as CityRow | null;
 				box.style.cursor = row ? 'pointer' : '';
-				setTip(row && { label: row.label, visitors: row.visitors });
+				setTip(insideRef.current && row ? { label: row.label, visitors: row.visitors } : null);
 			})
 			.onLabelClick((city) => onPickRef.current('city', (city as CityRow).key));
-		return () => {
-			for (const made of flat.values()) made.dispose();
-			sea.dispose();
-		};
 	}, [areas, cities, level, active.country, active.region, active.city, theme]);
 
 	// cities as a heatmap: each city's visitors spread over the land around
