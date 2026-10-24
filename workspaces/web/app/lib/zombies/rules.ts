@@ -63,14 +63,75 @@ export const ZOMBIE = {
 
 export const BREAK = { first: 4, between: 10 };
 
+// Boarded windows: how long a zombie takes to pull off each board and then
+// climb through, how often a held F nails one back, what that pays (up to a
+// cap each round), and the share of spawns that come in through a window
+// when one is near.
+export const WINDOW = {
+	tearTime: 1.1,
+	climbTime: 1,
+	repairTime: 0.75,
+	repairPoints: 10,
+	repairCap: 500,
+	share: 0.65
+};
+
+// Power-ups dropped by dying zombies: the chance of one, the most a round
+// gives, how long one waits on the floor, how long one runs once picked up,
+// and what a Nuke and a Carpenter pay everyone.
+export const POWERUP = {
+	chance: 0.03,
+	perRound: 4,
+	life: 25,
+	time: 30,
+	reach: 1.3,
+	nukePoints: 400,
+	carpenterPoints: 200
+};
+
+// The Mystery Box: its price, how long it spins, and how long it holds a
+// gun out before shutting.
+export const BOX = { cost: 950, roll: 4, offer: 9 };
+
 // Perks, bought from machines and lost when downed. Each is one bit of a
 // player's perks.
 export type PerkId = 'jugg' | 'speed' | 'tap' | 'revive';
-export const PERKS: Record<PerkId, { bit: number; name: string; cost: number; what: string }> = {
-	jugg: { bit: 1, name: 'Juggernog', cost: 2500, what: 'Takes more hits to go down' },
-	speed: { bit: 2, name: 'Speed Cola', cost: 3000, what: 'Reloads twice as fast' },
-	tap: { bit: 4, name: 'Double Tap', cost: 2000, what: 'Fires a third faster' },
-	revive: { bit: 8, name: 'Quick Revive', cost: 1500, what: 'Revives teammates twice as fast' }
+export const PERKS: Record<
+	PerkId,
+	{ bit: number; name: string; short: string; color: string; cost: number; what: string }
+> = {
+	jugg: {
+		bit: 1,
+		name: 'Juggernog',
+		short: 'JG',
+		color: '#9c3434',
+		cost: 2500,
+		what: 'Takes more hits to go down'
+	},
+	speed: {
+		bit: 2,
+		name: 'Speed Cola',
+		short: 'SC',
+		color: '#2f7d47',
+		cost: 3000,
+		what: 'Reloads twice as fast'
+	},
+	tap: {
+		bit: 4,
+		name: 'Double Tap',
+		short: 'DT',
+		color: '#b07a22',
+		cost: 2000,
+		what: 'Fires a third faster'
+	},
+	revive: {
+		bit: 8,
+		name: 'Quick Revive',
+		short: 'QR',
+		color: '#2f63a0',
+		cost: 1500,
+		what: 'Revives teammates twice as fast'
+	}
 };
 export const PERK_IDS = Object.keys(PERKS) as PerkId[];
 // health with Juggernog

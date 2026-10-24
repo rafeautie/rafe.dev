@@ -1,11 +1,13 @@
 import * as THREE from 'three';
-import { Blocking, CELL, buildMap, cellIndex, cellOf, type GameMap } from '../map';
+import { Blocking, CELL, WINDOW_BOARDS, buildMap, cellIndex, cellOf, type GameMap } from '../map';
 import type {
+	BoxSnap,
 	GameStats,
 	HostMessage,
 	LifeState,
 	Phase,
 	PlayerSnap,
+	PowerupKind,
 	Snapshot,
 	ZombieSnap
 } from '../protocol';
@@ -19,10 +21,23 @@ import {
 	SLIDE,
 	STAND,
 	ZOMBIE_ATTACKING,
+	ZOMBIE_CLIMBING,
 	ZOMBIE_RISING,
-	ZOMBIE_STAGGER
+	ZOMBIE_STAGGER,
+	ZOMBIE_TEARING
 } from '../protocol';
-import { DOUBLE_TAP_RATE, PERKS, PLAYER, SPEED_COLA_RATE, ZOMBIE } from '../rules';
+import {
+	BOX,
+	DOUBLE_TAP_RATE,
+	JUGG_HEALTH,
+	PERKS,
+	PERK_IDS,
+	PLAYER,
+	SPEED_COLA_RATE,
+	WINDOW,
+	ZOMBIE,
+	type PerkId
+} from '../rules';
 import type { Session } from '../session';
 import { settings } from '../settings';
 import { KNIFE, WEAPONS, ammoCost, type ReloadStyle, type Weapon, type WeaponId } from '../weapons';
@@ -119,6 +134,8 @@ export type HudState = {
 	left: number;
 	timer: number;
 	hp: number;
+	// the most health there is, more with Juggernog
+	maxHp: number;
 	life: LifeState;
 	bleed: number;
 	beingRevived: number;
@@ -128,8 +145,12 @@ export type HudState = {
 	reserve: number;
 	reloading: boolean;
 	players: HudPlayer[];
-	hint: { text: string; muted: boolean } | null;
-	note: string | null;
+	hint: { text: string; muted: boolean; progress?: number } | null;
+	note: { text: string; warning: boolean } | null;
+	// perks held, and seconds left on power-ups running for everyone
+	perks: PerkId[];
+	instakill: number;
+	double: number;
 	hits: number;
 	kills: number;
 	hurts: number;
@@ -241,6 +262,10 @@ export class GameClient {
 	private hint: HudState['hint'] = null;
 	// where recent hits came from, for the marks round the crosshair
 	private danger: { id: number; x: number; z: number; at: number }[] = [];
+	private drops = new Map<number, THREE.Mesh>();
+	private box: BoxSnap = { state: 'idle', weapon: null, by: null, left: 0 };
+	// how long F has been held at a window, toward the next board
+	private repairHeld = 0;
 	private dangerId = 0;
 
 	private snaps: { at: number; snap: Snapshot; zombies: Map<number, ZombieSnap> }[] = [];
@@ -433,8 +458,7 @@ export class GameClient {
 				this.grant(m.weapon, m.ammo);
 				break;
 			case 'denied':
-				this.sound.deny();
-				this.note('Not Enough Points');
+				this.deny();
 				break;
 			case 'hurt':
 				this.sound.hurt();
@@ -466,6 +490,26 @@ export class GameClient {
 			case 'stats':
 				if (this.phase !== 'over') this.stats = m.stats;
 				break;
+			case 'powerup':
+				this.sound.powerupPickup(m.kind);
+				this.note(POWERUP_NAMES[m.kind], false);
+				if (m.kind === 'ammo') {
+					for (const slot of this.slots) {
+						const w = WEAPONS[slot.weapon];
+						slot.mag = w.mag;
+						slot.reserve = w.reserve;
+					}
+				}
+				break;
+			case 'perk':
+				this.sound.perkJingle(m.perk);
+				this.sound.drink();
+				this.note(PERKS[m.perk].name, false);
+				// the gun goes down while drinking
+				this.reloadLeft = 0;
+				this.raise(WEAPONS[this.slot().weapon]);
+				this.swapLeft = this.swapTotal = 1.2;
+				break;
 			case 'over':
 				this.phase = 'over';
 				this.stats = m.stats;
@@ -496,9 +540,11 @@ export class GameClient {
 		this.snaps.push({ at: performance.now(), snap, zombies });
 		if (this.snaps.length > 30) this.snaps.shift();
 		this.phase = snap.phase;
+		this.syncWorld(snap, last?.snap);
 		const mine = snap.players.find((p) => p.id === this.session.state.you);
 		if (!mine) return;
 		this.hp = mine.hp;
+		this.perks = mine.perks;
 		if (mine.state !== this.life) {
 			const was = this.life;
 			this.life = mine.state;
@@ -518,6 +564,57 @@ export class GameClient {
 				this.raise(WEAPONS[this.slot().weapon]);
 			}
 		}
+	}
+
+	// Windows, the box and power-ups on the floor, brought up to date with a
+	// snapshot, with a sound for each change.
+	private syncWorld(snap: Snapshot, before: Snapshot | undefined) {
+		snap.windows.forEach((boards, i) => {
+			const was = before?.windows[i] ?? boards;
+			if (boards === was) return;
+			const w = this.map.windows[i];
+			this.world.setBoards(i, boards);
+			if (boards < was) this.sound.boardBreak({ x: w.x, y: 1.4, z: w.z });
+		});
+		const box = this.map.machines.find((m) => m.kind === 'box');
+		const at = box && { x: box.x, y: 1, z: box.z };
+		const was = before?.box.state ?? 'idle';
+		if (at && snap.box.state !== was) {
+			if (snap.box.state === 'rolling') {
+				this.sound.boxOpen(at);
+				this.sound.boxJingle(at);
+			} else if (snap.box.state === 'idle') this.sound.boxClose(at);
+		}
+		this.world.setBox(snap.box);
+		this.box = snap.box;
+
+		const seen = new Set<number>();
+		for (const d of snap.drops) {
+			seen.add(d.id);
+			let mesh = this.drops.get(d.id);
+			if (!mesh) {
+				mesh = dropMesh(d.kind);
+				mesh.position.set(d.x, 0.55, d.z);
+				this.dynamic.add(mesh);
+				this.effects.glow(mesh);
+				this.drops.set(d.id, mesh);
+				this.sound.powerupSpawn({ x: d.x, y: 0.6, z: d.z });
+			}
+			// blinks as it runs out
+			mesh.visible = d.left > 5 || Math.floor(performance.now() / 180) % 2 === 0;
+		}
+		for (const [id, mesh] of this.drops) {
+			if (seen.has(id)) continue;
+			this.effects.unglow(mesh);
+			mesh.removeFromParent();
+			for (const m of [mesh.material].flat()) {
+				(m as THREE.MeshLambertMaterial).map?.dispose();
+				m.dispose();
+			}
+			this.drops.delete(id);
+		}
+		if (before && before.instakill > 0 && snap.instakill === 0) this.sound.powerupEnd();
+		if (before && before.double > 0 && snap.double === 0) this.sound.powerupEnd();
 	}
 
 	private grant(weapon: WeaponId, ammo: boolean) {
@@ -550,9 +647,10 @@ export class GameClient {
 		return this.downedSlot ?? this.slots[this.current];
 	}
 
-	private note(text: string) {
-		this.noteUntil = performance.now() + 1500;
-		this.hud = { ...this.hud, note: text };
+	// a line under the crosshair for a moment: a warning, or good news
+	private note(text: string, warning = true) {
+		this.noteUntil = performance.now() + 1800;
+		this.hud = { ...this.hud, note: { text, warning } };
 	}
 
 	// --- the frame
@@ -1076,7 +1174,8 @@ export class GameClient {
 	// The nearest zombie a ray hits before a wall, if any.
 	private trace(o: THREE.Vector3, d: THREE.Vector3, range: number) {
 		const flat = Math.hypot(d.x, d.z);
-		let wall = flat > 1e-6 ? this.blocking.ray(o.x, o.z, d.x, d.z, range * flat) / flat : range;
+		let wall =
+			flat > 1e-6 ? this.blocking.ray(o.x, o.z, d.x, d.z, range * flat, true) / flat : range;
 		if (d.y < 0) wall = Math.min(wall, -o.y / d.y);
 		let best: { zombie: number | null; head: boolean; t: number } = {
 			zombie: null,
@@ -1133,6 +1232,11 @@ export class GameClient {
 		});
 	}
 
+	private deny() {
+		this.sound.deny();
+		this.note('Not Enough Points');
+	}
+
 	private interact(dt: number, active: boolean) {
 		this.interactWait -= dt;
 		this.reviving = null;
@@ -1159,14 +1263,64 @@ export class GameClient {
 			const door = this.map.doors.find(
 				(d) => !this.blocking.open[d.index] && Math.hypot(d.x - this.me.x, d.z - this.me.z) < 2.3
 			);
-			if (door) {
+			const boards = latest.windows;
+			const window = this.map.windows.find(
+				(w) =>
+					boards[w.index] < WINDOW_BOARDS &&
+					Math.hypot(w.x + w.nx * 1.3 - this.me.x, w.z + w.nz * 1.3 - this.me.z) < 1.7
+			);
+			const machine = this.map.machines.find(
+				(m) =>
+					Math.hypot(m.x + m.nx * 1.2 - this.me.x, m.z + m.nz * 1.2 - this.me.z) < 1.6 &&
+					(m.kind === 'box' || !(this.perks & PERKS[m.kind].bit))
+			);
+			if (window) {
+				// holding F nails a board back on every so often
+				hint = { text: 'Hold F to Rebuild', muted: false };
+				if (active && this.keys.has('KeyF')) {
+					this.repairHeld += dt;
+					hint.progress = Math.min(1, this.repairHeld / WINDOW.repairTime);
+					if (this.repairHeld >= WINDOW.repairTime) {
+						this.repairHeld = 0;
+						this.sound.boardRepair();
+						this.session.post({ t: 'repair', window: window.index });
+					}
+				} else this.repairHeld = 0;
+			} else if (machine?.kind === 'box') {
+				const box = this.box;
+				const mine = box.by === this.session.state.you;
+				if (box.state === 'idle') {
+					hint = { text: `Press F for the Mystery Box · ${BOX.cost}`, muted: points < BOX.cost };
+					if (press) {
+						this.interactWait = 0.4;
+						if (points < BOX.cost) this.deny();
+						else
+							this.session.post({
+								t: 'buyBox',
+								have: [...new Set(this.slots.map((s) => s.weapon))]
+							});
+					}
+				} else if (box.state === 'offering' && mine && box.weapon) {
+					hint = { text: `Press F to Take ${WEAPONS[box.weapon].name}`, muted: false };
+					if (press) {
+						this.interactWait = 0.4;
+						this.session.post({ t: 'takeBox' });
+					}
+				} else hint = { text: 'Mystery Box', muted: true };
+			} else if (machine) {
+				const perk = PERKS[machine.kind];
+				hint = { text: `Press F to Buy ${perk.name} · ${perk.cost}`, muted: points < perk.cost };
+				if (press) {
+					this.interactWait = 0.4;
+					if (points < perk.cost) this.deny();
+					else this.session.post({ t: 'buyPerk', perk: machine.kind });
+				}
+			} else if (door) {
 				hint = { text: `Press F to Open Door · ${door.cost}`, muted: points < door.cost };
 				if (press) {
 					this.interactWait = 0.4;
-					if (points < door.cost) {
-						this.sound.deny();
-						this.note('Not Enough Points');
-					} else this.session.post({ t: 'buyDoor', door: door.index });
+					if (points < door.cost) this.deny();
+					else this.session.post({ t: 'buyDoor', door: door.index });
 				}
 			} else {
 				const fx = -Math.sin(this.me.yaw);
@@ -1188,10 +1342,8 @@ export class GameClient {
 					};
 					if (press) {
 						this.interactWait = 0.4;
-						if (points < cost) {
-							this.sound.deny();
-							this.note('Not Enough Points');
-						} else this.session.post({ t: 'buyWeapon', wall: wall.index, owned });
+						if (points < cost) this.deny();
+						else this.session.post({ t: 'buyWeapon', wall: wall.index, owned });
 					}
 				}
 			}
@@ -1226,6 +1378,7 @@ export class GameClient {
 			const za = a.zombies.get(id) ?? zb;
 			const x = za[1] + (zb[1] - za[1]) * alpha;
 			const z = za[2] + (zb[2] - za[2]) * alpha;
+			const y = za[7] + (zb[7] - za[7]) * alpha;
 			const yaw = lerpAngle(za[3], zb[3], alpha);
 			let view = this.zombies.get(id);
 			if (!view) {
@@ -1258,12 +1411,16 @@ export class GameClient {
 			view.seen = now;
 			const stepBefore = view.step;
 			view.step += moved * 4.4;
+			// tearing at boards is a swing over and over
 			view.swing =
 				zb[5] & ZOMBIE_ATTACKING
 					? Math.min(1, view.swing + dt / ZOMBIE.windup)
-					: Math.max(0, view.swing - dt * 3);
+					: zb[5] & ZOMBIE_TEARING
+						? (view.swing + dt * 1.6) % 1
+						: Math.max(0, view.swing - dt * 3);
 			const rising = Math.max(0, 1 - (now - view.riseStart) / (ZOMBIE.rise * 1000));
-			const lean = [0, 0.1, 0.2][view.speed] ?? 0;
+			// bent over to climb through a window
+			const lean = zb[5] & ZOMBIE_CLIMBING ? 0.45 : ([0, 0.1, 0.2][view.speed] ?? 0);
 			// someone else's hit, seen from the host: a jolt straight back
 			if (zb[5] & ZOMBIE_STAGGER && view.flinch < 0.2 && now - view.flinchAt > 400) {
 				view.flinch = 0.6;
@@ -1276,7 +1433,7 @@ export class GameClient {
 			const c = Math.cos(yaw);
 			const s = Math.sin(yaw);
 			const push = view.flinch * view.flinch * (3 - 2 * view.flinch);
-			zombiePose(view.body.joints, x, -1.9 * rising, z, yaw, view.step, view.swing, lean, {
+			zombiePose(view.body.joints, x, y - 1.9 * rising, z, yaw, view.step, view.swing, lean, {
 				x: (view.flinchX * c - view.flinchZ * s) * push,
 				z: (view.flinchX * s + view.flinchZ * c) * push
 			});
@@ -1477,7 +1634,7 @@ export class GameClient {
 	// The first wall or floor along a ray, ignoring zombies.
 	private surface(o: THREE.Vector3, d: THREE.Vector3, range: number) {
 		const flat = Math.hypot(d.x, d.z);
-		let t = flat > 1e-6 ? this.blocking.ray(o.x, o.z, d.x, d.z, range * flat) / flat : range;
+		let t = flat > 1e-6 ? this.blocking.ray(o.x, o.z, d.x, d.z, range * flat, true) / flat : range;
 		if (d.y < 0) t = Math.min(t, -o.y / d.y);
 		const at = o.clone().addScaledVector(d, t);
 		return { t, normal: this.normalAt(at, d), door: this.onDoor(at, d) };
@@ -1567,6 +1724,10 @@ export class GameClient {
 			players: [],
 			hint: null,
 			note: null,
+			perks: [],
+			instakill: 0,
+			double: 0,
+			maxHp: PLAYER.health,
 			hits: 0,
 			kills: 0,
 			hurts: 0,
@@ -1638,6 +1799,10 @@ export class GameClient {
 			})),
 			hint: this.hint,
 			note: performance.now() < this.noteUntil ? this.hud.note : null,
+			perks: PERK_IDS.filter((id) => this.perks & PERKS[id].bit),
+			instakill: latest?.instakill ?? 0,
+			double: latest?.double ?? 0,
+			maxHp: this.perks & PERKS.jugg.bit ? JUGG_HEALTH : PLAYER.health,
 			locked: document.pointerLockElement === this.canvas,
 			played: this.played,
 			held: latest?.held ?? false,
@@ -1696,6 +1861,46 @@ function pausedBadge() {
 	sprite.visible = false;
 	return sprite;
 }
+
+const POWERUP_NAMES: Record<PowerupKind, string> = {
+	ammo: 'Max Ammo',
+	instakill: 'Insta-Kill',
+	double: 'Double Points',
+	nuke: 'Nuke',
+	carpenter: 'Carpenter'
+};
+
+const DROP_LOOK: Record<PowerupKind, { color: string; text: string }> = {
+	ammo: { color: '#3f8f4f', text: 'AMMO' },
+	instakill: { color: '#e8e8e8', text: 'KILL' },
+	double: { color: '#d4a62a', text: '×2' },
+	nuke: { color: '#b53a2e', text: 'NUKE' },
+	carpenter: { color: '#8a6a4a', text: 'FIX' }
+};
+
+// a power-up on the floor: a glowing block with what it is on every side
+function dropMesh(kind: PowerupKind) {
+	const look = DROP_LOOK[kind];
+	const canvas = document.createElement('canvas');
+	canvas.width = canvas.height = 128;
+	const g = canvas.getContext('2d')!;
+	g.fillStyle = look.color;
+	g.fillRect(0, 0, 128, 128);
+	g.fillStyle = kind === 'instakill' ? '#1a1a1a' : '#ffffff';
+	g.font = `700 ${look.text.length > 2 ? 34 : 60}px "Geist Variable", system-ui, sans-serif`;
+	g.textAlign = 'center';
+	g.textBaseline = 'middle';
+	g.fillText(look.text, 64, 68);
+	const texture = new THREE.CanvasTexture(canvas);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	const mesh = new THREE.Mesh(
+		DROP_BOX,
+		new THREE.MeshLambertMaterial({ map: texture, emissive: look.color, emissiveIntensity: 0.6 })
+	);
+	mesh.castShadow = true;
+	return mesh;
+}
+const DROP_BOX = new THREE.BoxGeometry(0.42, 0.42, 0.42);
 
 function nameLabel(name: string) {
 	const canvas = document.createElement('canvas');

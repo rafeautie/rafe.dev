@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { Button } from '~/components/ui/button';
 import type { GameClient, HudState } from '~/lib/zombies/game/client';
 import type { GameStats } from '~/lib/zombies/protocol';
-import { PLAYER } from '~/lib/zombies/rules';
+import { PERKS } from '~/lib/zombies/rules';
 import { cn } from '~/lib/utils';
 import { SettingsForm } from './Settings';
 import { Controls } from './Zombies';
@@ -14,7 +14,7 @@ const NUMBER = new Intl.NumberFormat('en-US');
 // not jump as they change.
 export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => void }) {
 	const hud = useSyncExternalStore(client.subscribe, client.getHud);
-	const hurt = Math.max(0, 1 - hud.hp / PLAYER.health);
+	const hurt = Math.max(0, 1 - hud.hp / hud.maxHp);
 	const over = hud.phase === 'over';
 	// before the mouse is first captured there is nothing to pause, just a click to start
 	const waiting = !hud.locked && !hud.played && !over;
@@ -94,9 +94,21 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 					<Panel className={cn('px-3.5 py-2 text-sm', hud.hint.muted && 'text-muted-foreground')}>
 						{hud.hint.text}
 						{hud.reviving > 0 && <Progress value={hud.reviving} className="mt-2" />}
+						{hud.hint.progress !== undefined && hud.reviving <= 0 && (
+							<Progress value={hud.hint.progress} className="mt-2" />
+						)}
 					</Panel>
 				)}
-				{hud.note && <Panel className="px-3.5 py-2 text-sm text-destructive">{hud.note}</Panel>}
+				{hud.note && (
+					<Panel
+						className={cn(
+							'px-3.5 py-2 text-sm',
+							hud.note.warning ? 'text-destructive' : 'text-base tracking-wide uppercase'
+						)}
+					>
+						{hud.note.text}
+					</Panel>
+				)}
 			</div>
 
 			{/* downed or dead */}
@@ -116,6 +128,30 @@ export function Hud({ client, onLeave }: { client: GameClient; onLeave: () => vo
 					</p>
 					{hud.beingRevived > 0 && <Progress value={hud.beingRevived} className="mt-2" />}
 				</Panel>
+			)}
+
+			{/* power-ups running, top middle */}
+			{(hud.instakill > 0 || hud.double > 0) && !over && (
+				<div className="absolute top-14 left-1/2 flex -translate-x-1/2 gap-2">
+					{hud.instakill > 0 && <Boost label="Insta-Kill" left={hud.instakill} />}
+					{hud.double > 0 && <Boost label="Double Points" left={hud.double} />}
+				</div>
+			)}
+
+			{/* perks held, above the round */}
+			{hud.perks.length > 0 && (
+				<div className="absolute bottom-[7.5rem] left-5 flex gap-1.5">
+					{hud.perks.map((perk) => (
+						<span
+							key={perk}
+							title={PERKS[perk].name}
+							className="flex size-8 items-center justify-center rounded-md text-xs font-semibold text-white shadow-sm"
+							style={{ background: PERKS[perk].color }}
+						>
+							{PERKS[perk].short}
+						</span>
+					))}
+				</div>
 			)}
 
 			{/* round, bottom left */}
@@ -426,6 +462,19 @@ function Panel({ className, children }: { className?: string; children: React.Re
 		>
 			{children}
 		</div>
+	);
+}
+
+function Boost({ label, left }: { label: string; left: number }) {
+	return (
+		<Panel
+			className={cn(
+				'px-3 py-1.5 text-sm tracking-wide uppercase',
+				left <= 5 && 'animate-pulse text-destructive'
+			)}
+		>
+			{label} <span className="text-muted-foreground tabular-nums">{left}</span>
+		</Panel>
 	);
 }
 

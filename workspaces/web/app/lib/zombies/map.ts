@@ -174,6 +174,60 @@ const WALL_BUY_SPECS: { room: RoomId; side: Side; at: number; weapon: WeaponId }
 	{ room: '22', side: 'e', at: 5, weapon: 'galil' }
 ];
 
+// Boarded windows in the walls between rooms, which zombies tear their way
+// through from the room on the other side. `at` is the cell along that wall,
+// 0 to 10, like a wall gun's; the room named is the one they climb into.
+const WINDOW_SPECS: { room: RoomId; side: Side; at: number }[] = [
+	{ room: '11', side: 'n', at: 2 },
+	{ room: '11', side: 'e', at: 8 },
+	{ room: '11', side: 'w', at: 2 },
+	{ room: '11', side: 's', at: 5 },
+	{ room: '01', side: 'w', at: 8 },
+	{ room: '02', side: 's', at: 2 },
+	{ room: '10', side: 'n', at: 8 },
+	{ room: '12', side: 's', at: 8 },
+	{ room: '00', side: 'e', at: 2 },
+	{ room: '20', side: 'n', at: 2 },
+	{ room: '21', side: 'e', at: 8 },
+	{ room: '22', side: 'n', at: 2 }
+];
+export const WINDOW_BOARDS = 6;
+
+// The Mystery Box and the perk machines, each filling a floor cell against a
+// wall and facing into the room.
+export type MachineKind = 'box' | 'jugg' | 'speed' | 'tap' | 'revive';
+const MACHINE_SPECS: { kind: MachineKind; room: RoomId; side: Side; at: number }[] = [
+	{ kind: 'box', room: '11', side: 'e', at: 3 },
+	{ kind: 'revive', room: '11', side: 'w', at: 8 },
+	{ kind: 'jugg', room: '12', side: 'n', at: 8 },
+	{ kind: 'speed', room: '10', side: 's', at: 8 },
+	{ kind: 'tap', room: '02', side: 'e', at: 5 }
+];
+
+export type Machine = {
+	kind: MachineKind;
+	cell: number;
+	// the middle of its cell
+	x: number;
+	z: number;
+	// unit vector out of the wall, the way it faces
+	nx: number;
+	nz: number;
+};
+
+export type Window = {
+	index: number;
+	cell: number;
+	// the window's middle, in the wall
+	x: number;
+	z: number;
+	// unit vector out of the wall, into the room zombies climb into
+	nx: number;
+	nz: number;
+	// the area on the inside
+	area: number;
+};
+
 export type Door = {
 	index: number;
 	cell: number;
@@ -202,6 +256,9 @@ export type GameMap = {
 	area: Int16Array; // area per floor cell, or -1; area 0 is where players start
 	doors: Door[];
 	wallBuys: WallBuy[];
+	machines: Machine[];
+	windows: Window[];
+	windowAt: Int16Array; // window index per cell, or -1
 	spawns: { x: number; z: number; area: number }[];
 	playerSpawns: { x: number; z: number }[];
 	roomName: (x: number, z: number) => string;
@@ -248,6 +305,14 @@ export function buildMap(): GameMap {
 		}
 	}
 	doorCells.forEach((d, i) => (doorAt[d.cell] = i));
+
+	const machines: Machine[] = MACHINE_SPECS.map((spec) => {
+		const [fx, fy, nx, nz] = against(spec.room, spec.side, spec.at);
+		const cell = cellIndex(fx, fy);
+		if (solid[cell]) throw new Error(`the ${spec.kind} machine is in a wall`);
+		solid[cell] = 1;
+		return { kind: spec.kind, cell, x: centerOf(fx), z: centerOf(fy), nx, nz };
+	});
 
 	// Areas: floor joined up without crossing a door.
 	const area = new Int16Array(SIZE * SIZE).fill(-1);
@@ -312,6 +377,29 @@ export function buildMap(): GameMap {
 		};
 	});
 
+	const windowAt = new Int16Array(SIZE * SIZE).fill(-1);
+	const windows: Window[] = WINDOW_SPECS.map((spec, index) => {
+		// the floor cell inside, the wall cell, and the way into the room
+		const [fx, fy, nx, nz] = against(spec.room, spec.side, spec.at);
+		const wx = fx - nx;
+		const wy = fy - nz;
+		const cell = cellIndex(wx, wy);
+		const outside = cellIndex(wx - nx, wy - nz);
+		if (!solid[cell] || doorAt[cell] >= 0) throw new Error(`window ${index} is not in a wall`);
+		if (solid[outside] || solid[cellIndex(fx, fy)])
+			throw new Error(`window ${index} has no floor on both sides`);
+		windowAt[cell] = index;
+		return {
+			index,
+			cell,
+			x: centerOf(wx),
+			z: centerOf(wy),
+			nx,
+			nz,
+			area: area[cellIndex(fx, fy)]
+		};
+	});
+
 	const spawns: GameMap['spawns'] = [];
 	for (const [id, spec] of Object.entries(ROOM_SPECS) as [RoomId, RoomSpec][]) {
 		const [ox, oy] = roomOrigin(id);
@@ -335,7 +423,29 @@ export function buildMap(): GameMap {
 		return ROOM_SPECS[`${row}${col}` as RoomId].name;
 	};
 
-	return { solid, doorAt, area, doors, wallBuys, spawns, playerSpawns, roomName };
+	return {
+		solid,
+		doorAt,
+		area,
+		doors,
+		wallBuys,
+		machines,
+		windows,
+		windowAt,
+		spawns,
+		playerSpawns,
+		roomName
+	};
+}
+
+// The floor cell against one of a room's walls, and the unit vector out of
+// that wall into the room.
+function against(room: RoomId, side: Side, at: number): [number, number, number, number] {
+	const [ox, oy] = roomOrigin(room);
+	if (side === 'n') return [ox + at, oy, 0, 1];
+	if (side === 's') return [ox + at, oy + 10, 0, -1];
+	if (side === 'w') return [ox, oy + at, 1, 0];
+	return [ox + 10, oy + at, -1, 0];
 }
 
 const NEIGHBORS_4 = [
@@ -410,7 +520,9 @@ export class Blocking {
 	}
 
 	// Distance along a flat ray (in x and z) to the first solid cell, up to max.
-	ray(x: number, z: number, dx: number, dz: number, max: number): number {
+	// Bullets pass through windows; sight lines for the zombies' route finding
+	// don't.
+	ray(x: number, z: number, dx: number, dz: number, max: number, thruWindows = false): number {
 		const len = Math.hypot(dx, dz);
 		if (len < 1e-9) return max;
 		dx /= len;
@@ -427,7 +539,11 @@ export class Blocking {
 			dz === 0 ? Infinity : ((dz > 0 ? (cy + 1) * CELL - z : z - cy * CELL) / CELL) * tDeltaY;
 		let t = 0;
 		while (t < max) {
-			if (this.isSolid(cx, cy)) return t;
+			if (
+				this.isSolid(cx, cy) &&
+				!(thruWindows && (this.map.windowAt[cellIndex(cx, cy)] ?? -1) >= 0)
+			)
+				return t;
 			if (tMaxX < tMaxY) {
 				t = tMaxX;
 				tMaxX += tDeltaX;

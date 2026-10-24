@@ -1,5 +1,16 @@
-import { Blocking, buildMap, cellIndex, cellOf, type GameMap } from './map';
+import {
+	Blocking,
+	CELL,
+	WINDOW_BOARDS,
+	buildMap,
+	cellIndex,
+	cellOf,
+	type GameMap,
+	type Window
+} from './map';
 import type {
+	BoxSnap,
+	DropSnap,
 	GameStats,
 	HostMessage,
 	LifeState,
@@ -8,6 +19,7 @@ import type {
 	PlayerStats,
 	Stance,
 	PlayerSnap,
+	PowerupKind,
 	ZombieSnap
 } from './protocol';
 import {
@@ -17,18 +29,26 @@ import {
 	POSE_PAUSED,
 	POSE_RELOAD,
 	POSE_SPRINT,
+	POWERUP_KINDS,
 	SLIDE,
 	STAND,
 	ZOMBIE_ATTACKING,
+	ZOMBIE_CLIMBING,
 	ZOMBIE_RISING,
-	ZOMBIE_STAGGER
+	ZOMBIE_STAGGER,
+	ZOMBIE_TEARING
 } from './protocol';
 import {
+	BOX,
 	BREAK,
 	DOWNED_LOSS,
+	JUGG_HEALTH,
+	PERKS,
 	PLAYER,
 	POINTS,
+	POWERUP,
 	START_POINTS,
+	WINDOW,
 	ZOMBIE,
 	spawnDelay,
 	speedClass,
@@ -36,7 +56,7 @@ import {
 	zombieHealth
 } from './rules';
 import { MAX_PLAYERS } from './signal';
-import { WEAPONS, ammoCost, type WeaponId } from './weapons';
+import { BOX_WEAPONS, WEAPONS, ammoCost, type WeaponId } from './weapons';
 
 export const TICK = 1 / 30;
 const SNAPSHOT_EVERY = 2; // ticks, so 15 a second
@@ -44,6 +64,14 @@ const FLOW_EVERY = 0.25; // seconds
 const CHASE_SIGHT = 14; // zombies walk straight at a player they can see this close
 const STRAY_TIME = 15; // a zombie this long with no player near is sent back to spawn
 const STRAY_RANGE = 32;
+// within this, zombies spread round a player rather than all heading for
+// the same spot
+const SURROUND_RANGE = 5;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+// a window zombie appears this far outside, and stands this far out to tear
+// at the boards
+const WINDOW_SPAWN = 2.6;
+const WINDOW_STAND = 1.45;
 
 type HostPlayer = {
 	id: string;
@@ -68,6 +96,11 @@ type HostPlayer = {
 	paused: boolean;
 	stance: Stance;
 	flags: number;
+	perks: number;
+	// when this player last nailed a board back, and what boards have paid
+	// this round
+	repaired: number;
+	repairPaid: number;
 	stats: Tally;
 };
 
@@ -102,6 +135,10 @@ type HostZombie = {
 	stray: number;
 	// knocked back by a hit, slowed until this runs out
 	stagger: number;
+	// coming in through a window: walking up to it, pulling boards off, then
+	// climbing through; null once inside
+	window: { index: number; phase: 'approach' | 'tear' | 'climb'; t: number } | null;
+	y: number;
 };
 
 export type Send = (to: string, message: HostMessage) => void;
@@ -126,6 +163,13 @@ export class HostGame {
 	private ticks = 0;
 	// how long each round took, from round 1 at index 0
 	private roundTimes: number[] = [];
+	private windows: number[];
+	private drops: DropSnap[] = [];
+	private nextDrop = 1;
+	private dropsThisRound = 0;
+	private instakill = 0;
+	private double = 0;
+	private box: BoxSnap = { state: 'idle', weapon: null, by: null, left: 0 };
 
 	constructor(
 		private send: Send,
@@ -133,6 +177,7 @@ export class HostGame {
 	) {
 		this.map = buildMap();
 		this.blocking = new Blocking(this.map);
+		this.windows = this.map.windows.map(() => WINDOW_BOARDS);
 	}
 
 	get playerCount() {
@@ -168,6 +213,9 @@ export class HostGame {
 			paused: false,
 			stance: STAND,
 			flags: 0,
+			perks: 0,
+			repaired: -Infinity,
+			repairPaid: 0,
 			stats: newTally()
 		});
 		this.send(id, {
@@ -202,6 +250,10 @@ export class HostGame {
 		this.round = 0;
 		this.roundTimes = [];
 		this.toSpawn = 0;
+		this.windows = this.map.windows.map(() => WINDOW_BOARDS);
+		this.drops = [];
+		this.instakill = this.double = 0;
+		this.box = { state: 'idle', weapon: null, by: null, left: 0 };
 		let i = 0;
 		for (const p of this.players.values()) {
 			const spot = this.map.playerSpawns[i++ % this.map.playerSpawns.length];
@@ -217,6 +269,7 @@ export class HostGame {
 				kills: 0,
 				weapon: 'm1911',
 				soloRevives: PLAYER.soloRevives,
+				perks: 0,
 				stats: newTally()
 			});
 		}
@@ -263,23 +316,43 @@ export class HostGame {
 				if (!wall || p.state !== 'alive') return;
 				const weapon = WEAPONS[wall.weapon];
 				const cost = message.owned ? ammoCost(weapon) : weapon.cost;
-				if (p.points < cost) return this.send(p.id, { t: 'denied' });
-				p.points -= cost;
-				p.stats.spent += cost;
-				this.send(p.id, { t: 'points', amount: -cost });
+				if (!this.spend(p, cost)) return;
 				this.send(p.id, { t: 'grant', weapon: weapon.id, ammo: message.owned });
 				break;
 			}
 			case 'buyDoor': {
 				const door = this.map.doors[message.door];
 				if (!door || this.blocking.open[door.index] || p.state !== 'alive') return;
-				if (p.points < door.cost) return this.send(p.id, { t: 'denied' });
-				p.points -= door.cost;
-				p.stats.spent += door.cost;
-				this.send(p.id, { t: 'points', amount: -door.cost });
+				if (!this.spend(p, door.cost)) return;
 				this.blocking.open[door.index] = true;
 				this.flow = null;
 				this.broadcast({ t: 'door', door: door.index, by: p.id });
+				break;
+			}
+			case 'repair':
+				this.repair(p, message.window);
+				break;
+			case 'buyBox':
+				this.buyBox(p, Array.isArray(message.have) ? message.have : []);
+				break;
+			case 'takeBox':
+				if (this.box.state === 'offering' && this.box.by === p.id && this.box.weapon) {
+					this.send(p.id, { t: 'grant', weapon: this.box.weapon, ammo: false });
+					this.box = { state: 'idle', weapon: null, by: null, left: 0 };
+				}
+				break;
+			case 'buyPerk': {
+				const perk = PERKS[message.perk];
+				const machine = this.map.machines.find((m) => m.kind === message.perk);
+				if (!perk || !machine || p.state !== 'alive' || p.perks & perk.bit) return;
+				if (
+					Math.hypot(machine.x + machine.nx * 1.2 - p.x, machine.z + machine.nz * 1.2 - p.z) > 2.2
+				)
+					return;
+				if (!this.spend(p, perk.cost)) return;
+				p.perks |= perk.bit;
+				if (message.perk === 'jugg') p.hp = this.maxHp(p);
+				this.send(p.id, { t: 'perk', perk: message.perk });
 				break;
 			}
 			case 'start':
@@ -308,7 +381,7 @@ export class HostGame {
 		if (!z || !valid) return;
 		// a downed player can still shoot; the dead cannot
 		if (p.state === 'dead') return;
-		z.hp -= Math.min(m.damage, 20000);
+		z.hp -= this.instakill > 0 ? z.hp : Math.min(m.damage, 20000);
 		// a knife or a heavy gun holds them up longer
 		const heavy = m.knife === true || (Number.isFinite(m.force) && m.force >= 9);
 		z.stagger = Math.max(z.stagger, heavy ? ZOMBIE.staggerHeavy : ZOMBIE.stagger);
@@ -319,6 +392,7 @@ export class HostGame {
 		if (m.head === true) p.stats.headshots++;
 		if (this.round > 0) add(p.stats.roundKills, this.round - 1, 1);
 		this.zombies.delete(z.id);
+		this.maybeDrop(z);
 		const dir = m.dir.map((v) => (Number.isFinite(v) ? v : 0)) as [number, number, number];
 		this.broadcast({
 			t: 'died',
@@ -331,6 +405,7 @@ export class HostGame {
 	}
 
 	private award(p: HostPlayer, amount: number) {
+		if (this.double > 0) amount *= 2;
 		p.points += amount;
 		p.stats.earned += amount;
 		if (this.round > 0) add(p.stats.roundEarned, this.round - 1, amount);
@@ -341,6 +416,7 @@ export class HostGame {
 		this.time += dt;
 		if ((this.phase === 'playing' || this.phase === 'break') && !this.held()) {
 			this.updatePlayers(dt);
+			this.updateExtras(dt);
 			// either can end the game, and nothing more happens after that
 			if (!this.ended()) this.updateZombies(dt);
 			if (this.ended()) {
@@ -383,6 +459,8 @@ export class HostGame {
 		this.phase = 'playing';
 		this.toSpawn = zombieCount(this.round, this.players.size);
 		this.spawnTimer = 1;
+		this.dropsThisRound = 0;
+		for (const p of this.players.values()) p.repairPaid = 0;
 		// the dead come back for the new round
 		for (const p of this.players.values()) {
 			if (p.state !== 'dead') continue;
@@ -415,8 +493,9 @@ export class HostGame {
 		const solo = this.players.size === 1;
 		for (const p of this.players.values()) {
 			if (p.state === 'alive') {
-				if (p.hp < PLAYER.health && this.time - p.lastHurt > PLAYER.regenDelay) {
-					p.hp = Math.min(PLAYER.health, p.hp + PLAYER.regenRate * dt);
+				const most = this.maxHp(p);
+				if (p.hp < most && this.time - p.lastHurt > PLAYER.regenDelay) {
+					p.hp = Math.min(most, p.hp + PLAYER.regenRate * dt);
 				}
 				continue;
 			}
@@ -428,7 +507,8 @@ export class HostGame {
 					Math.hypot(q.x - p.x, q.z - p.z) < PLAYER.reviveRange + 0.4
 			);
 			if (reviver) {
-				p.revive += dt / PLAYER.reviveTime;
+				const quick = reviver.perks & PERKS.revive.bit ? 2 : 1;
+				p.revive += (dt * quick) / PLAYER.reviveTime;
 				if (p.revive >= 1) {
 					this.getUp(p);
 					reviver.stats.revives++;
@@ -451,7 +531,7 @@ export class HostGame {
 
 	private getUp(p: HostPlayer) {
 		p.state = 'alive';
-		p.hp = PLAYER.health;
+		p.hp = this.maxHp(p);
 		p.revive = 0;
 		p.bleed = 0;
 		p.lastHurt = this.time;
@@ -461,6 +541,8 @@ export class HostGame {
 		p.state = 'downed';
 		p.stats.downs++;
 		p.hp = 0;
+		// perks are lost on going down
+		p.perks = 0;
 		const solo = this.players.size === 1;
 		p.bleed = solo ? PLAYER.soloReviveTime : PLAYER.bleedOut;
 		p.revive = 0;
@@ -487,6 +569,10 @@ export class HostGame {
 			if (this.ended()) break;
 			if (z.rise > 0) {
 				z.rise -= dt;
+				continue;
+			}
+			if (z.window) {
+				this.comeThrough(z, z.window, dt);
 				continue;
 			}
 			z.cooldown = Math.max(0, z.cooldown - dt);
@@ -524,12 +610,26 @@ export class HostGame {
 				continue;
 			}
 
-			// where to walk: straight at a player in sight, otherwise down the flow
+			// where to walk: straight at a player in sight, otherwise down the
+			// flow; close in, each to its own side of the player, so a crowd
+			// surrounds them rather than queueing up behind one another
 			let tx = nearest.x;
 			let tz = nearest.z;
-			if (nearestD > CHASE_SIGHT || !this.blocking.canSee(z.x, z.z, nearest.x, nearest.z)) {
+			const inSight =
+				nearestD <= CHASE_SIGHT && this.blocking.canSee(z.x, z.z, nearest.x, nearest.z);
+			if (!inSight) {
 				const next = this.flow && this.blocking.downhill(this.flow, z.x, z.z);
 				if (next) [tx, tz] = next;
+			} else if (nearestD < SURROUND_RANGE) {
+				const angle = z.id * GOLDEN_ANGLE;
+				const ox = nearest.x + Math.cos(angle) * ZOMBIE.reach * 0.75;
+				const oz = nearest.z + Math.sin(angle) * ZOMBIE.reach * 0.75;
+				if (!this.blocking.isSolid(cellOf(ox), cellOf(oz))) {
+					// the nearer it gets, the more it goes for its own side
+					const pull = 1 - nearestD / SURROUND_RANGE;
+					tx = nearest.x + (ox - nearest.x) * pull;
+					tz = nearest.z + (oz - nearest.z) * pull;
+				}
 			}
 			let dx = tx - z.x;
 			let dz = tz - z.z;
@@ -542,9 +642,10 @@ export class HostGame {
 				const ox = z.x - o.x;
 				const oz = z.z - o.z;
 				const d = Math.hypot(ox, oz);
-				if (d > 0 && d < ZOMBIE.radius * 2.2) {
-					dx += (ox / d) * 0.8;
-					dz += (oz / d) * 0.8;
+				if (d > 0 && d < ZOMBIE.radius * 2.6) {
+					const push = 1.2 * (1 - d / (ZOMBIE.radius * 2.6)) + 0.3;
+					dx += (ox / d) * push;
+					dz += (oz / d) * push;
 				}
 			}
 			const n = Math.hypot(dx, dz) || 1;
@@ -571,6 +672,18 @@ export class HostGame {
 		this.map.doors.forEach((d, i) => {
 			if (this.blocking.open[i]) d.areas.forEach((a) => open.add(a));
 		});
+		// most come in through a window, if one into an open room is free
+		const busy = new Set<number>();
+		for (const z of this.zombies.values()) if (z.window) busy.add(z.window.index);
+		const windows = this.map.windows.filter((w) => open.has(w.area) && !busy.has(w.index));
+		if (windows.length && this.random() < WINDOW.share) {
+			const near = windows
+				.map((w) => ({ w, walk: this.walkFrom(w.x + w.nx * CELL, w.z + w.nz * CELL) }))
+				.sort((a, b) => a.walk - b.walk);
+			const pick = near[Math.floor(this.random() * Math.min(3, near.length))].w;
+			this.addZombie(pick.x - pick.nx * WINDOW_SPAWN, pick.z - pick.nz * WINDOW_SPAWN, pick);
+			return true;
+		}
 		const candidates = this.map.spawns.filter((s) => open.has(s.area));
 		if (!candidates.length) return false;
 		// prefer spawns a short walk from a player, and never on top of one
@@ -584,21 +697,171 @@ export class HostGame {
 			.sort((a, b) => a.walk - b.walk);
 		if (!scored.length) return false;
 		const pick = scored[Math.floor(this.random() * Math.min(4, scored.length))].s;
+		this.addZombie(
+			pick.x + (this.random() - 0.5) * 0.6,
+			pick.z + (this.random() - 0.5) * 0.6,
+			null
+		);
+		return true;
+	}
+
+	private walkFrom(x: number, z: number) {
+		return this.flow ? this.flow[cellIndex(cellOf(x), cellOf(z))] : 0;
+	}
+
+	private addZombie(x: number, z: number, window: Window | null) {
 		const id = this.nextZombie++;
 		this.zombies.set(id, {
 			id,
-			x: pick.x + (this.random() - 0.5) * 0.6,
-			z: pick.z + (this.random() - 0.5) * 0.6,
-			yaw: this.random() * Math.PI * 2,
+			x,
+			z,
+			// one at a window faces it
+			yaw: window ? Math.atan2(-window.nx, -window.nz) : this.random() * Math.PI * 2,
 			hp: zombieHealth(this.round),
 			speed: speedClass(this.round, this.random()),
 			rise: ZOMBIE.rise,
 			windup: 0,
 			cooldown: 0,
 			stray: 0,
-			stagger: 0
+			stagger: 0,
+			window: window ? { index: window.index, phase: 'approach', t: 0 } : null,
+			y: 0
 		});
+	}
+
+	// A zombie at a window: up to it, a board off at a time, then over the sill.
+	private comeThrough(z: HostZombie, at: NonNullable<HostZombie['window']>, dt: number) {
+		const w = this.map.windows[at.index];
+		const outX = w.x - w.nx * WINDOW_STAND;
+		const outZ = w.z - w.nz * WINDOW_STAND;
+		z.yaw = Math.atan2(-w.nx, -w.nz);
+		if (at.phase === 'approach') {
+			const d = Math.hypot(outX - z.x, outZ - z.z);
+			const step = Math.min(d, ZOMBIE.speeds[z.speed] * dt);
+			if (d > 1e-6) {
+				z.x += ((outX - z.x) / d) * step;
+				z.z += ((outZ - z.z) / d) * step;
+			}
+			if (d - step < 0.02) at.phase = 'tear';
+		} else if (at.phase === 'tear') {
+			if (this.windows[at.index] <= 0) {
+				at.phase = 'climb';
+				at.t = 0;
+				return;
+			}
+			at.t += dt;
+			if (at.t >= WINDOW.tearTime) {
+				at.t = 0;
+				this.windows[at.index]--;
+			}
+		} else {
+			at.t += dt;
+			const t = Math.min(1, at.t / WINDOW.climbTime);
+			z.x = outX + w.nx * WINDOW_STAND * 2 * t;
+			z.z = outZ + w.nz * WINDOW_STAND * 2 * t;
+			z.y = Math.sin(t * Math.PI) * 0.95;
+			if (t >= 1) {
+				z.window = null;
+				z.y = 0;
+			}
+		}
+	}
+
+	private repair(p: HostPlayer, index: number) {
+		const w = this.map.windows[index];
+		if (!w || p.state !== 'alive' || this.windows[index] >= WINDOW_BOARDS) return;
+		if (Math.hypot(w.x + w.nx * 1.3 - p.x, w.z + w.nz * 1.3 - p.z) > 2) return;
+		if (this.time - p.repaired < WINDOW.repairTime * 0.85) return;
+		// not while one is climbing through it
+		for (const z of this.zombies.values())
+			if (z.window?.index === index && z.window.phase === 'climb') return;
+		this.windows[index]++;
+		p.repaired = this.time;
+		if (p.repairPaid < WINDOW.repairCap) {
+			p.repairPaid += WINDOW.repairPoints;
+			this.award(p, WINDOW.repairPoints);
+		}
+	}
+
+	private buyBox(p: HostPlayer, have: unknown[]) {
+		const box = this.map.machines.find((m) => m.kind === 'box');
+		if (!box || this.box.state !== 'idle' || p.state !== 'alive') return;
+		if (Math.hypot(box.x + box.nx * 1.2 - p.x, box.z + box.nz * 1.2 - p.z) > 2.2) return;
+		if (!this.spend(p, BOX.cost)) return;
+		const fresh = BOX_WEAPONS.filter((id) => !have.includes(id));
+		const pool = fresh.length ? fresh : BOX_WEAPONS;
+		this.box = {
+			state: 'rolling',
+			weapon: pool[Math.floor(this.random() * pool.length)],
+			by: p.id,
+			left: BOX.roll
+		};
+	}
+
+	// takes the points if the player has them, or tells them they don't
+	private spend(p: HostPlayer, cost: number) {
+		if (p.points < cost) {
+			this.send(p.id, { t: 'denied' });
+			return false;
+		}
+		p.points -= cost;
+		p.stats.spent += cost;
+		this.send(p.id, { t: 'points', amount: -cost });
 		return true;
+	}
+
+	private maxHp(p: HostPlayer) {
+		return p.perks & PERKS.jugg.bit ? JUGG_HEALTH : PLAYER.health;
+	}
+
+	private maybeDrop(z: HostZombie) {
+		if (this.phase !== 'playing' || this.dropsThisRound >= POWERUP.perRound) return;
+		if (this.random() >= POWERUP.chance) return;
+		const full = this.windows.every((b) => b >= WINDOW_BOARDS);
+		const kinds = POWERUP_KINDS.filter((k) => !(k === 'carpenter' && full));
+		const kind = kinds[Math.floor(this.random() * kinds.length)];
+		this.dropsThisRound++;
+		this.drops.push({ id: this.nextDrop++, kind, x: z.x, z: z.z, left: POWERUP.life });
+	}
+
+	// Power-ups waiting and running, and the box's spin.
+	private updateExtras(dt: number) {
+		this.instakill = Math.max(0, this.instakill - dt);
+		this.double = Math.max(0, this.double - dt);
+		const alive = this.targets();
+		this.drops = this.drops.filter((d) => {
+			d.left -= dt;
+			if (d.left <= 0) return false;
+			const by = alive.find((p) => Math.hypot(p.x - d.x, p.z - d.z) < POWERUP.reach);
+			if (!by) return true;
+			this.pickUp(d.kind, by);
+			return false;
+		});
+		if (this.box.state !== 'idle') {
+			this.box.left -= dt;
+			if (this.box.left <= 0) {
+				this.box =
+					this.box.state === 'rolling'
+						? { ...this.box, state: 'offering', left: BOX.offer }
+						: { state: 'idle', weapon: null, by: null, left: 0 };
+			}
+		}
+	}
+
+	private pickUp(kind: PowerupKind, by: HostPlayer) {
+		this.broadcast({ t: 'powerup', kind, by: by.id });
+		if (kind === 'instakill') this.instakill = POWERUP.time;
+		else if (kind === 'double') this.double = POWERUP.time;
+		else if (kind === 'carpenter') {
+			this.windows.fill(WINDOW_BOARDS);
+			for (const p of this.players.values()) this.award(p, POWERUP.carpenterPoints);
+		} else if (kind === 'nuke') {
+			for (const z of this.zombies.values())
+				this.broadcast({ t: 'died', id: z.id, dir: [0, 1, 0], force: 2, head: false });
+			this.zombies.clear();
+			for (const p of this.players.values()) this.award(p, POWERUP.nukePoints);
+			this.checkRoundDone();
+		}
 	}
 
 	stats(): GameStats {
@@ -642,7 +905,8 @@ export class HostGame {
 			shots: p.shots,
 			knifes: p.knifes,
 			stance: p.stance,
-			flags: p.flags | (p.paused ? POSE_PAUSED : 0)
+			flags: p.flags | (p.paused ? POSE_PAUSED : 0),
+			perks: p.perks
 		}));
 		const zombies: ZombieSnap[] = [...this.zombies.values()].map((z) => [
 			z.id,
@@ -652,7 +916,11 @@ export class HostGame {
 			z.speed,
 			(z.windup > 0 ? ZOMBIE_ATTACKING : 0) |
 				(z.rise > 0 ? ZOMBIE_RISING : 0) |
-				(z.stagger > 0 ? ZOMBIE_STAGGER : 0)
+				(z.stagger > 0 ? ZOMBIE_STAGGER : 0) |
+				(z.window?.phase === 'tear' ? ZOMBIE_TEARING : 0) |
+				(z.window?.phase === 'climb' ? ZOMBIE_CLIMBING : 0),
+			Math.max(0, Math.ceil(z.hp)),
+			r2(z.y)
 		]);
 		return {
 			t: 'snap',
@@ -663,7 +931,17 @@ export class HostGame {
 			timer: Math.ceil(Math.max(0, this.breakTimer)),
 			held: this.held(),
 			players,
-			zombies
+			zombies,
+			windows: [...this.windows],
+			drops: this.drops.map((d) => ({ ...d, left: Math.ceil(d.left) })),
+			instakill: Math.ceil(this.instakill),
+			double: Math.ceil(this.double),
+			// what the box will give stays a surprise until it stops
+			box: {
+				...this.box,
+				weapon: this.box.state === 'offering' ? this.box.weapon : null,
+				left: r2(this.box.left)
+			}
 		};
 	}
 

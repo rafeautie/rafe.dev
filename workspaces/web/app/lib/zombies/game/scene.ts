@@ -1,6 +1,17 @@
 import * as THREE from 'three';
-import { CELL, SIZE, WALL_HEIGHT, WORLD, type GameMap } from '../map';
-import { WEAPONS, ammoCost } from '../weapons';
+import {
+	CELL,
+	SIZE,
+	WALL_HEIGHT,
+	WINDOW_BOARDS,
+	WORLD,
+	type GameMap,
+	type Machine,
+	type Window
+} from '../map';
+import type { BoxSnap } from '../protocol';
+import { BOX, PERKS, type PerkId } from '../rules';
+import { WEAPONS, ammoCost, type WeaponId } from '../weapons';
 import { VIEW_LAYER } from './viewmodel';
 
 // The world is drawn the way the rest of rafe.dev looks: pale grays, a soft
@@ -20,6 +31,8 @@ export type World = {
 	root: THREE.Group;
 	openDoor(index: number): void;
 	closeDoors(): void;
+	setBoards(index: number, boards: number): void;
+	setBox(box: BoxSnap): void;
 	update(dt: number): void;
 };
 
@@ -56,9 +69,11 @@ export function buildWorld(map: GameMap): World {
 	floor.receiveShadow = true;
 	root.add(floor);
 
-	// walls and pillars, one box per cell
+	// walls and pillars, one box per cell; windows and machines are drawn
+	// on their own
+	const own = new Set([...map.windows.map((w) => w.cell), ...map.machines.map((m) => m.cell)]);
 	const solidCells: number[] = [];
-	for (let c = 0; c < SIZE * SIZE; c++) if (map.solid[c]) solidCells.push(c);
+	for (let c = 0; c < SIZE * SIZE; c++) if (map.solid[c] && !own.has(c)) solidCells.push(c);
 	const walls = new THREE.InstancedMesh(
 		new THREE.BoxGeometry(CELL, WALL_HEIGHT, CELL),
 		new THREE.MeshLambertMaterial({ color: PALETTE.wall }),
@@ -137,6 +152,13 @@ export function buildWorld(map: GameMap): World {
 		root.add(plane);
 	}
 
+	const windows = map.windows.map((w) => buildWindow(root, w));
+	let box: ReturnType<typeof buildBox> | null = null;
+	for (const machine of map.machines) {
+		if (machine.kind === 'box') box = buildBox(root, machine);
+		else buildPerk(root, machine, machine.kind);
+	}
+
 	const sky = new THREE.HemisphereLight('#ffffff', '#9a9a9a', 1.6);
 	root.add(sky);
 	const sun = new THREE.DirectionalLight('#ffffff', 1.5);
@@ -173,7 +195,15 @@ export function buildWorld(map: GameMap): World {
 				door.mesh.position.y = WALL_HEIGHT / 2;
 			}
 		},
+		setBoards(index, boards) {
+			windows[index]?.setBoards(boards);
+		},
+		setBox(state) {
+			box?.set(state);
+		},
 		update(dt) {
+			for (const w of windows) w.update(dt);
+			box?.update(dt);
 			for (const door of doors) {
 				if (door.opening < 0 || !door.mesh.visible) continue;
 				door.opening += dt;
@@ -183,4 +213,206 @@ export function buildWorld(map: GameMap): World {
 			}
 		}
 	};
+}
+
+const wood = new THREE.MeshLambertMaterial({ color: '#8a6a4a' });
+const woodDark = new THREE.MeshLambertMaterial({ color: '#6b4f35' });
+const frame = new THREE.MeshLambertMaterial({ color: PALETTE.wall });
+const OPENING = 1.2; // wide
+const SILL = 0.9;
+const LINTEL = 2.1;
+
+// A window: the wall with a hole in it, and boards nailed across the inside
+// that zombies pull off and players nail back. Built facing into the room
+// (local +z), so the same pieces work in any wall.
+export function buildWindow(root: THREE.Object3D, w: Window) {
+	const group = new THREE.Group();
+	group.position.set(w.x, 0, w.z);
+	group.rotation.y = Math.atan2(w.nx, w.nz);
+	const post = (CELL - OPENING) / 2;
+	const pieces: [number, number, number, number, number][] = [
+		// [width, height, x, y]: the sill, the lintel, and a post each side
+		[CELL, SILL, 0, SILL / 2, 0],
+		[CELL, WALL_HEIGHT - LINTEL, 0, (WALL_HEIGHT + LINTEL) / 2, 0],
+		[post, LINTEL - SILL, -(OPENING + post) / 2, (SILL + LINTEL) / 2, 0],
+		[post, LINTEL - SILL, (OPENING + post) / 2, (SILL + LINTEL) / 2, 0]
+	];
+	for (const [width, height, x, y] of pieces) {
+		const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, CELL), frame);
+		mesh.position.set(x, y, 0);
+		mesh.castShadow = mesh.receiveShadow = true;
+		group.add(mesh);
+	}
+	const plank = new THREE.BoxGeometry(OPENING + 0.35, 0.17, 0.06);
+	const boards = Array.from({ length: WINDOW_BOARDS }, (_, i) => {
+		const mesh = new THREE.Mesh(plank, i % 2 ? wood : woodDark);
+		const home = {
+			y: SILL + 0.12 + i * ((LINTEL - SILL - 0.24) / (WINDOW_BOARDS - 1)),
+			tilt: (i % 2 ? 1 : -1) * (0.12 + ((i * 37) % 5) * 0.03)
+		};
+		mesh.position.set(0, home.y, CELL / 2 + 0.04);
+		mesh.rotation.z = home.tilt;
+		mesh.castShadow = true;
+		group.add(mesh);
+		// falling: seconds since it came off, or -1
+		return { mesh, home, falling: -1 };
+	});
+	root.add(group);
+	let shown = WINDOW_BOARDS;
+	return {
+		setBoards(n: number) {
+			// a board pulled off falls out of the frame; one put back pops in
+			for (let i = n; i < shown; i++) boards[i].falling = 0;
+			for (let i = shown; i < n; i++) {
+				const b = boards[i];
+				b.falling = -1;
+				b.mesh.visible = true;
+				b.mesh.position.set(0, b.home.y, CELL / 2 + 0.04);
+				b.mesh.rotation.set(0, 0, b.home.tilt);
+				b.mesh.scale.setScalar(1.15);
+			}
+			shown = n;
+		},
+		update(dt: number) {
+			for (const b of boards) {
+				b.mesh.scale.lerp(ONE, Math.min(1, dt * 12));
+				if (b.falling < 0) continue;
+				b.falling += dt;
+				const t = b.falling;
+				// pulled outward through the window, then dropped
+				b.mesh.position.z = CELL / 2 + 0.04 - t * 2.2;
+				b.mesh.position.y = b.home.y + t * 0.6 - t * t * 4;
+				b.mesh.rotation.x = t * 3;
+				if (t > 0.6) {
+					b.mesh.visible = false;
+					b.falling = -1;
+				}
+			}
+		}
+	};
+}
+
+const ONE = new THREE.Vector3(1, 1, 1);
+
+// The Mystery Box: a crate on the floor that opens when paid, spins
+// through guns, and holds one up for whoever paid.
+export function buildBox(root: THREE.Object3D, m: Machine) {
+	const group = new THREE.Group();
+	group.position.set(m.x, 0, m.z);
+	group.rotation.y = Math.atan2(m.nx, m.nz);
+	const crate = new THREE.MeshLambertMaterial({ color: '#5a4632' });
+	const face = new THREE.MeshLambertMaterial({
+		map: canvasTexture(256, 128, (g) => {
+			g.fillStyle = '#5a4632';
+			g.fillRect(0, 0, 256, 128);
+			g.fillStyle = '#e8d9a8';
+			g.font = `600 84px ${FONT}`;
+			g.textAlign = 'center';
+			g.textBaseline = 'middle';
+			g.fillText('?', 72, 66);
+			g.fillText('?', 184, 66);
+		})
+	});
+	// box faces: +x, -x, +y, -y, +z, -z
+	const base = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.75, 0.9), [
+		crate,
+		crate,
+		crate,
+		crate,
+		face,
+		crate
+	]);
+	base.position.y = 0.375;
+	base.castShadow = true;
+	const hinge = new THREE.Group();
+	hinge.position.set(0, 0.75, -0.45);
+	const lid = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.1, 0.92), crate);
+	lid.position.set(0, 0.05, 0.45);
+	lid.castShadow = true;
+	hinge.add(lid);
+	const gun = new THREE.Mesh(
+		new THREE.BoxGeometry(1, 1, 1),
+		new THREE.MeshLambertMaterial({ color: '#262626', emissive: '#3a3020' })
+	);
+	gun.visible = false;
+	const light = new THREE.PointLight('#ffe7a8', 0, 5, 2);
+	light.position.set(0, 1.4, 0.2);
+	group.add(base, hinge, gun, light);
+	root.add(group);
+	let state: BoxSnap = { state: 'idle', weapon: null, by: null, left: 0 };
+	let open = 0;
+	let spin = 0;
+	const ids = Object.keys(WEAPONS) as WeaponId[];
+	const show = (id: WeaponId) => gun.scale.set(WEAPONS[id].length * 1.4 + 0.1, 0.1, 0.08);
+	return {
+		set(next: BoxSnap) {
+			state = next;
+		},
+		update(dt: number) {
+			const opening = state.state !== 'idle';
+			open += ((opening ? 1 : 0) - open) * Math.min(1, dt * 6);
+			hinge.rotation.x = -open * 1.6;
+			light.intensity = open * 4;
+			gun.visible = open > 0.3;
+			if (state.state === 'rolling') {
+				// rises out of the box, flicking through guns, slowing as it goes
+				spin += dt * (2 + state.left * 4);
+				const rise = Math.min(1, (BOX.roll - state.left) / 1.2);
+				gun.position.set(0, 0.8 + rise * 0.6, 0.1);
+				show(ids[Math.floor(spin) % ids.length]);
+			} else if (state.state === 'offering' && state.weapon) {
+				show(state.weapon);
+				// and sinks back as time runs out
+				gun.position.set(0, 0.8 + Math.min(0.6, state.left * 0.15), 0.1);
+			}
+			gun.rotation.y = Math.PI / 2 + Math.sin(spin * 0.7) * 0.2;
+		}
+	};
+}
+
+// A perk machine: a tall cabinet in the perk's colour, its name and price on
+// the front, lit from within.
+export function buildPerk(root: THREE.Object3D, m: Machine, perk: PerkId) {
+	const group = new THREE.Group();
+	group.position.set(m.x, 0, m.z);
+	group.rotation.y = Math.atan2(m.nx, m.nz);
+	const color = PERKS[perk].color;
+	const body = new THREE.MeshLambertMaterial({ color });
+	const info = PERKS[perk];
+	const face = new THREE.MeshLambertMaterial({
+		emissive: color,
+		emissiveIntensity: 0.35,
+		map: canvasTexture(256, 512, (g) => {
+			g.fillStyle = color;
+			g.fillRect(0, 0, 256, 512);
+			g.fillStyle = 'rgba(255,255,255,0.9)';
+			g.fillRect(20, 40, 216, 230);
+			g.fillStyle = color;
+			g.textAlign = 'center';
+			g.textBaseline = 'middle';
+			const words = info.name.toUpperCase().split(' ');
+			g.font = `700 ${words.length > 1 ? 44 : 38}px ${FONT}`;
+			words.forEach((word, i) => g.fillText(word, 128, 155 + (i - (words.length - 1) / 2) * 52));
+			g.fillStyle = '#f5f5f5';
+			g.font = `600 48px ${FONT}`;
+			g.fillText(String(info.cost), 128, 340);
+			g.font = `500 22px ${FONT}`;
+			g.fillText(info.what.toUpperCase(), 128, 400, 220);
+		})
+	});
+	face.map!.colorSpace = THREE.SRGBColorSpace;
+	const cabinet = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.2, 0.9), [
+		body,
+		body,
+		body,
+		body,
+		face,
+		body
+	]);
+	cabinet.position.set(0, 1.1, -0.3);
+	cabinet.castShadow = true;
+	const light = new THREE.PointLight(color, 3, 4, 2);
+	light.position.set(0, 1.6, 0.6);
+	group.add(cabinet, light);
+	root.add(group);
 }

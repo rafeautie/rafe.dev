@@ -24,7 +24,7 @@ const CONTROLS = [
 	['Right Click', 'Aim'],
 	['R', 'Reload'],
 	['V', 'Knife'],
-	['F', 'Buy, Open, Revive'],
+	['F', 'Buy, Open, Revive, Rebuild'],
 	['1 2', 'Swap Guns'],
 	['ESC', 'Pause']
 ];

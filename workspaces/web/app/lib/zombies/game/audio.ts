@@ -1,3 +1,5 @@
+import type { PowerupKind } from '../protocol';
+import type { PerkId } from '../rules';
 import type { WeaponId } from '../weapons';
 
 // Every sound is made on the spot with Web Audio, from filtered noise and a
@@ -22,8 +24,6 @@ const SHOT_TONE: Record<WeaponId, { freq: number; decay: number; boom: number }>
 export type Place = { x: number; y: number; z: number };
 export type Surface = 'tile';
 export type ReloadPart = 'out' | 'in' | 'shell' | 'pump' | 'slide' | 'open' | 'close';
-export type PowerupKind = 'ammo' | 'instakill' | 'double' | 'nuke' | 'carpenter';
-export type PerkId = 'jugg' | 'speed' | 'tap' | 'revive';
 
 // each perk machine's tune, as notes over a base pitch
 const PERK_TUNES: Record<PerkId, number[]> = {
