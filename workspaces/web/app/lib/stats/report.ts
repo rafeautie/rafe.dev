@@ -20,8 +20,7 @@ import { zoneOffset } from './zone';
 
 export type Row = { key: string; label: string; visitors: number; views: number };
 export type PageRow = Row & { engaged: number | null; scroll: number | null };
-// regions and cities, for the globe
-export type RegionRow = Row & { country: string; code: string | null };
+// cities, for the globe
 export type CityRow = Row & { country: string | null; lat: number; lng: number };
 
 export type SessionView = { at: number; path: string; engaged: number; scroll: number };
@@ -286,15 +285,7 @@ export const getStats = createServerFn({ method: 'GET' })
 			)
 		];
 		statements.push(
-			// MAP: regions, with each one's country and Cloudflare's code for it
-			run(
-				`SELECT ${DIMENSIONS.region.key} AS key, region AS label, country,
-					max(region_code) AS code, count(DISTINCT ${VISITOR}) AS visitors, count(*) AS views
-				FROM views WHERE ${filter.sql} AND region IS NOT NULL AND region != ''
-					AND country IS NOT NULL
-				GROUP BY key ORDER BY visitors DESC LIMIT 1000`
-			),
-			// MAP + 1: cities, where they are
+			// MAP: cities, where they are
 			run(
 				`SELECT ${DIMENSIONS.city.key} AS key, city AS label, country, avg(latitude) AS lat,
 					avg(longitude) AS lng, count(DISTINCT ${VISITOR}) AS visitors, count(*) AS views
@@ -373,7 +364,7 @@ export const getStats = createServerFn({ method: 'GET' })
 			pages: rows<PageRow>(4),
 			clicks: rows<Row>(5),
 			breakdowns,
-			places: { regions: rows<RegionRow>(MAP), cities: rows<CityRow>(MAP + 1) },
+			places: { cities: rows<CityRow>(MAP) },
 			recent,
 			visitors: rows<{
 				visitor: string;
