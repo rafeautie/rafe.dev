@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { loadCast } from '~/lib/zombies/game/character';
 import { GameClient } from '~/lib/zombies/game/client';
 import type { Session } from '~/lib/zombies/session';
 import { Hud } from './Hud';
@@ -11,10 +12,11 @@ export function Game({ session, onLeave }: { session: Session; onLeave: () => vo
 	useEffect(() => {
 		let game: GameClient | null = null;
 		let cancelled = false;
-		// the wall drawings and name tags are drawn in Geist, so wait for it
-		void document.fonts.ready.then(() => {
+		// the wall drawings and name tags are drawn in Geist, so wait for it,
+		// and for the characters (begun in the lobby, so usually here already)
+		void Promise.all([loadCast(), document.fonts.ready]).then(([cast]) => {
 			if (cancelled || !canvas.current) return;
-			game = new GameClient(canvas.current, session);
+			game = new GameClient(canvas.current, session, cast);
 			game.start();
 			// straight into the game: the click on Start Game still counts, so
 			// the mouse can be captured without another one
