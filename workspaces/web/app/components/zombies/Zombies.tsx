@@ -4,10 +4,12 @@ import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { REFUSALS } from '~/lib/zombies/net';
 import { Session } from '~/lib/zombies/session';
 import { MAX_PLAYERS, isLobbyCode } from '~/lib/zombies/signal';
 import { Game } from './Game';
+import { SettingsForm } from './Settings';
 
 const NAME_KEY = 'zombies-name';
 const CARD = 'rounded-xl border border-black/10 bg-black/[0.02] p-6';
@@ -99,10 +101,23 @@ export default function Zombies({ lobby }: { lobby?: string }) {
 						<Lobby session={session} onLeave={leave} />
 					)}
 				</div>
-				<section className={`${CARD} flex flex-col gap-4`}>
-					<h2 className="text-lg font-medium tracking-tight">Controls</h2>
-					<Controls />
-				</section>
+				{/* controls and settings share the second card, one at a time */}
+				<Tabs defaultValue="controls" className={`${CARD} gap-4`}>
+					<TabsList variant="line" className="-ml-1.5">
+						<TabsTrigger value="controls" className="text-lg tracking-tight">
+							Controls
+						</TabsTrigger>
+						<TabsTrigger value="settings" className="text-lg tracking-tight">
+							Settings
+						</TabsTrigger>
+					</TabsList>
+					<TabsContent value="controls">
+						<Controls />
+					</TabsContent>
+					<TabsContent value="settings">
+						<SettingsForm />
+					</TabsContent>
+				</Tabs>
 			</div>
 		</div>
 	);

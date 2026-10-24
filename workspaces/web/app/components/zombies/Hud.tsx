@@ -1,11 +1,9 @@
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '~/components/ui/button';
-import { Slider } from '~/components/ui/slider';
-import { Switch } from '~/components/ui/switch';
 import type { GameClient } from '~/lib/zombies/game/client';
 import { PLAYER } from '~/lib/zombies/rules';
-import { RANGES, settings, type Settings } from '~/lib/zombies/settings';
 import { cn } from '~/lib/utils';
+import { SettingsForm } from './Settings';
 import { Controls } from './Zombies';
 
 const NUMBER = new Intl.NumberFormat('en-US');
@@ -204,13 +202,10 @@ function PauseMenu({ client, onLeave }: { client: GameClient; onLeave: () => voi
 		return (
 			<Card>
 				<p className="text-2xl tracking-tight">Settings</p>
-				<SettingsForm />
-				<div className="mt-4 flex w-full gap-2">
-					<Button onClick={() => setView('pause')}>Back</Button>
-					<Button variant="ghost" className="ml-auto" onClick={() => settings.reset()}>
-						Reset to Defaults
-					</Button>
-				</div>
+				<SettingsForm className="mt-3 w-80" />
+				<Button className="mt-4" onClick={() => setView('pause')}>
+					Back
+				</Button>
 			</Card>
 		);
 	}
@@ -229,56 +224,6 @@ function PauseMenu({ client, onLeave }: { client: GameClient; onLeave: () => voi
 				</Button>
 			</div>
 		</Card>
-	);
-}
-
-const PERCENT = (v: number) => `${Math.round(v * 100)}%`;
-
-const SLIDERS: {
-	key: keyof typeof RANGES;
-	label: string;
-	format: (v: number) => string;
-}[] = [
-	{ key: 'volume', label: 'Volume', format: (v) => String(v) },
-	{ key: 'sensitivity', label: 'Mouse Sensitivity', format: (v) => v.toFixed(2) },
-	{ key: 'aimSensitivity', label: 'Aim Sensitivity', format: PERCENT },
-	{ key: 'fov', label: 'Field of View', format: (v) => `${v}°` }
-];
-
-function SettingsForm() {
-	const current = useSyncExternalStore(settings.subscribe, settings.get);
-	const set = (patch: Partial<Settings>) => settings.set(patch);
-
-	return (
-		<div className="mt-3 flex w-80 flex-col gap-4 text-sm">
-			{SLIDERS.map(({ key, label, format }) => (
-				<div key={key} className="flex flex-col gap-1.5">
-					<div className="flex justify-between">
-						<span className="text-muted-foreground">{label}</span>
-						<span>{format(current[key])}</span>
-					</div>
-					<Slider
-						{...RANGES[key]}
-						value={current[key]}
-						onValueChange={(value) => set({ [key]: value })}
-						aria-label={label}
-					/>
-				</div>
-			))}
-			<div className="flex items-center justify-between">
-				<span id="invert-look" className="text-muted-foreground">
-					Invert Look
-				</span>
-				<Switch
-					aria-labelledby="invert-look"
-					checked={current.invertY}
-					onCheckedChange={(checked) => set({ invertY: checked })}
-				/>
-			</div>
-			<p className="text-[0.8125rem] text-muted-foreground">
-				Aim sensitivity is a share of mouse sensitivity, used while aiming down sights.
-			</p>
-		</div>
 	);
 }
 
