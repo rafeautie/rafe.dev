@@ -19,6 +19,7 @@ const CONTROLS = [
 	['WASD', 'Move'],
 	['SHIFT', 'Sprint'],
 	['SPACE', 'Jump'],
+	['C', 'Crouch, Slide'],
 	['Click', 'Shoot'],
 	['Right Click', 'Aim'],
 	['R', 'Reload'],

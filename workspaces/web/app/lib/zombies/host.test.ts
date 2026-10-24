@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HostGame, TICK } from './host';
 import { Blocking, buildMap, cellIndex, cellOf } from './map';
 import type { HostMessage, PlayerMessage, Snapshot } from './protocol';
+import { CROUCH, POSE_ADS, POSE_PAUSED, POSE_SPRINT, STAND } from './protocol';
 import { BREAK, POINTS, START_POINTS, zombieCount } from './rules';
 import { WEAPONS } from './weapons';
 
@@ -80,7 +81,9 @@ describe('host game', () => {
 				shots: 0,
 				knifes: 0,
 				reviving: null,
-				paused: false
+				paused: false,
+				stance: 0,
+				flags: 0
 			});
 			for (const [id] of snap().zombies) {
 				game.handle('p0', {
@@ -184,7 +187,9 @@ describe('host game', () => {
 				shots: 0,
 				knifes: 0,
 				reviving: null,
-				paused
+				paused,
+				stance: 0,
+				flags: 0
 			});
 		game.start();
 		const timer = snap().timer;
@@ -200,6 +205,36 @@ describe('host game', () => {
 		me('p1', false);
 		run(BREAK.first);
 		expect(snap()).toMatchObject({ held: false, phase: 'playing', round: 1 });
+	});
+
+	it('passes on how each player is standing and moving, so others can draw it', () => {
+		const { game, run, snap } = setup(2);
+		const me = (id: string, paused: boolean, stance: number, flags: number) =>
+			game.handle(id, {
+				t: 'me',
+				x: 37,
+				y: 0,
+				z: 37,
+				yaw: 0,
+				pitch: 0,
+				weapon: 'm1911',
+				shots: 0,
+				knifes: 0,
+				reviving: null,
+				paused,
+				stance,
+				flags
+			} as PlayerMessage);
+		game.start();
+		me('p0', true, CROUCH, POSE_ADS | POSE_SPRINT | 64);
+		// nonsense from a player is cleaned up rather than passed on
+		me('p1', false, 7, POSE_PAUSED);
+		run(0.1);
+		expect(snap().players[0]).toMatchObject({
+			stance: CROUCH,
+			flags: POSE_ADS | POSE_SPRINT | POSE_PAUSED
+		});
+		expect(snap().players[1]).toMatchObject({ stance: STAND, flags: 0 });
 	});
 
 	it('revives a downed teammate who is held long enough', () => {
@@ -220,7 +255,9 @@ describe('host game', () => {
 			shots: 0,
 			knifes: 0,
 			reviving: 'p1',
-			paused: false
+			paused: false,
+			stance: 0,
+			flags: 0
 		});
 		run(1);
 		expect(snap().players[1].revive).toBeGreaterThan(0);

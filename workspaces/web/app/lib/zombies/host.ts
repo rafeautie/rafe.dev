@@ -6,10 +6,22 @@ import type {
 	Phase,
 	PlayerMessage,
 	PlayerStats,
+	Stance,
 	PlayerSnap,
 	ZombieSnap
 } from './protocol';
-import { ZOMBIE_ATTACKING, ZOMBIE_RISING } from './protocol';
+import {
+	CROUCH,
+	POSE_ADS,
+	POSE_AIR,
+	POSE_PAUSED,
+	POSE_RELOAD,
+	POSE_SPRINT,
+	SLIDE,
+	STAND,
+	ZOMBIE_ATTACKING,
+	ZOMBIE_RISING
+} from './protocol';
 import {
 	BREAK,
 	DOWNED_LOSS,
@@ -53,6 +65,8 @@ type HostPlayer = {
 	lastHurt: number;
 	soloRevives: number;
 	paused: boolean;
+	stance: Stance;
+	flags: number;
 	stats: Tally;
 };
 
@@ -149,6 +163,8 @@ export class HostGame {
 			lastHurt: -Infinity,
 			soloRevives: PLAYER.soloRevives,
 			paused: false,
+			stance: STAND,
+			flags: 0,
 			stats: newTally()
 		});
 		this.send(id, {
@@ -230,6 +246,10 @@ export class HostGame {
 				if (Number.isFinite(message.knifes)) p.knifes = message.knifes;
 				p.reviving = typeof message.reviving === 'string' ? message.reviving : null;
 				p.paused = message.paused === true;
+				p.stance = message.stance === CROUCH || message.stance === SLIDE ? message.stance : STAND;
+				p.flags = Number.isInteger(message.flags)
+					? message.flags & (POSE_SPRINT | POSE_ADS | POSE_RELOAD | POSE_AIR)
+					: 0;
 				break;
 			}
 			case 'hit':
@@ -611,7 +631,9 @@ export class HostGame {
 			kills: p.kills,
 			weapon: p.weapon,
 			shots: p.shots,
-			knifes: p.knifes
+			knifes: p.knifes,
+			stance: p.stance,
+			flags: p.flags | (p.paused ? POSE_PAUSED : 0)
 		}));
 		const zombies: ZombieSnap[] = [...this.zombies.values()].map((z) => [
 			z.id,

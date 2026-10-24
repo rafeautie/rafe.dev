@@ -58,11 +58,11 @@ export class HeldGun {
 	}
 
 	// hand is where the right hand is, in the world; yaw and pitch are where
-	// the player is looking
-	place(hand: THREE.Vector3, yaw: number, pitch: number, visible: boolean) {
+	// the gun points, roll how far it's tipped on its side
+	place(hand: THREE.Vector3, yaw: number, pitch: number, visible: boolean, roll = 0) {
 		this.gun.visible = visible;
 		this.gun.position.copy(hand);
-		this.gun.rotation.set(pitch, yaw, 0);
+		this.gun.rotation.set(pitch, yaw, roll);
 		this.dir.set(0, 0, -1).applyEuler(this.gun.rotation);
 		this.muzzle.copy(hand).addScaledVector(this.dir, this.length + 0.05);
 	}

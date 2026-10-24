@@ -2,12 +2,36 @@ import * as THREE from 'three';
 import { WEAPONS, type WeaponId } from '../weapons';
 
 // The gun in the player's hands, and the knife. Plain dark boxes, drawn over
-// the world, that kick, sway, dip for a reload and come up to the eye when
-// aiming.
+// the world, that kick, sway behind the mouse, bob with each step, drop for
+// a sprint, a reload or a landing, and come up to the eye when aiming.
 
 const HIP = new THREE.Vector3(0.2, -0.2, -0.42);
 const ADS = new THREE.Vector3(0, -0.115, -0.32);
 export const VIEW_LAYER = 1;
+const KICK_STIFF = 320;
+const KICK_DAMP = 22;
+
+// ads, reload, swap, sprint, crouch and slide run 0 to 1; moving is the
+// player's speed in m/s; stride is the step cycle; dip is how far a landing
+// has pushed the view down; turnX and turnY are how fast the mouse is turning
+export type ViewState = {
+	ads: number;
+	reload: number;
+	swap: number;
+	moving: number;
+	downed: boolean;
+	sprint: number;
+	crouch: number;
+	slide: number;
+	stride: number;
+	dip: number;
+	turnX: number;
+	turnY: number;
+};
+
+function clamp(v: number, most: number) {
+	return Math.max(-most, Math.min(most, v));
+}
 
 export class ViewModel {
 	readonly root = new THREE.Group();
@@ -20,6 +44,8 @@ export class ViewModel {
 	private light: THREE.PointLight;
 	private knife: THREE.Mesh;
 	private kick = 0;
+	private kickV = 0;
+	private sway = { x: 0, y: 0 };
 	private flashTime = 0;
 	private knifeTime = -1;
 	private bobTime = 0;
@@ -75,7 +101,9 @@ export class ViewModel {
 	}
 
 	fire(kick: number) {
-		this.kick = Math.min(1, this.kick + 0.35 + kick * 6);
+		// a shove back and up that a stiff spring brings back, overshooting a
+		// touch, rather than a jump and a slide
+		this.kickV += (0.35 + kick * 6) * 34;
 		this.flashTime = 0.05;
 		this.flash.rotation.z = Math.random() * Math.PI;
 		this.flash.scale.setScalar(0.7 + Math.random() * 0.6);
@@ -85,24 +113,42 @@ export class ViewModel {
 		this.knifeTime = 0;
 	}
 
-	// ads, reload and swap run 0 to 1; moving is the player's speed in m/s
-	update(
-		dt: number,
-		s: { ads: number; reload: number; swap: number; moving: number; downed: boolean }
-	) {
-		this.bobTime += dt * (2 + s.moving * 1.6);
-		this.kick = Math.max(0, this.kick - dt * 9);
-		const bob = Math.min(1, s.moving / 5) * (1 - s.ads * 0.85);
+	update(dt: number, s: ViewState) {
+		this.bobTime += dt;
+		this.kickV += (-KICK_STIFF * this.kick - KICK_DAMP * this.kickV) * dt;
+		this.kick = Math.min(1.2, this.kick + this.kickV * dt);
+		const ease = 1 - Math.exp(-dt * 10);
+		const steady = 1 - s.ads * 0.85;
+		// the gun trails a quick turn of the mouse and catches up
+		this.sway.x += (clamp(-s.turnX * 0.012, 0.05) - this.sway.x) * ease;
+		this.sway.y += (clamp(s.turnY * 0.012, 0.05) - this.sway.y) * ease;
+		const kick = Math.max(0, this.kick);
+		const bob = Math.min(1, s.moving / 5) * steady * (1 - s.slide);
 		const pos = HIP.clone().lerp(ADS, s.ads);
-		pos.x += Math.sin(this.bobTime) * 0.012 * bob;
-		pos.y += Math.abs(Math.cos(this.bobTime)) * 0.012 * bob - this.kick * 0.012;
-		pos.z += this.kick * 0.05;
-		// lowered for a reload or a swap
+		// a figure of eight with each pair of steps, bigger at a sprint
+		const big = 1 + s.sprint * 1.2;
+		pos.x += Math.sin(s.stride) * 0.011 * bob * big + this.sway.x * steady;
+		pos.y +=
+			-Math.abs(Math.cos(s.stride)) * 0.01 * bob * big +
+			this.sway.y * steady +
+			Math.sin(this.bobTime * 1.6) * 0.0025 * steady -
+			this.kick * 0.012;
+		pos.z += this.kick * (0.05 - s.ads * 0.02);
+		// lowered for a reload or a swap, and for a landing
 		const dip = Math.sin(Math.min(1, s.reload) * Math.PI) * 0.6 + s.swap;
-		pos.y -= dip * 0.18;
+		pos.y -= dip * 0.18 + s.dip * 0.35;
+		// held low and across the body at a sprint
+		pos.x -= s.sprint * 0.07;
+		pos.y -= s.sprint * 0.05;
+		pos.z += s.sprint * 0.04;
+		pos.x -= s.slide * 0.03;
 		if (s.downed) pos.x += 0.04;
 		this.gun.position.copy(pos);
-		this.gun.rotation.set(this.kick * 0.12 - dip * 0.5, 0, s.downed ? 0.25 : 0);
+		this.gun.rotation.set(
+			kick * 0.12 - dip * 0.5 - s.dip * 0.8 - s.sprint * 0.4 + this.sway.y * 2 * steady,
+			s.sprint * 0.75 + this.sway.x * 2 * steady,
+			(s.downed ? 0.25 : 0) + s.sprint * 0.35 + s.slide * 0.3 + s.crouch * 0.04
+		);
 
 		this.flashTime -= dt;
 		this.flash.visible = this.flashTime > 0;

@@ -164,6 +164,32 @@ export function zombiePose(
 }
 
 // Another player: upright with a gun held out, or downed, propped on one arm.
+// How another player is holding themselves, each 0 to 1 and eased, so the
+// body moves between poses rather than snapping. reload and knife run through
+// their motion; pitch is where they look, up positive.
+export type Posture = {
+	pitch: number;
+	crouch: number;
+	slide: number;
+	sprint: number;
+	ads: number;
+	reload: number;
+	knife: number;
+};
+
+export const STANDING: Posture = {
+	pitch: 0,
+	crouch: 0,
+	slide: 0,
+	sprint: 0,
+	ads: 0,
+	reload: 0,
+	knife: 0
+};
+
+// a little under the leg box, so a foot never floats
+const LEG = 0.9;
+
 export function playerPose(
 	out: Joints,
 	x: number,
@@ -171,7 +197,8 @@ export function playerPose(
 	z: number,
 	yaw: number,
 	step: number,
-	downed: boolean
+	downed: boolean,
+	st: Posture = STANDING
 ) {
 	if (downed) {
 		set(J.pelvis, 0, 0.22, 0.1);
@@ -185,22 +212,99 @@ export function playerPose(
 		set(J.rHip, 0.12, 0.2, 0.1);
 		set(J.lFoot, -0.18 + Math.sin(step) * 0.05, 0.08, 1.02);
 		set(J.rFoot, 0.18 - Math.sin(step) * 0.05, 0.08, 1.02);
-	} else {
-		const s = Math.sin(step);
-		const bob = Math.abs(s) * 0.03;
-		set(J.pelvis, 0, 0.95 + bob, 0);
-		set(J.neck, 0, 1.55 + bob, -0.02);
-		set(J.headTop, 0, 1.86 + bob, -0.04);
-		set(J.lShoulder, -0.24, 1.5 + bob, 0);
-		set(J.rShoulder, 0.24, 1.5 + bob, 0);
-		set(J.lHand, -0.06, 1.32 + bob, -0.5);
-		set(J.rHand, 0.12, 1.25 + bob, -0.3);
-		set(J.lHip, -0.12, 0.95 + bob, 0);
-		set(J.rHip, 0.12, 0.95 + bob, 0);
-		set(J.lFoot, -0.13, 0.04 + Math.max(0, s) * 0.1, -s * 0.34);
-		set(J.rFoot, 0.13, 0.04 + Math.max(0, -s) * 0.1, s * 0.34);
+		toWorld(out, pose, x, y, z, yaw);
+		return;
 	}
+	const s = Math.sin(step);
+	const still = 1 - st.slide;
+	const bob = Math.abs(s) * (0.03 + st.sprint * 0.03) * still;
+	// hips drop for a crouch and further for a slide
+	const hip = 0.95 - st.crouch * 0.15 * still - st.slide * 0.5 + bob;
+	// the body leans into a sprint and a crouch, and back in a slide
+	const lean = st.sprint * 0.28 + st.crouch * 0.12 * still - st.slide * 0.6;
+	set(J.pelvis, 0, hip, 0);
+	setRotated(J.neck, J.pelvis, 0, 0.6, 0, -lean);
+	setRotated(J.lShoulder, J.pelvis, -0.24, 0.55, 0, -lean);
+	setRotated(J.rShoulder, J.pelvis, 0.24, 0.55, 0, -lean);
+	// the head nods to where they look
+	setRotated(J.headTop, J.neck, 0, 0.31, 0, st.pitch * 0.5 - lean * 0.3);
+	set(J.lHip, -0.12, hip, 0);
+	set(J.rHip, 0.12, hip, 0);
+
+	// hands: the gun at the hip, up at the eye for aiming, low and across for
+	// a sprint; they follow the aim up and down, except at a sprint
+	const aim = Math.max(-1, Math.min(1, st.pitch)) * (1 - st.sprint);
+	const pump = s * 0.12 * st.sprint;
+	const r = mix3([-0.12, -0.25, -0.3], [-0.16, -0.12, -0.38], st.ads);
+	mixInto(r, [-0.1, -0.4 + pump, -0.18], st.sprint);
+	const l = mix3([0.18, -0.18, -0.5], [0.2, -0.08, -0.6], st.ads);
+	mixInto(l, [0.26, -0.32 - pump, -0.32], st.sprint);
+	// a knife is a jab of the right arm, straight out
+	const jab = Math.sin(Math.min(1, st.knife) * Math.PI);
+	mixInto(r, [-0.06, -0.06, -0.6], jab);
+	// reloading, the left hand goes down to the belt and back
+	const reach = (0.5 - 0.5 * Math.cos(st.reload * Math.PI * 2)) * (st.reload > 0 ? 1 : 0);
+	mixInto(l, [0.04, -0.55, -0.12], reach);
+	setRotated(J.rHand, J.rShoulder, r[0], r[1], r[2], aim);
+	setRotated(J.lHand, J.lShoulder, l[0], l[1], l[2], aim * (1 - reach));
+
+	// feet: a stride that grows with a sprint and shrinks in a crouch, spread
+	// wide in a crouch and thrown out front in a slide
+	const reachLeg = (0.34 + st.sprint * 0.16 - st.crouch * 0.12) * still;
+	const lift = (0.1 + st.sprint * 0.08) * still;
+	const lunge = st.crouch * 0.3 * still;
+	const lz = -s * reachLeg - lunge - st.slide * 0.6;
+	const rz = s * reachLeg + lunge - st.slide * 0.3;
+	foot(J.lFoot, -0.12, hip, -0.04 * st.crouch, lz, Math.max(0, s) * lift, -1);
+	foot(J.rFoot, 0.12, hip, 0.04 * st.crouch, rz, Math.max(0, -s) * lift, st.slide > 0.5 ? -1 : 1);
 	toWorld(out, pose, x, y, z, yaw);
+}
+
+// joint = from + (lx, ly, lz) turned about the side to side axis by angle
+// (positive tips it up and back toward the eyes; negative leans it forward)
+function setRotated(
+	joint: number,
+	from: number,
+	lx: number,
+	ly: number,
+	lz: number,
+	angle: number
+) {
+	const c = Math.cos(angle);
+	const sn = Math.sin(angle);
+	set(
+		joint,
+		pose[from * 3] + lx,
+		pose[from * 3 + 1] + ly * c - lz * sn,
+		pose[from * 3 + 2] + ly * sn + lz * c
+	);
+}
+
+// a foot at (hipX + dx, lift, dz), pushed forward or back (the way it already
+// sits, or toward sign) until the leg is its full length, as a stiff box leg
+// can't bend at the knee
+function foot(
+	joint: number,
+	hipX: number,
+	hipY: number,
+	dx: number,
+	dz: number,
+	lift: number,
+	sign: number
+) {
+	const fy = 0.04 + lift;
+	const down = hipY - fy;
+	const want = Math.sqrt(Math.max(0, LEG * LEG - down * down - dx * dx));
+	if (Math.abs(dz) < want) dz = (Math.abs(dz) > 0.02 ? Math.sign(dz) : sign) * want;
+	set(joint, hipX + dx, fy, dz);
+}
+
+function mix3(a: number[], b: number[], t: number) {
+	return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
+function mixInto(a: number[], b: number[], t: number) {
+	for (let i = 0; i < 3; i++) a[i] += (b[i] - a[i]) * t;
 }
 
 // pairs held at the distance they had when the body went down

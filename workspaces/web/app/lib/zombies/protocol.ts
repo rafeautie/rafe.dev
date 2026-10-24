@@ -25,7 +25,21 @@ export type PlayerSnap = {
 	weapon: WeaponId;
 	shots: number; // counts up with each shot, so others can see it
 	knifes: number; // the same, for the knife
+	stance: Stance;
+	flags: number; // POSE_* below, so others can be drawn as they are
 };
+
+export type Stance = 0 | 1 | 2; // standing, crouching, sliding
+export const STAND = 0;
+export const CROUCH = 1;
+export const SLIDE = 2;
+
+// what a player is doing, as bits
+export const POSE_SPRINT = 1;
+export const POSE_ADS = 2;
+export const POSE_RELOAD = 4;
+export const POSE_PAUSED = 8;
+export const POSE_AIR = 16;
 
 // [id, x, z, yaw, speed class, flags]; see ZOMBIE_* below
 export type ZombieSnap = [number, number, number, number, number, number];
@@ -115,6 +129,8 @@ export type PlayerMessage =
 			reviving: string | null;
 			// in the pause menu, or not yet clicked in
 			paused: boolean;
+			stance: Stance;
+			flags: number; // POSE_SPRINT, POSE_ADS, POSE_RELOAD, POSE_AIR
 	  }
 	| {
 			t: 'hit';
