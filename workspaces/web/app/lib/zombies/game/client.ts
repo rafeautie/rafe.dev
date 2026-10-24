@@ -9,16 +9,37 @@ import type {
 	Snapshot,
 	ZombieSnap
 } from '../protocol';
-import { ZOMBIE_ATTACKING, ZOMBIE_RISING } from '../protocol';
+import {
+	CROUCH,
+	POSE_ADS,
+	POSE_AIR,
+	POSE_PAUSED,
+	POSE_RELOAD,
+	POSE_SPRINT,
+	SLIDE,
+	STAND,
+	ZOMBIE_ATTACKING,
+	ZOMBIE_RISING
+} from '../protocol';
 import { PLAYER, ZOMBIE } from '../rules';
 import type { Session } from '../session';
 import { settings } from '../settings';
 import { KNIFE, WEAPONS, ammoCost, type WeaponId } from '../weapons';
 import { Sound } from './audio';
 import { HeldGun } from './heldgun';
-import { Body, J, Ragdoll, playerPose, rayCapsule, zombiePose, type Joints } from './rig';
+import {
+	Body,
+	J,
+	Ragdoll,
+	STANDING,
+	playerPose,
+	rayCapsule,
+	zombiePose,
+	type Joints,
+	type Posture
+} from './rig';
 import { PALETTE, buildWorld, type World } from './scene';
-import { VIEW_LAYER, ViewModel } from './viewmodel';
+import { VIEW_LAYER, ViewModel, type ViewState } from './viewmodel';
 
 // One player's view of the game: the 3D scene, the controls, and their own
 // player, which moves on this machine and tells the host where it is. Zombies
@@ -31,6 +52,12 @@ const HUD_EVERY = 0.05;
 const MOUSE_SPEED = 0.0022;
 // how much narrower the view gets when aiming down sights
 const ADS_ZOOM = 20;
+// recoil: how fast each shot's climb comes on, how long it holds after the
+// last shot, how fast it's brought back down, the most it can build to, and
+// the spring for the jolt
+const RECOIL = { climb: 30, hold: 0.09, recover: 7, most: 0.3, punchStiff: 260, punchDamp: 18 };
+// a moment after a sprint before the gun is back up and can fire
+const SPRINT_OUT = 0.18;
 const RAGDOLL_LIFE = 12;
 const MAX_RAGDOLLS = 20;
 
@@ -99,10 +126,15 @@ type OtherView = {
 	body: Body;
 	gun: HeldGun;
 	label: THREE.Sprite;
+	// shown over their head while they have the pause screen up
+	badge: THREE.Sprite;
 	step: number;
 	x: number;
 	z: number;
 	shots: number;
+	knifes: number;
+	// eased toward what the host last said, so they move between poses
+	pose: Posture;
 };
 
 type Particle = { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number };
@@ -136,6 +168,23 @@ export class GameClient {
 	private reviving: string | null = null;
 	private interactWait = 0;
 	private speedNow = 0;
+	// movement feel: crouching, sliding, the step cycle, a dip on landing
+	private crouched = false;
+	private slideLeft = 0;
+	private crouchNow = 0;
+	private slideNow = 0;
+	private sprintNow = 0;
+	private stride = 0;
+	private strafe = 0;
+	private dip = 0;
+	private roll = 0;
+	// the mouse's movement this frame, for the gun to lag behind
+	private turn = { x: 0, y: 0 };
+	// can't fire for a moment after a sprint, while the gun comes back up
+	private sprintOut = 0;
+	// how far shooting has thrown the aim up and sideways, on top of where
+	// the player is pointing; the target is where it's heading
+	private recoil = { pitch: 0, yaw: 0, target: 0, side: 0, since: 0, punch: 0, punchV: 0 };
 	private hint: HudState['hint'] = null;
 
 	private snaps: { at: number; snap: Snapshot; zombies: Map<number, ZombieSnap> }[] = [];
@@ -449,11 +498,25 @@ export class GameClient {
 		if (active) {
 			const { sensitivity, aimSensitivity, invertY } = settings.get();
 			const speed = MOUSE_SPEED * sensitivity * (1 + (aimSensitivity - 1) * this.ads);
-			this.me.yaw -= this.look.x * speed;
-			this.me.pitch -= this.look.y * speed * (invertY ? -1 : 1);
+			const dx = this.look.x * speed;
+			let dy = this.look.y * speed * (invertY ? -1 : 1);
+			// pulling down against recoil takes it off first, the way a player
+			// fights the climb, so the recovery doesn't drag the aim on past
+			const r = this.recoil;
+			if (dy > 0 && r.target > 0) {
+				const take = Math.min(dy, r.target);
+				r.target -= take;
+				r.pitch = Math.max(0, r.pitch - take);
+				dy -= take;
+			}
+			this.me.yaw -= dx;
+			this.me.pitch -= dy;
 			this.me.pitch = Math.max(-1.45, Math.min(1.45, this.me.pitch));
-		}
+			this.turn.x += (dx / Math.max(dt, 0.001) - this.turn.x) * Math.min(1, dt * 20);
+			this.turn.y += (dy / Math.max(dt, 0.001) - this.turn.y) * Math.min(1, dt * 20);
+		} else this.turn.x = this.turn.y = 0;
 		this.look.x = this.look.y = 0;
+		this.settleRecoil(dt);
 
 		if (this.life !== 'dead') this.move(dt, active);
 		this.weapons(dt, active);
@@ -474,13 +537,19 @@ export class GameClient {
 				x: this.me.x,
 				y: this.me.y,
 				z: this.me.z,
-				yaw: this.me.yaw,
-				pitch: this.me.pitch,
+				yaw: this.me.yaw + this.recoil.yaw,
+				pitch: this.me.pitch + this.recoil.pitch,
 				weapon: this.slot().weapon,
 				shots: this.shots,
 				knifes: this.knifes,
 				reviving: this.reviving,
-				paused: document.pointerLockElement !== this.canvas
+				paused: document.pointerLockElement !== this.canvas,
+				stance: this.slideLeft > 0 ? SLIDE : this.crouched ? CROUCH : STAND,
+				flags:
+					(this.sprintNow > 0.5 ? POSE_SPRINT : 0) |
+					(this.ads > 0.5 ? POSE_ADS : 0) |
+					(this.reloadLeft > 0 ? POSE_RELOAD : 0) |
+					(this.me.ground ? 0 : POSE_AIR)
 			});
 		}
 
@@ -517,6 +586,10 @@ export class GameClient {
 		scene.background = background;
 	}
 
+	// Movement in the style of modern shooters: speed comes and goes quickly
+	// on the ground, so the player stops and turns where they mean to, while a
+	// jump keeps its momentum. Sprinting builds up over a moment; crouching
+	// from a sprint turns into a slide.
 	private move(dt: number, active: boolean) {
 		const me = this.me;
 		const downed = this.life === 'downed';
@@ -528,19 +601,68 @@ export class GameClient {
 			fx /= len;
 			sx /= len;
 		}
-		const sprinting = this.sprinting();
-		const speed = downed
-			? PLAYER.crawl
-			: sprinting
-				? PLAYER.sprint
-				: PLAYER.walk * (1 - this.ads * 0.45);
 		const sin = Math.sin(me.yaw);
 		const cos = Math.cos(me.yaw);
-		const tx = (-sin * fx + cos * sx) * speed;
-		const tz = (-cos * fx - sin * sx) * speed;
-		const blend = Math.min(1, dt * (me.ground ? 12 : 3));
-		me.vx += (tx - me.vx) * blend;
-		me.vz += (tz - me.vz) * blend;
+		// the way the keys point, in the world
+		const wx = -sin * fx + cos * sx;
+		const wz = -cos * fx - sin * sx;
+		const speed = Math.hypot(me.vx, me.vz);
+
+		// stance: C crouches, or slides out of a sprint; jumping or sprinting
+		// stands back up
+		if (downed) {
+			this.crouched = false;
+			this.slideLeft = 0;
+		} else if (active && this.pressed.has('KeyC')) {
+			if (this.sprinting() && me.ground && speed > PLAYER.walk) {
+				this.slideLeft = PLAYER.slideTime;
+				const boost = Math.max(PLAYER.slideSpeed, speed) / Math.max(speed, 0.001);
+				me.vx *= boost;
+				me.vz *= boost;
+				this.crouched = true;
+				this.sound.slide();
+			} else this.crouched = !this.crouched;
+		}
+		if (this.crouched && this.slideLeft <= 0 && k('ShiftLeft') && fx > 0) this.crouched = false;
+
+		if (this.slideLeft > 0) {
+			// a slide carries on the way it started, losing speed, steered a little
+			this.slideLeft -= dt;
+			const going = Math.hypot(me.vx, me.vz);
+			const left = Math.max(0, going - PLAYER.slideFriction * dt);
+			let dx = me.vx / (going || 1);
+			let dz = me.vz / (going || 1);
+			dx += wx * dt * 1.5;
+			dz += wz * dt * 1.5;
+			const d = Math.hypot(dx, dz) || 1;
+			me.vx = (dx / d) * left;
+			me.vz = (dz / d) * left;
+			if (left < PLAYER.crouch) this.slideLeft = 0;
+		} else {
+			const target = downed
+				? PLAYER.crawl
+				: this.sprinting()
+					? PLAYER.sprint
+					: this.crouched
+						? PLAYER.crouch
+						: PLAYER.walk * (1 - this.ads * (1 - PLAYER.adsWalk));
+			const tx = wx * target;
+			const tz = wz * target;
+			let rate: number;
+			if (!me.ground) rate = PLAYER.airAccel;
+			else if (len === 0) rate = PLAYER.friction;
+			// building up to a sprint takes a moment; everything else is quick
+			else rate = speed > PLAYER.walk && target > PLAYER.walk ? PLAYER.sprintAccel : PLAYER.accel;
+			const ex = tx - me.vx;
+			const ez = tz - me.vz;
+			const e = Math.hypot(ex, ez);
+			const step = Math.min(e, rate * dt);
+			if (e > 1e-6) {
+				me.vx += (ex / e) * step;
+				me.vz += (ez / e) * step;
+			}
+		}
+
 		[me.x, me.z] = this.blocking.move(me.x, me.z, me.vx * dt, me.vz * dt, PLAYER.radius);
 		// zombies are solid: they can box a player in. A downed player crawls
 		// under them instead, or they would shove the player around.
@@ -556,18 +678,38 @@ export class GameClient {
 		}
 		[me.x, me.z] = this.blocking.pushOut(me.x, me.z, PLAYER.radius);
 		this.speedNow = Math.hypot(me.vx, me.vz);
+		// sideways speed, for leaning the view into a strafe
+		this.strafe = me.vx * cos - me.vz * sin;
 
 		if (!downed && me.ground && this.pressed.has('Space')) {
-			me.vy = PLAYER.jump;
-			me.ground = false;
+			if (this.crouched && this.slideLeft <= 0) this.crouched = false;
+			else {
+				me.vy = PLAYER.jump;
+				me.ground = false;
+				this.slideLeft = 0;
+				this.crouched = false;
+			}
 		}
 		me.vy -= PLAYER.gravity * dt;
 		me.y += me.vy * dt;
 		if (me.y <= 0) {
+			if (!me.ground) {
+				// the view dips on landing, more for a longer fall
+				this.dip = Math.min(0.14, this.dip + -me.vy * 0.012);
+				this.sound.land(Math.min(1, -me.vy / 9));
+			}
 			me.y = 0;
 			me.vy = 0;
 			me.ground = true;
 		}
+
+		// smoothed, for the view and for others to see
+		const ease = 1 - Math.exp(-dt * 14);
+		this.crouchNow += ((this.crouched ? 1 : 0) - this.crouchNow) * ease;
+		this.slideNow += ((this.slideLeft > 0 ? 1 : 0) - this.slideNow) * ease;
+		this.sprintNow += ((this.sprinting() && speed > PLAYER.walk ? 1 : 0) - this.sprintNow) * ease;
+		if (me.ground && this.slideLeft <= 0) this.stride += this.speedNow * dt * 1.75;
+		this.dip *= Math.exp(-dt * 9);
 	}
 
 	private sprinting() {
@@ -575,8 +717,12 @@ export class GameClient {
 			this.life === 'alive' &&
 			this.keys.has('ShiftLeft') &&
 			this.keys.has('KeyW') &&
+			!this.keys.has('KeyS') &&
+			!this.buttons.has(0) &&
 			!this.buttons.has(2) &&
-			this.reloadLeft <= 0
+			this.reloadLeft <= 0 &&
+			!(this.crouched && this.slideLeft <= 0) &&
+			this.me.ground
 		);
 	}
 
@@ -589,6 +735,9 @@ export class GameClient {
 		this.view.setWeapon(slot.weapon);
 		const dead = this.life === 'dead';
 		const sprinting = this.sprinting();
+		// the gun has to come back up from a sprint before it can fire
+		if (this.sprintNow > 0.5) this.sprintOut = SPRINT_OUT;
+		else this.sprintOut = Math.max(0, this.sprintOut - dt);
 		const aiming = active && !dead && this.buttons.has(2) && !sprinting && this.swapLeft <= 0;
 		this.ads += ((aiming ? 1 : 0) - this.ads) * Math.min(1, dt * 12);
 
@@ -646,13 +795,7 @@ export class GameClient {
 		// fire
 		const trigger = this.buttons.has(0);
 		const wants = trigger && (weapon.auto || !this.triggerWasDown);
-		if (
-			wants &&
-			!busy &&
-			this.reloadLeft <= 0 &&
-			this.fireWait <= 0 &&
-			!(sprinting && this.speedNow > PLAYER.walk)
-		) {
+		if (wants && !busy && this.reloadLeft <= 0 && this.fireWait <= 0 && this.sprintOut <= 0) {
 			if (slot.mag > 0) {
 				slot.mag--;
 				this.fireWait = 60 / weapon.rpm;
@@ -667,13 +810,20 @@ export class GameClient {
 		this.view.update(dt, this.viewState(weapon));
 	}
 
-	private viewState(weapon: (typeof WEAPONS)[WeaponId]) {
+	private viewState(weapon: (typeof WEAPONS)[WeaponId]): ViewState {
 		return {
 			ads: this.ads,
 			reload: this.reloadLeft > 0 ? 1 - this.reloadLeft / weapon.reload : 0,
 			swap: Math.sin((this.swapLeft / 0.45) * Math.PI) * 0.8,
-			moving: this.speedNow,
-			downed: this.life === 'downed'
+			moving: this.me.ground ? this.speedNow : 0,
+			downed: this.life === 'downed',
+			sprint: this.sprintNow,
+			crouch: this.crouchNow,
+			slide: this.slideNow,
+			stride: this.stride,
+			dip: this.dip,
+			turnX: this.turn.x,
+			turnY: this.turn.y
 		};
 	}
 
@@ -737,9 +887,34 @@ export class GameClient {
 			this.sound.hit(false);
 			this.hud = { ...this.hud, hits: this.hud.hits + 1 };
 		}
-		// the view climbs a little with each shot
-		this.me.pitch = Math.min(1.45, this.me.pitch + weapon.kick * (1 - this.ads * 0.4));
-		this.me.yaw += (Math.random() - 0.5) * weapon.kick * 0.4;
+		// the gun climbs with each shot, mostly up and drifting a little to
+		// one side; held steadier when aiming or crouched
+		const r = this.recoil;
+		const steady = (1 - this.ads * 0.35) * (this.crouched ? 0.8 : 1);
+		r.target = Math.min(RECOIL.most, r.target + weapon.kick * steady);
+		r.side += (Math.random() - 0.35) * weapon.kick * 0.45 * steady;
+		r.since = 0;
+		// and the view jolts, a quick roll that springs back
+		r.punchV += (Math.random() < 0.5 ? -1 : 1) * weapon.kick * 3;
+	}
+
+	// The climb comes on fast, holds while the trigger is held, then once the
+	// shooting stops is eased back down towards where the player was aiming,
+	// slowing as it gets there, like hands bringing the gun back on target.
+	private settleRecoil(dt: number) {
+		const r = this.recoil;
+		r.since += dt;
+		if (r.since > RECOIL.hold) {
+			const back = Math.exp(-dt * RECOIL.recover);
+			r.target *= back;
+			r.side *= back;
+		}
+		const climb = 1 - Math.exp(-dt * RECOIL.climb);
+		r.pitch += (r.target - r.pitch) * climb;
+		r.yaw += (r.side - r.yaw) * climb;
+		// a stiff spring that overshoots a little before it settles
+		r.punchV += (-RECOIL.punchStiff * r.punch - RECOIL.punchDamp * r.punchV) * dt;
+		r.punch += r.punchV * dt;
 	}
 
 	// The nearest zombie a ray hits before a wall, if any.
@@ -968,12 +1143,15 @@ export class GameClient {
 					body: new Body(this.dynamic, PLAYER_COLORS),
 					gun: new HeldGun(this.dynamic),
 					label: nameLabel(pb.name),
+					badge: pausedBadge(),
 					step: 0,
 					x: pb.x,
 					z: pb.z,
-					shots: pb.shots
+					shots: pb.shots,
+					knifes: pb.knifes,
+					pose: { ...STANDING, knife: 1 }
 				};
-				this.dynamic.add(view.label);
+				this.dynamic.add(view.label, view.badge);
 				this.others.set(pb.id, view);
 			}
 			this.drawOther(view, pa, pb, alpha, dt);
@@ -982,9 +1160,11 @@ export class GameClient {
 			if (seen.has(id)) continue;
 			view.body.dispose();
 			view.gun.dispose();
-			view.label.removeFromParent();
-			view.label.material.map?.dispose();
-			view.label.material.dispose();
+			for (const sprite of [view.label, view.badge]) {
+				sprite.removeFromParent();
+				sprite.material.map?.dispose();
+				sprite.material.dispose();
+			}
 			this.others.delete(id);
 		}
 	}
@@ -994,18 +1174,49 @@ export class GameClient {
 		const y = pa.y + (pb.y - pa.y) * alpha;
 		const z = pa.z + (pb.z - pa.z) * alpha;
 		const yaw = lerpAngle(pa.yaw, pb.yaw, alpha);
-		view.step += Math.hypot(x - view.x, z - view.z) * 3.6;
+		const pitch = pa.pitch + (pb.pitch - pa.pitch) * alpha;
+		const pose = view.pose;
+		const ease = 1 - Math.exp(-dt * 12);
+		const to = (now: number, want: number) => now + (want - now) * ease;
+		const downed = pb.state === 'downed';
+		pose.pitch = pitch;
+		pose.crouch = to(pose.crouch, pb.stance === CROUCH || pb.stance === SLIDE ? 1 : 0);
+		pose.slide = to(pose.slide, pb.stance === SLIDE ? 1 : 0);
+		pose.sprint = to(pose.sprint, pb.flags & POSE_SPRINT ? 1 : 0);
+		pose.ads = to(pose.ads, pb.flags & POSE_ADS ? 1 : 0);
+		// the reload motion loops while it lasts and finishes its swing after
+		if (pb.flags & POSE_RELOAD || (pose.reload > 0 && pose.reload % 1 > 0.05))
+			pose.reload += dt * 1.2;
+		else pose.reload = 0;
+		if (pb.knifes !== view.knifes) {
+			view.knifes = pb.knifes;
+			pose.knife = 0;
+		}
+		pose.knife = Math.min(1, pose.knife + dt / 0.28);
+		// steps keep time with how fast they're really going, and stop in a slide
+		const moved = Math.hypot(x - view.x, z - view.z);
+		if (pose.slide < 0.5 && !(pb.flags & POSE_AIR)) view.step += moved * 3;
 		view.x = x;
 		view.z = z;
 		const visible = pb.state !== 'dead';
 		for (const mesh of view.body.meshes) mesh.visible = visible;
 		view.label.visible = visible;
-		playerPose(view.body.joints, x, y, z, yaw, view.step, pb.state === 'downed');
+		playerPose(view.body.joints, x, y, z, yaw, view.step, downed, pose);
 		view.body.place();
-		view.label.position.set(x, y + (pb.state === 'downed' ? 1.2 : 2.25), z);
-		const pitch = pa.pitch + (pb.pitch - pa.pitch) * alpha;
+		const top = downed ? 1.2 : 2.25 - pose.crouch * 0.15 - pose.slide * 0.45;
+		view.label.position.set(x, y + top, z);
+		view.badge.visible = visible && (pb.flags & POSE_PAUSED) !== 0;
+		view.badge.position.set(x, y + top + 0.32, z);
 		view.gun.setWeapon(pb.weapon);
-		view.gun.place(hand.fromArray(view.body.joints, J.rHand * 3), yaw, pitch, visible);
+		// pointed down and across the body at a sprint, tipped up for a reload
+		const tipping = pose.reload > 0 ? Math.sin(Math.min(1, pose.reload * 4) * Math.PI * 0.5) : 0;
+		view.gun.place(
+			hand.fromArray(view.body.joints, J.rHand * 3),
+			yaw + pose.sprint * 0.8,
+			downed ? pitch : pitch * (1 - pose.sprint) - pose.sprint * 0.7 + tipping * 0.35,
+			visible,
+			pose.sprint * 0.4 + tipping * 0.6
+		);
 		view.gun.update(dt);
 		if (pb.shots !== view.shots) {
 			view.shots = pb.shots;
@@ -1083,12 +1294,33 @@ export class GameClient {
 			this.camera.position.set(me.x, 7, me.z);
 			this.camera.rotation.set(-1.1, now / 6000, 0);
 		} else {
-			const eye = this.life === 'downed' ? PLAYER.downedEye : PLAYER.eye;
-			const bob = me.ground ? Math.sin(now / 95) * Math.min(1, this.speedNow / 6) * 0.035 : 0;
-			this.camera.position.set(me.x, me.y + eye + bob, me.z);
-			this.camera.rotation.set(me.pitch, me.yaw, this.life === 'downed' ? 0.12 : 0);
+			const downed = this.life === 'downed';
+			let eye = PLAYER.eye + (PLAYER.crouchEye - PLAYER.eye) * this.crouchNow;
+			eye += (PLAYER.slideEye - eye) * this.slideNow;
+			if (downed) eye = PLAYER.downedEye;
+			// the head rises and falls with each step and sways side to side
+			// once a stride, less when aiming and not at all in a slide
+			const pace = me.ground
+				? Math.min(1, this.speedNow / PLAYER.sprint) * (1 - this.ads * 0.8) * (1 - this.slideNow)
+				: 0;
+			const bobY = (Math.abs(Math.cos(this.stride)) - 0.5) * 0.06 * pace;
+			const bobX = Math.sin(this.stride) * 0.03 * pace;
+			const cos = Math.cos(me.yaw);
+			const sin = Math.sin(me.yaw);
+			this.camera.position.set(me.x + cos * bobX, me.y + eye + bobY - this.dip, me.z - sin * bobX);
+			// a lean into a strafe and a slide
+			const roll = downed
+				? 0.12
+				: (-this.strafe / PLAYER.sprint) * 0.02 * (1 - this.ads) + this.slideNow * 0.05;
+			this.roll += (roll - this.roll) * Math.min(1, dt * 10);
+			const r = this.recoil;
+			this.camera.rotation.set(
+				Math.max(-1.5, Math.min(1.5, me.pitch + r.pitch)),
+				me.yaw + r.yaw,
+				this.roll + r.punch
+			);
 		}
-		const fov = settings.get().fov - ADS_ZOOM * this.ads + (this.sprinting() ? 4 : 0);
+		const fov = settings.get().fov - ADS_ZOOM * this.ads + this.sprintNow * 5 + this.slideNow * 4;
 		if (Math.abs(this.camera.fov - fov) > 0.01) {
 			this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 14);
 			this.camera.updateProjectionMatrix();
@@ -1188,6 +1420,33 @@ function lerpAngle(a: number, b: number, t: number) {
 	while (d > Math.PI) d -= Math.PI * 2;
 	while (d < -Math.PI) d += Math.PI * 2;
 	return a + d * t;
+}
+
+// a dark pill reading PAUSED
+function pausedBadge() {
+	const canvas = document.createElement('canvas');
+	canvas.width = 256;
+	canvas.height = 80;
+	const g = canvas.getContext('2d')!;
+	g.fillStyle = 'rgba(15, 15, 15, 0.85)';
+	g.beginPath();
+	g.roundRect(28, 10, 200, 60, 30);
+	g.fill();
+	g.font = '600 30px "Geist Variable", system-ui, sans-serif';
+	g.textAlign = 'center';
+	g.textBaseline = 'middle';
+	g.fillStyle = '#fafafa';
+	g.letterSpacing = '4px';
+	g.fillText('PAUSED', 130, 41);
+	const texture = new THREE.CanvasTexture(canvas);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	const sprite = new THREE.Sprite(
+		new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true })
+	);
+	sprite.scale.set(0.8, 0.25, 1);
+	sprite.renderOrder = 6;
+	sprite.visible = false;
+	return sprite;
 }
 
 function nameLabel(name: string) {

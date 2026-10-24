@@ -11,10 +11,26 @@ export const PLAYER = {
 	health: 100,
 	radius: 0.35,
 	eye: 1.6,
+	crouchEye: 1.08,
+	slideEye: 0.82,
 	downedEye: 0.45,
-	walk: 4.2,
-	sprint: 6.4,
+	// m/s
+	walk: 4.6,
+	sprint: 6.9,
+	crouch: 2.4,
 	crawl: 1.1,
+	// slower while aiming down sights, as a share of walking
+	adsWalk: 0.55,
+	// m/s², how quickly speed is gained and lost: quick on the ground so it
+	// stops where you let go, slow in the air so a jump is committed
+	accel: 48,
+	sprintAccel: 16,
+	friction: 38,
+	airAccel: 9,
+	// a slide starts at this speed, and loses this much each second
+	slideSpeed: 9,
+	slideFriction: 7,
+	slideTime: 0.85,
 	jump: 5.6,
 	gravity: 16,
 	// health comes back this long after the last hit, at this rate

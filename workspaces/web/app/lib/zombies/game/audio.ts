@@ -123,6 +123,17 @@ export class Sound {
 		this.burst({ freq: 200, q: 0.5, decay: 0.6, gain: 0.8, type: 'lowpass' });
 	}
 
+	// a scuff along the floor
+	slide() {
+		this.burst({ freq: 900, q: 0.4, decay: 0.45, gain: 0.3, type: 'lowpass' });
+	}
+
+	// a thud on landing; strength 0 to 1 from how fast the player fell
+	land(strength: number) {
+		if (strength < 0.15) return;
+		this.burst({ freq: 300, q: 0.6, decay: 0.12, gain: 0.5 * strength, type: 'lowpass' });
+	}
+
 	reload() {
 		this.tone(600, 0.04, 0.12, 'square', 500);
 	}
