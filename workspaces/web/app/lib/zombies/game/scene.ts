@@ -11,7 +11,14 @@ import {
 } from '../map';
 import type { Finish, GroundKind, Layout, PropKind, Pt, WallKind } from '../layout';
 import type { BoxSnap } from '../protocol';
-import { surfaceMaterial, type Art, type PropName, type SurfaceName } from './art';
+import {
+	SKY_TURN,
+	surfaceMaterial,
+	underSky,
+	type Art,
+	type PropName,
+	type SurfaceName
+} from './art';
 import { BOX, PERKS, type PerkId } from '../rules';
 import { WEAPONS, ammoCost, type WeaponId } from '../weapons';
 import { VIEW_LAYER } from './viewmodel';
@@ -29,16 +36,21 @@ export const PALETTE = {
 };
 const FONT = '"Geist Variable", system-ui, sans-serif';
 
-// with real textures the world is a run-down town at dusk
+// with real textures the world is a run-down town at dusk, under a sunset
+// sky: the haze is the sky's colour at the horizon, and the town beyond the
+// map stands against it in silhouette
 export const DUSK = {
-	sky: '#2b2b35',
+	haze: '#675b68',
+	silhouette: '#4a4050',
 	chalk: '#ece6d6'
 };
 
 export type World = {
 	root: THREE.Group;
-	// the sky and the haze it fades into
+	// the haze everything fades into, and the sky's colour without a picture
 	sky: string;
+	// gives a scene the sky and the haze
+	dress(scene: THREE.Scene): void;
 	openDoor(index: number): void;
 	closeDoors(): void;
 	setBoards(index: number, boards: number): void;
@@ -94,13 +106,17 @@ type Materials = {
 	glass: THREE.Material;
 	glassLit: THREE.Material;
 	chainlink: THREE.Material;
+	water: THREE.Material;
+	litter: THREE.Material[];
 };
 
 function materials(art: Art | null): Materials {
 	const plain = (color: string) => new THREE.MeshLambertMaterial({ color });
 	const s = (name: SurfaceName, tile: number, tint?: string) =>
-		art ? surfaceMaterial(art.surfaces[name], tile, tint) : null;
+		art ? surfaceMaterial(art, name, tile, tint) : null;
 	const pick = (m: THREE.Material | null, color: string) => m ?? plain(color);
+	// a material of our own that takes the sky's light
+	const sky = <T extends THREE.MeshStandardMaterial>(m: T) => (art ? underSky(m, art.sky) : m);
 	const ground = (
 		name: SurfaceName,
 		tile: number,
@@ -126,7 +142,7 @@ function materials(art: Art | null): Materials {
 		inner: pick(s('wall_plaster', 3, '#e8dfcf'), '#f6f6f6'),
 		ground: {
 			dirt: ground('ground_dirt', 4, '#a89a88', PALETTE.floor, 0),
-			asphalt: ground('ground_asphalt', 4, '#b9b3a8', '#d0d0d0', 2),
+			asphalt: ground('ground_asphalt', 4, '#8e97a8', '#d0d0d0', 2),
 			sidewalk: ground('ground_sidewalk', 2.4, '#b8b2a6', '#dedede', 1),
 			concrete: ground('ground_concrete', 4, '#b3ada3', '#dadada', 1),
 			grass: ground('ground_grass', 3, '#8a9070', '#d9d9d9', 3),
@@ -150,37 +166,66 @@ function materials(art: Art | null): Materials {
 			polygonOffsetUnits: -6
 		}),
 		hedge: art
-			? new THREE.MeshStandardMaterial({
-					color: '#4f6136',
-					map: art.surfaces.ground_grass.color,
-					roughness: 1,
-					flatShading: true
-				})
+			? sky(
+					new THREE.MeshStandardMaterial({
+						color: '#4f6136',
+						map: art.surfaces.ground_grass.color,
+						roughness: 1,
+						flatShading: true
+					})
+				)
 			: plain('#dcdcdc'),
-		leaves: new THREE.MeshStandardMaterial({
-			color: art ? '#3e4a2c' : '#d6d6d6',
-			roughness: 1,
-			flatShading: true
-		}),
-		glass: new THREE.MeshStandardMaterial({
-			color: art ? '#1b2129' : '#cfcfcf',
-			roughness: 0.25,
-			metalness: 0.6
-		}),
+		leaves: sky(
+			new THREE.MeshStandardMaterial({
+				color: art ? '#3e4a2c' : '#d6d6d6',
+				roughness: 1,
+				flatShading: true
+			})
+		),
+		glass: sky(
+			new THREE.MeshStandardMaterial({
+				color: art ? '#1b2129' : '#cfcfcf',
+				roughness: 0.25,
+				metalness: 0.6
+			})
+		),
 		glassLit: new THREE.MeshStandardMaterial({
 			color: '#2a2016',
 			emissive: art ? '#ffb46a' : '#000000',
 			emissiveIntensity: 0.9,
 			roughness: 0.4
 		}),
-		chainlink: new THREE.MeshStandardMaterial({
-			map: chainlinkTexture(),
-			color: art ? '#b9bec4' : '#9a9a9a',
-			metalness: 0.6,
-			roughness: 0.5,
-			alphaTest: 0.5,
-			side: THREE.DoubleSide
-		})
+		chainlink: sky(
+			new THREE.MeshStandardMaterial({
+				map: chainlinkTexture(),
+				color: art ? '#b9bec4' : '#9a9a9a',
+				metalness: 0.6,
+				roughness: 0.5,
+				alphaTest: 0.5,
+				side: THREE.DoubleSide
+			})
+		),
+		litter: ['#c4bcac', '#8d877c', '#4a4744', '#b9a98a'].map(
+			(color) =>
+				new THREE.MeshLambertMaterial({
+					color,
+					polygonOffset: true,
+					polygonOffsetFactor: -6,
+					polygonOffsetUnits: -6
+				})
+		),
+		water: sky(
+			new THREE.MeshStandardMaterial({
+				color: '#0c0d10',
+				roughness: 0.05,
+				metalness: 0.9,
+				transparent: true,
+				opacity: 0.8,
+				polygonOffset: true,
+				polygonOffsetFactor: -7,
+				polygonOffsetUnits: -7
+			})
+		)
 	};
 }
 
@@ -366,7 +411,7 @@ function wallWithHoles(
 export function buildWorld(map: GameMap, art: Art | null = null): World {
 	const root = new THREE.Group();
 	const layout = map.layout;
-	const sky = art ? DUSK.sky : PALETTE.sky;
+	const sky = art ? DUSK.haze : PALETTE.sky;
 	const m = materials(art);
 	const batch = new Batch();
 	const random = seeded(11);
@@ -416,8 +461,13 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 
 	if (art) placeProps(root, batch, layout, art, m, random);
 	else placePlainProps(batch, layout, m);
+	if (art) {
+		puddles(batch, layout, m, random);
+		litter(batch, layout, m, random);
+		wires(root, layout);
+	}
 	batch.flush(root);
-	if (art) root.add(skyline(random), outskirts(map, m, random));
+	if (art) root.add(skyline(random), outskirts(map, m, random), stars(random));
 
 	const doors = map.doors.map((d) => buildDoor(root, d, m, art));
 
@@ -459,8 +509,10 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 		else buildPerk(root, machine, machine.kind);
 	}
 
+	// with the art the sky itself lights what reflects it (see underSky), so
+	// the hemisphere light only fills in the rest
 	const ambient = art
-		? new THREE.HemisphereLight('#8f9fc4', '#6a5a48', 3)
+		? new THREE.HemisphereLight('#a394b6', '#6a5a48', 2)
 		: new THREE.HemisphereLight('#ffffff', '#9a9a9a', 1.6);
 	root.add(ambient);
 	const sun = art
@@ -494,6 +546,11 @@ export function buildWorld(map: GameMap, art: Art | null = null): World {
 	return {
 		root,
 		sky,
+		dress(scene) {
+			scene.background = art ? art.sky : new THREE.Color(sky);
+			scene.backgroundRotation.copy(SKY_TURN);
+			scene.fog = new THREE.Fog(sky, art ? 14 : 10, art ? 80 : 62);
+		},
 		openDoor(index) {
 			const door = doors[index];
 			if (door && door.opening < 0) door.opening = 0;
@@ -1099,7 +1156,7 @@ function placeProps(
 		if (prop.kind === 'lamp') placeLamp(root, art, x, z, prop.rot);
 		else if (prop.kind === 'tree') tree(batch, x, z, random, m);
 		else if (prop.kind === 'pine') pine(batch, x, z, random, m);
-		else if (prop.kind === 'pole') pole(batch, x, z, m);
+		else if (prop.kind === 'pole') pole(batch, x, z, rot, m);
 		else if (prop.kind === 'post') {
 			batch.add(m.trim, new THREE.BoxGeometry(0.4, 4.6, 0.4).translate(x, 2.3, z));
 		} else if (prop.kind === 'pump') pump(root, x, z, rot, art, m);
@@ -1183,12 +1240,133 @@ function pine(batch: Batch, x: number, z: number, random: () => number, m: Mater
 	}
 }
 
-// A wooden utility pole with its cross-arm.
-function pole(batch: Batch, x: number, z: number, m: Materials) {
+// A wooden utility pole with its cross-arm, turned so the arm reaches
+// across the wires it carries (see `wires`).
+const POLE_ARM = 7.6;
+function pole(batch: Batch, x: number, z: number, rot: number, m: Materials) {
 	batch.add(m.wood, new THREE.CylinderGeometry(0.13, 0.17, 8.5, 8).translate(x, 4.25, z));
-	batch.add(m.wood, new THREE.BoxGeometry(2.2, 0.14, 0.14).translate(x, 7.6, z));
+	batch.add(m.wood, new THREE.BoxGeometry(2.2, 0.14, 0.14).rotateY(rot).translate(x, POLE_ARM, z));
 	for (const dx of [-0.9, -0.3, 0.3, 0.9])
-		batch.add(m.trim, new THREE.CylinderGeometry(0.04, 0.05, 0.22, 6).translate(x + dx, 7.79, z));
+		batch.add(
+			m.trim,
+			new THREE.CylinderGeometry(0.04, 0.05, 0.22, 6)
+				.translate(dx, POLE_ARM + 0.19, 0)
+				.rotateY(rot)
+				.translate(x, 0, z)
+		);
+}
+
+// Overhead lines slung from pole to pole, sagging between them. They're
+// drawn as lines, so they stay a wire's width however far off they are.
+function wires(root: THREE.Object3D, layout: Layout) {
+	const points: number[] = [];
+	for (const run of layout.wires) {
+		for (let i = 0; i < run.length - 1; i++) {
+			const [a, b] = [run[i], run[i + 1]];
+			const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+			// across the run, where the arm's insulators sit
+			const nx = -(b[1] - a[1]) / len;
+			const nz = (b[0] - a[0]) / len;
+			for (const off of [-0.6, 0.6]) {
+				const steps = Math.max(6, Math.ceil(len / 2));
+				let last: number[] | null = null;
+				for (let k = 0; k <= steps; k++) {
+					const t = k / steps;
+					const sag = len * 0.025 * 4 * t * (1 - t);
+					const p = [
+						a[0] + (b[0] - a[0]) * t + nx * off,
+						POLE_ARM + 0.3 - sag,
+						a[1] + (b[1] - a[1]) * t + nz * off
+					];
+					if (last) points.push(...last, ...p);
+					last = p;
+				}
+			}
+		}
+	}
+	const g = new THREE.BufferGeometry();
+	g.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+	root.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#0d0c0f' })));
+}
+
+// Rainwater standing in the dips of the ground, mirroring the sky.
+function puddles(batch: Batch, layout: Layout, m: Materials, random: () => number) {
+	for (const { at, size, rot } of layout.puddles) {
+		const g = new THREE.CircleGeometry(size / 2, 18);
+		// an uneven edge
+		const pos = g.getAttribute('position') as THREE.BufferAttribute;
+		for (let i = 1; i < pos.count; i++) {
+			const k = 0.8 + random() * 0.35;
+			pos.setXY(i, pos.getX(i) * k, pos.getY(i) * (0.55 + random() * 0.2));
+		}
+		g.rotateX(-Math.PI / 2);
+		g.rotateY((-rot * Math.PI) / 180);
+		g.translate(at[0], 0.014, at[1]);
+		batch.add(m.water, g);
+	}
+}
+
+// Scraps of paper and rubbish blown into the paved parts of town.
+function litter(batch: Batch, layout: Layout, m: Materials, random: () => number) {
+	for (const g of layout.ground) {
+		if (g.kind === 'dirt' || g.kind === 'grass' || g.kind === 'tile') continue;
+		const xs = g.poly.map((p) => p[0]);
+		const zs = g.poly.map((p) => p[1]);
+		const [x0, x1] = [Math.min(...xs), Math.max(...xs)];
+		const [z0, z1] = [Math.min(...zs), Math.max(...zs)];
+		const count = Math.round(Math.abs(signedArea(g.poly)) / 45);
+		for (let n = 0, tries = 0; n < count && tries < count * 20; tries++) {
+			const x = x0 + random() * (x1 - x0);
+			const z = z0 + random() * (z1 - z0);
+			if (!inside(g.poly, x, z)) continue;
+			n++;
+			const scrap = new THREE.PlaneGeometry(0.16 + random() * 0.22, 0.12 + random() * 0.16);
+			scrap.rotateX(-Math.PI / 2);
+			scrap.rotateY(random() * Math.PI);
+			scrap.translate(x, 0.01, z);
+			batch.add(m.litter[Math.floor(random() * m.litter.length)], scrap);
+		}
+	}
+}
+
+function inside(poly: Pt[], x: number, z: number) {
+	let hit = false;
+	for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+		const [xi, zi] = poly[i];
+		const [xj, zj] = poly[j];
+		if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) hit = !hit;
+	}
+	return hit;
+}
+
+// The first stars, high up where the sky has darkened.
+function stars(random: () => number) {
+	const pos: number[] = [];
+	const col: number[] = [];
+	for (let k = 0; k < 180; k++) {
+		const a = random() * Math.PI * 2;
+		// more of them the higher up, none where the sky is still bright
+		const up = 0.45 + random() * 0.55;
+		const r = Math.sqrt(1 - up * up);
+		pos.push(WORLD_X / 2 + Math.cos(a) * r * 360, up * 360, WORLD_Z / 2 + Math.sin(a) * r * 360);
+		const bright = (0.15 + random() * 0.45) * up;
+		col.push(bright, bright, bright * (0.9 + random() * 0.1));
+	}
+	const g = new THREE.BufferGeometry();
+	g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+	g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+	return new THREE.Points(
+		g,
+		new THREE.PointsMaterial({
+			size: 1.3,
+			sizeAttenuation: false,
+			vertexColors: true,
+			transparent: true,
+			depthWrite: false,
+			blending: THREE.AdditiveBlending,
+			fog: false
+		})
+	);
 }
 
 // A petrol pump: a cabinet with a lit display.
@@ -1220,25 +1398,46 @@ function pump(
 	root.add(g);
 }
 
-// A box truck's trailer, left where it stopped.
+// A box truck left where it stopped: a cab, a box on a chassis, and six
+// wheels. Its footprint is the one in SOLID_PROPS.
 function truck(batch: Batch, x: number, z: number, rot: number, m: Materials) {
-	const box = new THREE.BoxGeometry(6.5, 2.6, 2.4);
-	box.translate(0, 1.6, 0);
-	box.rotateY(rot);
-	box.translate(x, 0, z);
-	batch.add(m.finish.metal, box);
+	const place = (g: THREE.BufferGeometry) => g.rotateY(rot).translate(x, 0, z);
+	// the box, with ribs down its sides
+	batch.add(m.finish.metal, place(new THREE.BoxGeometry(4.5, 2.4, 2.4).translate(1, 2.2, 0)));
+	for (let k = -1.9; k <= 1.9; k += 0.76)
+		batch.add(m.trim, place(new THREE.BoxGeometry(0.08, 2.44, 2.46).translate(1 + k, 2.2, 0)));
+	batch.add(m.trim, place(new THREE.BoxGeometry(4.55, 0.1, 2.45).translate(1, 1.02, 0)));
+	// the chassis and the cab
+	batch.add(m.trim, place(new THREE.BoxGeometry(6.2, 0.3, 1).translate(0.05, 0.78, 0)));
+	batch.add(m.metal, place(new THREE.BoxGeometry(1.7, 1.45, 2.3).translate(-2.3, 1.72, 0)));
+	batch.add(m.trim, place(new THREE.BoxGeometry(1.75, 0.5, 2.35).translate(-2.3, 0.98, 0)));
+	batch.add(m.glass, place(new THREE.BoxGeometry(0.04, 0.8, 2).translate(-3.16, 1.95, 0)));
+	for (const side of [1, -1]) {
+		batch.add(
+			m.glass,
+			place(new THREE.BoxGeometry(0.9, 0.6, 0.04).translate(-2.5, 1.95, side * 1.16))
+		);
+		batch.add(
+			m.glassLit,
+			place(new THREE.BoxGeometry(0.06, 0.2, 0.3).translate(-3.17, 1.1, side * 0.85))
+		);
+	}
 	for (const [dx, dz] of [
-		[-2.2, 1],
-		[-2.2, -1],
-		[2.4, 1],
-		[2.4, -1]
+		[-2.4, 1],
+		[-2.4, -1],
+		[1.4, 1.05],
+		[1.4, -1.05],
+		[2.5, 1.05],
+		[2.5, -1.05]
 	]) {
-		const wheel = new THREE.CylinderGeometry(0.42, 0.42, 0.3, 12);
+		const wheel = new THREE.CylinderGeometry(0.48, 0.48, 0.32, 14);
 		wheel.rotateX(Math.PI / 2);
-		wheel.translate(dx, 0.42, dz);
-		wheel.rotateY(rot);
-		wheel.translate(x, 0, z);
-		batch.add(m.trim, wheel);
+		wheel.translate(dx, 0.48, dz);
+		batch.add(m.dark, place(wheel));
+		const hub = new THREE.CylinderGeometry(0.2, 0.2, 0.34, 10);
+		hub.rotateX(Math.PI / 2);
+		hub.translate(dx, 0.48, dz);
+		batch.add(m.trim, place(hub));
 	}
 }
 
@@ -1319,7 +1518,7 @@ function outskirts(map: GameMap, m: Materials, random: () => number) {
 	};
 	const batch = new Batch();
 	const group = new THREE.Group();
-	const finishes = [m.finish.brick, m.finish.brick_red, m.finish.concrete, m.finish.plaster];
+	const finishes = [m.finish.brick, m.finish.brick_red, m.finish.concrete];
 	const step = 11;
 	for (let z = -40; z < ROWS + 40; z += step) {
 		for (let x = -40; x < COLS + 40; x += step) {
@@ -1356,8 +1555,9 @@ function outskirts(map: GameMap, m: Materials, random: () => number) {
 // the sky.
 function skyline(random: () => number) {
 	const group = new THREE.Group();
+	// the blocks' own colour, with a window lit here and there
 	const windows = canvasTexture(256, 256, (g) => {
-		g.fillStyle = '#000';
+		g.fillStyle = DUSK.silhouette;
 		g.fillRect(0, 0, 256, 256);
 		const r = seeded(5);
 		for (let y = 0; y < 8; y++)
@@ -1368,16 +1568,12 @@ function skyline(random: () => number) {
 			}
 	});
 	windows.wrapS = windows.wrapT = THREE.RepeatWrapping;
-	const material = new THREE.MeshLambertMaterial({
-		color: '#16151a',
-		emissive: '#ffffff',
-		emissiveMap: windows,
-		emissiveIntensity: 0.55,
-		fog: false
-	});
+	const material = new THREE.MeshBasicMaterial({ map: windows, fog: false });
 	const parts: THREE.BufferGeometry[] = [];
 	const cx = WORLD_X / 2;
 	const cz = WORLD_Z / 2;
+	// the sun sets over the lower blocks, so the sky glows between them
+	const sunward = Math.atan2(24, -60);
 	for (let k = 0; k < 90; k++) {
 		const a = (k / 90) * Math.PI * 2 + random() * 0.05;
 		// out past the map's corners
@@ -1386,7 +1582,8 @@ function skyline(random: () => number) {
 		const z = cz + Math.sin(a) * ring * 0.95;
 		const w = 8 + random() * 14;
 		const d = 8 + random() * 10;
-		const h = 8 + random() * 26;
+		const toSun = Math.abs(((a - sunward + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+		const h = (6 + random() * 20) * (toSun < 1 ? 0.45 + toSun * 0.55 : 1);
 		const g = new THREE.BoxGeometry(w, h, d);
 		// windows a storey apart, whatever the block's size
 		const uv = g.getAttribute('uv') as THREE.BufferAttribute;
@@ -1422,10 +1619,7 @@ export function buildWindow(root: THREE.Object3D, w: Window, art: Art | null = n
 	const width = w.width;
 	const frame = new THREE.MeshLambertMaterial({ color: art ? '#3a3027' : PALETTE.wall });
 	const boardFaces = art
-		? [
-				surfaceMaterial(art.surfaces.planks, 1.2),
-				surfaceMaterial(art.surfaces.planks, 1.2, '#b8a48a')
-			]
+		? [surfaceMaterial(art, 'planks', 1.2), surfaceMaterial(art, 'planks', 1.2, '#b8a48a')]
 		: [
 				new THREE.MeshLambertMaterial({ color: '#6b4f35' }),
 				new THREE.MeshLambertMaterial({ color: '#8a6a4a' })

@@ -343,8 +343,7 @@ export class GameClient {
 		// cleared by hand, so the gun's pass can draw over the world's
 		this.renderer.autoClear = false;
 		this.world = buildWorld(this.map, art);
-		this.scene.background = new THREE.Color(this.world.sky);
-		this.scene.fog = new THREE.Fog(this.world.sky, art ? 14 : 10, art ? 70 : 62);
+		this.world.dress(this.scene);
 		this.blocking.open.forEach((open, i) => open && this.world.openDoor(i));
 		this.world.update(10);
 		this.camera.rotation.order = 'YXZ';
