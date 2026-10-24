@@ -1,16 +1,9 @@
-import {
-	type ExtendedFeature,
-	geoArea,
-	geoBounds,
-	geoCentroid,
-	geoContains,
-	geoDistance,
-	geoInterpolate,
-	geoOrthographic,
-	geoPath
-} from 'd3-geo';
+import { type ExtendedFeature, geoArea, geoCentroid, geoDistance } from 'd3-geo';
+import { interpolateTurbo } from 'd3-scale-chromatic';
+import GlobeGl, { type GlobeInstance } from 'globe.gl';
 import { MinusIcon, PlusIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { CanvasTexture, Mesh, MeshBasicMaterial, SphereGeometry, SRGBColorSpace } from 'three';
 import { feature } from 'topojson-client';
 import { Button } from '~/components/ui/button';
 import type { FilterKey } from '~/lib/stats/dimensions';
@@ -18,10 +11,10 @@ import type { CityRow, RegionRow, Row } from '~/lib/stats/report';
 import { country as countryName } from './format';
 import WORLD from './globe/world.json';
 
-// Where visitors are, on a globe that turns slowly until touched. Drag to
-// turn it; scroll, pinch or the buttons to zoom. Zoomed out it shades
-// countries by visitors, closer in their states or provinces, and closest
-// in it shows cities as dots. Choosing any of them filters the page, and a
+// Where visitors are, on a globe (globe.gl) that turns slowly until touched.
+// Drag to turn it; scroll, pinch or the buttons step between three levels:
+// countries, then states or provinces, then cities as a heatmap. Hovering
+// names the place at the level shown, and choosing one filters the page; a
 // filter turns the globe to it. Outlines come from scripts/world-map.mjs.
 
 type Topology = Parameters<typeof feature>[0];
@@ -30,8 +23,7 @@ type RegionProps = { name: string; codes: string[]; names: string[]; groups: str
 type RegionShape = ExtendedFeature & { properties: RegionProps };
 
 // Rounding the outlines to fit a small file can turn a tiny piece inside
-// out, which d3 reads as the whole globe but that piece; those are turned
-// back.
+// out, which reads as the whole globe but that piece; those are turned back.
 function wound<T extends ExtendedFeature>(shape: T): T {
 	const geometry = shape.geometry;
 	if (geometry?.type !== 'Polygon' && geometry?.type !== 'MultiPolygon') return shape;
@@ -56,12 +48,7 @@ const COUNTRIES = (
 	}
 ).features
 	.map(wound)
-	.map((shape) => ({
-		shape,
-		code: String(shape.id),
-		bounds: geoBounds(shape),
-		center: geoCentroid(shape)
-	}));
+	.map((shape) => ({ shape, code: String(shape.id), center: geoCentroid(shape) }));
 const BY_CODE = new Map(COUNTRIES.map((entry) => [entry.code, entry]));
 
 // states and provinces, a file per country, loaded when first needed
@@ -90,17 +77,18 @@ function loadRegions(code: string, done: () => void) {
 		});
 }
 
-// how close in each level starts: 1 is the whole globe
-const STATES_FROM = 2;
-const CITIES_FROM = 5;
-const MAX_ZOOM = 60;
 const LEVELS = ['Countries', 'States and provinces', 'Cities'];
-const levelOf = (k: number) => (k >= CITIES_FROM ? 2 : k >= STATES_FROM ? 1 : 0);
-// degrees a second
-const SPIN = 4;
+// how far the camera is from the ground at each level, in globe radii
+const ALTITUDES = [1.5, 0.75, 0.22];
+// states are shown for countries this close to the middle of the view, radians
+const NEAR = 0.45;
 
-type View = { rotate: [number, number]; k: number };
-type Hit = { key: FilterKey; value: string; label: string; visitors: number; shape?: object };
+// the countries close to the middle of the view
+function nearTo(lat: number, lng: number) {
+	return COUNTRIES.filter((entry) => geoDistance([lng, lat], entry.center) < NEAR).map(
+		(entry) => entry.code
+	);
+}
 
 // Each region of visitors on its outlines: by Cloudflare's code, or by name
 // for visits from before codes were kept, or else as the larger region a
@@ -124,9 +112,9 @@ function matchRegions(shapes: RegionShape[], rows: RegionRow[]) {
 	return byOutline;
 }
 
-// The middle of a country's biggest piece, and how far it reaches, so France
-// is not centred on the sea between it and its islands in South America.
-function frameOf(shape: Shape) {
+// The middle of a country's biggest piece, so France is not centred on the
+// sea between it and its islands in South America.
+function middleOf(shape: Shape): [number, number] | null {
 	const geometry = shape.geometry;
 	const polygons =
 		geometry?.type === 'Polygon'
@@ -137,27 +125,86 @@ function frameOf(shape: Shape) {
 	const biggest = polygons
 		.map((coordinates) => ({ type: 'Polygon' as const, coordinates }))
 		.sort((a, b) => geoArea(b) - geoArea(a))[0];
-	if (!biggest) return null;
-	const center = geoCentroid(biggest);
-	const reach = Math.max(
-		...biggest.coordinates[0].map((point) => geoDistance(center, point as [number, number]))
-	);
-	return { center, reach };
+	return biggest ? geoCentroid(biggest) : null;
 }
 
-// zoom that shows an angle (radians) around the middle
-const zoomFor = (reach: number) => 1 / Math.sin(Math.min(reach * 1.3, Math.PI / 2));
-
-function inBounds(
-	[[west, south], [east, north]]: [[number, number], [number, number]],
-	[lng, lat]: [number, number]
-) {
-	if (lat < south - 0.5 || lat > north + 0.5) return false;
-	// a shape across the 180th meridian has its west east of its east
-	return west <= east
-		? lng >= west - 0.5 && lng <= east + 0.5
-		: lng >= west - 0.5 || lng <= east + 0.5;
+// a theme colour (oklch and all) as the rgb the 3D scene understands
+function rgbOf(css: string) {
+	const canvas = document.createElement('canvas');
+	canvas.width = canvas.height = 1;
+	const context = canvas.getContext('2d');
+	if (!context) return [0, 0, 0];
+	context.fillStyle = css;
+	context.fillRect(0, 0, 1, 1);
+	const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+	return [r, g, b];
 }
+
+// how far each city's visitors spread, in degrees: about 60km
+const SPREAD = 0.55;
+
+// The whole world, flat, as a heatmap of cities: a bell curve of visitors
+// round each one, added up, then coloured as globe.gl colours its own
+// heatmaps: blue through red, clearer where fewer visit.
+const TURBO = Array.from({ length: 256 }, (_, i) =>
+	// 'rgb(r, g, b)'
+	(interpolateTurbo(i / 255).match(/\d+/g) ?? []).map(Number)
+);
+function heatmap(cities: CityRow[]) {
+	const width = 4096;
+	const height = 2048;
+	const perDegree = width / 360;
+	const sum = new Float32Array(width * height);
+	const reach = Math.ceil(SPREAD * 4 * perDegree);
+	for (const city of cities) {
+		const cx = ((city.lng + 180) / 360) * width;
+		const cy = ((90 - city.lat) / 180) * height;
+		// a degree of longitude narrows toward the poles
+		const squeeze = Math.max(0.1, Math.cos((city.lat * Math.PI) / 180));
+		const across = Math.ceil(reach / squeeze);
+		for (let y = Math.max(0, Math.floor(cy - reach)); y < Math.min(height, cy + reach); y++) {
+			const dy = (y - cy) / perDegree;
+			for (let x = Math.floor(cx - across); x < cx + across; x++) {
+				const dx = ((x - cx) / perDegree) * squeeze;
+				const at = y * width + ((x + width) % width);
+				sum[at] += city.visitors * Math.exp(-(dx * dx + dy * dy) / (2 * SPREAD * SPREAD));
+			}
+		}
+	}
+	let max = 0;
+	for (const value of sum) if (value > max) max = value;
+	const canvas = document.createElement('canvas');
+	canvas.width = width;
+	canvas.height = height;
+	const context = canvas.getContext('2d');
+	if (!context || !max) return canvas;
+	const image = context.createImageData(width, height);
+	for (let i = 0; i < sum.length; i++) {
+		// globe.gl's scale, red from two thirds of the busiest
+		const t = Math.min(1, (1.5 * sum[i]) / max);
+		if (t < 0.001) continue;
+		const [r, g, b] = TURBO[Math.round(t * 255)];
+		image.data[i * 4] = r;
+		image.data[i * 4 + 1] = g;
+		image.data[i * 4 + 2] = b;
+		// and its see-through edges, eased out so they fade to nothing
+		image.data[i * 4 + 3] = 255 * Math.cbrt(t) * Math.min(1, t / 0.05);
+	}
+	context.putImageData(image, 0, 0);
+	return canvas;
+}
+
+// One shape on the globe: a country, or a state of one.
+type Area = {
+	key: FilterKey;
+	// what choosing it filters by; empty when nobody visited
+	value: string;
+	label: string;
+	visitors: number;
+	geometry: Shape['geometry'];
+};
+
+type Tip = { label: string; visitors: number };
 
 export function Globe({
 	countries,
@@ -172,486 +219,360 @@ export function Globe({
 	active: { country?: string; region?: string; city?: string };
 	onPick: (key: FilterKey, value: string) => void;
 }) {
-	const canvasRef = useRef<HTMLCanvasElement>(null);
-	const view = useRef<View>({ rotate: [-10, -25], k: 1 });
-	const [level, setLevel] = useState(0);
-	// what the hover label says; it follows the pointer through tipRef
-	const [tip, setTip] = useState<{ label: string; visitors: number } | null>(null);
+	const boxRef = useRef<HTMLDivElement>(null);
+	const globeRef = useRef<GlobeInstance | null>(null);
 	const tipRef = useRef<HTMLDivElement>(null);
-	// bumped when a country's regions arrive, to shade them
+	const [level, setLevel] = useState(0);
+	const [tip, setTip] = useState<Tip | null>(null);
+	// countries near the middle of the view, whose states are shown
+	const [near, setNear] = useState<string[]>([]);
+	// bumped when a country's states arrive
 	const [loaded, setLoaded] = useState(0);
-
-	const data = useMemo(() => {
-		const byCountry = new Map<string, RegionRow[]>();
-		for (const row of regions)
-			byCountry.set(row.country, [...(byCountry.get(row.country) ?? []), row]);
-		const shading = new Map<string, { shapes: RegionShape[]; rows: Map<number, RegionRow[]> }>();
-		for (const [code, rows] of byCountry) {
-			const shapes = regionCache.get(code);
-			if (shapes) shading.set(code, { shapes, rows: matchRegions(shapes, rows) });
-		}
-		return {
-			counts: new Map(countries.map((row) => [row.key, row])),
-			countryMax: Math.max(1, ...countries.map((row) => row.visitors)),
-			regionCountries: [...byCountry.keys()],
-			shading,
-			regionMax: Math.max(1, ...regions.map((row) => row.visitors)),
-			cities,
-			cityMax: Math.max(1, ...cities.map((row) => row.visitors))
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- `loaded` marks new region files
-	}, [countries, regions, cities, loaded]);
-	const dataRef = useRef(data);
-	const activeRef = useRef(active);
+	// bumped when the theme changes
+	const [theme, setTheme] = useState(0);
 	const onPickRef = useRef(onPick);
-	// zoom by a factor, from the buttons
-	const zoomRef = useRef<(factor: number) => void>(() => undefined);
-	const hitRef = useRef<Hit | null>(null);
-	const dirty = useRef(true);
-	const animation = useRef<{ from: View; to: View; start: number; ms: number } | null>(null);
+	const levelRef = useRef(level);
+	// where a filter turned the globe to, kept when the level changes with it
+	const aimRef = useRef<{ lat: number; lng: number; ms: number } | null>(null);
 
 	useEffect(() => {
-		dataRef.current = data;
-		activeRef.current = active;
 		onPickRef.current = onPick;
-		dirty.current = true;
-	}, [data, active, onPick]);
+		levelRef.current = level;
+	}, [onPick, level]);
 
-	// turn to what the page is filtered by
-	const focusCode =
-		active.country ?? (active.city ?? active.region)?.split(', ').pop() ?? undefined;
-	// a region is turned to once its country's outlines are here
-	const regionReady = !!active.region && !!focusCode && data.shading.has(focusCode);
-	useEffect(() => {
-		let target: { center: [number, number]; k: number } | null = null;
-		if (active.city) {
-			const city = cities.find((row) => row.key === active.city);
-			if (city) target = { center: [city.lng, city.lat], k: 9 };
+	// the shapes to draw: countries, or near ones split into their states
+	const areas = useMemo(() => {
+		const counts = new Map(countries.map((row) => [row.key, row.visitors]));
+		const byCountry = new Map<string, RegionRow[]>();
+		for (const row of regions) {
+			byCountry.set(row.country, [...(byCountry.get(row.country) ?? []), row]);
 		}
-		if (!target && active.region && focusCode) {
-			loadRegions(focusCode, () => setLoaded((n) => n + 1));
-			const shading = data.shading.get(focusCode);
-			const outlines = shading
-				? shading.shapes.filter((_, index) =>
-						(shading.rows.get(index) ?? []).some((row) => row.key === active.region)
-					)
-				: [];
-			if (outlines.length) {
-				const all = { type: 'FeatureCollection' as const, features: outlines };
-				const center = geoCentroid(all);
-				const [[west, south], [east, north]] = geoBounds(all);
-				const corners: [number, number][] = [
-					[west, south],
-					[west, north],
-					[east, south],
-					[east, north]
-				];
-				const reach = Math.max(...corners.map((corner) => geoDistance(center, corner)));
-				// close enough to see its cities
-				target = { center, k: Math.min(20, Math.max(CITIES_FROM + 0.5, zoomFor(reach))) };
+		const split = new Set(level > 0 ? near : []);
+		const list: Area[] = [];
+		for (const { shape, code } of COUNTRIES) {
+			const shapes = split.has(code) ? regionCache.get(code) : null;
+			if (!shapes) {
+				const visitors = counts.get(code) ?? 0;
+				list.push({
+					key: 'country',
+					value: visitors ? code : '',
+					label: countryName(code),
+					visitors,
+					geometry: shape.geometry
+				});
+				continue;
 			}
+			const matched = matchRegions(shapes, byCountry.get(code) ?? []);
+			shapes.forEach((region, index) => {
+				const rows = matched.get(index) ?? [];
+				list.push({
+					key: 'region',
+					value: rows[0]?.key ?? '',
+					label: rows[0]?.label ?? region.properties.name,
+					visitors: rows.reduce((sum, row) => sum + row.visitors, 0),
+					geometry: region.geometry
+				});
+			});
 		}
-		if (!target && focusCode) {
-			const entry = BY_CODE.get(focusCode);
-			const frame = entry && frameOf(entry.shape);
-			if (frame) {
-				target = {
-					center: frame.center,
-					// a country by its states
-					k: Math.min(CITIES_FROM - 0.5, Math.max(STATES_FROM + 0.5, zoomFor(frame.reach)))
-				};
-			}
-		}
-		if (!target) return;
-		const to: View = { rotate: [-target.center[0], -target.center[1]], k: target.k };
-		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-			view.current = to;
-			animation.current = null;
-			dirty.current = true;
-			return;
-		}
-		animation.current = {
-			from: { rotate: [...view.current.rotate] as [number, number], k: view.current.k },
-			to,
-			start: performance.now(),
-			ms: 900
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- only when the filters change
-	}, [active.country, active.region, active.city, regionReady]);
+		return list;
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- `loaded` marks new state files
+	}, [countries, regions, level, near, loaded]);
 
+	// set the globe up once
 	useEffect(() => {
-		const canvas = canvasRef.current;
-		if (!canvas) return;
-		const context = canvas.getContext('2d');
-		if (!context) return;
+		const box = boxRef.current;
+		if (!box) return;
 		const still = window.matchMedia('(prefers-reduced-motion: reduce)');
-		let width = 0;
-		let height = 0;
-		let frame = 0;
-		let last = performance.now();
-		let visible = true;
-		let inside = false;
-		let dragging: { x: number; y: number; rotate: [number, number]; moved: boolean } | null = null;
-		const pointers = new Map<number, { x: number; y: number }>();
-		let pinch: { distance: number; k: number } | null = null;
-		// the theme's colours, read again when it changes
-		let ink = '#000';
-		let paper = '#fff';
-		const readColors = () => {
-			const style = getComputedStyle(canvas);
-			ink = style.getPropertyValue('--foreground').trim() || '#000';
-			paper = style.getPropertyValue('--background').trim() || '#fff';
-			dirty.current = true;
-		};
-		readColors();
+		const globe = new GlobeGl(box, { rendererConfig: { alpha: true, antialias: true } })
+			.backgroundColor('rgba(0,0,0,0)')
+			.showAtmosphere(false)
+			.showGraticules(false)
+			.polygonSideColor(() => 'rgba(0,0,0,0)')
+			.polygonsTransitionDuration(0)
+			.pointOfView({ lat: 25, lng: 10, altitude: ALTITUDES[0] });
+		globeRef.current = globe;
+		const controls = globe.controls();
+		controls.enableZoom = false;
+		controls.autoRotate = !still.matches;
+		controls.autoRotateSpeed = 0.5;
 
-		const radius = () => Math.min(width, height) / 2 - 2;
-		const projection = () =>
-			geoOrthographic()
-				.rotate(view.current.rotate)
-				.scale(radius() * view.current.k)
-				.translate([width / 2, height / 2])
-				.clipAngle(90)
-				.precision(0.3);
+		const size = () => {
+			globe.width(box.clientWidth).height(box.clientWidth);
+		};
+		size();
+		const resize = new ResizeObserver(size);
+		resize.observe(box);
 
-		const resize = () => {
-			const box = canvas.getBoundingClientRect();
-			const ratio = window.devicePixelRatio || 1;
-			width = box.width;
-			height = box.height;
-			canvas.width = Math.round(width * ratio);
-			canvas.height = Math.round(height * ratio);
-			context.setTransform(ratio, 0, 0, ratio, 0, 0);
-			dirty.current = true;
+		// the states of countries in view
+		const look = () => {
+			const { lat, lng } = globe.pointOfView();
+			setNear(nearTo(lat, lng));
 		};
+		controls.addEventListener('end', look);
+		look();
 
-		const draw = () => {
-			const { counts, countryMax, shading, regionMax, cityMax } = dataRef.current;
-			const tier = levelOf(view.current.k);
-			const p = projection();
-			const path = geoPath(p, context);
-			const hover = hitRef.current;
-			const chosen = activeRef.current;
-
-			context.clearRect(0, 0, width, height);
-			const shape = (geometry: object, alpha: number) => {
-				context.beginPath();
-				path(geometry as Shape);
-				context.globalAlpha = alpha;
-				context.fillStyle = ink;
-				context.fill();
-				context.globalAlpha = 1;
-				context.strokeStyle = paper;
-				context.lineWidth = 0.6;
-				context.stroke();
-			};
-			const outline = (geometry: object, lineWidth: number) => {
-				context.beginPath();
-				path(geometry as Shape);
-				context.strokeStyle = ink;
-				context.lineWidth = lineWidth;
-				context.stroke();
-			};
-			const shade = (count: number, max: number) => (count ? 0.15 + (count / max) * 0.75 : 0.07);
-
-			// the sea
-			context.beginPath();
-			path({ type: 'Sphere' });
-			context.globalAlpha = 0.03;
-			context.fillStyle = ink;
-			context.fill();
-			context.globalAlpha = 0.12;
-			context.strokeStyle = ink;
-			context.lineWidth = 1;
-			context.stroke();
-			context.globalAlpha = 1;
-
-			for (const { shape: country, code } of COUNTRIES) {
-				const split = tier > 0 && shading.has(code);
-				shape(country, split ? 0.07 : shade(counts.get(code)?.visitors ?? 0, countryMax));
-			}
-			if (tier > 0) {
-				for (const { shapes, rows } of shading.values()) {
-					shapes.forEach((region, index) => {
-						const count = (rows.get(index) ?? []).reduce((sum, row) => sum + row.visitors, 0);
-						// fainter behind the cities
-						shape(
-							region,
-							tier === 2 && count ? 0.08 + (count / regionMax) * 0.35 : shade(count, regionMax)
-						);
-					});
-				}
-			}
-			for (const { shape: country, code } of COUNTRIES) {
-				// a country split into regions has their finer coast instead
-				if (chosen.country === code && !(tier > 0 && shading.has(code))) outline(country, 1.5);
-			}
-			if (tier > 0) {
-				for (const { shapes, rows } of shading.values()) {
-					shapes.forEach((region, index) => {
-						if ((rows.get(index) ?? []).some((row) => row.key === chosen.region))
-							outline(region, 1.5);
-					});
-				}
-			}
-			// a country split into regions is outlined by the region under the pointer
-			if (hover?.shape && !(hover.key === 'country' && tier > 0 && shading.has(hover.value))) {
-				outline(hover.shape, 1);
-			}
-
-			if (tier === 2) {
-				const center = p.invert?.([width / 2, height / 2]);
-				for (const city of dataRef.current.cities) {
-					if (center && geoDistance(center, [city.lng, city.lat]) > Math.PI / 2 - 0.01) continue;
-					const point = p([city.lng, city.lat]);
-					if (!point) continue;
-					const r = 3 + 6 * Math.sqrt(city.visitors / cityMax);
-					context.beginPath();
-					context.arc(point[0], point[1], r, 0, 2 * Math.PI);
-					context.fillStyle = ink;
-					context.fill();
-					context.strokeStyle = paper;
-					context.lineWidth = city.key === chosen.city || hover?.value === city.key ? 2.5 : 1;
-					context.stroke();
-				}
-			}
-		};
-
-		// what is under a point on the canvas
-		const hitAt = (x: number, y: number): Hit | null => {
-			const p = projection();
-			const { counts, shading, cities, cityMax } = dataRef.current;
-			const tier = levelOf(view.current.k);
-			if (Math.hypot(x - width / 2, y - height / 2) > radius() * view.current.k) return null;
-			const where = p.invert?.([x, y]);
-			if (!where) return null;
-			if (tier === 2) {
-				let best: { city: CityRow; distance: number } | null = null;
-				for (const city of cities) {
-					if (geoDistance(where, [city.lng, city.lat]) > Math.PI / 4) continue;
-					const point = p([city.lng, city.lat]);
-					if (!point) continue;
-					const distance = Math.hypot(point[0] - x, point[1] - y);
-					const r = 3 + 6 * Math.sqrt(city.visitors / cityMax) + 3;
-					if (distance <= r && (!best || distance < best.distance)) best = { city, distance };
-				}
-				if (best) {
-					return {
-						key: 'city',
-						value: best.city.key,
-						label: best.city.label,
-						visitors: best.city.visitors
-					};
-				}
-			}
-			const country = COUNTRIES.find(
-				(entry) => inBounds(entry.bounds as never, where) && geoContains(entry.shape, where)
-			);
-			if (!country) return null;
-			const regions = tier > 0 ? shading.get(country.code) : undefined;
-			if (regions) {
-				const index = regions.shapes.findIndex((region) => geoContains(region, where));
-				const rows = regions.rows.get(index) ?? [];
-				// a region without visits of its own is still part of its country
-				if (index >= 0 && rows.length) {
-					return {
-						key: 'region',
-						value: rows[0].key,
-						label: rows[0].label,
-						visitors: rows.reduce((sum, row) => sum + row.visitors, 0),
-						shape: regions.shapes[index]
-					};
-				}
-			}
-			const row = counts.get(country.code);
-			return {
-				key: 'country',
-				value: country.code,
-				label: countryName(country.code),
-				visitors: row?.visitors ?? 0,
-				shape: country.shape
-			};
-		};
-
-		const loop = (now: number) => {
-			const dt = Math.min(now - last, 100);
-			last = now;
-			const run = animation.current;
-			if (run) {
-				const t = Math.min(1, (now - run.start) / run.ms);
-				const ease = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
-				const turn = geoInterpolate(
-					[-run.from.rotate[0], -run.from.rotate[1]],
-					[-run.to.rotate[0], -run.to.rotate[1]]
-				)(ease);
-				view.current = {
-					rotate: [-turn[0], -turn[1]],
-					k: run.from.k * (run.to.k / run.from.k) ** ease
-				};
-				if (t === 1) animation.current = null;
-				dirty.current = true;
-			} else if (!dragging && !inside && !still.matches && view.current.k < STATES_FROM) {
-				view.current.rotate[0] += (SPIN * dt) / 1000;
-				dirty.current = true;
-			}
-			if (dirty.current && width) {
-				dirty.current = false;
-				draw();
-				setLevel(levelOf(view.current.k));
-				// regions of the countries in view, once close enough to see them
-				if (view.current.k >= STATES_FROM * 0.8) {
-					const p = projection();
-					const center = p.invert?.([width / 2, height / 2]);
-					for (const code of dataRef.current.regionCountries) {
-						if (regionCache.has(code)) continue;
-						const entry = BY_CODE.get(code);
-						if (center && entry && geoDistance(center, entry.center) < 1.4) {
-							loadRegions(code, () => setLoaded((n) => n + 1));
-						}
-					}
-				}
-			}
-			frame = visible ? requestAnimationFrame(loop) : 0;
-		};
-
-		const zoomTo = (k: number) => {
-			view.current.k = Math.min(MAX_ZOOM, Math.max(1, k));
-			animation.current = null;
-			dirty.current = true;
-		};
-		const local = (event: PointerEvent | WheelEvent) => {
-			const box = canvas.getBoundingClientRect();
-			return { x: event.clientX - box.left, y: event.clientY - box.top };
-		};
-		// the label re-renders only when what is under the pointer changes
-		const showTip = (found: Hit | null) => {
-			const now = hitRef.current;
-			if (found?.key === now?.key && found?.value === now?.value && found?.label === now?.label) {
-				return;
-			}
-			hitRef.current = found;
-			dirty.current = true;
-			setTip(found && { label: found.label, visitors: found.visitors });
-		};
-		const onDown = (event: PointerEvent) => {
-			const point = local(event);
-			pointers.set(event.pointerId, point);
-			canvas.setPointerCapture(event.pointerId);
-			animation.current = null;
-			if (pointers.size === 2) {
-				const [a, b] = [...pointers.values()];
-				pinch = { distance: Math.hypot(a.x - b.x, a.y - b.y), k: view.current.k };
-				dragging = null;
-			} else {
-				dragging = { ...point, rotate: [...view.current.rotate], moved: false };
-			}
-		};
-		const onMove = (event: PointerEvent) => {
-			const point = local(event);
-			inside = true;
-			if (pointers.has(event.pointerId)) pointers.set(event.pointerId, point);
-			if (pinch && pointers.size === 2) {
-				const [a, b] = [...pointers.values()];
-				zoomTo(pinch.k * (Math.hypot(a.x - b.x, a.y - b.y) / pinch.distance));
-				return;
-			}
-			if (dragging) {
-				const dx = point.x - dragging.x;
-				const dy = point.y - dragging.y;
-				if (Math.hypot(dx, dy) > 3) dragging.moved = true;
-				if (dragging.moved) {
-					// a drag moves the ground under the pointer, about
-					const scale = 180 / Math.PI / (radius() * view.current.k);
-					view.current.rotate = [
-						dragging.rotate[0] + dx * scale,
-						Math.max(-85, Math.min(85, dragging.rotate[1] - dy * scale))
-					];
-					dirty.current = true;
-					showTip(null);
-					return;
-				}
-			}
-			const found = hitAt(point.x, point.y);
-			showTip(found);
-			canvas.style.cursor = found?.visitors ? 'pointer' : '';
-			if (tipRef.current) {
-				tipRef.current.style.left = `${point.x}px`;
-				tipRef.current.style.top = `${point.y}px`;
-			}
-		};
-		const onUp = (event: PointerEvent) => {
-			pointers.delete(event.pointerId);
-			if (pinch && pointers.size === 1) {
-				// one finger left after a pinch turns the globe again
-				pinch = null;
-				const [point] = [...pointers.values()];
-				dragging = { ...point, rotate: [...view.current.rotate], moved: true };
-				return;
-			}
-			if (pointers.size < 2) pinch = null;
-			const drag = dragging;
-			dragging = null;
-			if (drag && !drag.moved && event.type === 'pointerup') {
-				const point = local(event);
-				const found = hitAt(point.x, point.y);
-				if (found?.value && found.visitors) onPickRef.current(found.key, found.value);
-			}
-		};
-		const onLeave = () => {
-			inside = false;
-			showTip(null);
+		// scroll and pinch step a level at a time
+		let lastStep = 0;
+		let wheel = 0;
+		const step = (by: number) => {
+			const now = performance.now();
+			if (now - lastStep < 450) return;
+			const next = Math.max(0, Math.min(2, levelRef.current + by));
+			if (next === levelRef.current) return;
+			lastStep = now;
+			setLevel(next);
 		};
 		const onWheel = (event: WheelEvent) => {
 			event.preventDefault();
-			zoomTo(view.current.k * Math.exp(-event.deltaY * 0.0015));
-		};
-
-		const theme = new MutationObserver(readColors);
-		theme.observe(document.documentElement, { attributes: true });
-		const scheme = window.matchMedia('(prefers-color-scheme: dark)');
-		scheme.addEventListener('change', readColors);
-		const observer = new ResizeObserver(resize);
-		observer.observe(canvas);
-		const seen = new IntersectionObserver(([entry]) => {
-			visible = entry.isIntersecting;
-			if (visible && !frame) {
-				last = performance.now();
-				frame = requestAnimationFrame(loop);
+			wheel += event.deltaY;
+			if (Math.abs(wheel) > 40) {
+				step(wheel < 0 ? 1 : -1);
+				wheel = 0;
 			}
-		});
-		seen.observe(canvas);
-		canvas.addEventListener('pointerdown', onDown);
-		canvas.addEventListener('pointermove', onMove);
-		canvas.addEventListener('pointerup', onUp);
-		canvas.addEventListener('pointercancel', onUp);
-		canvas.addEventListener('pointerleave', onLeave);
-		canvas.addEventListener('wheel', onWheel, { passive: false });
-		zoomRef.current = (factor) => {
-			const from = { rotate: [...view.current.rotate] as [number, number], k: view.current.k };
-			const k = Math.min(MAX_ZOOM, Math.max(1, view.current.k * factor));
-			animation.current = {
-				from,
-				to: { rotate: from.rotate, k },
-				start: performance.now(),
-				ms: 300
-			};
 		};
-		resize();
-		frame = requestAnimationFrame(loop);
+		let pinch = 0;
+		const spread = (event: TouchEvent) =>
+			Math.hypot(
+				event.touches[0].clientX - event.touches[1].clientX,
+				event.touches[0].clientY - event.touches[1].clientY
+			);
+		const onTouchStart = (event: TouchEvent) => {
+			if (event.touches.length === 2) pinch = spread(event);
+		};
+		const onTouchMove = (event: TouchEvent) => {
+			if (event.touches.length !== 2 || !pinch) return;
+			const ratio = spread(event) / pinch;
+			if (ratio > 1.3 || ratio < 0.77) {
+				step(ratio > 1 ? 1 : -1);
+				pinch = spread(event);
+			}
+		};
+		// the label follows the pointer; the globe stops turning under it
+		const onMove = (event: PointerEvent) => {
+			const rect = box.getBoundingClientRect();
+			if (tipRef.current) {
+				tipRef.current.style.left = `${event.clientX - rect.left}px`;
+				tipRef.current.style.top = `${event.clientY - rect.top}px`;
+			}
+		};
+		const onEnter = () => {
+			controls.autoRotate = false;
+		};
+		const onLeave = () => {
+			controls.autoRotate = levelRef.current === 0 && !still.matches;
+			setTip(null);
+		};
+		box.addEventListener('wheel', onWheel, { passive: false });
+		box.addEventListener('touchstart', onTouchStart, { passive: true });
+		box.addEventListener('touchmove', onTouchMove, { passive: true });
+		box.addEventListener('pointermove', onMove);
+		box.addEventListener('pointerenter', onEnter);
+		box.addEventListener('pointerleave', onLeave);
+
+		const themeChange = new MutationObserver(() => setTheme((n) => n + 1));
+		themeChange.observe(document.documentElement, { attributes: true });
+		const scheme = window.matchMedia('(prefers-color-scheme: dark)');
+		const onScheme = () => setTheme((n) => n + 1);
+		scheme.addEventListener('change', onScheme);
+
+		// stop drawing while scrolled out of view
+		const seen = new IntersectionObserver(([entry]) => {
+			if (entry.isIntersecting) globe.resumeAnimation();
+			else globe.pauseAnimation();
+		});
+		seen.observe(box);
+
 		return () => {
-			cancelAnimationFrame(frame);
-			observer.disconnect();
+			resize.disconnect();
 			seen.disconnect();
-			theme.disconnect();
-			scheme.removeEventListener('change', readColors);
-			canvas.removeEventListener('pointerdown', onDown);
-			canvas.removeEventListener('pointermove', onMove);
-			canvas.removeEventListener('pointerup', onUp);
-			canvas.removeEventListener('pointercancel', onUp);
-			canvas.removeEventListener('pointerleave', onLeave);
-			canvas.removeEventListener('wheel', onWheel);
+			themeChange.disconnect();
+			scheme.removeEventListener('change', onScheme);
+			controls.removeEventListener('end', look);
+			box.removeEventListener('wheel', onWheel);
+			box.removeEventListener('touchstart', onTouchStart);
+			box.removeEventListener('touchmove', onTouchMove);
+			box.removeEventListener('pointermove', onMove);
+			box.removeEventListener('pointerenter', onEnter);
+			box.removeEventListener('pointerleave', onLeave);
+			globe._destructor();
+			box.replaceChildren();
+			globeRef.current = null;
 		};
 	}, []);
+
+	// move to the level chosen; turning is slower near the ground
+	useEffect(() => {
+		const globe = globeRef.current;
+		if (!globe) return;
+		const controls = globe.controls();
+		controls.rotateSpeed = [1, 0.4, 0.15][level];
+		controls.autoRotate =
+			level === 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const aim = aimRef.current;
+		aimRef.current = null;
+		globe.pointOfView(
+			aim
+				? { lat: aim.lat, lng: aim.lng, altitude: ALTITUDES[level] }
+				: { altitude: ALTITUDES[level] },
+			aim?.ms ?? 500
+		);
+		setTip(null);
+	}, [level]);
+
+	// load the states of countries in view, once close enough to see them
+	useEffect(() => {
+		if (level === 0) return;
+		for (const code of near) loadRegions(code, () => setLoaded((n) => n + 1));
+	}, [level, near]);
+
+	// draw the shapes and cities, in the theme's colours
+	useEffect(() => {
+		const globe = globeRef.current;
+		const box = boxRef.current;
+		if (!globe || !box) return;
+		const style = getComputedStyle(box);
+		const [r, g, b] = rgbOf(style.getPropertyValue('--foreground').trim() || '#000');
+		const [pr, pg, pb] = rgbOf(style.getPropertyValue('--background').trim() || '#fff');
+		const ink = (alpha: number) => `rgba(${r},${g},${b},${alpha})`;
+		const paper = `rgb(${pr},${pg},${pb})`;
+		const flat = new Map<number, MeshBasicMaterial>();
+		// flat colour, unlit, so the globe reads like the rest of the page
+		const material = (alpha: number) => {
+			const rounded = Math.round(alpha * 100) / 100;
+			let made = flat.get(rounded);
+			if (!made) {
+				made = new MeshBasicMaterial({
+					color: `rgb(${r},${g},${b})`,
+					transparent: true,
+					opacity: rounded
+				});
+				flat.set(rounded, made);
+			}
+			return made;
+		};
+		// the sea, a touch darker than the page so the globe's edge shows
+		const mix = (p: number, i: number) => Math.round(p + (i - p) * 0.04);
+		const sea = new MeshBasicMaterial({
+			color: `rgb(${mix(pr, r)},${mix(pg, g)},${mix(pb, b)})`
+		});
+		const max = Math.max(1, ...areas.map((area) => area.visitors));
+		const shade = (area: Area) => (area.visitors ? 0.15 + (area.visitors / max) * 0.75 : 0.07);
+		const chosen = (area: Area) =>
+			area.value !== '' &&
+			((area.key === 'country' && area.value === active.country) ||
+				(area.key === 'region' && area.value === active.region));
+		let hovered: Area | null = null;
+		const altitude = (area: Area) => (area === hovered ? 0.012 : chosen(area) ? 0.009 : 0.004);
+		// at the city level the shapes are a backdrop for the heatmap
+		const shapesHover = level < 2;
+
+		globe
+			.globeMaterial(sea)
+			.polygonsData(areas)
+			.polygonGeoJsonGeometry('geometry')
+			.polygonCapMaterial((area) =>
+				material(level === 2 ? Math.min(shade(area as Area), 0.25) : shade(area as Area))
+			)
+			.polygonStrokeColor((area) => (chosen(area as Area) ? ink(0.9) : paper))
+			.polygonAltitude((area) => altitude(area as Area))
+			.onPolygonHover((area) => {
+				if (!shapesHover) return;
+				hovered = (area as Area | null) ?? null;
+				globe.polygonAltitude((item) => altitude(item as Area));
+				box.style.cursor = hovered?.value ? 'pointer' : '';
+				setTip(hovered && { label: hovered.label, visitors: hovered.visitors });
+			})
+			.onPolygonClick((area) => {
+				const picked = area as Area;
+				if (shapesHover && picked.value) onPickRef.current(picked.key, picked.value);
+			});
+
+		// a small flat dot on each city, to name and choose it
+		globe
+			.labelsData(level === 2 ? cities : [])
+			.labelLat('lat')
+			.labelLng('lng')
+			.labelText(() => '')
+			.labelSize(0)
+			.labelAltitude(0.016)
+			.labelDotRadius(0.12)
+			.labelColor((city) => ((city as CityRow).key === active.city ? ink(1) : ink(0.7)))
+			.onLabelHover((city) => {
+				const row = city as CityRow | null;
+				box.style.cursor = row ? 'pointer' : '';
+				setTip(row && { label: row.label, visitors: row.visitors });
+			})
+			.onLabelClick((city) => onPickRef.current('city', (city as CityRow).key));
+		return () => {
+			for (const made of flat.values()) made.dispose();
+			sea.dispose();
+		};
+	}, [areas, cities, level, active.country, active.region, active.city, theme]);
+
+	// cities as a heatmap: each city's visitors spread over the land around
+	// it, added up, on a see-through layer just above the outlines. Worked out
+	// here rather than with globe.gl's own heatmap, which hid the outlines and
+	// took seconds at this scale.
+	useEffect(() => {
+		const globe = globeRef.current;
+		const box = boxRef.current;
+		if (!globe || !box || level !== 2 || !cities.length) {
+			globe?.customLayerData([]);
+			return;
+		}
+		const texture = new CanvasTexture(heatmap(cities));
+		texture.colorSpace = SRGBColorSpace;
+		texture.anisotropy = 4;
+		const geometry = new SphereGeometry(globe.getGlobeRadius() * 1.014, 180, 90);
+		const material = new MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false });
+		const layer = new Mesh(geometry, material);
+		// the way globe.gl turns its own globe, so the map lines up
+		layer.rotation.y = -Math.PI / 2;
+		globe.customLayerData([{}]).customThreeObject(() => layer);
+		return () => {
+			globe.customLayerData([]);
+			geometry.dispose();
+			material.dispose();
+			texture.dispose();
+		};
+	}, [cities, level]);
+
+	// turn to what the page is filtered by
+	const focus = active.country ?? (active.city ?? active.region)?.split(', ').pop() ?? undefined;
+	const regionShapes = focus && active.region ? regionCache.get(focus) : undefined;
+	useEffect(() => {
+		const globe = globeRef.current;
+		if (!globe) return;
+		let target: { lat: number; lng: number; level: number } | null = null;
+		if (active.city) {
+			const city = cities.find((row) => row.key === active.city);
+			if (city) target = { lat: city.lat, lng: city.lng, level: 2 };
+		}
+		if (!target && active.region && focus) {
+			loadRegions(focus, () => setLoaded((n) => n + 1));
+			const rows = regions.filter((row) => row.key === active.region);
+			const matched = regionShapes ? matchRegions(regionShapes, rows) : new Map();
+			const outlines = regionShapes?.filter((_, index) => matched.has(index)) ?? [];
+			if (outlines.length) {
+				const [lng, lat] = geoCentroid({ type: 'FeatureCollection', features: outlines });
+				target = { lat, lng, level: 2 };
+			}
+		}
+		if (!target && focus) {
+			const entry = BY_CODE.get(focus);
+			const middle = entry && middleOf(entry.shape);
+			if (middle) target = { lat: middle[1], lng: middle[0], level: 1 };
+		}
+		if (!target) return;
+		const ms = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 900;
+		const { lat, lng, level: next } = target;
+		globe.pointOfView({ lat, lng, altitude: ALTITUDES[next] }, ms);
+		// if the level changes too, moving to it must not undo this turn
+		aimRef.current = next === levelRef.current ? null : { lat, lng, ms };
+		setLevel(next);
+		setNear(nearTo(lat, lng));
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- only when the filters change
+	}, [active.country, active.region, active.city, !!regionShapes]);
 
 	return (
 		<div>
@@ -662,7 +583,8 @@ export function Globe({
 						variant="outline"
 						size="icon-sm"
 						aria-label="Zoom out"
-						onClick={() => zoomRef.current(1 / 2)}
+						disabled={level === 0}
+						onClick={() => setLevel((n) => Math.max(0, n - 1))}
 						className="rounded-r-none"
 					>
 						<MinusIcon />
@@ -671,7 +593,8 @@ export function Globe({
 						variant="outline"
 						size="icon-sm"
 						aria-label="Zoom in"
-						onClick={() => zoomRef.current(2)}
+						disabled={level === 2}
+						onClick={() => setLevel((n) => Math.min(2, n + 1))}
 						className="-ml-px rounded-l-none"
 					>
 						<PlusIcon />
@@ -679,11 +602,11 @@ export function Globe({
 				</div>
 			</div>
 			<div className="relative mx-auto max-w-80">
-				<canvas
-					ref={canvasRef}
+				<div
+					ref={boxRef}
 					role="img"
 					aria-label="Globe of where visitors are. The lists beside it have the same numbers."
-					className="aspect-square w-full cursor-grab touch-none active:cursor-grabbing"
+					className="aspect-square w-full cursor-grab touch-none overflow-hidden rounded-full active:cursor-grabbing"
 				/>
 				<div
 					ref={tipRef}
