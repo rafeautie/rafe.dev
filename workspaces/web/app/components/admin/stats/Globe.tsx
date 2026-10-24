@@ -1,10 +1,8 @@
 import { type ExtendedFeature, geoArea, geoCentroid } from 'd3-geo';
 import GlobeGl, { type GlobeInstance } from 'globe.gl';
-import { MinusIcon, PlusIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { MeshBasicMaterial } from 'three';
 import { feature } from 'topojson-client';
-import { Button } from '~/components/ui/button';
 import type { FilterKey } from '~/lib/stats/dimensions';
 import type { CityRow, Row } from '~/lib/stats/report';
 import { country as countryName } from './format';
@@ -12,7 +10,7 @@ import WORLD from './globe/world.json';
 
 // Where visitors are, on a globe (globe.gl) of hexagons that turns slowly
 // until touched. Land is light hexagons; the hexagons visitors came from are
-// darker the more came. Drag to turn it, scroll, pinch or the buttons to zoom.
+// darker the more came. Drag to turn it, scroll or pinch to zoom.
 // Hovering names the place, and choosing one filters the page; a filter turns
 // the globe to it. Outlines come from scripts/world-map.mjs.
 
@@ -297,42 +295,14 @@ export function Globe({
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- only when the filters change
 	}, [active.country, active.region, active.city]);
 
-	// the buttons zoom by steps
-	const zoom = (by: number) => {
-		const globe = globeRef.current;
-		if (!globe) return;
-		const altitude = Math.max(NEAREST, Math.min(FARTHEST, globe.pointOfView().altitude * by));
-		globe.pointOfView({ altitude }, 400);
-	};
-
 	return (
 		<div>
-			<div className="flex items-center justify-end pb-2">
-				<Button
-					variant="outline"
-					size="icon-sm"
-					aria-label="Zoom out"
-					onClick={() => zoom(1.8)}
-					className="rounded-r-none"
-				>
-					<MinusIcon />
-				</Button>
-				<Button
-					variant="outline"
-					size="icon-sm"
-					aria-label="Zoom in"
-					onClick={() => zoom(1 / 1.8)}
-					className="-ml-px rounded-l-none"
-				>
-					<PlusIcon />
-				</Button>
-			</div>
 			<div className="relative mx-auto max-w-80">
 				<div
 					ref={boxRef}
 					role="img"
 					aria-label="Globe of where visitors are. The lists beside it have the same numbers."
-					className="aspect-square w-full cursor-grab touch-none overflow-hidden rounded-full active:cursor-grabbing"
+					className="aspect-square w-full cursor-grab touch-none active:cursor-grabbing"
 				/>
 				<div
 					ref={tipRef}
