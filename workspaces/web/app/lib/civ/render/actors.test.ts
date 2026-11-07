@@ -1,10 +1,22 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Biome, Water, type HerdView, type MapLayers, type PersonView } from '../types';
-import { collectActors, dryPoint, nearestPerson, personPosition, poseOf, spotInto } from './actors';
+import { SEA_LEVEL } from '../config';
+import {
+	collectActors,
+	dryPoint,
+	faceOf,
+	nearestPerson,
+	personLevel,
+	personPosition,
+	poseOf,
+	screenOf,
+	spotInto
+} from './actors';
 import { Camera } from './camera';
 import { lightningAt, stepWeights } from './atmosphere';
 import { waterAt } from './ground';
-import { viewOf, type DrawState, type Standing } from './scene';
+import { LOCAL_LIFT } from './pixel/iso';
+import { snapToArt, viewOf, type DrawState, type Standing } from './scene';
 
 const person = (over: Partial<PersonView> = {}): PersonView => ({
 	id: 7,
@@ -27,6 +39,20 @@ const DRY = {
 	biome: new Uint8Array(64 * 64).fill(Biome.grassland)
 } as unknown as DryLayers;
 
+// low land (level 1) for x < 12 and a high plateau (the top level) from x = 12 on
+const HILLS = (() => {
+	const size = 64;
+	const height = new Float32Array(size * size);
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++) height[y * size + x] = x < 12 ? SEA_LEVEL + 0.0001 : 1;
+	return {
+		size,
+		height,
+		water: new Uint8Array(size * size),
+		biome: new Uint8Array(size * size).fill(Biome.grassland)
+	} as unknown as DryLayers;
+})();
+
 // workerd has no canvas: a stand-in that accepts every drawing call, so sprites can be "made"
 beforeAll(() => {
 	const g = globalThis as unknown as Record<string, unknown>;
@@ -47,12 +73,13 @@ function frame(
 	mode: keyof typeof ZOOM,
 	people: PersonView[],
 	herds: HerdView[] = [],
-	layers: DryLayers = DRY
+	layers: DryLayers = DRY,
+	at = { x: 10, y: 20 }
 ): Standing[] {
 	const camera = new Camera();
 	camera.setViewport(800, 600);
-	camera.x = 10;
-	camera.y = 20;
+	camera.x = at.x;
+	camera.y = at.y;
 	camera.zoom = ZOOM[mode];
 	const state = {
 		camera,
@@ -166,9 +193,110 @@ describe('nearestPerson', () => {
 		const at = personPosition(a, 0);
 		cam.x = at.x;
 		cam.y = at.y;
+		// the foot is lifted by one level (24 art px at 2x) above the ground point
+		const foot = 300 - LOCAL_LIFT * 2;
 		// 14 px above the foot is on the body (16 art px tall at 2x), outside the old 10 px radius
-		expect(nearestPerson([a], cam, 0, 400, 300 - 14)).toBe(1);
-		expect(nearestPerson([a], cam, 0, 400, 300 - 70)).toBeNull();
+		expect(nearestPerson([a], cam, 0, 400, foot - 14)).toBe(1);
+		expect(nearestPerson([a], cam, 0, 400, foot - 70)).toBeNull();
+	});
+
+	it('picks a figure standing on a hill where it is drawn, not on the ground below', () => {
+		const cam = new Camera();
+		cam.setViewport(800, 600);
+		cam.zoom = 480;
+		const a = person({ id: 301, x: 20, y: 20 });
+		frame('local', [a], [], HILLS, { x: 20.5, y: 20.5 });
+		const at = personPosition(a, 0);
+		cam.x = at.x;
+		cam.y = at.y;
+		const lv = personLevel(a, 0);
+		expect(lv).toBeGreaterThan(4);
+		const foot = 300 - Math.round(lv * LOCAL_LIFT) * 2;
+		expect(nearestPerson([a], cam, 0, 400, foot - 14)).toBe(301);
+		// the flat-ground point is hundreds of pixels below the sprite
+		expect(nearestPerson([a], cam, 0, 400, 300 - 14)).toBeNull();
+	});
+});
+
+describe('isometric placement', () => {
+	it('projects like snapToArt, and lifts by a fraction of a level', () => {
+		frame('local', [], [], HILLS);
+		const camera = new Camera();
+		camera.setViewport(800, 600);
+		camera.zoom = 480;
+		camera.x = 10;
+		camera.y = 20;
+		const state = { camera, layers: HILLS } as unknown as DrawState;
+		const view = viewOf(state);
+		const out = { x: 0, y: 0 };
+		for (const [x, y, lv] of [
+			[10.5, 20.5, 1],
+			[13.2, 22.7, 8],
+			[3.9, 4.1, 0]
+		]) {
+			screenOf(view, x, y, lv, out);
+			expect(out).toEqual(snapToArt(view, x, y, lv));
+		}
+		const flat = screenOf(view, 10.5, 20.5, 2, { x: 0, y: 0 });
+		const half = screenOf(view, 10.5, 20.5, 2.5, { x: 0, y: 0 });
+		expect(flat.y - half.y).toBe((LOCAL_LIFT / 2) * view.scale);
+		expect(flat.x).toBe(half.x);
+	});
+
+	it('sorts people and animals by x + y in the map and local views', () => {
+		// one tame animal stays close to its tile centre, so it is well ahead of the person
+		const herd: HerdView = { id: 304, kind: 'deer', x: 11, y: 21, count: 1, tame: true };
+		const who = person({ id: 302, x: 10, y: 20 });
+		for (const mode of ['map', 'local'] as const) {
+			const out = frame(mode, [who], [herd], DRY, { x: 11, y: 21 });
+			expect(out.length).toBeGreaterThan(1);
+			const at = personPosition(who, 0);
+			expect(out[0].y).toBeCloseTo(at.x + at.y, 9);
+			// the herd stands further down the diagonal, so it sorts after the person
+			for (const thing of out.slice(1)) expect(thing.y).toBeGreaterThan(out[0].y);
+		}
+		// the overview keeps plain y
+		const dots = frame('overview', [who]);
+		expect(dots[0].y).toBeCloseTo(personPosition(who, 0).y, 9);
+	});
+
+	it('eases the lift when walking onto higher ground', () => {
+		// someone first seen on the plateau stands at its top level straight away
+		const onTop = person({ id: 205, x: 13, y: 20, activity: 'idle' });
+		frame('local', [onTop], [], HILLS, { x: 13.5, y: 20.5 });
+		const high = personLevel(onTop, 0);
+		// a walker on the low side steps up and the lift never pops
+		const w2 = person({ id: 206, x: 11, y: 20, activity: 'idle' });
+		frame('local', [w2], [], HILLS, { x: 11.5, y: 20.5 });
+		const start = personLevel(w2, 0);
+		expect(high).toBeGreaterThan(start + 3);
+		const up = { ...w2, x: 13 };
+		let prev = start;
+		let sawBetween = false;
+		let t = 16;
+		personLevel(up, t);
+		for (t = 32; t <= 8000; t += 16) {
+			const lv = personLevel(up, t);
+			expect(lv).toBeGreaterThanOrEqual(prev - 1e-9);
+			expect(lv - prev).toBeLessThan(1);
+			if (lv > start + 0.5 && lv < high - 0.5) sawBetween = true;
+			prev = lv;
+		}
+		expect(sawBetween).toBe(true);
+		expect(prev).toBeCloseTo(high, 1);
+	});
+
+	it('faces the way the figure moves on screen', () => {
+		// +x goes right and down the screen, +y goes left and down
+		expect(faceOf(1, 0, -1)).toBe(1);
+		expect(faceOf(0, 1, 1)).toBe(-1);
+		expect(faceOf(-1, 0, 1)).toBe(-1);
+		expect(faceOf(0, -1, -1)).toBe(1);
+		// straight down the screen (dx = dy) keeps the old facing
+		expect(faceOf(0.5, 0.5, 1)).toBe(1);
+		expect(faceOf(0.5, 0.5, -1)).toBe(-1);
+		// world dx is no longer what decides it
+		expect(faceOf(1, 3, 1)).toBe(-1);
 	});
 });
 

@@ -31,13 +31,17 @@ import {
 	type Pose,
 	type Sheet
 } from './pixel/actorsprites';
+import { LAND_LEVELS, LOCAL_LIFT, MAP_LIFT } from './pixel/iso';
 import { PALETTE } from './pixel/palette';
 import { drawSprite, type Sprite } from './pixel/sprite';
-import { modeOf, pixelScale, type Mode } from './pixel/scale';
-import { hash, type DrawState, type Standing, type View } from './scene';
+import { LOCAL_TILE_PX, MAP_TILE_PX, modeOf, pixelScale, type Mode } from './pixel/scale';
+import { depthOf, hash, type DrawState, type Standing, type View } from './scene';
 
 // People and animals. Zoomed out they are coloured dots; on the map they are
 // tiny icons; close up they are pixel-art sprites standing on the art grid.
+// Map and local views are isometric: a figure stands on the raised ground of
+// its tile, so its position is projected and lifted by a (smoothly eased)
+// height level, and it sorts by x + y.
 // Everything about how someone looks comes from hash(id), never from chance.
 
 const TAU = Math.PI * 2;
@@ -131,7 +135,11 @@ type Mover = {
 	t: number;
 	seen: number;
 	moving: boolean;
-	// which way a figure faces (1 = right)
+	// height level they stand at (eased, so a walk uphill is a slope not a pop)
+	// and the level of the tile they are heading for
+	lv: number;
+	tl: number;
+	// which way a figure faces on screen (1 = right)
 	face: 1 | -1;
 	// walk cycle in radians, advanced by how fast they actually move
 	phase: number;
@@ -159,6 +167,17 @@ let frameId = 0;
 let lastDetail = 0;
 let lastMode: Mode = 'overview';
 let layersRef: WaterLayers | null = null;
+// the last frame's tile heights, so positions and picking can lift figures
+let levelsRef: Uint8Array | null = null;
+let levelsSize = 0;
+
+// The height level of the tile under a world point (0 before any frame).
+function tileLevel(x: number, y: number): number {
+	if (!levelsRef) return 0;
+	const tx = clamp(Math.floor(x), 0, levelsSize - 1);
+	const ty = clamp(Math.floor(y), 0, levelsSize - 1);
+	return levelsRef[ty * levelsSize + tx] ?? 0;
+}
 
 function newMover(x: number, y: number, now: number, seed: number): Mover {
 	return {
@@ -167,6 +186,8 @@ function newMover(x: number, y: number, now: number, seed: number): Mover {
 		t: now,
 		seen: frameId,
 		moving: false,
+		lv: 0,
+		tl: 0,
 		face: hash(seed, 22) < 0.5 ? 1 : -1,
 		phase: hash(seed, 23) * TAU,
 		tx: x,
@@ -186,8 +207,17 @@ function newMover(x: number, y: number, now: number, seed: number): Mover {
 function snapTo(m: Mover, tx: number, ty: number, now: number): void {
 	m.x = tx;
 	m.y = ty;
+	m.lv = m.tl;
 	m.t = now;
 	m.moving = false;
+}
+
+// Which way a step (world tiles) faces on screen: the map is turned 45 degrees,
+// so a step goes right by dx - dy. Straight up or down the screen keeps `prev`.
+export function faceOf(dx: number, dy: number, prev: 1 | -1): 1 | -1 {
+	const screen = dx - dy;
+	if (Math.abs(screen) <= 1e-5) return prev;
+	return screen > 0 ? 1 : -1;
 }
 
 // Move m toward the target by an exponential ease. Safe to call many times
@@ -211,17 +241,20 @@ function advance(
 	}
 	m.t = now;
 	const k = 1 - Math.exp(-dt / tau);
-	const sx = dx * k;
-	const sy = dy * k;
-	m.x += sx;
-	m.y += sy;
-	const speed = Math.hypot(sx, sy) / dt; // tiles per second
+	const stepX = dx * k;
+	const stepY = dy * k;
+	m.x += stepX;
+	m.y += stepY;
+	// the height closes its gap at the same rate as the position, so the climb
+	// stays in step with the walk across a change of level
+	m.lv += (m.tl - m.lv) * k;
+	const speed = Math.hypot(stepX, stepY) / dt; // tiles per second
 	const left = Math.hypot(tx - m.x, ty - m.y);
 	// hysteresis so the walk cycle doesn't flicker at the end of a move
 	if (!m.moving && left > 0.05) m.moving = true;
 	else if (m.moving && left < 0.02) m.moving = false;
 	if (m.moving) {
-		if (Math.abs(sx) > 1e-5) m.face = sx > 0 ? 1 : -1;
+		m.face = faceOf(stepX, stepY, m.face);
 		m.phase += clamp(speed * 28.6, 0.6, maxRate) * TAU * dt;
 	}
 }
@@ -272,6 +305,7 @@ function resolveSpot(m: Mover, person: PersonView): void {
 	}
 	m.tx = tx;
 	m.ty = ty;
+	m.tl = tileLevel(tx, ty);
 	m.spotKey = key;
 	m.spotLayers = layersRef;
 }
@@ -285,7 +319,10 @@ function clusterY(id: number): number {
 	return (hash(id, 52) - 0.5) * 0.4;
 }
 
-function positionInto(person: PersonView, now: number, out: Pt): void {
+// A world position plus the (fractional) height level it stands at.
+type Pos = Pt & { lv: number };
+
+function positionInto(person: PersonView, now: number, out: Pos): void {
 	let m = people.get(person.id);
 	if (!m) {
 		m = newMover(person.x + 0.5, person.y + 0.5, now, person.id);
@@ -304,27 +341,47 @@ function positionInto(person: PersonView, now: number, out: Pt): void {
 			out.x += clusterX(person.id);
 			out.y += clusterY(person.id);
 		}
+		out.lv = m.tl;
 		return;
 	}
 	advance(m, m.tx, m.ty, now, PERSON_TAU, PERSON_RATE);
 	out.x = person.x + 0.5 + (m.x - person.x - 0.5) * lastDetail;
 	out.y = person.y + 0.5 + (m.y - person.y - 0.5) * lastDetail;
+	out.lv = m.tl + (m.lv - m.tl) * lastDetail;
 }
 
-// The eased on-screen position (tiles) used for drawing, following and clicking.
+// The eased position in WORLD tiles (not screen), used to follow someone with
+// the camera. The height they stand at is added only when projecting.
 export function personPosition(person: PersonView, now: number): { x: number; y: number } {
-	const out = { x: 0, y: 0 };
-	positionInto(person, now, out);
+	positionInto(person, now, posTmp);
+	return { x: posTmp.x, y: posTmp.y };
+}
+
+// The (fractional) height level a person stands at right now: the level of
+// their tile, eased across a change of level as they walk.
+export function personLevel(person: PersonView, now: number): number {
+	positionInto(person, now, posTmp);
+	return posTmp.lv;
+}
+
+// ------------------------------------------------------------ projecting
+
+// What it takes to put a world point on screen (a subset of View, so picking
+// can use the camera alone).
+export type Proj = Pick<View, 'originX' | 'originY' | 'scale' | 'artPerTile' | 'liftArt'>;
+
+// A world point (tiles) at height `lv` on screen, on the art-pixel grid. The
+// same as snapToArt in scene.ts (which only knows whole levels), without making
+// an object for every figure, and lifting by a fractional level when someone is
+// climbing between tiles.
+export function screenOf(p: Proj, wx: number, wy: number, lv: number, out: Pt): Pt {
+	out.x = p.originX + Math.round((wx - wy) * p.artPerTile) * p.scale;
+	out.y =
+		p.originY + (Math.round(((wx + wy) * p.artPerTile) / 2) - Math.round(lv * p.liftArt)) * p.scale;
 	return out;
 }
 
-// ------------------------------------------------------------ snapping
-
-// Same as snapToArt in scene.ts, without making an object for every figure.
-const snapX = (view: View, wx: number) =>
-	view.originX + Math.round(wx * view.artPerTile) * view.scale;
-const snapY = (view: View, wy: number) =>
-	view.originY + Math.round(wy * view.artPerTile) * view.scale;
+const scr: Pt = { x: 0, y: 0 };
 
 // ------------------------------------------------------------ slots
 
@@ -397,7 +454,7 @@ function takeSlot(): Slot {
 	return slots[used++];
 }
 
-const posTmp: Pt = { x: 0, y: 0 };
+const posTmp: Pos = { x: 0, y: 0, lv: 0 };
 
 // the head-top of a figure in a given pose, art pixels above the foot
 function topOf(body: BodyKind, pose: Pose): number {
@@ -413,6 +470,8 @@ export function collectActors(state: DrawState, view: View, out: Standing[]): vo
 	lastDetail = view.detail;
 	lastMode = view.mode ?? 'overview';
 	layersRef = (state.layers as WaterLayers | undefined) ?? null;
+	levelsRef = view.levels;
+	levelsSize = Math.round(Math.sqrt(view.levels.length));
 	const { camera, now } = state;
 	const dpr = state.dpr || 1;
 	const w2 = camera.width / 2;
@@ -446,16 +505,19 @@ export function collectActors(state: DrawState, view: View, out: Standing[]): vo
 			out.push(s.st);
 			continue;
 		}
-		const sx = snapX(view, posTmp.x);
-		const sy = snapY(view, posTmp.y);
+		// isometric: projected and lifted onto the raised ground of their tile
+		screenOf(view, posTmp.x, posTmp.y, posTmp.lv, scr);
+		const sx = scr.x;
+		const sy = scr.y;
 		const reach = 30 * sc;
 		if (sx < -reach || sy < -reach || sx > camera.width + reach || sy > camera.height + reach / 3)
 			continue;
+		const depth = depthOf(view, posTmp.x, posTmp.y);
 		const cloth = clothIndex(p.village);
 		if (mode === 'map') {
 			const s = takeSlot();
 			s.kind = Kind.personIcon;
-			s.st.y = posTmp.y;
+			s.st.y = depth;
 			s.sx = sx;
 			s.sy = sy;
 			s.scale = sc;
@@ -488,7 +550,7 @@ export function collectActors(state: DrawState, view: View, out: Standing[]): vo
 		else frame = Math.floor(t * POSE_FPS[pose] + ph0) % frames;
 		const s = takeSlot();
 		s.kind = Kind.person;
-		s.st.y = posTmp.y;
+		s.st.y = depth;
 		s.sx = sx;
 		s.sy = sy;
 		s.scale = sc;
@@ -580,9 +642,12 @@ function collectHerds(state: DrawState, view: View, out: Standing[]): void {
 		const ty = herd.y + 0.5;
 		if (!m) {
 			m = newMover(tx, ty, now, herd.id);
+			m.tl = tileLevel(tx, ty);
+			m.lv = m.tl;
 			herdMovers.set(herd.id, m);
 		}
 		m.seen = frameId;
+		m.tl = tileLevel(tx, ty);
 		if (view.detail <= 0) snapTo(m, tx, ty, now);
 		else advance(m, tx, ty, now, HERD_TAU, HERD_RATE);
 		const cx = view.detail <= 0 ? tx : m.x;
@@ -591,9 +656,21 @@ function collectHerds(state: DrawState, view: View, out: Standing[]): void {
 
 		const n = Math.min(herd.count, MAX_ANIMALS);
 		const radius = herd.tame ? Math.min(0.9, 0.3 + 0.08 * n) : Math.min(3, 0.8 + 0.28 * n);
-		const hx = (cx - camera.x) * zoom + w2;
-		const hy = (cy - camera.y) * zoom + h2;
-		const margin = radius * zoom + 30 * sc + 20 * dpr;
+		let hx: number;
+		let hy: number;
+		let margin: number;
+		if (mode === 'overview') {
+			hx = (cx - camera.x) * zoom + w2;
+			hy = (cy - camera.y) * zoom + h2;
+			margin = radius * zoom + 30 * sc + 20 * dpr;
+		} else {
+			// the herd's centre on the flat ground; the margin covers the diamond
+			// it spreads over and the tallest hill it could stand on
+			screenOf(view, cx, cy, 0, scr);
+			hx = scr.x;
+			hy = scr.y;
+			margin = radius * 2 * zoom + (30 + LAND_LEVELS * view.liftArt) * sc + 20 * dpr;
+		}
 		if (hx < -margin || hy < -margin || hx > camera.width + margin || hy > camera.height + margin)
 			continue;
 
@@ -619,11 +696,13 @@ function collectHerds(state: DrawState, view: View, out: Standing[]): void {
 			for (let i = 0; i < icons; i++) {
 				const wx = cx + (hash(herd.id, i, 8) - 0.5) * 0.55;
 				const wy = cy + (hash(herd.id, i, 9) - 0.5) * 0.45;
+				// a small hashed spot on the tile's diamond, lifted with the ground
+				screenOf(view, wx, wy, m.lv, scr);
 				const s = takeSlot();
 				s.kind = Kind.herdIcon;
-				s.st.y = wy;
-				s.sx = snapX(view, wx);
-				s.sy = snapY(view, wy);
+				s.st.y = depthOf(view, wx, wy);
+				s.sx = scr.x;
+				s.sy = scr.y;
 				s.scale = sc;
 				s.flip = hash(herd.id, i, 4) < 0.5;
 				s.spr = herdIcon(kind);
@@ -641,8 +720,12 @@ function collectHerds(state: DrawState, view: View, out: Standing[]): void {
 			// a slow idle drift, a few art pixels, so a standing herd is not frozen
 			const wx = cx + offs[i * 2] + Math.sin(t * 0.21 + ph) * 0.016;
 			const wy = cy + offs[i * 2 + 1] + Math.cos(t * 0.17 + ph) * 0.012;
-			const sx = snapX(view, wx);
-			const sy = snapY(view, wy);
+			// each animal stands on its own tile's height; the herd's unfinished climb
+			// (lv - tl) is added so a herd crossing a ridge doesn't pop
+			const lv = tileLevel(tx + offs[i * 2], ty + offs[i * 2 + 1]) + (m.lv - m.tl);
+			screenOf(view, wx, wy, lv, scr);
+			const sx = scr.x;
+			const sy = scr.y;
 			const reach = 24 * sc;
 			if (sx < -reach || sy < -reach || sx > camera.width + reach || sy > camera.height + reach)
 				continue;
@@ -653,7 +736,7 @@ function collectHerds(state: DrawState, view: View, out: Standing[]): void {
 			const face = m.moving ? m.face : hash(herd.id, i, 4) < 0.5 ? 1 : -1;
 			const s = takeSlot();
 			s.kind = Kind.animal;
-			s.st.y = wy;
+			s.st.y = depthOf(view, wx, wy);
 			s.sx = sx;
 			s.sy = sy;
 			s.scale = sc;
@@ -905,8 +988,10 @@ export function drawActorOverlays(
 		let sx = (posTmp.x - camera.x) * view.zoom + camera.width / 2;
 		let sy = (posTmp.y - camera.y) * view.zoom + camera.height / 2;
 		if (mode !== 'overview') {
-			sx = snapX(view, posTmp.x);
-			sy = snapY(view, posTmp.y);
+			// round the lifted, projected foot, exactly where the sprite is drawn
+			screenOf(view, posTmp.x, posTmp.y, posTmp.lv, scr);
+			sx = scr.x;
+			sy = scr.y;
 		} else {
 			sx = Math.round(sx);
 			sy = Math.round(sy);
@@ -937,8 +1022,12 @@ export function drawActorOverlays(
 
 // ------------------------------------------------------------ picking
 
-// The person closest to a screen point (device pixels), within maxPx or within
-// the figure's own size when zoomed in, or null.
+const pickProj = { originX: 0, originY: 0, scale: 1, artPerTile: 1, liftArt: 0 };
+
+// The person closest to a screen point (device pixels), or null. Zoomed out
+// that is within maxPx of the dot. Up close each person is projected exactly
+// as drawn (isometric, lifted by the height they stand at) and the point has
+// to fall on their sprite box, give or take half of maxPx.
 export function nearestPerson(
 	list: PersonView[],
 	camera: Camera,
@@ -949,23 +1038,41 @@ export function nearestPerson(
 ): number | null {
 	const mode = modeOf(camera.zoom);
 	const sc = pixelScale(camera.zoom);
+	const iso = mode !== 'overview';
+	if (iso) {
+		// the same origin viewOf() works out, so we land on the drawn pixels
+		const o = camera.toScreen(0, 0);
+		pickProj.originX = Math.round(o.x);
+		pickProj.originY = Math.round(o.y);
+		pickProj.scale = sc;
+		pickProj.artPerTile = mode === 'map' ? MAP_TILE_PX : LOCAL_TILE_PX;
+		pickProj.liftArt = mode === 'map' ? MAP_LIFT : LOCAL_LIFT;
+	}
+	const pad = maxPx * 0.5;
 	let best: number | null = null;
 	let bestDist = Infinity;
 	for (const person of list) {
 		positionInto(person, now, posTmp);
-		const px = (posTmp.x - camera.x) * camera.zoom + camera.width / 2;
-		const py = (posTmp.y - camera.y) * camera.zoom + camera.height / 2;
-		let cy = py;
-		let reach = maxPx;
-		if (mode !== 'overview') {
-			// the sprite's own size: its centre is half a body above the foot
-			const moving = people.get(person.id)?.moving ?? false;
-			boxInto(boxTmp, person, moving, mode, sc, px, py, camera.zoom, 1);
-			cy = (boxTmp.y0 + boxTmp.y1) / 2;
-			reach = Math.max(maxPx, (Math.max(boxTmp.x1 - boxTmp.x0, boxTmp.y1 - boxTmp.y0) / 2) * 1.1);
+		if (!iso) {
+			const px = (posTmp.x - camera.x) * camera.zoom + camera.width / 2;
+			const py = (posTmp.y - camera.y) * camera.zoom + camera.height / 2;
+			const dd = (px - sx) ** 2 + (py - sy) ** 2;
+			if (dd <= maxPx * maxPx && dd < bestDist) {
+				bestDist = dd;
+				best = person.id;
+			}
+			continue;
 		}
-		const d = (px - sx) ** 2 + (cy - sy) ** 2;
-		if (d <= reach * reach && d < bestDist) {
+		screenOf(pickProj, posTmp.x, posTmp.y, posTmp.lv, scr);
+		const moving = people.get(person.id)?.moving ?? false;
+		boxInto(boxTmp, person, moving, mode, sc, scr.x, scr.y, camera.zoom, 1);
+		if (sx < boxTmp.x0 - pad || sx > boxTmp.x1 + pad) continue;
+		if (sy < boxTmp.y0 - pad || sy > boxTmp.y1 + pad) continue;
+		// of those under the point, the one whose body is closest wins
+		const cx = (boxTmp.x0 + boxTmp.x1) / 2;
+		const cy = (boxTmp.y0 + boxTmp.y1) / 2;
+		const d = (cx - sx) ** 2 + (cy - sy) ** 2;
+		if (d < bestDist) {
 			bestDist = d;
 			best = person.id;
 		}
