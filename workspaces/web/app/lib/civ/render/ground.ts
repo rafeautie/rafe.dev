@@ -116,8 +116,8 @@ function landLook(layers: GroundLayers, i: number, season: number): Look {
 	if (biome === Biome.snow) return SNOWY;
 	if (biome === Biome.mountain) return ROCK;
 	if (biome === Biome.coast) return SAND;
-	const g = GROUND_LOOK[layers.ground[i]];
-	if (g) return g;
+	// the biome sets the colour, as on the map; the ground layer only shows as
+	// small exposed patches (paintExposed)
 	return (LEAFY[biome] ?? LEAFY[Biome.grassland])[season];
 }
 
@@ -462,19 +462,29 @@ function paintVillage(env: GroundEnv, tx: number, ty: number): void {
 
 const isSnow = (c: number) => c === K.white || c === K.ice;
 
+// Bare ground showing through the turf: a few small patches in the ground's
+// own colours, never the whole tile.
+function paintExposed(tx: number, ty: number, i: number, layers: GroundLayers): void {
+	const look = GROUND_LOOK[layers.ground[i]];
+	if (!look || layers.ground[i] === Ground.bog) return;
+	if (!isLeafy(layers, i)) return;
+	const n = 1 + Math.floor(hash(tx, ty, 3, 70) * 3);
+	for (let j = 0; j < n; j++) {
+		const cx = 30 + hash(tx, ty, j, 71) * (T - 60);
+		const cy = 30 + hash(tx, ty, j, 72) * (T - 60);
+		const r = 10 + hash(tx, ty, j, 73) * 14;
+		patch(cx, cy, r, r, look[0], look[1], tx * 31 + ty + j);
+	}
+}
+
 function isLeafy(layers: GroundLayers, i: number): boolean {
 	const biome = layers.biome[i];
-	const ground = layers.ground[i];
 	return (
-		ground !== Ground.rock &&
-		ground !== Ground.sand &&
-		ground !== Ground.clay &&
-		ground !== Ground.chalk &&
-		(biome === Biome.grassland ||
-			biome === Biome.forest ||
-			biome === Biome.scrub ||
-			biome === Biome.hills ||
-			biome === Biome.wetland)
+		biome === Biome.grassland ||
+		biome === Biome.forest ||
+		biome === Biome.scrub ||
+		biome === Biome.hills ||
+		biome === Biome.wetland
 	);
 }
 
@@ -552,7 +562,7 @@ function paintDecals(env: GroundEnv, tx: number, ty: number, i: number, look: Lo
 		}
 	}
 	if (ground === Ground.bog) for (let j = 0; j < 5; j++) pool(tx, ty, j);
-	if (ground === Ground.sand || biome === Biome.coast) {
+	if (biome === Biome.coast) {
 		// ripples of sand
 		for (let j = 0; j < 7; j++) {
 			const x = Math.floor(hash(tx, ty, j, 56) * (T - 10));
@@ -561,7 +571,7 @@ function paintDecals(env: GroundEnv, tx: number, ty: number, i: number, look: Lo
 			for (let k = 0; k < len; k++) if (free(x + k, y)) px(x + k, y - (k > len / 2 ? 1 : 0), light);
 		}
 	}
-	if (ground === Ground.rock || biome === Biome.mountain || ground === Ground.clay) {
+	if (biome === Biome.mountain) {
 		// cracks and chips
 		for (let j = 0; j < 6; j++) {
 			let x = Math.floor(hash(tx, ty, j, 50) * T);
@@ -985,16 +995,10 @@ export function paintTile(env: GroundEnv, tx: number, ty: number, out: Uint32Arr
 	} else {
 		fillLand(tx, ty, look);
 		const biome = layers.biome[i];
-		const cover =
-			season === 3
-				? (WINTER_SNOW[biome] ?? 0.5)
-				: biome === Biome.mountain
-					? 0.15
-					: biome === Biome.snow
-						? 1
-						: 0;
+		const cover = season === 3 ? (WINTER_SNOW[biome] ?? 0.5) : biome === Biome.snow ? 1 : 0;
 		snowOver(tx, ty, cover);
 		blendEdges(tx, ty, env, look);
+		paintExposed(tx, ty, i, layers);
 		const dep = layers.deposit[i];
 		const stain = DEP_STAIN[dep];
 		if (stain)

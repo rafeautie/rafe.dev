@@ -187,15 +187,31 @@ describe('paintTile', () => {
 			}
 			return [r, g, b].map((v) => v / out.length);
 		};
-		w.layers.ground[2 * 6 + 1] = Ground.sand;
-		w.layers.ground[2 * 6 + 2] = Ground.rock;
-		w.layers.ground[2 * 6 + 3] = Ground.clay;
+		w.layers.biome[2 * 6 + 1] = Biome.coast;
+		w.layers.biome[2 * 6 + 2] = Biome.mountain;
+		w.layers.biome[2 * 6 + 3] = Biome.scrub;
 		const means = [0, 1, 2, 3].map(mean);
 		for (let i = 0; i < 4; i++)
 			for (let j = i + 1; j < 4; j++) {
 				const d = Math.hypot(...means[i].map((v, k) => v - means[j][k]));
 				expect(d).toBeGreaterThan(25);
 			}
+	});
+
+	it('follows the biome, and shows the ground layer only in small patches', () => {
+		const w = world();
+		w.layers.biome.fill(Biome.forest);
+		const plain = paint(w.env, 2, 2).out;
+		w.layers.ground[2 * 6 + 2] = Ground.chalk;
+		const chalk = paint(w.env, 2, 2).out;
+		let changed = 0;
+		for (let p = 0; p < plain.length; p++) if (plain[p] !== chalk[p]) changed++;
+		expect(changed).toBeGreaterThan(100);
+		expect(changed / plain.length).toBeLessThan(0.25);
+		// no snow-coloured ground in summer
+		let pale = 0;
+		for (const c of chalk) if (c === hex('white') || c === hex('chalk')) pale++;
+		expect(pale / chalk.length).toBeLessThan(0.1);
 	});
 
 	it('changes with the season', () => {
@@ -209,7 +225,7 @@ describe('paintTile', () => {
 
 	it('blends toward a neighbour with different ground along the border', () => {
 		const w = world();
-		w.layers.ground[2 * 6 + 3] = Ground.rock;
+		w.layers.biome[2 * 6 + 3] = Biome.mountain;
 		const plain = paint(world().env, 2, 2).out;
 		const next = paint(w.env, 2, 2).out;
 		// only the strip beside the rock tile (the east edge) differs
@@ -228,7 +244,7 @@ describe('paintTile', () => {
 
 	it('mixes the two grounds across a border in blobs, from both sides', () => {
 		const w = world();
-		w.layers.ground[2 * 6 + 3] = Ground.rock;
+		w.layers.biome[2 * 6 + 3] = Biome.mountain;
 		const grass = paint(w.env, 2, 2).out;
 		const rock = paint(w.env, 3, 2).out;
 		const rockColours = new Set([hex('stone'), hex('stoneDark'), hex('stoneLight')]);
