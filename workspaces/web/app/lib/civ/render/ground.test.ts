@@ -201,13 +201,19 @@ describe('paintTile', () => {
 	it('follows the biome, and shows the ground layer only in small patches', () => {
 		const w = world();
 		w.layers.biome.fill(Biome.forest);
-		const plain = paint(w.env, 2, 2).out;
-		w.layers.ground[2 * 6 + 2] = Ground.chalk;
-		const chalk = paint(w.env, 2, 2).out;
-		let changed = 0;
-		for (let p = 0; p < plain.length; p++) if (plain[p] !== chalk[p]) changed++;
-		expect(changed).toBeGreaterThan(100);
-		expect(changed / plain.length).toBeLessThan(0.25);
+		const plain = [0, 1, 2, 3, 4, 5].map((x) => paint(w.env, x, 2).out);
+		for (let x = 0; x < 6; x++) w.layers.ground[2 * 6 + x] = Ground.chalk;
+		const tiles = [0, 1, 2, 3, 4, 5].map((x) => paint(w.env, x, 2).out);
+		let most = 0;
+		for (let k = 0; k < 6; k++) {
+			let changed = 0;
+			for (let p = 0; p < T * T; p++) if (plain[k][p] !== tiles[k][p]) changed++;
+			// only a few tiles show a small patch, never the whole tile
+			expect(changed / (T * T)).toBeLessThan(0.15);
+			most = Math.max(most, changed);
+		}
+		expect(most).toBeGreaterThan(50);
+		const chalk = tiles[2];
 		// no snow-coloured ground in summer
 		let pale = 0;
 		for (const c of chalk) if (c === hex('white') || c === hex('chalk')) pale++;

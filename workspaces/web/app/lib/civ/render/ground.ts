@@ -82,13 +82,6 @@ const LEAFY: Record<number, Look[]> = {
 	]
 };
 const SAND: Look = ['sand', 'straw', 'sandLight', 'sandLight'];
-const GROUND_LOOK: Record<number, Look> = {
-	[Ground.sand]: SAND,
-	[Ground.clay]: ['clay', 'rust', 'soilLight', 'soilLight'],
-	[Ground.rock]: ['stone', 'stoneDark', 'stoneLight', 'stoneLight'],
-	[Ground.chalk]: ['chalk', 'stoneLight', 'white', 'stoneDark'],
-	[Ground.bog]: ['moss', 'leafDark', 'grass', 'water']
-};
 const ROCK: Look = ['stone', 'stoneDark', 'stoneLight', 'stoneLight'];
 const SNOWY: Look = ['white', 'ice', 'white', 'ice'];
 
@@ -464,16 +457,41 @@ const isSnow = (c: number) => c === K.white || c === K.ice;
 
 // Bare ground showing through the turf: a few small patches in the ground's
 // own colours, never the whole tile.
+// muted colours for bare ground, nearer the turf than the ground's own look
+const EXPOSED: Partial<Record<number, ColorName>> = {
+	[Ground.sand]: 'straw',
+	[Ground.clay]: 'soilLight',
+	[Ground.rock]: 'stone',
+	[Ground.chalk]: 'straw'
+};
+
 function paintExposed(tx: number, ty: number, i: number, layers: GroundLayers): void {
-	const look = GROUND_LOOK[layers.ground[i]];
-	if (!look || layers.ground[i] === Ground.bog) return;
-	if (!isLeafy(layers, i)) return;
-	const n = 1 + Math.floor(hash(tx, ty, 3, 70) * 3);
+	const name = EXPOSED[layers.ground[i]];
+	if (!name || !isLeafy(layers, i)) return;
+	// most tiles show none; some a small patch, a few two
+	const h = hash(tx, ty, 3, 70);
+	const n = h < 0.55 ? 0 : h < 0.9 ? 1 : 2;
+	if (n === 0) return;
+	const c = K[name];
+	noiseField(tx, ty, 12, 13, nC);
 	for (let j = 0; j < n; j++) {
 		const cx = 30 + hash(tx, ty, j, 71) * (T - 60);
 		const cy = 30 + hash(tx, ty, j, 72) * (T - 60);
-		const r = 10 + hash(tx, ty, j, 73) * 14;
-		patch(cx, cy, r, r, look[0], look[1], tx * 31 + ty + j);
+		const r = 7 + hash(tx, ty, j, 73) * 8;
+		const reach = Math.ceil(r * 1.5);
+		for (let y = Math.max(0, Math.floor(cy - reach)); y <= Math.min(T - 1, cy + reach); y++) {
+			for (let x = Math.max(0, Math.floor(cx - reach)); x <= Math.min(T - 1, cx + reach); x++) {
+				// an outline warped by noise, so it is a patch and not a disc
+				const warp = 0.55 + nC[y * T + x] * 0.9;
+				const d = Math.hypot(x - cx, y - cy) / (r * warp);
+				if (d > 1) continue;
+				const p = y * T + x;
+				if (isSnow(B[p])) continue;
+				// the turf shows through, thinning to a dithered edge a few pixels wide
+				const keep = d < 0.6 ? 0.6 : 0.6 * (1 - (d - 0.6) / 0.4);
+				if (bay(x, y) < keep) B[p] = c;
+			}
+		}
 	}
 }
 
@@ -770,7 +788,7 @@ function paintBeach(
 	for (let y = 0; y < T; y++) {
 		for (let x = 0; x < T; x++) {
 			const r = bd(x, y);
-			if (r > 4) continue;
+			if (r > 3) continue;
 			const p = y * T + x;
 			if (r < -1) B[p] = K.sand;
 			else if (r === -1) B[p] = K.sandLight;
@@ -780,7 +798,7 @@ function paintBeach(
 				if (bay(x, y) < 0.4) B[p] = K.waterLight;
 			}
 			// a thin dark line where the shore drops away
-			else if (r === 3 ? bay(x, y) < 0.7 : bay(x, y) < 0.25) B[p] = K.deep;
+			else if (r === 3 && bay(x, y) < 0.5) B[p] = K.deep;
 		}
 	}
 }
@@ -843,7 +861,6 @@ export function channelMask(layers: WaterLayers, tx: number, ty: number, out: Ui
 
 function paintRiver(env: GroundEnv, tx: number, ty: number, i: number, sparks: number[]): void {
 	channelMask(env.layers, tx, ty, chan);
-	noiseField(tx, ty, 20, 4, nA);
 	for (let y = 0; y < T; y++) {
 		for (let x = 0; x < T; x++) {
 			const p = y * T + x;
@@ -860,13 +877,19 @@ function paintRiver(env: GroundEnv, tx: number, ty: number, i: number, sparks: n
 				const down = y < T - 1 ? chan[p + T] : 3;
 				const right = x < T - 1 ? chan[p + 1] : 3;
 				let c = K.water;
-				if (nA[p] > 0.62 && bay(x, y) < 0.7) c = K.deep;
-				else if (nA[p] < 0.3 && bay(x, y) < 0.7) c = K.waterLight;
 				if (up !== 3 || left !== 3) c = K.deep;
 				else if (down !== 3 || right !== 3) c = bay(x, y) < 0.6 ? K.waterLight : K.water;
 				B[p] = c;
 			}
 		}
+	}
+	// a few short light dashes on the flat water
+	for (let j = 0; j < 14; j++) {
+		const x = 4 + Math.floor(hash(tx, ty, j, 25) * (T - 10));
+		const y = 3 + Math.floor(hash(tx, ty, j, 26) * (T - 6));
+		for (let k = 0; k < 3; k++)
+			if (chan[y * T + x + k] === 3 && chan[(y - 1) * T + x + k] === 3)
+				B[y * T + x + k] = K.waterLight;
 	}
 	// shimmer spots sit on the water
 	for (let j = 0; j < 30; j++) {
@@ -961,7 +984,7 @@ function paintPool(env: GroundEnv, tx: number, ty: number, i: number, sparks: nu
 }
 
 // pools of different depth meet in a short dithered band
-const POOL_BLEND = 14;
+const POOL_BLEND = 3;
 function blendSide(side: number, c: number): void {
 	for (let d = 0; d < POOL_BLEND; d++) {
 		const p = (POOL_BLEND - d) / POOL_BLEND / 2;
