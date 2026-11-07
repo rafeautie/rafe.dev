@@ -1,6 +1,7 @@
 export const MIN_ZOOM = 1.5;
-// up close a 40 m tile fills the screen, so a person stands about 20 px tall
-export const MAX_ZOOM = 480;
+// up close a 40 m tile is wider than the screen and a person, drawn larger
+// than life, stands about 65 px tall
+export const MAX_ZOOM = 960;
 
 // The view onto the map. World units are tiles: tile (tx, ty) covers
 // [tx, tx+1) x [ty, ty+1). Screen units are CSS pixels (the canvas scales for
