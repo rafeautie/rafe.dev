@@ -1,5 +1,6 @@
 import type { HerdView, MapLayers, PersonView, Village, WeatherKind, WorldMap } from '../types';
 import type { Camera } from './camera';
+import { LOCAL_TILE_PX, MAP_TILE_PX, modeOf, pixelScale, type Mode } from './pixel/scale';
 
 // What every drawing layer shares: the frame's state, the part of the map on
 // screen, and how close the camera is. Layers live in their own files
@@ -33,6 +34,16 @@ export type DrawState = {
 };
 
 export type View = {
+	// overview (1 px a tile), map (16 px art tiles) or local (240 px art tiles)
+	mode: Mode;
+	// screen pixels per art pixel (whole numbers in map and local)
+	scale: number;
+	// art pixels per tile in this mode (16 or 240; 1 in overview)
+	artPerTile: number;
+	// the screen position of world (0, 0), on whole pixels, so every art
+	// pixel lands on a whole multiple of `scale` from it
+	originX: number;
+	originY: number;
 	// the tiles on screen, clamped to the map, with a tile of margin
 	x0: number;
 	y0: number;
@@ -40,9 +51,9 @@ export type View = {
 	y1: number;
 	// pixels per tile
 	zoom: number;
-	// 0 = the flat overview map, 1 = full close-up detail
+	// 1 in local mode, 0 otherwise (kept for code that fades by closeness)
 	detail: number;
-	// pixels per metre, handy for sizing things by their real size
+	// screen pixels per metre
 	ppm: number;
 };
 
@@ -54,10 +65,6 @@ export type Standing = {
 };
 
 export const METERS_PER_TILE = 40;
-// close-up detail starts fading in at DETAIL_START px per tile and is full
-// at DETAIL_FULL
-export const DETAIL_START = 18;
-export const DETAIL_FULL = 60;
 
 export function viewOf(state: DrawState): View {
 	const { camera, layers } = state;
@@ -65,16 +72,33 @@ export function viewOf(state: DrawState): View {
 	const b = camera.toWorld(camera.width, camera.height);
 	const size = layers.size;
 	const zoom = camera.zoom;
-	const t =
-		(Math.log(zoom) - Math.log(DETAIL_START)) / (Math.log(DETAIL_FULL) - Math.log(DETAIL_START));
+	const mode = modeOf(zoom);
+	const origin = camera.toScreen(0, 0);
 	return {
+		mode,
+		scale: pixelScale(zoom),
+		artPerTile: mode === 'map' ? MAP_TILE_PX : mode === 'local' ? LOCAL_TILE_PX : 1,
+		originX: Math.round(origin.x),
+		originY: Math.round(origin.y),
 		x0: Math.max(0, Math.floor(a.x) - 1),
 		y0: Math.max(0, Math.floor(a.y) - 1),
 		x1: Math.min(size, Math.ceil(b.x) + 1),
 		y1: Math.min(size, Math.ceil(b.y) + 1),
 		zoom,
-		detail: Math.min(1, Math.max(0, t)),
+		detail: mode === 'local' ? 1 : 0,
 		ppm: zoom / METERS_PER_TILE
+	};
+}
+
+// A world point (tiles) on screen, snapped to the art-pixel grid, so sprites
+// never sit between pixels and don't shimmer as the camera moves.
+export function snapToArt(view: View, wx: number, wy: number): { x: number; y: number } {
+	const per = view.artPerTile * view.scale;
+	const ax = Math.round(wx * view.artPerTile);
+	const ay = Math.round(wy * view.artPerTile);
+	return {
+		x: view.originX + (ax * per) / view.artPerTile,
+		y: view.originY + (ay * per) / view.artPerTile
 	};
 }
 

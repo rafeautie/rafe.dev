@@ -1,6 +1,7 @@
 import { drawActorOverlays, collectActors } from './actors';
 import { drawAtmosphere } from './atmosphere';
 import { drawGround } from './ground';
+import { drawMap } from './mapview';
 import { collectObjects } from './objects';
 import { viewOf, type DrawState, type Standing, type View } from './scene';
 
@@ -26,11 +27,15 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: DrawState): void
 	ctx.fillRect(0, 0, width, height);
 	if (view.x1 <= view.x0 || view.y1 <= view.y0) return;
 
+	ctx.imageSmoothingEnabled = false;
+	// the overview always goes down first, so nothing is ever blank while a
+	// layer above is still being drawn or cached
 	drawOverview(ctx, state, view);
-	drawGround(ctx, state, view);
+	if (view.mode === 'map') drawMap(ctx, state, view);
+	if (view.mode === 'local') drawGround(ctx, state, view);
 
 	standing.length = 0;
-	collectObjects(state, view, standing);
+	if (view.mode === 'local') collectObjects(state, view, standing);
 	collectActors(state, view, standing);
 	standing.sort((a, b) => a.y - b.y);
 	for (const thing of standing) thing.draw(ctx);
@@ -42,18 +47,15 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: DrawState): void
 
 // The map as one pixel per tile, scaled up. Up close the ground layer covers it.
 function drawOverview(ctx: CanvasRenderingContext2D, state: DrawState, view: View): void {
-	if (view.detail >= 1) return;
-	const { camera, terrain } = state;
-	ctx.imageSmoothingEnabled = false;
-	const origin = camera.toScreen(view.x0, view.y0);
+	const { terrain } = state;
 	ctx.drawImage(
 		terrain,
 		view.x0,
 		view.y0,
 		view.x1 - view.x0,
 		view.y1 - view.y0,
-		origin.x,
-		origin.y,
+		view.originX + view.x0 * view.zoom,
+		view.originY + view.y0 * view.zoom,
 		(view.x1 - view.x0) * view.zoom,
 		(view.y1 - view.y0) * view.zoom
 	);

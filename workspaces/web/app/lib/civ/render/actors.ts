@@ -2,7 +2,11 @@ import { MATERIALS } from '../discovery/materials';
 import type { PersonView } from '../types';
 import type { Camera } from './camera';
 import { villageColor } from './palette';
-import { DETAIL_FULL, DETAIL_START, hash, type DrawState, type Standing, type View } from './scene';
+import { hash, type DrawState, type Standing, type View } from './scene';
+
+// the zooms the old close-up crossfade ran between (replaced by pixel modes)
+const DETAIL_START = 18;
+const DETAIL_FULL = 60;
 
 // People and animals. Zoomed out they are the old coloured dots; up close they
 // are small figures drawn in code, in metres, so their size matches the trees
