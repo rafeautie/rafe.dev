@@ -2,7 +2,7 @@
 // only the living, the tiles that changed since the last frame, and the new
 // chronicle entries.
 
-import { ADULT_AGE } from '../config';
+import { ADULT_AGE, ELDER_AGE } from '../config';
 import type {
 	HerdView,
 	PersonView,
@@ -69,7 +69,9 @@ export function personViews(world: World): PersonView[] {
 			y: p.y,
 			sex: p.sex,
 			child: ageOf(world, p) < ADULT_AGE,
+			elder: ageOf(world, p) >= ELDER_AGE,
 			activity: p.activity.kind,
+			carrying: p.carrying[0]?.material,
 			village: p.village
 		});
 	}

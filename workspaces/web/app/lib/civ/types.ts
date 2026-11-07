@@ -63,7 +63,7 @@ export type WorldMap = {
 	seed: number;
 	height: Float32Array; // 0..1, below SEA_LEVEL is sea
 	moisture: Float32Array; // 0..1
-	temperature: Float32Array; // mean yearly °C
+	temperature: Float32Array; // mean yearly Â°C
 	ground: Uint8Array; // Ground
 	water: Uint8Array; // Water
 	biome: Uint8Array; // Biome
@@ -212,6 +212,17 @@ export type Person = {
 	notable: boolean;
 	// a goal set by the model each season, in their words, and its tag
 	goal?: { text: string; tag: string; until: number };
+	// a long walk for ore that is not near camp: where to, what for, and whether the
+	// load is on its way home (px, py: where they were last time, to spot being stuck)
+	trip?: {
+		x: number;
+		y: number;
+		material: MaterialId;
+		back: boolean;
+		px: number;
+		py: number;
+		stuck: number;
+	};
 };
 
 // ----------------------------------------------------------------- animals
@@ -238,7 +249,7 @@ export type Village = {
 	leader?: number;
 	// shared stores at camp
 	store: Stack[];
-	// the hottest heat source anyone here can make, °C
+	// the hottest heat source anyone here can make, Â°C
 	heat: number;
 	customs: string[];
 };
@@ -300,7 +311,10 @@ export type PersonView = {
 	y: number;
 	sex: 'f' | 'm';
 	child: boolean;
+	elder: boolean;
 	activity: ActivityKind;
+	// the main thing in their hands, for drawing it
+	carrying?: MaterialId;
 	village: number;
 };
 

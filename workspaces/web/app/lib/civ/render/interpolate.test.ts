@@ -9,6 +9,7 @@ const person = (id: number, x: number, y: number): PersonView => ({
 	y,
 	sex: 'f',
 	child: false,
+	elder: false,
 	activity: 'walk',
 	village: 0
 });

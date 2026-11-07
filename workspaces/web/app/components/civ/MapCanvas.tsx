@@ -1,6 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import { Camera } from '../../lib/civ/render/camera';
-import { drawFrame, nearestPerson, TILE_CENTER } from '../../lib/civ/render/draw';
+import { personPosition } from '../../lib/civ/render/actors';
+import { drawFrame, nearestPerson } from '../../lib/civ/render/draw';
 import { interpolateHerds, interpolatePeople } from '../../lib/civ/render/interpolate';
 import { fillTerrain, patchTerrain } from '../../lib/civ/render/terrain';
 import type { MapLayers, SimResponse, WorldMap } from '../../lib/civ/types';
@@ -16,7 +17,7 @@ import type { MapLayers, SimResponse, WorldMap } from '../../lib/civ/types';
 
 export type MapFrame = Pick<
 	Extract<SimResponse, { type: 'frame' }>,
-	'people' | 'herds' | 'villages' | 'tiles'
+	'people' | 'herds' | 'villages' | 'tiles' | 'tick' | 'weather'
 >;
 
 export type MapCanvasHandle = {
@@ -160,19 +161,25 @@ export function MapCanvas(props: Props) {
 
 			if (p.followedId !== null && !s.dragging) {
 				const who = s.people.find((person) => person.id === p.followedId);
-				if (who) camera.follow(who.x + TILE_CENTER, who.y + TILE_CENTER, dt);
+				if (who) {
+					const at = personPosition(who, now);
+					camera.follow(at.x, at.y, dt);
+				}
 			}
 
 			drawFrame(ctx, {
 				camera,
 				terrain: s.terrain,
 				dpr: s.dpr,
-				mapSize: s.layers.size,
+				layers: s.layers,
+				living: s.living,
 				people: s.people,
 				herds,
 				villages: next?.villages ?? [],
-				built: s.living.built,
-				deposit: s.layers.deposit,
+				tick: next?.tick ?? 0,
+				now,
+				season: p.season,
+				weather: next?.weather ?? 'clear',
 				followedId: p.followedId,
 				hoveredId: s.hoveredId,
 				theme: p.theme
@@ -208,7 +215,7 @@ export function MapCanvas(props: Props) {
 			const before = pointers.get(e.pointerId);
 			if (!before) {
 				if (e.pointerType === 'mouse') {
-					s.hoveredId = nearestPerson(s.people, camera, at.x, at.y, PICK_RADIUS);
+					s.hoveredId = nearestPerson(s.people, camera, performance.now(), at.x, at.y, PICK_RADIUS);
 					cursor();
 				}
 				return;
@@ -241,7 +248,9 @@ export function MapCanvas(props: Props) {
 			if (known && pointers.size === 0) {
 				if (!moved && e.type === 'pointerup') {
 					const at = local(e);
-					propsRef.current.onSelect(nearestPerson(s.people, camera, at.x, at.y, PICK_RADIUS));
+					propsRef.current.onSelect(
+						nearestPerson(s.people, camera, performance.now(), at.x, at.y, PICK_RADIUS)
+					);
 				}
 				s.dragging = false;
 				cursor();
