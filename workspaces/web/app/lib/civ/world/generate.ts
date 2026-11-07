@@ -57,7 +57,7 @@ function buildHeight(size: number, rng: Rng): Float32Array {
 	const ridgePos = rng.range(0.14, 0.3);
 	const ridgeWidth = rng.range(0.07, 0.12);
 	const seaArea = second < 0 ? width1 : width1 + width2 - width1 * width2;
-	const landShare = Math.min(0.78, Math.max(0.6, 1 - seaArea));
+	const landShare = Math.min(0.7, Math.max(0.58, 1 - seaArea));
 
 	const raw = new Float32Array(n);
 	const d = [0, 0, 0, 0];
@@ -87,6 +87,8 @@ function buildHeight(size: number, rng: Rng): Float32Array {
 				if (e !== primary && e !== second) h += 0.2 * (1 - smoothstep(0, 0.05, d[e]));
 			}
 			raw[y * size + x] = h;
+			// read back, so the range matches what the float array really holds
+			h = raw[y * size + x];
 			if (h < lo) lo = h;
 			if (h > hi) hi = h;
 		}
@@ -362,7 +364,7 @@ function placeSites(map: WorldMap, rng: Rng, spec: SiteSpec): number {
 					const i = y * size + x;
 					const dist = Math.hypot(dx, dy);
 					// ragged edge, so a cluster is not a perfect disc
-					if (dist > 0 && dist > r * (0.65 + 0.45 * rng.next())) continue;
+					if (dist > 0 && dist > r * (0.85 + 0.4 * rng.next()) + 0.3) continue;
 					if (deposit[i] !== Deposit.none || !spec.ok(i)) continue;
 					deposit[i] = spec.kind;
 					depositLeft[i] = Math.max(10, Math.round(rich * (1 - (0.5 * dist) / (r + 1))));
@@ -381,6 +383,11 @@ export function generateWorld(seed: number, size = MAP_SIZE): WorldMap {
 	const rng = new Rng(seed);
 	const h = buildHeight(size, rng);
 	const sea = findSea(h, size);
+	// low ground cut off from the sea becomes a shallow basin; the lakes are
+	// picked from the deepest basins below
+	for (let i = 0; i < n; i++) {
+		if (!sea[i] && h[i] < SEA_LEVEL) h[i] = SEA_LEVEL + 0.02 * (SEA_LEVEL - h[i]) + 0.0005;
+	}
 
 	const rainNoise = createNoise2D(rng.fork());
 	const moistNoise = createNoise2D(rng.fork());
@@ -417,8 +424,6 @@ export function generateWorld(seed: number, size = MAP_SIZE): WorldMap {
 	for (let i = 0; i < n; i++) {
 		if (sea[i]) {
 			water[i] = Water.sea;
-		} else if (h[i] < SEA_LEVEL) {
-			lake[i] = 1;
 		} else {
 			const depth = filled[i] - h[i];
 			if (depth > 0.0004) depths.push(depth);
@@ -429,7 +434,7 @@ export function generateWorld(seed: number, size = MAP_SIZE): WorldMap {
 	const lakeTiles = Math.round(landCount * features.range(0.006, 0.012));
 	const lakeDepth = depths.length > lakeTiles ? depths[lakeTiles - 1] : 0.0004;
 	for (let i = 0; i < n; i++) {
-		if (!sea[i] && h[i] >= SEA_LEVEL && filled[i] - h[i] >= lakeDepth) lake[i] = 1;
+		if (!sea[i] && filled[i] - h[i] >= lakeDepth) lake[i] = 1;
 	}
 	dropSmall(lake, size, 5);
 	for (let i = 0; i < n; i++) if (lake[i]) water[i] = Water.lake;
@@ -453,10 +458,24 @@ export function generateWorld(seed: number, size = MAP_SIZE): WorldMap {
 		const around = [x > 0 ? i - 1 : -1, x < size - 1 ? i + 1 : -1, y > 0 ? i - size : -1];
 		around.push(y < size - 1 ? i + size : -1);
 		for (const j of around) {
-			if (j >= 0 && !sea[j] && h[j] >= SEA_LEVEL && water[j] === Water.none) river[j] = 2;
+			if (j >= 0 && !sea[j] && water[j] === Water.none) river[j] = 2;
 		}
 	}
 	for (let i = 0; i < n; i++) if (river[i]) water[i] = Water.river;
+	// Level the bed so water really runs downhill: fill small pits on the
+	// river's path, and set the wide parts to the same level as the bed.
+	for (let i = 0; i < n; i++) {
+		if (river[i] === 1) h[i] = Math.max(h[i], filled[i]);
+	}
+	for (let i = 0; i < n; i++) {
+		if (river[i] !== 1 || acc[i] < threshold * 5) continue;
+		const x = i % size;
+		const y = (i - x) / size;
+		if (x > 0 && river[i - 1] === 2) h[i - 1] = h[i];
+		if (x < size - 1 && river[i + 1] === 2) h[i + 1] = h[i];
+		if (y > 0 && river[i - size] === 2) h[i - size] = h[i];
+		if (y < size - 1 && river[i + size] === 2) h[i + size] = h[i];
+	}
 
 	// springs where the highest streams begin, and a few more in the hills
 	const fed = new Uint8Array(n);
@@ -471,7 +490,6 @@ export function generateWorld(seed: number, size = MAP_SIZE): WorldMap {
 		if (rise(sources[k]) > 0.3) water[sources[k]] = Water.spring;
 	}
 	for (let tries = 0; tries < 400; tries++) {
-		if (tries >= 400) break;
 		const i = features.int(0, n - 1);
 		const r = rise(i);
 		if (water[i] === Water.none && !sea[i] && r > 0.45 && r < 0.85 && features.chance(0.05)) {
@@ -507,8 +525,7 @@ export function generateWorld(seed: number, size = MAP_SIZE): WorldMap {
 			const u = x / size;
 			const v = y / size;
 			const r = rise(i);
-			temperature[i] =
-				18 - 6 * lat - 11 * r + 1.5 * fbm(warmNoise, u * 3, v * 3, 3) - (sea[i] ? 0 : 0);
+			temperature[i] = 18 - 6 * lat - 11 * r + 1.5 * fbm(warmNoise, u * 3, v * 3, 3);
 			if (sea[i]) {
 				moisture[i] = 1;
 			} else {
@@ -550,7 +567,7 @@ export function generateWorld(seed: number, size = MAP_SIZE): WorldMap {
 		else if (r >= 0.7) b = Biome.mountain;
 		else if (r >= 0.5) b = Biome.hills;
 		else if (nearSea[i] <= 1 && r < 0.12) b = Biome.coast;
-		else if (r < 0.22 && m > 0.66 && nearFresh[i] <= 4) b = Biome.wetland;
+		else if (r < 0.15 && m > 0.72 && nearFresh[i] <= 3) b = Biome.wetland;
 		else if (m < 0.32) b = Biome.scrub;
 		else if (forestness[i] + 0.4 * m > forestLine) b = Biome.forest;
 		else b = Biome.grassland;
@@ -603,7 +620,8 @@ export function generateWorld(seed: number, size = MAP_SIZE): WorldMap {
 			const v = y / size;
 			const variety = 0.6 + 0.8 * (0.5 + 0.5 * fbm(plantNoise, u * 8, v * 8, 3));
 			let food = plantBase[b] * variety * (0.5 + 0.5 * m);
-			if (b === Biome.grassland || b === Biome.forest) food += 0.25 * clamp01(1 - Math.abs(edge) / 0.1);
+			if (b === Biome.grassland || b === Biome.forest)
+				food += 0.25 * clamp01(1 - Math.abs(edge) / 0.1);
 			const wet = nearFresh[i];
 			if (wet <= 4 && b !== Biome.snow && b !== Biome.mountain) food += 0.3 * (1 - wet / 5);
 			// thick wild grain on open ground by rivers
@@ -638,7 +656,7 @@ export function generateWorld(seed: number, size = MAP_SIZE): WorldMap {
 }
 
 function placeDeposits(map: WorldMap, rng: Rng, nearFresh: Uint8Array) {
-	const { size, ground, water, biome, deposit } = map;
+	const { size, ground, water, biome } = map;
 	const dry = (i: number) => water[i] !== Water.sea;
 	const scale = size / MAP_SIZE;
 
@@ -680,7 +698,7 @@ function placeDeposits(map: WorldMap, rng: Rng, nearFresh: Uint8Array) {
 		kind: Deposit.tin,
 		count: rng.int(1, 2),
 		spacing: 30 * scale,
-		radius: [1, 2],
+		radius: [2, 2],
 		amount: [40, 120],
 		ok: tinOk
 	});
@@ -724,7 +742,7 @@ function placeDeposits(map: WorldMap, rng: Rng, nearFresh: Uint8Array) {
 		kind: Deposit.obsidian,
 		count: rng.int(0, 2),
 		spacing: 30 * scale,
-		radius: [1, 1],
+		radius: [1, 2],
 		amount: [30, 100],
 		ok: (i) => biome[i] === Biome.mountain
 	});
