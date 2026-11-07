@@ -82,8 +82,11 @@ function Bench() {
 
 	useEffect(() => {
 		void readDevice().then(setDevice);
-		void findCached().then(setCached);
 	}, []);
+	// what's downloaded already, again once a model has loaded
+	useEffect(() => {
+		void findCached().then(setCached);
+	}, [state.status]);
 
 	if (!device) return <p className="text-sm text-foreground/50">Reading this device…</p>;
 	const ready = state.status === 'ready' ? state : undefined;
@@ -271,7 +274,7 @@ function Loader({
 			</div>
 		);
 	}
-	const loaded = state.status === 'ready' && state.model === model;
+	if (state.status === 'ready' && state.model === model) return null;
 	return (
 		<div className="flex flex-col items-start gap-2">
 			{state.status === 'error' && (
@@ -279,20 +282,16 @@ function Loader({
 					{state.model.name} didn&rsquo;t load: {state.message}
 				</p>
 			)}
-			{!loaded && (
-				<>
-					<p className="text-sm text-pretty text-foreground/50">
-						{cached
-							? `${model.name} is in this browser already, so it loads without downloading.`
-							: `This downloads ${downloadSize(model, device).toFixed(1)} GB from Hugging Face. The browser keeps it, so later visits (and /chess) load it without downloading again.`}
-					</p>
-					<Button variant="outline" disabled={disabled} onClick={onLoad}>
-						{cached
-							? `Load ${model.name}`
-							: `Download ${model.name} (${downloadSize(model, device).toFixed(1)} GB)`}
-					</Button>
-				</>
-			)}
+			<p className="text-sm text-pretty text-foreground/50">
+				{cached
+					? `${model.name} is in this browser already, so it loads without downloading.`
+					: `This downloads ${downloadSize(model, device).toFixed(1)} GB from Hugging Face. The browser keeps it, so later visits (and /chess) load it without downloading again.`}
+			</p>
+			<Button variant="outline" disabled={disabled} onClick={onLoad}>
+				{cached
+					? `Load ${model.name}`
+					: `Download ${model.name} (${downloadSize(model, device).toFixed(1)} GB)`}
+			</Button>
 		</div>
 	);
 }
@@ -377,7 +376,7 @@ function describeDevice(device: DeviceInfo): string {
 			? `WebGPU${device.f16 ? ' with 16-bit math' : ''}, largest GPU buffer ${device.maxBuffer.toFixed(1)} GB`
 			: 'no WebGPU, so the model runs on the processor (slow)'
 	];
-	if (device.memory) parts.push(`${device.memory} GB memory (browsers say 8 at most)`);
+	if (device.memory) parts.push(`${device.memory} GB memory, as the browser reports it`);
 	if (device.phone) parts.push('a phone or tablet');
 	return parts.join(', ');
 }

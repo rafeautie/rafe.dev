@@ -107,7 +107,6 @@ type Loaded = {
 // A kept reading of an opening: each cache tensor's numbers, held apart from
 // the model so it never changes them
 type Opening = {
-	length: number;
 	tensors: { name: string; type: Tensor['type']; data: Tensor['data']; dims: number[] }[];
 };
 
@@ -274,7 +273,6 @@ async function generate({ model }: Pick<Loaded, 'model'>, options: GenerateOptio
 		attention_mask: ones_like(options.input_ids),
 		return_dict_in_generate: true,
 		temperature: TEMPERATURE,
-		top_p: 0.95,
 		top_k: 64,
 		logits_processor,
 		stopping_criteria
@@ -301,7 +299,7 @@ async function readOpening(ready: Pick<Loaded, 'model'>, ids: number[]): Promise
 					: ((await tensor.ort_tensor.getData()) as Tensor['data']);
 			tensors.push({ name, type: tensor.type, data, dims: [...tensor.dims] });
 		}
-		return { length: ids.length, tensors };
+		return { tensors };
 	} finally {
 		await run.past_key_values.dispose();
 	}
