@@ -3,7 +3,7 @@
 // one tick of that activity.
 
 import { ADULT_AGE, WALK_TILES_PER_TICK } from '../config';
-import { resolve, matchIdea } from '../discovery/engine';
+import { knowledgeOf, resolve, matchIdea } from '../discovery/engine';
 import { MATERIALS } from '../discovery/materials';
 import { foodValue, isFood, isPoisonous, materialsFromDeposit } from '../discovery/sources';
 import type { Rng } from '../rng';
@@ -550,15 +550,6 @@ function placeProduct(
 		return true;
 	}
 	return false;
-}
-
-// the knowledge a try would teach, to read the maker's mastery of it
-function knowledgeOf(action: string, items: MaterialId[]): string | undefined {
-	const rule = matchIdea(action, items);
-	if (!rule) return undefined;
-	if (rule.knowledge) return rule.knowledge;
-	for (const id of items) if (MATERIALS[id]?.teaches) return MATERIALS[id].teaches;
-	return undefined;
 }
 
 function nextHerdId(world: World): number {

@@ -497,7 +497,7 @@ const RAW: Raw[] = [
 	{
 		id: 'build-lean-to',
 		action: 'build',
-		in: ['branch', 'branch', 'grass|reed|bark|hide'],
+		in: ['~#sharp', 'branch', 'branch', 'grass|reed|bark|hide'],
 		out: ['lean-to'],
 		learns: 'shelter',
 		skill: 'building',
@@ -557,7 +557,7 @@ const RAW: Raw[] = [
 	{
 		id: 'build-fence',
 		action: 'build',
-		in: ['branch', 'branch', 'branch', '#strongfiber'],
+		in: ['~#sharp', 'branch', 'branch', 'branch', '#strongfiber'],
 		out: ['fence'],
 		learns: 'fencing',
 		skill: 'building',
@@ -569,7 +569,7 @@ const RAW: Raw[] = [
 	{
 		id: 'sow-field',
 		action: 'plant',
-		in: ['wild-grain|roots', 'earth'],
+		in: ['wild-grain|roots', 'earth', '~digging-stick'],
 		out: ['field'],
 		learns: 'planting',
 		skill: 'farming',

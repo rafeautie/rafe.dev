@@ -159,6 +159,16 @@ export function matchIdea(action: string, items: MaterialId[]): Rule | undefined
 	return findMatch(action, items)?.rule;
 }
 
+// The know-how a try would teach: the rule's own, or what an item says it
+// teaches (a fired pot teaches pottery)
+export function knowledgeOf(action: string, items: MaterialId[]): KnowledgeId | undefined {
+	const rule = matchIdea(action, items);
+	if (!rule) return undefined;
+	if (rule.knowledge) return rule.knowledge;
+	for (const id of items) if (MATERIALS[id]?.teaches) return MATERIALS[id].teaches;
+	return undefined;
+}
+
 // The least heat this rule needs for these particular items, °C
 export function requiredHeat(rule: Rule, items: MaterialId[]): number {
 	if (rule.byProperty) {

@@ -5,8 +5,9 @@ import type { KnowledgeId, MaterialId } from '../types';
 import type { Rng } from '../rng';
 import { ACTION_IDS } from './actions';
 import { MATERIALS } from './materials';
-import { RULES } from './rules';
-import { expandRule, matchIdea, requiredHeat } from './engine';
+import { RULES, type Rule } from './rules';
+import { depthFactor } from './depth';
+import { expandRule, knowledgeOf, matchIdea, requiredHeat } from './engine';
 
 export type Idea = { action: string; items: MaterialId[] };
 
@@ -20,6 +21,18 @@ function shuffle<T>(list: T[], rng: Rng): T[] {
 		[list[i], list[j]] = [list[j], list[i]];
 	}
 	return list;
+}
+
+// Slowing applies to the first time someone hits on a technique; practising
+// what they already know is not held back.
+export function newToThem(
+	person: { knowledge: Record<KnowledgeId, number> },
+	idea: Idea
+): { rule: Rule; fresh: boolean } | undefined {
+	const rule = matchIdea(idea.action, idea.items);
+	if (!rule) return undefined;
+	const id = knowledgeOf(idea.action, idea.items);
+	return { rule, fresh: !id || !(person.knowledge[id] > 0) };
 }
 
 export function ideaOptions(
@@ -40,9 +53,13 @@ export function ideaOptions(
 		const options = expandRule(rule, pool, 12);
 		if (options.length === 0) continue;
 		const items = rng.pick(options);
-		let weight = rule.knowledge && (person.knowledge[rule.knowledge] ?? 0) > 0 ? 0.5 : 2;
+		const shuffled = shuffle([...items], rng);
+		const known = rule.knowledge && (person.knowledge[rule.knowledge] ?? 0) > 0;
+		let weight = known ? 0.5 : 2;
+		// deeper techniques are rarer thoughts
+		if (!known) weight *= depthFactor(rule);
 		if (requiredHeat(rule, items) > heat) weight *= 0.4;
-		promising.push({ idea: { action: rule.action, items: shuffle([...items], rng) }, weight });
+		promising.push({ idea: { action: rule.action, items: shuffled }, weight });
 	}
 
 	// ideas that lead nowhere: random tinkering that no rule answers
