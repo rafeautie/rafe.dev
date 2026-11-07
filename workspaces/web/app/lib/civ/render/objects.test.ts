@@ -4,6 +4,7 @@ import { Camera } from './camera';
 import {
 	MAX_OBJECTS,
 	bushCount,
+	clearFactor,
 	collectObjects,
 	keepRatio,
 	keptCount,
@@ -138,5 +139,31 @@ describe('collectObjects', () => {
 		const ys = a.map((e) => e.y);
 		collectObjects(state, viewOf(state), b);
 		expect(b.map((e) => e.y)).toEqual(ys);
+	});
+});
+
+describe('village clearing', () => {
+	it('is 0 at the centre and 1 well away, and only grows outward', () => {
+		const vx = [10.5];
+		const vy = [10.5];
+		expect(clearFactor(10.5, 10.5, vx, vy, 1)).toBe(0);
+		expect(clearFactor(14, 10.5, vx, vy, 1)).toBe(1);
+		expect(clearFactor(11.5, 10.5, vx, vy, 1)).toBeLessThan(clearFactor(12.5, 10.5, vx, vy, 1));
+		expect(clearFactor(3, 3, vx, vy, 0)).toBe(1);
+	});
+
+	it('leaves no trees at a village centre', () => {
+		const state = fakeState(120);
+		state.villages = [{ id: 1, name: 'A', x: 32, y: 32 }];
+		const out: Standing[] = [];
+		collectObjects(state, viewOf(state), out);
+		// entries are pooled and reused, so count before the next collect
+		const row = (list: Standing[]) => list.filter((e) => e.y > 32.2 && e.y < 32.8).length;
+		const near = row(out);
+		const withoutVillage: Standing[] = [];
+		state.villages = [];
+		collectObjects(state, viewOf(state), withoutVillage);
+		// trees standing on the row through the village are fewer near its centre
+		expect(near).toBeLessThan(row(withoutVillage));
 	});
 });

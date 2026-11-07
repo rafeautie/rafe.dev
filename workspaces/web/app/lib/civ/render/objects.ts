@@ -1,4 +1,5 @@
 import { Biome, Built, Deposit, Ground, Water } from '../types';
+import { waterAt } from './ground';
 import { drawSprite, Kind, SPECS } from './sprites';
 import { hash, type DrawState, type Standing, type View } from './scene';
 
@@ -163,6 +164,15 @@ export function collectObjects(state: DrawState, view: View, out: Standing[]): v
 	if (bx1 <= bx0 || by1 <= by0) return;
 	const nTiles = (bx1 - bx0) * (by1 - by0);
 
+	// villages whose clearing can reach the tiles being drawn
+	villageCount = 0;
+	for (const v of state.villages) {
+		if (v.x < bx0 - 3 || v.x > bx1 + 3 || v.y < by0 - 3 || v.y > by1 + 3) continue;
+		vxs[villageCount] = v.x + 0.5;
+		vys[villageCount] = v.y + 0.5;
+		villageCount++;
+	}
+
 	// 1. buildings and ore, plus the cheap far-away markers
 	const markerAlpha = 1 - detail;
 	for (let ty = by0; ty < by1; ty++) {
@@ -189,7 +199,7 @@ export function collectObjects(state: DrawState, view: View, out: Standing[]): v
 	for (let ty = by0; ty < by1; ty++) {
 		for (let tx = bx0; tx < bx1; tx++) {
 			const i = ty * size + tx;
-			if (living.built[i] !== Built.none || isWater(layers, i)) continue;
+			if (living.built[i] !== Built.none || isOpenWater(layers, i)) continue;
 			total += treeCount(living.wood[i]);
 		}
 	}
@@ -199,7 +209,7 @@ export function collectObjects(state: DrawState, view: View, out: Standing[]): v
 		for (let ty = by0; ty < by1; ty++) {
 			for (let tx = bx0; tx < bx1; tx++) {
 				const i = ty * size + tx;
-				if (living.built[i] !== Built.none || isWater(layers, i)) continue;
+				if (living.built[i] !== Built.none || isOpenWater(layers, i)) continue;
 				const n = treeCount(living.wood[i]);
 				if (n === 0) continue;
 				const k = keptCount(n, ratio, tx, ty);
@@ -209,7 +219,7 @@ export function collectObjects(state: DrawState, view: View, out: Standing[]): v
 					const kind = treeKind(biome, hash(tx, ty, j, 5));
 					const base = kind === Kind.scrub ? 0.8 : 0.75;
 					const sc = (base + 0.5 * hash(tx, ty, j, 6)) * clump;
-					add(kind, Math.floor(hash(tx, ty, j, 7) * 4), tx + spot[0], ty + spot[1], sc, detail);
+					put(kind, Math.floor(hash(tx, ty, j, 7) * 4), tx + spot[0], ty + spot[1], sc, detail);
 				}
 			}
 		}
@@ -222,18 +232,66 @@ export function collectObjects(state: DrawState, view: View, out: Standing[]): v
 	for (let ty = by0; ty < by1; ty++) {
 		for (let tx = bx0; tx < bx1; tx++) {
 			const i = ty * size + tx;
-			if (living.built[i] !== Built.none || isWater(layers, i)) continue;
+			if (living.built[i] !== Built.none || isOpenWater(layers, i)) continue;
 			addSmall(state, view, tx, ty, i, cap, zoom, detail);
 		}
 	}
 }
 
-function isWater(layers: DrawState['layers'], i: number): boolean {
-	return layers.water[i] !== Water.none || layers.biome[i] === Biome.ocean;
+// lakes and sea; river tiles are mostly bank, and `put` keeps things out of the channel
+function isOpenWater(layers: DrawState['layers'], i: number): boolean {
+	const w = layers.water[i];
+	return (w !== Water.none && w !== Water.river) || layers.biome[i] === Biome.ocean;
 }
+
+// Place a thing unless it would stand in a river channel, or (for trees and
+// bushes) in a village clearing.
+function put(kind: number, v: number, x: number, y: number, scale: number, alpha: number) {
+	const layers = cur.layers;
+	if (
+		layers.water[Math.floor(y) * layers.size + Math.floor(x)] === Water.river &&
+		waterAt(layers, x, y)
+	)
+		return;
+	if (
+		villageCount > 0 &&
+		(kind === Kind.oak ||
+			kind === Kind.conifer ||
+			kind === Kind.scrub ||
+			kind === Kind.bush ||
+			kind === Kind.berry) &&
+		hash(Math.round(x * 4096), Math.round(y * 4096), 11) >=
+			clearFactor(x, y, vxs, vys, villageCount)
+	)
+		return;
+	add(kind, v, x, y, scale, alpha);
+}
+
+// 0 at a village centre, rising to 1 about 2 tiles out: the share of trees and
+// bushes allowed to stay. Depends only on position, so nothing pops.
+export function clearFactor(
+	x: number,
+	y: number,
+	vx: ArrayLike<number>,
+	vy: ArrayLike<number>,
+	n: number
+): number {
+	let f = 1;
+	for (let k = 0; k < n; k++) {
+		const t = (Math.hypot(x - vx[k], y - vy[k]) - 0.6) / 1.5;
+		const s = t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+		if (s < f) f = s;
+	}
+	return f;
+}
+
+const vxs: number[] = [];
+const vys: number[] = [];
+let villageCount = 0;
 
 function nearWater(layers: DrawState['layers'], tx: number, ty: number): boolean {
 	const size = layers.size;
+	if (layers.water[ty * size + tx] === Water.river) return true;
 	for (let k = 0; k < 4; k++) {
 		const x = tx + (k === 0 ? -1 : k === 1 ? 1 : 0);
 		const y = ty + (k === 2 ? -1 : k === 3 ? 1 : 0);
@@ -273,7 +331,7 @@ function addSmall(
 		n = Math.min(n, left);
 		for (let j = 0; j < n; j++, left--) {
 			scatter(tx, ty, j, 3, spot);
-			add(
+			put(
 				Kind.boulder,
 				Math.floor(hash(tx, ty, j, 31) * 4),
 				tx + spot[0],
@@ -286,7 +344,7 @@ function addSmall(
 		n = Math.min(bushCount(plants, biome), left);
 		for (let j = 0; j < n; j++, left--) {
 			scatter(tx, ty, j, 2, spot);
-			add(
+			put(
 				j % 2 === 0 ? Kind.berry : Kind.bush,
 				Math.floor(hash(tx, ty, j, 21) * 4),
 				tx + spot[0],
@@ -308,7 +366,7 @@ function addSmall(
 		for (let j = 0; j < n; j++, left--) {
 			const x = Math.min(1 - EDGE, Math.max(EDGE, cx + (hash(tx, ty, j, 41) - 0.5) * 0.2));
 			const y = Math.min(1 - EDGE, Math.max(EDGE, cy + (hash(tx, ty, j, 42) - 0.5) * 0.12));
-			add(
+			put(
 				Kind.reed,
 				Math.floor(hash(tx, ty, j, 43) * 4),
 				tx + x,
@@ -322,7 +380,7 @@ function addSmall(
 		const n = Math.min(rocky ? 4 : Math.floor(hash(tx, ty, 78) * 2.2), left);
 		for (let j = 0; j < n; j++, left--) {
 			scatter(tx, ty, j, 4, spot);
-			add(Kind.stone, Math.floor(hash(tx, ty, j, 51) * 4), tx + spot[0], ty + spot[1], 1, detail);
+			put(Kind.stone, Math.floor(hash(tx, ty, j, 51) * 4), tx + spot[0], ty + spot[1], 1, detail);
 		}
 	}
 	const grassy =
@@ -344,7 +402,7 @@ function addSmall(
 		for (let j = 0; j < n; j++) {
 			if (season === 2 && j % 3 !== 0) continue;
 			scatter(tx, ty, j, 6, spot);
-			add(Kind.flower, Math.floor(hash(tx, ty, j, 61) * 4), tx + spot[0], ty + spot[1], 1, detail);
+			put(Kind.flower, Math.floor(hash(tx, ty, j, 61) * 4), tx + spot[0], ty + spot[1], 1, detail);
 			left--;
 		}
 	}
@@ -352,7 +410,7 @@ function addSmall(
 		const n = Math.min(Math.round(1 + plants * 9), left);
 		for (let j = 0; j < n; j++) {
 			scatter(tx, ty, j, 7, spot);
-			add(
+			put(
 				Kind.tuft,
 				Math.floor(hash(tx, ty, j, 71) * 4),
 				tx + spot[0],

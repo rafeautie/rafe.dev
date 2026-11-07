@@ -1,5 +1,5 @@
 import { SEA_LEVEL } from '../config';
-import { Biome, Built, Deposit, Ground, Water } from '../types';
+import { Biome, Built, Deposit, Ground, Water, type MapLayers } from '../types';
 import { tileColor } from './palette';
 import { hash, type DrawState, type View } from './scene';
 // (View is the part of the map on screen and how close we are)
@@ -28,6 +28,9 @@ const GROUND_TINT: (Rgba | null)[] = [
 ];
 // the bed under water tiles, so beaches blend toward wet sand
 const WET_SAND: [number, number, number] = [0xc4, 0xb4, 0x86];
+const BANK: [number, number, number] = [0xa4, 0xa8, 0x76];
+// how much of a lake corner is cut round, as a share of the tile edge
+const CUT = 0.3;
 
 const SOIL = ['#6e4f35', '#7a5a3a', '#8a6a40', '#6a5848'];
 const BLADE_DARK = [
@@ -74,6 +77,9 @@ const tileY = (ty: number) => Y0 + (ty - by0) * zoom;
 const isWater = (layers: DrawState['layers'], i: number) =>
 	layers.water[i] !== Water.none || layers.biome[i] === Biome.ocean;
 
+const isRiver = (layers: Pick<MapLayers, 'water' | 'biome'>, i: number) =>
+	layers.water[i] === Water.river && layers.biome[i] !== Biome.ocean;
+
 export function drawGround(c: CanvasRenderingContext2D, state: DrawState, view: View): void {
 	const detail = view.detail;
 	if (detail <= 0.001) return;
@@ -104,6 +110,7 @@ export function drawGround(c: CanvasRenderingContext2D, state: DrawState, view: 
 	paintDecor();
 	paintFields();
 	paintWater();
+	paintRivers();
 	ctx.globalAlpha = 1;
 	ctx.imageSmoothingEnabled = smoothing;
 	ctx.setLineDash([]);
@@ -138,7 +145,13 @@ function buildTiles(w: number, h: number): void {
 			const tx = Math.min(size - 1, Math.max(0, bx0 + xx));
 			const i = ty * size + tx;
 			const p = (yy + 1) * pw + xx + 1;
-			if (isWater(layers, i)) {
+			if (isRiver(layers, i)) {
+				// rivers are drawn as a channel; the rest of the tile is damp bank
+				wf[p] = 0;
+				cr[p] = BANK[0];
+				cg[p] = BANK[1];
+				cb[p] = BANK[2];
+			} else if (isWater(layers, i)) {
 				wf[p] = 1;
 				cr[p] = WET_SAND[0];
 				cg[p] = WET_SAND[1];
@@ -559,6 +572,242 @@ function paintFields(): void {
 	ctx.stroke(edges);
 }
 
+// ------------------------------------------------------------ river channels
+
+type WaterLayers = Pick<MapLayers, 'size' | 'water' | 'biome'>;
+
+// A river tile is a winding channel 6 to 14 m wide, not a whole square of
+// water. Each neighbouring water tile (or diagonal one, when nothing joins on
+// the sides) gives an entry point; the channel runs from each to a wobbly
+// centre. Entry points and widths come from the shared edge, so neighbouring
+// tiles meet exactly. Positions are fractions of the tile.
+const SEG = 7; // px, py, bend x, bend y, centre x, centre y, width
+const ND = [
+	[0, -1],
+	[1, 0],
+	[0, 1],
+	[-1, 0]
+];
+const DIAG = [
+	[1, -1],
+	[1, 1],
+	[-1, 1],
+	[-1, -1]
+];
+const segBuf: number[] = new Array(SEG * 9).fill(0);
+
+function waterish(layers: WaterLayers, x: number, y: number): boolean {
+	if (x < 0 || y < 0 || x >= layers.size || y >= layers.size) return false;
+	const i = y * layers.size + x;
+	return layers.water[i] !== Water.none || layers.biome[i] === Biome.ocean;
+}
+
+// lakes and sea: a river mouth widens into them
+function bigWater(layers: WaterLayers, x: number, y: number): boolean {
+	if (!waterish(layers, x, y)) return false;
+	const i = y * layers.size + x;
+	return layers.water[i] !== Water.river && layers.water[i] !== Water.spring;
+}
+
+function pushSeg(
+	out: number[],
+	n: number,
+	px: number,
+	py: number,
+	cx: number,
+	cy: number,
+	w: number,
+	tx: number,
+	ty: number
+): void {
+	const o = n * SEG;
+	const dx = cx - px;
+	const dy = cy - py;
+	const len = Math.hypot(dx, dy) || 1;
+	const amt = (hash(tx, ty, n + 3, 41) - 0.5) * 0.25;
+	out[o] = px;
+	out[o + 1] = py;
+	out[o + 2] = (px + cx) / 2 - (dy / len) * amt;
+	out[o + 3] = (py + cy) / 2 + (dx / len) * amt;
+	out[o + 4] = cx;
+	out[o + 5] = cy;
+	out[o + 6] = w;
+}
+
+// Writes the channel's segments into `out` (SEG numbers each) and returns how many
+export function riverChannel(layers: WaterLayers, tx: number, ty: number, out: number[]): number {
+	const cx = 0.5 + (hash(tx, ty, 1, 40) - 0.5) * 0.2;
+	const cy = 0.5 + (hash(tx, ty, 2, 40) - 0.5) * 0.2;
+	let n = 0;
+	for (let d = 0; d < 4; d++) {
+		const nx = tx + ND[d][0];
+		const ny = ty + ND[d][1];
+		if (!waterish(layers, nx, ny)) continue;
+		// the edge is shared with the neighbour, so key it by its east or south side
+		const kx = d === 3 ? tx - 1 : tx;
+		const ky = d === 0 ? ty - 1 : ty;
+		const kk = d === 1 || d === 3 ? 0 : 1;
+		const s = (hash(kx, ky, kk, 43) - 0.5) * 0.3;
+		const w = (bigWater(layers, nx, ny) ? 14 : 6 + 6 * hash(kx, ky, kk, 44)) / 40;
+		if (d === 0) pushSeg(out, n++, 0.5 + s, 0, cx, cy, w, tx, ty);
+		else if (d === 1) pushSeg(out, n++, 1, 0.5 + s, cx, cy, w, tx, ty);
+		else if (d === 2) pushSeg(out, n++, 0.5 + s, 1, cx, cy, w, tx, ty);
+		else pushSeg(out, n++, 0, 0.5 + s, cx, cy, w, tx, ty);
+	}
+	for (let c = 0; c < 4; c++) {
+		const ddx = DIAG[c][0];
+		const ddy = DIAG[c][1];
+		if (!waterish(layers, tx + ddx, ty + ddy)) continue;
+		if (waterish(layers, tx + ddx, ty) || waterish(layers, tx, ty + ddy)) continue;
+		const wx = tx + (ddx > 0 ? 1 : 0);
+		const wy = ty + (ddy > 0 ? 1 : 0);
+		pushSeg(
+			out,
+			n++,
+			ddx > 0 ? 1 : 0,
+			ddy > 0 ? 1 : 0,
+			cx,
+			cy,
+			(6 + 6 * hash(wx, wy, 2, 44)) / 40,
+			tx,
+			ty
+		);
+	}
+	if (n === 0) {
+		// a lone pool
+		const w = (8 + 4 * hash(tx, ty, 5, 44)) / 40;
+		pushSeg(out, 0, cx, cy, cx, cy, w, tx, ty);
+		n = 1;
+	}
+	return n;
+}
+
+function segDist2(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+	const dx = bx - ax;
+	const dy = by - ay;
+	const l2 = dx * dx + dy * dy;
+	let t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+	t = t < 0 ? 0 : t > 1 ? 1 : t;
+	const ex = ax + dx * t - px;
+	const ey = ay + dy * t - py;
+	return ex * ex + ey * ey;
+}
+
+// Is the point (lx, ly), in tile fractions, inside the channel of river tile (tx, ty)?
+function inChannel(layers: WaterLayers, tx: number, ty: number, lx: number, ly: number): boolean {
+	const n = riverChannel(layers, tx, ty, segBuf);
+	for (let s = 0; s < n; s++) {
+		const o = s * SEG;
+		const r = segBuf[o + 6] / 2;
+		const r2 = r * r;
+		let ax = segBuf[o];
+		let ay = segBuf[o + 1];
+		for (let k = 1; k <= 4; k++) {
+			const u = k / 4;
+			const a = (1 - u) * (1 - u);
+			const b = 2 * u * (1 - u);
+			const c = u * u;
+			const qx = a * segBuf[o] + b * segBuf[o + 2] + c * segBuf[o + 4];
+			const qy = a * segBuf[o + 1] + b * segBuf[o + 3] + c * segBuf[o + 5];
+			if (segDist2(lx, ly, ax, ay, qx, qy) <= r2) return true;
+			ax = qx;
+			ay = qy;
+		}
+	}
+	return false;
+}
+
+// Is this world point (x, y in fractional tiles) water as drawn? Whole tiles
+// for lakes and sea, only the channel for rivers.
+export function waterAt(layers: WaterLayers, x: number, y: number): boolean {
+	const tx = Math.floor(x);
+	const ty = Math.floor(y);
+	if (tx < 0 || ty < 0 || tx >= layers.size || ty >= layers.size) return false;
+	const i = ty * layers.size + tx;
+	if (isRiver(layers, i)) return inChannel(layers, tx, ty, x - tx, y - ty);
+	return layers.water[i] !== Water.none || layers.biome[i] === Biome.ocean;
+}
+
+const rv: number[] = [];
+let riverColor = '#7bbbdc';
+
+function paintRivers(): void {
+	const { layers } = st;
+	const size = layers.size;
+	const hh = layers.height;
+	const now = st.now;
+	rv.length = 0;
+	for (let ty = by0; ty < by1; ty++) {
+		for (let tx = bx0; tx < bx1; tx++) {
+			const i = ty * size + tx;
+			if (!isRiver(layers, i)) continue;
+			riverColor = css(tileColor(i, layers, st.living, season));
+			const n = riverChannel(layers, tx, ty, segBuf);
+			const x = tileX(tx);
+			const y = tileY(ty);
+			for (let s = 0; s < n; s++) {
+				const o = s * SEG;
+				// which way the water runs along this segment: out of the tile if
+				// the neighbour at its mouth is lower
+				const dxn = segBuf[o] < 0.01 ? -1 : segBuf[o] > 0.99 ? 1 : 0;
+				const dyn = segBuf[o + 1] < 0.01 ? -1 : segBuf[o + 1] > 0.99 ? 1 : 0;
+				let flow = 0;
+				const nx = tx + dxn;
+				const ny = ty + dyn;
+				if ((dxn !== 0 || dyn !== 0) && nx >= 0 && ny >= 0 && nx < size && ny < size)
+					flow = hh[ny * size + nx] < hh[i] ? 1 : -1;
+				rv.push(
+					x + segBuf[o] * zoom,
+					y + segBuf[o + 1] * zoom,
+					x + segBuf[o + 2] * zoom,
+					y + segBuf[o + 3] * zoom,
+					x + segBuf[o + 4] * zoom,
+					y + segBuf[o + 5] * zoom,
+					segBuf[o + 6] * zoom,
+					flow
+				);
+			}
+		}
+	}
+	if (rv.length === 0) return;
+	const STRIDE = 8;
+	const pass = (width: (w: number) => number) => {
+		for (let o = 0; o < rv.length; o += STRIDE) {
+			ctx.lineWidth = width(rv[o + 6]);
+			ctx.beginPath();
+			ctx.moveTo(rv[o], rv[o + 1]);
+			ctx.quadraticCurveTo(rv[o + 2], rv[o + 3], rv[o + 4], rv[o + 5]);
+			ctx.stroke();
+		}
+	};
+	ctx.lineCap = 'round';
+	ctx.lineJoin = 'round';
+	// damp banks, then the water, then a lighter middle
+	ctx.strokeStyle = 'rgba(105, 88, 55, 0.3)';
+	pass((w) => w + Math.max(3, ppm * 4));
+	ctx.strokeStyle = riverColor;
+	pass((w) => w);
+	ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+	pass((w) => w * 0.5);
+	if (zoom >= 30) {
+		// ripples sliding along the flow
+		ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+		ctx.lineCap = 'butt';
+		ctx.setLineDash([Math.max(2, ppm * 2.5), Math.max(4, ppm * 6)]);
+		for (let o = 0; o < rv.length; o += STRIDE) {
+			if (rv[o + 7] === 0) continue;
+			ctx.lineDashOffset = rv[o + 7] * now * 0.01 * Math.max(1, ppm);
+			ctx.lineWidth = Math.max(1, ppm * 0.25);
+			ctx.beginPath();
+			ctx.moveTo(rv[o], rv[o + 1]);
+			ctx.quadraticCurveTo(rv[o + 2], rv[o + 3], rv[o + 4], rv[o + 5]);
+			ctx.stroke();
+		}
+		ctx.setLineDash([]);
+		ctx.lineDashOffset = 0;
+	}
+}
+
 // -------------------------------------------------------------------- water
 
 const css = (c: number) => '#' + (c & 0xffffff).toString(16).padStart(6, '0');
@@ -605,7 +854,6 @@ function paintWater(): void {
 	const sparkB = new Path2D();
 	const sparkD = new Path2D();
 	const waves = new Path2D();
-	const streaks = new Path2D();
 	let any = false;
 	let anyShore = false;
 	const nSpark = Math.min(40, Math.max(1, Math.floor(dens * 0.04)));
@@ -644,28 +892,50 @@ function paintWater(): void {
 					pts[c * 2] = corner[0];
 					pts[c * 2 + 1] = corner[1];
 				}
-				path.moveTo(pts[0], pts[1]);
+				// edges: 0 top, 1 right, 2 bottom, 3 left; corner c sits between edge c-1 and c
 				const wet = [wf[p - pw], wf[p + 1], wf[p + pw], wf[p - 1]];
+				// a corner between two land edges is cut round, so lakes and sea
+				// don't look like stacked squares at middle zoom
+				const rounded = [
+					!wet[3] && !wet[0],
+					!wet[0] && !wet[1],
+					!wet[1] && !wet[2],
+					!wet[2] && !wet[3]
+				];
+				const at = (e: number, t: number, o: number) => {
+					const n = ((e + 1) % 4) * 2;
+					return pts[e * 2 + o] + (pts[n + o] - pts[e * 2 + o]) * t;
+				};
+				path.moveTo(rounded[0] ? at(0, CUT, 0) : pts[0], rounded[0] ? at(0, CUT, 1) : pts[1]);
 				for (let e = 0; e < 4; e++) {
-					const fx = pts[e * 2];
-					const fy = pts[e * 2 + 1];
-					const tx2 = pts[((e + 1) % 4) * 2];
-					const ty2 = pts[((e + 1) % 4) * 2 + 1];
+					const nc = (e + 1) % 4;
+					const fx = rounded[e] ? at(e, CUT, 0) : pts[e * 2];
+					const fy = rounded[e] ? at(e, CUT, 1) : pts[e * 2 + 1];
+					const tx2 = rounded[nc] ? at(e, 1 - CUT, 0) : pts[nc * 2];
+					const ty2 = rounded[nc] ? at(e, 1 - CUT, 1) : pts[nc * 2 + 1];
 					if (wet[e]) {
 						path.lineTo(tx2, ty2);
-						continue;
+					} else {
+						// a land edge: bow it a little and remember it for foam
+						const dx = tx2 - fx;
+						const dy = ty2 - fy;
+						const len = Math.hypot(dx, dy) || 1;
+						const amt = (hash(tx, ty, e, 6) - 0.5) * 0.3 * zoom;
+						const qx = (fx + tx2) / 2 - (dy / len) * amt;
+						const qy = (fy + ty2) / 2 + (dx / len) * amt;
+						path.quadraticCurveTo(qx, qy, tx2, ty2);
+						shore.moveTo(fx, fy);
+						shore.quadraticCurveTo(qx, qy, tx2, ty2);
+						anyShore = true;
 					}
-					// a land edge: bow it a little and remember it for foam
-					const dx = tx2 - fx;
-					const dy = ty2 - fy;
-					const len = Math.hypot(dx, dy) || 1;
-					const amt = (hash(tx, ty, e, 6) - 0.5) * 0.3 * zoom;
-					const qx = (fx + tx2) / 2 - (dy / len) * amt;
-					const qy = (fy + ty2) / 2 + (dx / len) * amt;
-					path.quadraticCurveTo(qx, qy, tx2, ty2);
-					shore.moveTo(fx, fy);
-					shore.quadraticCurveTo(qx, qy, tx2, ty2);
-					anyShore = true;
+					if (rounded[nc]) {
+						const sx2 = at(nc, CUT, 0);
+						const sy2 = at(nc, CUT, 1);
+						path.quadraticCurveTo(pts[nc * 2], pts[nc * 2 + 1], sx2, sy2);
+						shore.moveTo(tx2, ty2);
+						shore.quadraticCurveTo(pts[nc * 2], pts[nc * 2 + 1], sx2, sy2);
+						anyShore = true;
+					}
 				}
 				path.closePath();
 			}
@@ -680,31 +950,7 @@ function paintWater(): void {
 				g.moveTo(sx, sy);
 				g.lineTo(sx + sparkLen * (0.6 + hash(tx, ty, j, 18)), sy);
 			}
-			if (cls === 7) {
-				// river streaks run downhill
-				const hh = layers.height;
-				let best = hh[i];
-				let dx = 1;
-				let dy = 0;
-				for (let k = 0; k < 4; k++) {
-					const nx = Math.min(size - 1, Math.max(0, tx + (k === 0 ? -1 : k === 1 ? 1 : 0)));
-					const ny = Math.min(size - 1, Math.max(0, ty + (k === 2 ? -1 : k === 3 ? 1 : 0)));
-					const hn = hh[ny * size + nx];
-					if (hn < best) {
-						best = hn;
-						dx = nx - tx;
-						dy = ny - ty;
-					}
-				}
-				for (let s = 0; s < 2; s++) {
-					const off = (hash(tx, ty, s, 19) - 0.5) * 0.5;
-					const t = (now / 5000 + hash(tx, ty, s, 20)) % 1;
-					const cx = x + (0.5 + dx * (t - 0.5) - dy * off) * zoom;
-					const cy = y + (0.5 + dy * (t - 0.5) + dx * off) * zoom;
-					streaks.moveTo(cx, cy);
-					streaks.lineTo(cx + dx * 0.16 * zoom, cy + dy * 0.16 * zoom);
-				}
-			} else if (zoom >= 30) {
+			if (zoom >= 30) {
 				// slow swells on open water
 				const hw = hash(tx, ty, 21);
 				const wx = x + (0.15 + 0.5 * hw + 0.05 * Math.sin(now * 0.0004 + hw * TAU)) * zoom;
@@ -743,8 +989,6 @@ function paintWater(): void {
 	ctx.lineWidth = Math.max(1, ppm * 0.16);
 	ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
 	ctx.stroke(waves);
-	ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
-	ctx.stroke(streaks);
 	ctx.lineWidth = Math.max(1, ppm * 0.2);
 	ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
 	ctx.stroke(sparkD);
