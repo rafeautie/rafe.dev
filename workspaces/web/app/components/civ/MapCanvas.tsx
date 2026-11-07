@@ -1,6 +1,13 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import { Camera } from '../../lib/civ/render/camera';
-import { personPosition } from '../../lib/civ/render/actors';
+import { personLevel, personPosition } from '../../lib/civ/render/actors';
+import { LOCAL_LIFT, MAP_LIFT } from '../../lib/civ/render/pixel/iso';
+import { LOCAL_TILE_PX, MAP_TILE_PX, modeOf } from '../../lib/civ/render/pixel/scale';
+
+// How far along x + y (in tiles) one terrain level lifts things on screen.
+function liftPerLevel(zoom: number): number {
+	return modeOf(zoom) === 'local' ? LOCAL_LIFT / LOCAL_TILE_PX : MAP_LIFT / MAP_TILE_PX;
+}
 import { drawFrame, nearestPerson } from '../../lib/civ/render/draw';
 import { interpolateHerds, interpolatePeople } from '../../lib/civ/render/interpolate';
 import { fillTerrain, patchTerrain } from '../../lib/civ/render/terrain';
@@ -165,7 +172,10 @@ export function MapCanvas(props: Props) {
 				const who = s.people.find((person) => person.id === p.followedId);
 				if (who) {
 					const at = personPosition(who, now);
-					camera.follow(at.x, at.y, dt);
+					// in iso, someone on raised ground is drawn higher up the screen;
+					// moving the target back along x + y by the lift centres them
+					const back = camera.iso ? personLevel(who, now) * liftPerLevel(camera.zoom) : 0;
+					camera.follow(at.x - back, at.y - back, dt);
 				}
 			}
 
