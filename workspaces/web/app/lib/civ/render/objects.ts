@@ -1,7 +1,20 @@
 import { Biome, Built, Deposit, Ground, Water } from '../types';
 import { waterAt } from './ground';
-import { drawSprite, Kind, SPECS } from './sprites';
-import { hash, type DrawState, type Standing, type View } from './scene';
+import {
+	FIRE_FRAMES,
+	Kind,
+	chunkLook,
+	flameLook,
+	furnaceGlowLook,
+	glowLook,
+	kilnGlowLook,
+	lookOf,
+	puffAt,
+	shadowLook,
+	spriteOf
+} from './pixel/localsprites';
+import { drawSprite } from './pixel/sprite';
+import { hash, snapToArt, type DrawState, type Standing, type View } from './scene';
 
 // Things that stand on the ground: trees, bushes, rocks, ore, and what people
 // have built. Each is a `Standing` entry (foot y in tiles + a draw closure).
@@ -14,6 +27,9 @@ import { hash, type DrawState, type Standing, type View } from './scene';
 // clumps when the view is crowded), then small things (bushes, rocks, grass,
 // flowers) share what is left, an equal share per visible tile, which is zero
 // when many tiles are on screen. So small things only show up when zoomed in.
+//
+// Every entry is a pixel sprite drawn at a whole art pixel (`snapToArt`) and a
+// whole scale, with a flat oval shadow under it.
 
 export const MAX_OBJECTS = 3000;
 const POOL = MAX_OBJECTS + 400;
@@ -80,32 +96,44 @@ const pKind = new Int16Array(POOL);
 const pVar = new Uint8Array(POOL);
 const pX = new Float32Array(POOL);
 const pY = new Float32Array(POOL);
-const pScale = new Float32Array(POOL);
-const pAlpha = new Float32Array(POOL);
 const pool: (Standing | undefined)[] = new Array(POOL);
 
-// entry kinds above the sprite kinds
-const MARK_BUILT = 100; // + Built
-const MARK_DEPOSIT = 200; // + Deposit
+// entry kinds above the sprite kinds: things that move
 const LIVE_FIRE = 300;
 const LIVE_KILN = 301;
 const LIVE_FURNACE = 302;
 
+// the high bit of a variant mirrors the sprite, so rows of the same tree differ
+const FLIP = 128;
+const FLIPPABLE = new Set<number>([
+	Kind.oak,
+	Kind.conifer,
+	Kind.scrub,
+	Kind.bush,
+	Kind.berry,
+	Kind.tuft,
+	Kind.reed,
+	Kind.boulder,
+	Kind.stone,
+	Kind.flint,
+	Kind.clay,
+	Kind.copper,
+	Kind.tin,
+	Kind.bogIron,
+	Kind.obsidian,
+	Kind.salt,
+	Kind.ochre,
+	Kind.meteorite,
+	Kind.chunk
+]);
+
 let count = 0;
 let outList: Standing[] = [];
 let cur: DrawState;
-let curPpm = 1;
+let curView: View;
 let curSeason = 0;
 
-function add(
-	kind: number,
-	v: number,
-	x: number,
-	y: number,
-	scale: number,
-	alpha: number,
-	sortOff = 0
-) {
+function add(kind: number, v: number, x: number, y: number, sortOff = 0) {
 	if (count >= POOL) return;
 	const i = count++;
 	let e = pool[i];
@@ -113,12 +141,11 @@ function add(
 		e = { y: 0, draw: (ctx) => drawEntry(ctx, i) };
 		pool[i] = e;
 	}
+	if (FLIPPABLE.has(kind) && hash(Math.round(x * 4096), Math.round(y * 4096), 5) < 0.5) v |= FLIP;
 	pKind[i] = kind;
 	pVar[i] = v;
 	pX[i] = x;
 	pY[i] = y;
-	pScale[i] = scale;
-	pAlpha[i] = alpha;
 	e.y = y + sortOff;
 	outList.push(e);
 }
@@ -137,22 +164,18 @@ const DEPOSIT_KIND: Record<number, Kind> = {
 	[Deposit.meteorite]: Kind.meteorite
 };
 
-// small buildings are shown a little larger than life when far, so they stay readable
-const boost = (widthM: number, ppm: number) => Math.min(4, Math.max(1, 7 / (widthM * ppm)));
-const widthOf = (kind: number) => SPECS[kind].l + SPECS[kind].r;
-
 const spot = [0, 0];
 
 export function collectObjects(state: DrawState, view: View, out: Standing[]): void {
+	// the close-up scene only: further out the map layers draw the buildings
+	if (view.mode !== 'local') return;
 	const { camera, layers, living } = state;
 	cur = state;
+	curView = view;
 	outList = out;
 	count = 0;
-	curPpm = view.ppm;
 	curSeason = state.season & 3;
 	const size = layers.size;
-	const detail = view.detail;
-	const ppm = view.ppm;
 
 	// tiles that can touch the screen (objects reach a few metres past their tile)
 	const a = camera.toWorld(0, 0);
@@ -173,26 +196,16 @@ export function collectObjects(state: DrawState, view: View, out: Standing[]): v
 		villageCount++;
 	}
 
-	// 1. buildings and ore, plus the cheap far-away markers
-	const markerAlpha = 1 - detail;
+	// 1. buildings and ore
 	for (let ty = by0; ty < by1; ty++) {
 		for (let tx = bx0; tx < bx1; tx++) {
 			const i = ty * size + tx;
 			const built = living.built[i];
 			const dep = layers.deposit[i];
-			if (built === Built.none && dep === Deposit.none) continue;
-			if (markerAlpha > 0.01) {
-				if (built !== Built.none) add(MARK_BUILT + built, 0, tx + 0.5, ty + 0.5, 1, markerAlpha);
-				if (dep !== Deposit.none && view.zoom >= 8)
-					add(MARK_DEPOSIT + dep, 0, tx + 0.5, ty + 0.5, 1, markerAlpha);
-			}
-			if (detail > 0.02) {
-				if (built !== Built.none) addBuilt(built, tx, ty, ppm, detail, state.tick);
-				if (dep !== Deposit.none) addDeposit(dep, tx, ty, detail, view.zoom);
-			}
+			if (built !== Built.none) addBuilt(built, tx, ty);
+			if (dep !== Deposit.none) addDeposit(dep, tx, ty);
 		}
 	}
-	if (detail <= 0.02) return;
 
 	// 2. trees, thinned into bigger clumps when there are too many
 	let total = 0;
@@ -204,7 +217,6 @@ export function collectObjects(state: DrawState, view: View, out: Standing[]): v
 		}
 	}
 	const ratio = keepRatio(total, Math.floor(MAX_OBJECTS * TREE_SHARE) - count);
-	const clump = ratio > 0 ? Math.min(2.2, 1 / Math.sqrt(ratio)) : 1;
 	if (ratio > 0) {
 		for (let ty = by0; ty < by1; ty++) {
 			for (let tx = bx0; tx < bx1; tx++) {
@@ -217,9 +229,7 @@ export function collectObjects(state: DrawState, view: View, out: Standing[]): v
 				for (let j = 0; j < k && count < MAX_OBJECTS; j++) {
 					scatter(tx, ty, j, 0, spot);
 					const kind = treeKind(biome, hash(tx, ty, j, 5));
-					const base = kind === Kind.scrub ? 0.8 : 0.75;
-					const sc = (base + 0.5 * hash(tx, ty, j, 6)) * clump;
-					put(kind, Math.floor(hash(tx, ty, j, 7) * 4), tx + spot[0], ty + spot[1], sc, detail);
+					put(kind, Math.floor(hash(tx, ty, j, 7) * 4), tx + spot[0], ty + spot[1]);
 				}
 			}
 		}
@@ -228,12 +238,11 @@ export function collectObjects(state: DrawState, view: View, out: Standing[]): v
 	// 3. small things share what is left, evenly per tile
 	const cap = Math.floor((MAX_OBJECTS - count) / nTiles);
 	if (cap <= 0) return;
-	const zoom = view.zoom;
 	for (let ty = by0; ty < by1; ty++) {
 		for (let tx = bx0; tx < bx1; tx++) {
 			const i = ty * size + tx;
 			if (living.built[i] !== Built.none || isOpenWater(layers, i)) continue;
-			addSmall(state, view, tx, ty, i, cap, zoom, detail);
+			addSmall(state, tx, ty, i, cap);
 		}
 	}
 }
@@ -246,7 +255,7 @@ function isOpenWater(layers: DrawState['layers'], i: number): boolean {
 
 // Place a thing unless it would stand in a river channel, or (for trees and
 // bushes) in a village clearing.
-function put(kind: number, v: number, x: number, y: number, scale: number, alpha: number) {
+function put(kind: number, v: number, x: number, y: number) {
 	const layers = cur.layers;
 	if (
 		layers.water[Math.floor(y) * layers.size + Math.floor(x)] === Water.river &&
@@ -264,7 +273,7 @@ function put(kind: number, v: number, x: number, y: number, scale: number, alpha
 			clearFactor(x, y, vxs, vys, villageCount)
 	)
 		return;
-	add(kind, v, x, y, scale, alpha);
+	add(kind, v, x, y);
 }
 
 // 0 at a village centre, rising to 1 about 2 tiles out: the share of trees and
@@ -302,16 +311,7 @@ function nearWater(layers: DrawState['layers'], tx: number, ty: number): boolean
 	return false;
 }
 
-function addSmall(
-	state: DrawState,
-	_view: View,
-	tx: number,
-	ty: number,
-	i: number,
-	cap: number,
-	zoom: number,
-	detail: number
-): void {
+function addSmall(state: DrawState, tx: number, ty: number, i: number, cap: number): void {
 	const { layers, living } = state;
 	const biome = layers.biome[i];
 	const ground = layers.ground[i];
@@ -325,62 +325,44 @@ function addSmall(
 		biome === Biome.snow;
 	const h0 = hash(tx, ty, 77);
 
-	if (zoom >= 24) {
-		// boulders
-		let n = rocky ? 1 + Math.floor(h0 * 2.5) : h0 > 0.93 ? 1 : 0;
-		n = Math.min(n, left);
-		for (let j = 0; j < n; j++, left--) {
-			scatter(tx, ty, j, 3, spot);
-			put(
-				Kind.boulder,
-				Math.floor(hash(tx, ty, j, 31) * 4),
-				tx + spot[0],
-				ty + spot[1],
-				0.7 + 0.8 * hash(tx, ty, j, 32),
-				detail
-			);
-		}
-		// bushes, half of them berry bushes
-		n = Math.min(bushCount(plants, biome), left);
-		for (let j = 0; j < n; j++, left--) {
-			scatter(tx, ty, j, 2, spot);
-			put(
-				j % 2 === 0 ? Kind.berry : Kind.bush,
-				Math.floor(hash(tx, ty, j, 21) * 4),
-				tx + spot[0],
-				ty + spot[1],
-				0.8 + 0.5 * hash(tx, ty, j, 22),
-				detail
-			);
-		}
+	// boulders
+	let n = rocky ? 1 + Math.floor(h0 * 2.5) : h0 > 0.93 ? 1 : 0;
+	n = Math.min(n, left);
+	for (let j = 0; j < n; j++, left--) {
+		scatter(tx, ty, j, 3, spot);
+		put(Kind.boulder, Math.floor(hash(tx, ty, j, 31) * 4), tx + spot[0], ty + spot[1]);
 	}
-	if (zoom >= 30 && left > 0 && biome !== Biome.mountain && biome !== Biome.hills) {
+	// bushes, half of them berry bushes
+	n = Math.min(bushCount(plants, biome), left);
+	for (let j = 0; j < n; j++, left--) {
+		scatter(tx, ty, j, 2, spot);
+		put(
+			j % 2 === 0 ? Kind.berry : Kind.bush,
+			Math.floor(hash(tx, ty, j, 21) * 3),
+			tx + spot[0],
+			ty + spot[1]
+		);
+	}
+	if (left > 0 && biome !== Biome.mountain && biome !== Biome.hills) {
 		// reeds in clumps, thick in wetland and thin along fresh water
-		let n = 0;
-		if (biome === Biome.wetland) n = 4 + Math.floor(h0 * 5);
-		else if (nearWater(layers, tx, ty)) n = 1 + Math.floor(h0 * 3);
-		n = Math.min(n, left);
-		if (n > 0) scatter(tx, ty, 0, 5, spot);
+		let m = 0;
+		if (biome === Biome.wetland) m = 4 + Math.floor(h0 * 5);
+		else if (nearWater(layers, tx, ty)) m = 1 + Math.floor(h0 * 3);
+		m = Math.min(m, left);
+		if (m > 0) scatter(tx, ty, 0, 5, spot);
 		const cx = spot[0];
 		const cy = spot[1];
-		for (let j = 0; j < n; j++, left--) {
+		for (let j = 0; j < m; j++, left--) {
 			const x = Math.min(1 - EDGE, Math.max(EDGE, cx + (hash(tx, ty, j, 41) - 0.5) * 0.2));
 			const y = Math.min(1 - EDGE, Math.max(EDGE, cy + (hash(tx, ty, j, 42) - 0.5) * 0.12));
-			put(
-				Kind.reed,
-				Math.floor(hash(tx, ty, j, 43) * 4),
-				tx + x,
-				ty + y,
-				0.8 + 0.4 * hash(tx, ty, j, 44),
-				detail
-			);
+			put(Kind.reed, Math.floor(hash(tx, ty, j, 43) * 2), tx + x, ty + y);
 		}
 	}
-	if (zoom >= 70 && left > 0) {
-		const n = Math.min(rocky ? 4 : Math.floor(hash(tx, ty, 78) * 2.2), left);
-		for (let j = 0; j < n; j++, left--) {
+	if (left > 0) {
+		const m = Math.min(rocky ? 4 : Math.floor(hash(tx, ty, 78) * 2.2), left);
+		for (let j = 0; j < m; j++, left--) {
 			scatter(tx, ty, j, 4, spot);
-			put(Kind.stone, Math.floor(hash(tx, ty, j, 51) * 4), tx + spot[0], ty + spot[1], 1, detail);
+			put(Kind.stone, Math.floor(hash(tx, ty, j, 51) * 3), tx + spot[0], ty + spot[1]);
 		}
 	}
 	const grassy =
@@ -391,111 +373,90 @@ function addSmall(
 			biome === Biome.scrub ||
 			biome === Biome.wetland ||
 			biome === Biome.hills);
-	if (
-		zoom >= 100 &&
-		left > 0 &&
-		season < 3 &&
-		(biome === Biome.grassland || biome === Biome.scrub)
-	) {
-		let n = Math.round(plants * 5);
-		n = Math.min(n, left);
-		for (let j = 0; j < n; j++) {
+	if (left > 0 && season < 3 && (biome === Biome.grassland || biome === Biome.scrub)) {
+		let m = Math.round(plants * 5);
+		m = Math.min(m, left);
+		for (let j = 0; j < m; j++) {
 			if (season === 2 && j % 3 !== 0) continue;
 			scatter(tx, ty, j, 6, spot);
-			put(Kind.flower, Math.floor(hash(tx, ty, j, 61) * 4), tx + spot[0], ty + spot[1], 1, detail);
+			put(Kind.flower, Math.floor(hash(tx, ty, j, 61) * 4), tx + spot[0], ty + spot[1]);
 			left--;
 		}
 	}
-	if (zoom >= 80 && left > 0 && grassy) {
-		const n = Math.min(Math.round(1 + plants * 9), left);
-		for (let j = 0; j < n; j++) {
+	if (left > 0 && grassy) {
+		const m = Math.min(Math.round(1 + plants * 9), left);
+		for (let j = 0; j < m; j++) {
 			scatter(tx, ty, j, 7, spot);
-			put(
-				Kind.tuft,
-				Math.floor(hash(tx, ty, j, 71) * 4),
-				tx + spot[0],
-				ty + spot[1],
-				0.8 + 0.6 * hash(tx, ty, j, 72),
-				detail
-			);
+			put(Kind.tuft, Math.floor(hash(tx, ty, j, 71) * 3), tx + spot[0], ty + spot[1]);
 		}
 	}
 }
 
-function addDeposit(dep: number, tx: number, ty: number, detail: number, zoom: number): void {
+function addDeposit(dep: number, tx: number, ty: number): void {
 	const kind = DEPOSIT_KIND[dep];
 	if (kind === undefined) return;
 	const x = tx + 0.3 + 0.4 * hash(tx, ty, 1, 90);
 	const y = ty + 0.4 + 0.3 * hash(tx, ty, 2, 90);
-	const v = Math.floor(hash(tx, ty, 3, 90) * 4);
-	const mine = widthOf(kind);
-	const sc = (0.9 + 0.5 * hash(tx, ty, 4, 90)) * boost(mine, (zoom / 40) * 1.2);
-	add(kind, v, x, y, sc, detail);
-	// a few loose chunks around it
-	if (zoom >= 40) {
-		for (let k = 0; k < 3; k++) {
-			const cx = Math.min(tx + 0.95, Math.max(tx + 0.05, x + (hash(tx, ty, k, 91) - 0.5) * 0.4));
-			const cy = Math.min(ty + 0.95, Math.max(ty + 0.05, y + (hash(tx, ty, k, 92) - 0.3) * 0.3));
-			add(kind, (v + k + 1) & 3, cx, cy, 0.3, detail);
-		}
+	const v = Math.floor(hash(tx, ty, 3, 90) * 2);
+	add(kind, v, x, y);
+	// a few loose chunks around it, in its colours (the variant holds which ore)
+	for (let k = 0; k < 3; k++) {
+		const cx = Math.min(tx + 0.95, Math.max(tx + 0.05, x + (hash(tx, ty, k, 91) - 0.5) * 0.4));
+		const cy = Math.min(ty + 0.95, Math.max(ty + 0.05, y + (hash(tx, ty, k, 92) - 0.3) * 0.3));
+		add(Kind.chunk, kind, cx, cy);
 	}
 }
 
-function addBuilt(built: number, tx: number, ty: number, ppm: number, detail: number, _t: number) {
+function addBuilt(built: number, tx: number, ty: number) {
 	const v = Math.floor(hash(tx, ty, 5, 95) * 4);
 	switch (built) {
 		case Built.camp: {
-			const bs = boost(widthOf(Kind.tent), ppm);
-			add(Kind.tent, v, tx + 0.33, ty + 0.36, bs, detail);
-			add(Kind.tent, v + 1, tx + 0.68, ty + 0.4, bs, detail);
-			add(Kind.tent, v + 2, tx + 0.5, ty + 0.72, bs, detail);
-			add(Kind.fireRing, 0, tx + 0.5, ty + 0.52, bs, detail, -0.06);
-			add(LIVE_FIRE, 0, tx + 0.5, ty + 0.52, bs, detail, 0.001);
+			add(Kind.tent, v, tx + 0.33, ty + 0.36);
+			add(Kind.tent, v + 1, tx + 0.68, ty + 0.4);
+			add(Kind.tent, v + 2, tx + 0.5, ty + 0.72);
+			add(Kind.fireRing, 0, tx + 0.5, ty + 0.52, -0.0005);
+			add(LIVE_FIRE, 0, tx + 0.5, ty + 0.52, 0.0005);
 			break;
 		}
 		case Built.hut:
-			add(Kind.hut, v, tx + 0.5, ty + 0.58, boost(widthOf(Kind.hut), ppm), detail);
+			add(Kind.hut, v, tx + 0.5, ty + 0.58);
 			break;
-		case Built.kiln: {
-			const bs = boost(widthOf(Kind.kiln), ppm);
-			add(Kind.kiln, v, tx + 0.5, ty + 0.56, bs, detail);
-			add(LIVE_KILN, 0, tx + 0.5, ty + 0.56, bs, detail, 0.001);
+		case Built.kiln:
+			add(Kind.kiln, v, tx + 0.5, ty + 0.56);
+			add(LIVE_KILN, 0, tx + 0.5, ty + 0.56, 0.0005);
 			break;
-		}
 		case Built.pen: {
 			// fence runs: back, front with a gap for the gate, and two sides
-			for (let k = -2; k <= 2; k++)
-				add(Kind.fenceH, 0, tx + 0.5 + (k * 6) / 40, ty + 0.25, 1, detail);
-			for (const k of [-2, -1, 1, 2])
-				add(Kind.fenceH, 0, tx + 0.5 + (k * 6) / 40, ty + 0.75, 1, detail);
-			add(Kind.fenceV, 0, tx + 0.5 - 15 / 40, ty + 0.75, 1, detail);
-			add(Kind.fenceV, 0, tx + 0.5 + 15 / 40, ty + 0.75, 1, detail);
+			for (let k = -2; k <= 2; k++) add(Kind.fenceH, 0, tx + 0.5 + (k * 36) / 240, ty + 0.25);
+			for (const k of [-2, -1, 1, 2]) add(Kind.fenceH, 0, tx + 0.5 + (k * 36) / 240, ty + 0.75);
+			// the ends of each run get a post of their own
+			add(Kind.fenceH, 1, tx + 0.5 + 90 / 240, ty + 0.25);
+			add(Kind.fenceH, 1, tx + 0.5 + 90 / 240, ty + 0.75);
+			add(Kind.fenceH, 1, tx + 0.5 - 18 / 240, ty + 0.75);
+			add(Kind.fenceV, 0, tx + 0.5 - 90 / 240, ty + 0.75);
+			add(Kind.fenceV, 0, tx + 0.5 + 90 / 240, ty + 0.75);
 			break;
 		}
 		case Built.shrine: {
-			add(Kind.altar, 0, tx + 0.5, ty + 0.5, 1, detail, -0.3);
+			add(Kind.altar, 0, tx + 0.5, ty + 0.5, -0.3);
 			for (let j = 0; j < 8; j++) {
 				const ang = (j / 8) * TAU + 0.2;
 				add(
 					Kind.standing,
 					j,
-					tx + 0.5 + (6 * Math.sin(ang)) / 40,
-					ty + 0.5 + (3.4 * Math.cos(ang)) / 40,
-					boost(2, ppm),
-					detail
+					tx + 0.5 + (36 * Math.sin(ang)) / 240,
+					ty + 0.5 + (20 * Math.cos(ang)) / 240
 				);
 			}
 			break;
 		}
 		case Built.store:
-			add(Kind.store, v, tx + 0.5, ty + 0.58, boost(widthOf(Kind.store), ppm), detail);
+			add(Kind.store, v, tx + 0.5, ty + 0.58);
 			break;
-		case Built.furnace: {
-			const bs = boost(widthOf(Kind.furnace), ppm);
-			add(Kind.furnace, 0, tx + 0.5, ty + 0.58, bs, detail);
-			add(LIVE_FURNACE, 0, tx + 0.5, ty + 0.58, bs, detail, 0.001);
+		case Built.furnace:
+			add(Kind.furnace, 0, tx + 0.5, ty + 0.58);
+			add(LIVE_FURNACE, 0, tx + 0.5, ty + 0.58, 0.0005);
 			break;
-		}
 		default:
 			break; // fields are part of the ground
 	}
@@ -503,216 +464,87 @@ function addBuilt(built: number, tx: number, ty: number, ppm: number, detail: nu
 
 // -------------------------------------------------------------------- drawing
 
+// the ground is painted at 6 art pixels a metre; shadows fall down and right
+const SHADOW_DX = 2;
+const SHADOW_DY = 1;
+
 function drawEntry(ctx: CanvasRenderingContext2D, i: number): void {
-	const cam = cur.camera;
-	const sx = (pX[i] - cam.x) * cam.zoom + cam.width / 2;
-	const sy = (pY[i] - cam.y) * cam.zoom + cam.height / 2;
+	const view = curView;
 	const kind = pKind[i];
-	const alpha = pAlpha[i];
-	if (alpha < 0.01) return;
-	ctx.globalAlpha = alpha;
-	if (kind < MARK_BUILT) {
-		drawSprite(ctx, kind, pVar[i], curSeason, sx, sy, curPpm * pScale[i], cur.dpr);
-	} else if (kind < MARK_DEPOSIT) {
-		drawBuiltMarker(ctx, kind - MARK_BUILT, sx, sy, cam.zoom);
-	} else if (kind < LIVE_FIRE) {
-		drawDepositMarker(ctx, kind - MARK_DEPOSIT, sx, sy, cam.zoom);
-	} else {
-		drawLive(ctx, kind, sx, sy, curPpm * pScale[i], pX[i] * 7 + pY[i] * 13);
-	}
-	ctx.globalAlpha = 1;
-}
-
-const MARK_COLOR: Record<number, string> = {
-	[Built.camp]: '#8a5a3c',
-	[Built.hut]: '#b98458',
-	[Built.field]: '#d9c35c',
-	[Built.kiln]: '#7a4c46',
-	[Built.pen]: '#8c6a45',
-	[Built.shrine]: '#ebe5d2',
-	[Built.store]: '#a47c52',
-	[Built.furnace]: '#555a60'
-};
-const DEPOSIT_COLOR: Record<number, string> = {
-	[Deposit.flint]: '#6d7378',
-	[Deposit.clay]: '#b5653f',
-	[Deposit.copper]: '#2fb596',
-	[Deposit.tin]: '#c3ccd4',
-	[Deposit.bogIron]: '#7a4b3a',
-	[Deposit.obsidian]: '#1d1d28',
-	[Deposit.salt]: '#ffffff',
-	[Deposit.ochre]: '#d38b2c',
-	[Deposit.meteorite]: '#7b5ac0'
-};
-const MARK_EDGE = 'rgba(0, 0, 0, 0.4)';
-
-// The old overview shapes: a speck when tiny, a little glyph when there is room
-function drawBuiltMarker(
-	ctx: CanvasRenderingContext2D,
-	built: number,
-	cx: number,
-	cy: number,
-	s: number
-) {
-	ctx.fillStyle = MARK_COLOR[built] ?? '#888';
-	ctx.strokeStyle = MARK_EDGE;
-	ctx.lineWidth = 1;
-	if (s < 4) {
-		const half = Math.max(1, s * 0.35);
-		ctx.fillRect(cx - half, cy - half, half * 2, half * 2);
+	const at = snapToArt(view, pX[i], pY[i]);
+	const scale = view.scale;
+	if (kind >= LIVE_FIRE) {
+		drawLive(ctx, kind, at.x, at.y, scale, pX[i] * 7 + pY[i] * 13);
 		return;
 	}
-	const h = s * 0.38;
-	ctx.beginPath();
-	switch (built) {
-		case Built.camp:
-			ctx.moveTo(cx, cy - h);
-			ctx.lineTo(cx + h, cy + h * 0.8);
-			ctx.lineTo(cx - h, cy + h * 0.8);
-			ctx.closePath();
-			break;
-		case Built.field:
-			ctx.rect(cx - s * 0.45, cy - s * 0.45, s * 0.9, s * 0.9);
-			break;
-		case Built.kiln:
-			ctx.arc(cx, cy, h, 0, TAU);
-			break;
-		case Built.pen:
-			ctx.rect(cx - s * 0.42, cy - s * 0.42, s * 0.84, s * 0.84);
-			ctx.fillStyle = 'rgba(140, 106, 69, 0.35)';
-			break;
-		case Built.shrine:
-			ctx.moveTo(cx, cy - h * 1.2);
-			ctx.lineTo(cx + h * 0.8, cy);
-			ctx.lineTo(cx, cy + h * 1.2);
-			ctx.lineTo(cx - h * 0.8, cy);
-			ctx.closePath();
-			break;
-		case Built.hut:
-			ctx.moveTo(cx - h * 1.2, cy);
-			ctx.lineTo(cx, cy - h * 1.1);
-			ctx.lineTo(cx + h * 1.2, cy);
-			ctx.lineTo(cx + h, cy + h);
-			ctx.lineTo(cx - h, cy + h);
-			ctx.closePath();
-			break;
-		default:
-			ctx.rect(cx - h, cy - h * 0.8, h * 2, h * 1.6);
+	const flip = pVar[i] >= FLIP;
+	const v = pVar[i] & (FLIP - 1);
+	const look = kind === Kind.chunk ? chunkLook(v) : lookOf(kind, v, curSeason);
+	const shadow = shadowLook(kind);
+	if (shadow) {
+		ctx.globalAlpha = 0.35;
+		drawSprite(
+			ctx,
+			spriteOf(shadow),
+			at.x + SHADOW_DX * scale * (flip ? -1 : 1),
+			at.y + SHADOW_DY * scale,
+			scale
+		);
+		ctx.globalAlpha = 1;
 	}
-	ctx.fill();
-	ctx.stroke();
-	if (built === Built.furnace || built === Built.kiln) {
-		ctx.fillStyle = '#f2994a';
-		ctx.fillRect(cx - h * 0.35, cy - h * 0.35, h * 0.7, h * 0.7);
-	}
+	drawSprite(ctx, spriteOf(look), at.x, at.y, scale, flip);
 }
 
-function drawDepositMarker(
-	ctx: CanvasRenderingContext2D,
-	dep: number,
-	cx: number,
-	cy: number,
-	s: number
-) {
-	const r = s * 0.17;
-	ctx.fillStyle = DEPOSIT_COLOR[dep] ?? '#999';
-	ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
-	ctx.lineWidth = 1;
-	ctx.beginPath();
-	ctx.moveTo(cx, cy - r);
-	ctx.lineTo(cx + r, cy);
-	ctx.lineTo(cx, cy + r);
-	ctx.lineTo(cx - r, cy);
-	ctx.closePath();
-	ctx.fill();
-	ctx.stroke();
-}
-
-// Flames, glow and smoke: drawn live each frame since they move
+// Flames, glow and smoke: frames picked from the clock, a few a second
 function drawLive(
 	ctx: CanvasRenderingContext2D,
 	kind: number,
 	sx: number,
 	sy: number,
-	ppm: number,
+	scale: number,
 	seed: number
 ) {
 	const t = cur.now;
-	const flick = Math.sin(t * 0.013 + seed) * 0.12 + Math.sin(t * 0.031 + seed * 2) * 0.08;
+	const art = (n: number) => Math.round(n) * scale;
 	if (kind === LIVE_FIRE) {
-		const m = ppm;
-		glow(ctx, sx, sy - 0.5 * m, 6 * m, 0.28 + flick * 0.3);
-		const h = 1.7 * m * (1 + flick);
-		flame(ctx, sx, sy - 0.1 * m, 0.55 * m, h, '#e8742a');
-		flame(ctx, sx, sy - 0.1 * m, 0.38 * m, h * 0.72, '#f6c04a');
-		flame(ctx, sx, sy - 0.1 * m, 0.2 * m, h * 0.4, '#fff2b0');
-	} else if (kind === LIVE_KILN) {
-		const m = ppm;
-		glow(ctx, sx, sy - 0.8 * m, 4 * m, 0.3 + flick * 0.3);
-		ctx.fillStyle = `rgba(255, 150, 50, ${0.75 + flick})`;
-		ctx.beginPath();
-		ctx.ellipse(sx, sy - 0.8 * m, 0.6 * m, 0.45 * m, 0, 0, TAU);
-		ctx.fill();
-		smoke(ctx, sx, sy - 3.7 * m, m, t, seed, 0.8);
+		const frame = Math.floor(t / 170 + seed) % FIRE_FRAMES;
+		ctx.globalAlpha = 0.16 + (frame & 1) * 0.06;
+		drawSprite(ctx, spriteOf(glowLook(30, 18)), sx, sy - art(2), scale);
+		ctx.globalAlpha = 1;
+		drawSprite(ctx, spriteOf(flameLook(frame)), sx, sy - art(1), scale);
+		return;
+	}
+	const frame = Math.floor(t / 220 + seed) % 3;
+	if (kind === LIVE_KILN) {
+		ctx.globalAlpha = 0.14 + (frame & 1) * 0.05;
+		drawSprite(ctx, spriteOf(glowLook(18, 10)), sx, sy - art(1), scale);
+		ctx.globalAlpha = 1;
+		drawSprite(ctx, spriteOf(kilnGlowLook(frame)), sx, sy, scale);
+		smoke(ctx, sx, sy - art(13), scale, t, seed);
 	} else {
-		const m = ppm;
-		glow(ctx, sx, sy - 0.6 * m, 5 * m, 0.34 + flick * 0.3);
-		ctx.fillStyle = `rgba(255, 140, 40, ${0.8 + flick})`;
-		ctx.beginPath();
-		ctx.moveTo(sx - 0.6 * m, sy);
-		ctx.lineTo(sx - 0.6 * m, sy - 1.0 * m);
-		ctx.quadraticCurveTo(sx, sy - 1.6 * m, sx + 0.6 * m, sy - 1.0 * m);
-		ctx.lineTo(sx + 0.6 * m, sy);
-		ctx.fill();
-		smoke(ctx, sx, sy - 6.3 * m, m, t, seed, 1.2);
+		ctx.globalAlpha = 0.16 + (frame & 1) * 0.05;
+		drawSprite(ctx, spriteOf(glowLook(20, 11)), sx, sy - art(1), scale);
+		ctx.globalAlpha = 1;
+		drawSprite(ctx, spriteOf(furnaceGlowLook(frame)), sx, sy, scale);
+		smoke(ctx, sx, sy - art(23), scale, t, seed);
 	}
 }
 
-function flame(
-	ctx: CanvasRenderingContext2D,
-	x: number,
-	y: number,
-	w: number,
-	h: number,
-	color: string
-) {
-	ctx.fillStyle = color;
-	ctx.beginPath();
-	ctx.moveTo(x - w, y);
-	ctx.quadraticCurveTo(x - w * 1.1, y - h * 0.55, x, y - h);
-	ctx.quadraticCurveTo(x + w * 1.1, y - h * 0.55, x + w, y);
-	ctx.closePath();
-	ctx.fill();
-}
-
-function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, a: number) {
-	if (r < 5) return;
-	const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-	g.addColorStop(0, `rgba(255, 170, 70, ${Math.max(0, a)})`);
-	g.addColorStop(1, 'rgba(255, 170, 70, 0)');
-	ctx.fillStyle = g;
-	ctx.beginPath();
-	ctx.arc(x, y, r, 0, TAU);
-	ctx.fill();
-}
-
+// Three puffs rising and thinning, each moving a whole art pixel at a time
 function smoke(
 	ctx: CanvasRenderingContext2D,
 	x: number,
 	y: number,
-	m: number,
+	scale: number,
 	t: number,
-	seed: number,
-	strength: number
+	seed: number
 ) {
-	if (m < 0.6) return;
-	for (let k = 0; k < 4; k++) {
-		const p = (t / 3200 + k / 4 + seed * 0.37) % 1;
-		const px = x + (Math.sin(p * 5 + k) * 0.8 + p * 1.8) * m;
-		const py = y - p * 6 * m;
-		ctx.fillStyle = `rgba(95, 95, 100, ${(1 - p) * 0.28 * strength})`;
-		ctx.beginPath();
-		ctx.arc(px, py, (0.4 + p * 1.1) * m, 0, TAU);
-		ctx.fill();
+	for (let k = 0; k < 3; k++) {
+		const p = (t / 3200 + k / 3 + seed * 0.37) % 1;
+		const px = x + Math.round(Math.sin(p * 5 + k) * 2 + p * 5) * scale;
+		const py = y - Math.round(p * 24) * scale;
+		ctx.globalAlpha = (1 - p) * 0.6;
+		drawSprite(ctx, spriteOf(puffAt(p < 0.33 ? 0 : p < 0.66 ? 1 : 2)), px, py, scale);
 	}
+	ctx.globalAlpha = 1;
 }

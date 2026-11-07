@@ -13,7 +13,7 @@ import {
 	treeKind
 } from './objects';
 import { viewOf, type DrawState, type Standing } from './scene';
-import { Kind } from './sprites';
+import { Kind } from './pixel/localsprites';
 
 describe('scatter', () => {
 	it('is stable for the same tile and stays inside it', () => {
@@ -115,7 +115,7 @@ function fakeState(zoom: number): DrawState {
 
 describe('collectObjects', () => {
 	it('stays within the object budget at every zoom, in the thickest forest', () => {
-		for (const zoom of [1.5, 5, 18, 30, 60, 120, 480, 960]) {
+		for (const zoom of [1.5, 5, 18, 30, 60, 120, 240, 480, 720, 960]) {
 			const state = fakeState(zoom);
 			const out: Standing[] = [];
 			collectObjects(state, viewOf(state), out);
@@ -123,16 +123,27 @@ describe('collectObjects', () => {
 		}
 	});
 
-	it('draws nothing but markers when zoomed out', () => {
-		const state = fakeState(5);
+	it('collects nothing outside the close-up view', () => {
+		for (const zoom of [5, 32, 120]) {
+			const state = fakeState(zoom);
+			const out: Standing[] = [];
+			collectObjects(state, viewOf(state), out);
+			expect(out.length).toBe(0);
+		}
+	});
+
+	it('builds the village pieces: a hut, a pen of fence, ore with its chunks', () => {
+		const state = fakeState(960);
+		state.camera.x = 32.5;
+		state.camera.y = 32.5;
 		const out: Standing[] = [];
 		collectObjects(state, viewOf(state), out);
-		// a hut and a pen (ore markers start at 8 px per tile)
-		expect(out.length).toBe(2);
+		// hut (1) + pen: 9 rails, 3 end posts, 2 side runs + flint and 3 chunks, at least
+		expect(out.length).toBeGreaterThan(1 + 14 + 4);
 	});
 
 	it('is deterministic between frames', () => {
-		const state = fakeState(120);
+		const state = fakeState(480);
 		const a: Standing[] = [];
 		const b: Standing[] = [];
 		collectObjects(state, viewOf(state), a);
@@ -153,7 +164,7 @@ describe('village clearing', () => {
 	});
 
 	it('leaves no trees at a village centre', () => {
-		const state = fakeState(120);
+		const state = fakeState(240);
 		state.villages = [{ id: 1, name: 'A', x: 32, y: 32 }];
 		const out: Standing[] = [];
 		collectObjects(state, viewOf(state), out);

@@ -5,11 +5,11 @@ piece of art. Sprites are hand-authored as text rows (`sprite.ts`).
 
 ## Scales
 
-| Mode | Zoom (px a tile) | Art pixels | What's drawn |
-| --- | --- | --- | --- |
-| overview | 1.5–16, smooth | 1 px a tile | the generated terrain image only |
-| map | 16–192, 1×–12× | 16 × 16 a tile | one map tile per tile; small icons for villages, herds, people |
-| local | 240–960, 1×–4× | 240 × 240 a tile, 6 a metre | every tree, rock, hut, person and animal as its own sprite |
+| Mode     | Zoom (px a tile) | Art pixels                  | What's drawn                                                   |
+| -------- | ---------------- | --------------------------- | -------------------------------------------------------------- |
+| overview | 1.5–16, smooth   | 1 px a tile                 | the generated terrain image only                               |
+| map      | 16–96, 1×–6×     | 16 × 16 a tile              | one map tile per tile; small icons for villages, herds, people |
+| local    | 240–960, 1×–4×   | 240 × 240 a tile, 6 a metre | every tree, rock, hut, person and animal as its own sprite     |
 
 Sizes in local mode, in art pixels (people and animals are larger than life,
 as in most games of this kind; scenery is roughly to scale):
