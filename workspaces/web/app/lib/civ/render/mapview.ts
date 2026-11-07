@@ -1,22 +1,46 @@
 import type { MapLayers } from '../types';
-import { MAP_TILE_PX } from './pixel/scale';
-import { pickTile, newPick, seasonRecolor, VILLAGE_ICON, type TilePick } from './pixel/maptiles';
+import { levelsOf } from './pixel/iso';
+import {
+	CHUNK_H,
+	CHUNK_TILES,
+	CHUNK_W,
+	FACE_Y,
+	TILE_ORDER,
+	chunkArt,
+	chunkOrder,
+	cliffsAt,
+	faceSprite,
+	fallOf,
+	newCliffs,
+	tileSpotX,
+	tileSpotY
+} from './pixel/mapiso';
+import { RISE } from './pixel/mapisokit';
+import { newPick, pickTile, seasonRecolor, VILLAGE_ICON, type TilePick } from './pixel/maptiles';
 import { VILLAGE_CLOTH } from './pixel/palette';
 import { sprite, type SpriteDef } from './pixel/sprite';
-import type { DrawState, Living, View } from './scene';
+import { hash, type DrawState, type Living, type View } from './scene';
 
-// The pixel-art map (zoom 16..192 px a tile): each tile a 16 x 16 sprite.
+// The pixel-art map (zoom 16..96 px a half tile, 1x..6x): isometric, each
+// tile a 32 x 16 diamond, raised in steps with cliff faces down to lower
+// ground.
 //
-// Tiles are composed into chunks of 16 x 16 tiles (256 x 256 px) at one art
-// pixel per pixel, and a chunk is drawn to the screen as a single scaled
+// Tiles are composed into chunks of 16 x 16 tiles at one art pixel per pixel.
+// A chunk is a diamond of tiles, drawn into a canvas that fits its bounding
+// box (mapiso.ts has the layout), and drawn to the screen as a single scaled
 // image. A chunk is only redrawn when its tiles change or the season turns,
-// so a frame is a handful of drawImage calls.
+// so a frame is a few dozen drawImage calls.
+//
+// Order: the tiles of a chunk are drawn back to front (nearest last), and so
+// are the chunks. Trees and cliffs spill out of a tile's own diamond, but
+// only upwards over tiles behind it or downwards inside its own footprint, so
+// back-to-front chunks cover each other correctly with no seams.
 
-const CHUNK_TILES = 16;
-const CHUNK_PX = CHUNK_TILES * MAP_TILE_PX;
-// chunks kept around (about 64 MB at most) and chunks rebuilt in one frame
-const MAX_CHUNKS = 256;
-const REBUILDS_PER_FRAME = 6;
+// chunks kept around (about 75 MB at most) and how many are rebuilt in a
+// frame, and for how long (ms)
+const MAX_CHUNKS = 120;
+const REBUILDS_PER_FRAME = 4;
+const REBUILD_MS = 10;
 
 type Canvas = HTMLCanvasElement | OffscreenCanvas;
 
@@ -32,18 +56,31 @@ type Chunk = {
 	used: number;
 };
 
+// a chunk that is on screen this frame
+type Visible = {
+	chunk: Chunk;
+	cx: number;
+	cy: number;
+	dx: number;
+	dy: number;
+	stale: boolean;
+	// the signature to remember once the chunk is rebuilt
+	sig: number;
+};
+
 const chunks = new Map<number, Chunk>();
 let forLayers: MapLayers | null = null;
 let forLiving: Living | null = null;
 let frame = 0;
 
 const pick: TilePick = newPick();
+const cliffs = newCliffs();
 
 function makeCanvas(): Canvas {
-	if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(CHUNK_PX, CHUNK_PX);
+	if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(CHUNK_W, CHUNK_H);
 	const canvas = document.createElement('canvas');
-	canvas.width = CHUNK_PX;
-	canvas.height = CHUNK_PX;
+	canvas.width = CHUNK_W;
+	canvas.height = CHUNK_H;
 	return canvas;
 }
 
@@ -71,37 +108,72 @@ function villageSignature(villages: DrawState['villages']): number {
 	return h;
 }
 
-function put(g: CanvasRenderingContext2D, def: SpriteDef, x: number, y: number, season: number) {
-	g.drawImage(sprite(def, seasonRecolor(season)).canvas, x, y);
+// each sprite as a canvas for a season, so drawing a tile is a lookup
+const bitmaps: Map<SpriteDef, Canvas>[] = [new Map(), new Map(), new Map(), new Map()];
+
+function bitmap(def: SpriteDef, season: number): Canvas {
+	let hit = bitmaps[season].get(def);
+	if (!hit) {
+		hit = sprite(def, seasonRecolor(season)).canvas;
+		bitmaps[season].set(def, hit);
+	}
+	return hit;
 }
 
 function drawChunk(chunk: Chunk, state: DrawState, cx: number, cy: number, season: number): void {
 	const { layers, living } = state;
+	const size = layers.size;
+	const levels = levelsOf(layers);
 	const g = chunk.canvas.getContext('2d') as CanvasRenderingContext2D;
 	g.imageSmoothingEnabled = false;
-	g.clearRect(0, 0, CHUNK_PX, CHUNK_PX);
+	g.clearRect(0, 0, CHUNK_W, CHUNK_H);
 	const x0 = cx * CHUNK_TILES;
 	const y0 = cy * CHUNK_TILES;
-	const x1 = Math.min(layers.size, x0 + CHUNK_TILES);
-	const y1 = Math.min(layers.size, y0 + CHUNK_TILES);
-	for (let ty = y0; ty < y1; ty++) {
-		for (let tx = x0; tx < x1; tx++) {
-			pickTile(layers, living, tx, ty, pick);
-			const px = (tx - x0) * MAP_TILE_PX;
-			const py = (ty - y0) * MAP_TILE_PX;
-			put(g, pick.base, px, py, season);
-			if (pick.over) put(g, pick.over, px, py, season);
-			if (pick.deposit) put(g, pick.deposit, px + pick.depositX, py + pick.depositY, season);
-			if (pick.built) put(g, pick.built, px, py, season);
-		}
-	}
+
+	// the villages in this chunk, by tile
+	const flags = new Map<number, string>();
 	for (const v of state.villages) {
-		if (v.x < x0 || v.x >= x1 || v.y < y0 || v.y >= y1) continue;
-		const cloth = VILLAGE_CLOTH[
-			((v.id % VILLAGE_CLOTH.length) + VILLAGE_CLOTH.length) % 6
-		] as `#${string}`;
-		const icon = sprite(VILLAGE_ICON, { ...seasonRecolor(season), M: cloth });
-		g.drawImage(icon.canvas, (v.x - x0) * MAP_TILE_PX, (v.y - y0) * MAP_TILE_PX);
+		if (v.x < x0 || v.x >= x0 + CHUNK_TILES || v.y < y0 || v.y >= y0 + CHUNK_TILES) continue;
+		const n = VILLAGE_CLOTH.length;
+		flags.set((v.y - y0) * CHUNK_TILES + (v.x - x0), VILLAGE_CLOTH[((v.id % n) + n) % n]);
+	}
+
+	for (const [i, j] of TILE_ORDER) {
+		const tx = x0 + i;
+		const ty = y0 + j;
+		if (tx >= size || ty >= size) continue;
+		const level = levels[ty * size + tx];
+		const sx = tileSpotX(i, j);
+		const sy = tileSpotY(i, j, level);
+		pickTile(layers, living, tx, ty, pick);
+
+		// cliffs first, the top face hangs from their upper edge
+		cliffsAt(levels, size, tx, ty, cliffs);
+		const variant = hash(tx, ty, 31) < 0.5 ? 0 : 1;
+		if (cliffs.right > 0) {
+			const fall = pick.river ? fallOf(pick.river, 'right') : 0;
+			const face = faceSprite(pick.face, 'right', cliffs.right, variant, cliffs.rimRight, fall);
+			g.drawImage(bitmap(face, season), sx + 16, sy + FACE_Y);
+		}
+		if (cliffs.left > 0) {
+			const fall = pick.river ? fallOf(pick.river, 'left') : 0;
+			const face = faceSprite(pick.face, 'left', cliffs.left, variant, cliffs.rimLeft, fall);
+			g.drawImage(bitmap(face, season), sx, sy + FACE_Y);
+		}
+
+		g.drawImage(bitmap(pick.base, season), sx, sy);
+		if (pick.over) g.drawImage(bitmap(pick.over, season), sx, sy);
+		// what stands on the tile reaches up over the tiles behind it
+		if (pick.stand) g.drawImage(bitmap(pick.stand, season), sx, sy - RISE);
+		if (pick.deposit) {
+			g.drawImage(bitmap(pick.deposit, season), sx + pick.depositX, sy + pick.depositY);
+		}
+		if (pick.built) g.drawImage(bitmap(pick.built, season), sx, sy - RISE);
+		const cloth = flags.get(j * CHUNK_TILES + i);
+		if (cloth) {
+			const icon = sprite(VILLAGE_ICON, { ...seasonRecolor(season), M: cloth as `#${string}` });
+			g.drawImage(icon.canvas, sx, sy - RISE);
+		}
 	}
 }
 
@@ -111,8 +183,10 @@ function forget(): void {
 	for (const [key] of old.slice(0, chunks.size - MAX_CHUNKS)) chunks.delete(key);
 }
 
+const visible: Visible[] = [];
+
 export function drawMap(ctx: CanvasRenderingContext2D, state: DrawState, view: View): void {
-	const { layers, living } = state;
+	const { layers, living, camera } = state;
 	if (layers !== forLayers || living !== forLiving) {
 		chunks.clear();
 		forLayers = layers;
@@ -121,53 +195,78 @@ export function drawMap(ctx: CanvasRenderingContext2D, state: DrawState, view: V
 	frame++;
 	const season = ((state.season % 4) + 4) % 4;
 	const villages = villageSignature(state.villages);
+	const s = view.scale;
 	const cx0 = Math.floor(view.x0 / CHUNK_TILES);
 	const cy0 = Math.floor(view.y0 / CHUNK_TILES);
 	const cx1 = Math.floor((view.x1 - 1) / CHUNK_TILES);
 	const cy1 = Math.floor((view.y1 - 1) / CHUNK_TILES);
-	const span = CHUNK_PX * view.scale;
+
+	// the chunks that reach the screen, back to front
+	visible.length = 0;
+	for (const [cx, cy] of chunkOrder(cx0, cy0, cx1, cy1)) {
+		const at = chunkArt(cx, cy);
+		const dx = view.originX + at.x * s;
+		const dy = view.originY + at.y * s;
+		if (
+			dx + CHUNK_W * s <= 0 ||
+			dy + CHUNK_H * s <= 0 ||
+			dx >= camera.width ||
+			dy >= camera.height
+		) {
+			continue;
+		}
+		const key = cy * 4096 + cx;
+		let chunk = chunks.get(key);
+		if (!chunk) {
+			chunk = {
+				canvas: makeCanvas(),
+				sig: 0,
+				season: -1,
+				villages: 0,
+				checked: -1,
+				drawn: false,
+				used: 0
+			};
+			chunks.set(key, chunk);
+		}
+		chunk.used = frame;
+		let stale = false;
+		let sigNow = chunk.sig;
+		if (chunk.season !== season || chunk.villages !== villages || chunk.checked !== state.tick) {
+			const sig = chunkSignature(living, layers.size, cx, cy);
+			stale =
+				!chunk.drawn || sig !== chunk.sig || chunk.season !== season || chunk.villages !== villages;
+			if (!stale) chunk.checked = state.tick;
+			sigNow = sig;
+		}
+		visible.push({ chunk, cx, cy, dx, dy, stale, sig: sigNow });
+	}
+
+	// rebuild the stale ones nearest the middle of the screen first; a chunk
+	// that has to wait keeps showing its old picture (or nothing, the first time)
+	const midX = camera.width / 2;
+	const midY = camera.height / 2;
+	const dist = (v: Visible) =>
+		Math.hypot(v.dx + (CHUNK_W * s) / 2 - midX, v.dy + (CHUNK_H * s) / 2 - midY);
+	const todo = visible.filter((v) => v.stale).sort((a, b) => dist(a) - dist(b));
+	const started = performance.now();
 	let rebuilt = 0;
+	for (const v of todo) {
+		if (rebuilt >= REBUILDS_PER_FRAME) break;
+		if (rebuilt > 0 && performance.now() - started > REBUILD_MS) break;
+		rebuilt++;
+		drawChunk(v.chunk, state, v.cx, v.cy, season);
+		v.chunk.sig = v.sig;
+		v.chunk.season = season;
+		v.chunk.villages = villages;
+		v.chunk.checked = state.tick;
+		v.chunk.drawn = true;
+	}
 
 	ctx.imageSmoothingEnabled = false;
-	for (let cy = cy0; cy <= cy1; cy++) {
-		for (let cx = cx0; cx <= cx1; cx++) {
-			const key = cy * 4096 + cx;
-			let chunk = chunks.get(key);
-			if (!chunk) {
-				chunk = {
-					canvas: makeCanvas(),
-					sig: 0,
-					season: -1,
-					villages: 0,
-					checked: -1,
-					drawn: false,
-					used: 0
-				};
-				chunks.set(key, chunk);
-			}
-			chunk.used = frame;
-			if (chunk.season !== season || chunk.villages !== villages || chunk.checked !== state.tick) {
-				const sig = chunkSignature(living, layers.size, cx, cy);
-				const stale =
-					!chunk.drawn ||
-					sig !== chunk.sig ||
-					chunk.season !== season ||
-					chunk.villages !== villages;
-				// the overview shows through a chunk that has to wait its turn
-				if (!stale) chunk.checked = state.tick;
-				else if (rebuilt < REBUILDS_PER_FRAME) {
-					rebuilt++;
-					drawChunk(chunk, state, cx, cy, season);
-					chunk.sig = sig;
-					chunk.season = season;
-					chunk.villages = villages;
-					chunk.checked = state.tick;
-					chunk.drawn = true;
-				}
-			}
-			if (!chunk.drawn) continue;
-			ctx.drawImage(chunk.canvas, view.originX + cx * span, view.originY + cy * span, span, span);
-		}
+	for (const v of visible) {
+		if (!v.chunk.drawn) continue;
+		ctx.drawImage(v.chunk.canvas, v.dx, v.dy, CHUNK_W * s, CHUNK_H * s);
 	}
 	forget();
 }

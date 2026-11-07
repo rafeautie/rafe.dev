@@ -3,6 +3,9 @@ import { Biome, Built, Deposit, Water, type MapLayers } from '../../types';
 import {
 	BUILT_ICON,
 	DEPOSIT_ICON,
+	DEPOSIT_SPOTS,
+	DENSE_SPOTS,
+	SPARSE_SPOTS,
 	E,
 	N,
 	NE,
@@ -14,15 +17,13 @@ import {
 	W,
 	allTileSprites,
 	newPick,
-	normalizeShore,
 	pickTile,
 	downstreamOf,
 	riverCode,
-	riverLinks,
-	riverTile,
-	shoreQuarter,
-	shoreTile
+	riverLinks
 } from './maptiles';
+import { RIVER_ENDS, normalizeShore, riverOverlay, shoreOverlay } from './mapiso';
+import { STAND_H, TILE_H, TILE_W, inDiamond, tileUV } from './mapisokit';
 import { generateWorld } from '../../world/generate';
 import { pixels } from './sprite';
 
@@ -48,12 +49,21 @@ function fake() {
 }
 
 describe('tile sprites', () => {
-	it('are all 16 x 16 and only use keyed letters', () => {
+	it('are all 32 wide, top faces 16 and standing sprites 36 tall, and only use keyed letters', () => {
 		for (const def of allTileSprites()) {
-			expect(def.rows.length).toBe(16);
-			for (const row of def.rows) expect(row.length).toBe(16);
+			expect([TILE_H, STAND_H]).toContain(def.rows.length);
+			for (const row of def.rows) expect(row.length).toBe(TILE_W);
 			expect(() => pixels(def)).not.toThrow();
 		}
+	});
+
+	it('paint every top face exactly over the diamond', () => {
+		const pick = newPick();
+		const { layers, living } = fake();
+		pickTile(layers, living, 2, 2, pick);
+		pick.base.rows.forEach((row, y) => {
+			[...row].forEach((ch, x) => expect(ch !== '.').toBe(inDiamond(x, y)));
+		});
 	});
 
 	it('keeps icons rectangular and keyed, under every season', () => {
@@ -65,36 +75,44 @@ describe('tile sprites', () => {
 			for (const recolor of SEASON_RECOLOR) expect(() => pixels(def!, recolor)).not.toThrow();
 		}
 	});
+
+	it('puts deposit marks and tree feet on the diamond', () => {
+		for (const [x, y] of DEPOSIT_SPOTS) {
+			for (const [dx, dy] of [
+				[0, 0],
+				[4, 0],
+				[0, 2],
+				[4, 2]
+			]) {
+				expect(inDiamond(x + dx, y + dy)).toBe(true);
+			}
+		}
+		for (const [x, y] of [...SPARSE_SPOTS.flat(), ...DENSE_SPOTS.flat()]) {
+			expect(inDiamond(x - 2, y) && inDiamond(x + 2, y)).toBe(true);
+		}
+	});
 });
 
-describe('shore autotiling', () => {
-	it('picks a piece for each quarter from the neighbours', () => {
-		expect(shoreQuarter(0, 0)).toBe('none');
-		expect([0, 1, 2, 3].map((q) => shoreQuarter(N, q))).toEqual(['edgeV', 'edgeV', 'none', 'none']);
-		expect([0, 1, 2, 3].map((q) => shoreQuarter(N | W, q))).toEqual([
-			'corner',
-			'edgeV',
-			'edgeH',
-			'none'
-		]);
-		expect(shoreQuarter(NE, 1)).toBe('notch');
-		expect(shoreQuarter(E, 1)).toBe('edgeH');
-	});
-
+describe('shores on the diamond', () => {
 	it('drops corners that sit next to land', () => {
 		expect(normalizeShore(N | NE)).toBe(N);
 		expect(normalizeShore(NW | S)).toBe(NW | S);
 	});
 
-	it('has no overlay for open water, and a 16 x 16 one otherwise', () => {
-		expect(shoreTile(0)).toBeNull();
-		expect(shoreTile(N | E)?.rows[0]).toBe('SSSSSSSSSSSSSSSS');
-		expect(shoreTile(S)?.rows[15]).toBe('SSSSSSSSSSSSSSSS');
-		expect(
-			shoreTile(W)
-				?.rows.map((r) => r[0])
-				.join('')
-		).toBe('SSSSSSSSSSSSSSSS');
+	it('has no overlay for open water, and lays sand along the edges that meet land', () => {
+		expect(shoreOverlay(0)).toBeNull();
+		const rows = shoreOverlay(N)!.rows;
+		// the top-right edge has sand; the bottom-left side has none
+		expect(rows[2].includes('S')).toBe(true);
+		expect(rows[13].includes('S')).toBe(false);
+		expect(shoreOverlay(S)!.rows[13].includes('S')).toBe(true);
+		// a rocky foot is stone, not sand
+		expect(shoreOverlay(N, N)!.rows.join('')).not.toContain('S');
+		expect(shoreOverlay(N, N)!.rows.join('')).toContain('r');
+		// a land corner only touching diagonally makes a notch at that corner
+		const notch = shoreOverlay(NE)!.rows;
+		expect(/[Sf]/.test(notch[7])).toBe(true);
+		expect(/[Sf]/.test(notch[0])).toBe(false);
 	});
 
 	it('finds the land neighbours of a lake tile', () => {
@@ -103,7 +121,7 @@ describe('shore autotiling', () => {
 		layers.water[mid] = Water.lake;
 		const pick = newPick();
 		pickTile(layers, living, 2, 2, pick);
-		expect(pick.over).toBe(shoreTile(N | E | S | W | NE | SE | SW | NW));
+		expect(pick.over).toBe(shoreOverlay(N | E | S | W | NE | SE | SW | NW, 255));
 		// open water in the middle of a lake has no shore
 		for (let i = 0; i < layers.water.length; i++) layers.water[i] = Water.lake;
 		pickTile(layers, living, 2, 2, pick);
@@ -131,23 +149,16 @@ describe('rivers', () => {
 	});
 
 	it('draws water out to exactly the sides it connects to', () => {
-		const wetEdge = (code: number, side: 'n' | 'e' | 's' | 'w') => {
-			const rows = riverTile(code).rows;
-			const line =
-				side === 'n'
-					? rows[0]
-					: side === 's'
-						? rows[15]
-						: [...rows].map((r) => r[side === 'w' ? 0 : 15]).join('');
-			return /[aef]/.test(line);
-		};
 		const straight = N | S;
-		expect([wetEdge(straight, 'n'), wetEdge(straight, 's')]).toEqual([true, true]);
-		expect([wetEdge(straight, 'e'), wetEdge(straight, 'w')]).toEqual([false, false]);
+		expect([reaches(straight, N), reaches(straight, S)]).toEqual([true, true]);
+		expect([reaches(straight, E), reaches(straight, W)]).toEqual([false, false]);
 		const bend = E | S;
-		expect([wetEdge(bend, 'n'), wetEdge(bend, 'w')]).toEqual([false, false]);
-		expect([wetEdge(bend, 'e'), wetEdge(bend, 's')]).toEqual([true, true]);
-		expect(riverTile(0).rows.join('')).toContain('a');
+		expect([reaches(bend, N), reaches(bend, W)]).toEqual([false, false]);
+		expect([reaches(bend, E), reaches(bend, S)]).toEqual([true, true]);
+		const diagonal = NE | SW;
+		expect([reaches(diagonal, NE), reaches(diagonal, SW)]).toEqual([true, true]);
+		expect([reaches(diagonal, NW), reaches(diagonal, SE)]).toEqual([false, false]);
+		expect(riverOverlay(0).rows.join('')).toContain('a');
 	});
 });
 
@@ -187,10 +198,21 @@ describe('tile choice', () => {
 			living.wood.fill(wood);
 			const pick = newPick();
 			pickTile(layers, living, 3, 3, pick);
-			return pick.base.rows.join('').match(/[tuPpQ]/g)?.length ?? 0;
+			return pick.stand?.rows.join('').match(/[tuPpQ]/g)?.length ?? 0;
 		};
 		expect(count(0.8)).toBeGreaterThan(count(0.3));
 		expect(count(0.3)).toBeGreaterThan(count(0.05));
+	});
+
+	it('leaves the river channel clear of trees', () => {
+		const { layers, living } = fake();
+		layers.biome.fill(Biome.forest);
+		living.wood.fill(0.8);
+		layers.water[2 * SIZE + 2] = Water.river;
+		const pick = newPick();
+		pickTile(layers, living, 2, 2, pick);
+		expect(pick.stand).toBeNull();
+		expect(pick.over).not.toBeNull();
 	});
 });
 
@@ -200,7 +222,6 @@ describe('generated rivers', () => {
 		const size = map.size;
 		const links = riverLinks(map);
 		const isRiver = (i: number) => map.water[i] === Water.river || map.water[i] === Water.spring;
-		const wet = (ch: string) => 'aef'.includes(ch);
 		const DIRS: [number, number, number, number][] = [
 			[0, -1, N, S],
 			[1, 0, E, W],
@@ -217,7 +238,6 @@ describe('generated rivers', () => {
 			rivers++;
 			const x = i % size;
 			const y = (i - x) / size;
-			const rows = riverTile(links[i]).rows;
 			// what should be linked: where it flows, and every river flowing into it
 			let expected = 0;
 			const down = downstreamOf(map, i);
@@ -232,9 +252,7 @@ describe('generated rivers', () => {
 					// the other end draws an arm back
 					if (isRiver(j)) expect(links[j] & back).toBe(back);
 					// and the drawn channel reaches that side
-					const px = dx === 0 ? 7 : dx > 0 ? 15 : 0;
-					const py = dy === 0 ? 7 : dy > 0 ? 15 : 0;
-					expect(wet(rows[py][px])).toBe(true);
+					expect(reaches(links[i], bit)).toBe(true);
 				}
 			}
 			expect(links[i] & 255).toBe(expected);
@@ -263,3 +281,17 @@ describe('generated rivers', () => {
 		expect(pits).toBeLessThan(rivers * 0.25 * 6);
 	});
 });
+
+// is there water on the diamond next to the end of an arm?
+function reaches(code: number, bit: number): boolean {
+	const end = RIVER_ENDS.find((e) => e[0] === bit)!;
+	const rows = riverOverlay(code).rows;
+	for (let y = 0; y < TILE_H; y++) {
+		for (let x = 0; x < TILE_W; x++) {
+			if (!inDiamond(x, y)) continue;
+			const { u, v } = tileUV(x, y);
+			if (Math.hypot(u - end[1], v - end[2]) < 0.09 && 'aef'.includes(rows[y][x])) return true;
+		}
+	}
+	return false;
+}

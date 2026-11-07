@@ -1,595 +1,371 @@
 import { SEA_LEVEL } from '../../config';
 import { Biome, Built, Deposit, Ground, Water, type MapLayers } from '../../types';
 import { hash, type Living } from '../scene';
+import { levelsOf } from './iso';
+import { riverOverlay, shoreOverlay, type FaceMat } from './mapiso';
+import {
+	E,
+	KEY,
+	N,
+	NE,
+	NW,
+	RISE,
+	S,
+	SE,
+	SW,
+	TILE_H,
+	TILE_W,
+	W,
+	def,
+	inDiamond,
+	scatterIn,
+	seasonRecolor,
+	standGrid,
+	standStamp,
+	stamp,
+	ticksIn,
+	topGrid,
+	tuftsIn,
+	SEASON_RECOLOR,
+	type Grid,
+	type Recolor
+} from './mapisokit';
 import type { SpriteDef } from './sprite';
 
-// The pixel-art map tiles: every 40 m tile is a 16 x 16 sprite. Land tiles are
-// full tiles; water edges (shores) and rivers are drawn as transparent overlays
-// on top of a water or land tile, picked from which neighbours are water.
+// The pixel-art map tiles, isometric: every 40 m tile is a 32 x 16 diamond.
+// A tile is a flat top face (ground texture) plus, for forest and mountains,
+// a standing sprite of trees or peaks that reaches above the diamond. Shores
+// and rivers are overlays on the diamond; cliff faces under raised tiles come
+// from mapiso.ts.
 //
-// One shared key (below) keeps the letters the same in every tile, so a season
-// is just a recolouring of a few letters (leaves turn orange, grass goes white).
+// The sprite letters are shared (mapisokit.ts), so a season is just a
+// recolouring of a few letters (leaves turn orange, grass goes white).
 
-export const TILE = 16;
+export { E, KEY, N, NE, NW, S, SE, SW, W, SEASON_RECOLOR, seasonRecolor, type Recolor };
 
-export type Recolor = Record<string, NonNullable<SpriteDef['key'][string]>>;
+// What a terrain tile is made of: its top face, what stands on it and the
+// stuff its cliffs are made of.
+export type Look = { top: SpriteDef; stand: SpriteDef | null; face: FaceMat };
 
-export const KEY: SpriteDef['key'] = {
-	// ground
-	g: 'grass',
-	l: 'grassLight',
-	d: 'leaf',
-	m: 'moss',
-	s: 'straw',
-	y: 'gold',
-	// broadleaf foliage, conifer foliage
-	t: 'leaf',
-	u: 'leafDark',
-	j: 'grassLight',
-	p: 'leaf',
-	P: 'leafDark',
-	Q: 'grass',
-	// wood
-	b: 'bark',
-	B: 'barkDark',
-	W: 'wood',
-	// stone
-	r: 'stone',
-	R: 'stoneDark',
-	c: 'stoneLight',
-	h: 'chalk',
-	w: 'white',
-	// earth
-	o: 'soil',
-	O: 'soilDark',
-	v: 'soilLight',
-	Y: 'clay',
-	X: 'rust',
-	S: 'sand',
-	T: 'sandLight',
-	// water
-	a: 'water',
-	A: 'deep',
-	e: 'waterLight',
-	f: 'foam',
-	i: 'ice',
-	z: 'waterLight',
-	// accents
-	C: 'copper',
-	N: 'tin',
-	H: 'ochre',
-	V: 'obsidian',
-	F: 'fire',
-	L: 'flame',
-	E: 'ember',
-	n: 'berry',
-	q: 'blossom',
-	k: 'ink',
-	x: 'shadow',
-	// a village's cloth
-	M: '#c0503c'
-};
-
-// Per season (0 spring .. 3 winter): only the letters that change.
-export const SEASON_RECOLOR: Recolor[] = [
-	{ t: 'grass', u: 'leaf', Q: 'grassLight' },
-	{},
-	{ t: 'orange', u: 'rust', j: 'gold', g: 'moss', l: 'straw', m: 'straw', s: 'gold' },
-	{
-		t: 'bark',
-		u: 'barkDark',
-		j: 'white',
-		g: 'white',
-		l: 'white',
-		d: 'chalk',
-		m: 'chalk',
-		s: 'chalk',
-		Q: 'white',
-		S: 'sandLight',
-		T: 'white',
-		f: 'white',
-		z: 'ice',
-		e: 'ice'
-	}
-];
-
-export function seasonRecolor(season: number): Recolor {
-	return SEASON_RECOLOR[((season % 4) + 4) % 4];
-}
-
-// ------------------------------------------------------------ grid helpers
-
-type Grid = string[][];
-
-const grid = (ch: string): Grid => Array.from({ length: TILE }, () => Array<string>(TILE).fill(ch));
-const rowsOf = (g: Grid): string[] => g.map((r) => r.join(''));
-const def = (g: Grid): SpriteDef => ({ rows: rowsOf(g), key: KEY });
-
-// Puts a small picture on the grid at (x, y); `.` leaves what is there.
-function stamp(g: Grid, rows: string[], x: number, y: number): void {
-	for (let j = 0; j < rows.length; j++) {
-		const gy = y + j;
-		if (gy < 0 || gy >= TILE) continue;
-		for (let i = 0; i < rows[j].length; i++) {
-			const ch = rows[j][i];
-			const gx = x + i;
-			if (ch === '.' || gx < 0 || gx >= TILE) continue;
-			g[gy][gx] = ch;
-		}
-	}
-}
-
-function scatter(g: Grid, ch: string, n: number, seed: number): void {
-	for (let k = 0; k < n; k++) {
-		g[Math.floor(hash(seed, k, 1) * TILE)][Math.floor(hash(seed, k, 2) * TILE)] = ch;
-	}
-}
-
-// two-pixel-wide ticks (waves, ripples)
-function ticks(g: Grid, ch: string, n: number, seed: number): void {
-	for (let k = 0; k < n; k++) {
-		const x = Math.floor(hash(seed, k, 3) * (TILE - 1));
-		g[Math.floor(hash(seed, k, 4) * TILE)][x] = ch;
-		g[Math.floor(hash(seed, k, 4) * TILE)][x + 1] = ch;
-	}
-}
-
-// grass blades: a light pixel over a dark one
-function tufts(g: Grid, n: number, seed: number): void {
-	for (let k = 0; k < n; k++) {
-		const x = Math.floor(hash(seed, k, 5) * TILE);
-		const y = Math.floor(hash(seed, k, 6) * (TILE - 1));
-		g[y][x] = 'l';
-		g[y + 1][x] = 'd';
-	}
-}
-
-const flipH = (rows: string[]): string[] => rows.map((r) => [...r].reverse().join(''));
-const flipV = (rows: string[]): string[] => [...rows].reverse();
-const remap = (rows: string[], to: Record<string, string>): string[] =>
-	rows.map((r) => [...r].map((ch) => to[ch] ?? ch).join(''));
+const look = (top: Grid, face: FaceMat, stand: SpriteDef | null = null): Look => ({
+	top: def(top),
+	stand,
+	face
+});
 
 // ------------------------------------------------------------------- land
 
-function grassGrid(seed: number): Grid {
-	const g = grid('g');
-	scatter(g, 'l', 9, seed);
-	scatter(g, 'd', 5, seed + 50);
-	tufts(g, 4, seed + 90);
+function grassTop(seed: number): Grid {
+	const g = topGrid('g');
+	scatterIn(g, 'l', 16, seed);
+	scatterIn(g, 'd', 9, seed + 50);
+	tuftsIn(g, 6, seed + 90);
 	return g;
 }
 
-export const GRASS: SpriteDef[] = [11, 23, 37].map((s) => def(grassGrid(s)));
-export const MEADOW: SpriteDef = (() => {
-	const g = grassGrid(61);
-	scatter(g, 'q', 2, 70);
-	scatter(g, 'y', 2, 71);
-	scatter(g, 'n', 1, 72);
-	return def(g);
+export const GRASS: Look[] = [11, 23, 37].map((s) => look(grassTop(s), 'earth'));
+export const MEADOW: Look = (() => {
+	const g = grassTop(61);
+	scatterIn(g, 'q', 3, 70);
+	scatterIn(g, 'y', 3, 71);
+	scatterIn(g, 'n', 2, 72);
+	return look(g, 'earth');
 })();
 // grass where plants are thin
-export const DRY_GRASS: SpriteDef[] = [5, 6].map((s) => {
-	const g = grid('g');
-	scatter(g, 's', 14, s);
-	scatter(g, 'm', 8, s + 20);
-	scatter(g, 'l', 3, s + 40);
-	return def(g);
+export const DRY_GRASS: Look[] = [5, 6].map((s) => {
+	const g = topGrid('g');
+	scatterIn(g, 's', 28, s);
+	scatterIn(g, 'm', 16, s + 20);
+	scatterIn(g, 'l', 5, s + 40);
+	return look(g, 'dry');
 });
 
-export const SAND: SpriteDef[] = [3, 4, 5].map((s) => {
-	const g = grid('S');
-	scatter(g, 'T', 12, s);
-	ticks(g, 'T', 3, s + 30);
-	scatter(g, 's', 4, s + 60);
-	return def(g);
+export const SAND: Look[] = [3, 4, 5].map((s) => {
+	const g = topGrid('S');
+	scatterIn(g, 'T', 24, s);
+	ticksIn(g, 'T', 5, s + 30);
+	scatterIn(g, 's', 8, s + 60);
+	return look(g, 'sand');
 });
 
 const BUSH = ['.uuu..', 'ujjtu.', 'uttttu', '.uuuu.'];
-export const SCRUB: SpriteDef[] = [8, 9].map((s) => {
-	const g = grid('m');
-	scatter(g, 's', 10, s);
-	scatter(g, 'd', 4, s + 20);
-	stamp(g, BUSH, 1 + (s % 3), 2);
-	stamp(g, BUSH, 8, 7 + (s % 2));
-	stamp(g, BUSH, 2, 10);
-	scatter(g, 'n', 1, s + 40);
-	return def(g);
+export const SCRUB: Look[] = [8, 9].map((s) => {
+	const g = topGrid('m');
+	scatterIn(g, 's', 20, s);
+	scatterIn(g, 'd', 8, s + 20);
+	stamp(g, BUSH, 8 + (s % 3), 3, true);
+	stamp(g, BUSH, 17, 6 + (s % 2), true);
+	stamp(g, BUSH, 7, 8, true);
+	scatterIn(g, 'n', 2, s + 40);
+	return look(g, 'dry');
 });
 
-const PUDDLE = ['.aaaa.', 'aaeaaa', '.aaaa.'];
+const PUDDLE = ['.aaaaaa.', 'aaeaaaaa', '.aaaaaa.'];
 const REED = ['b', 'd', 'l'];
-export const MARSH: SpriteDef[] = [12, 13].map((s) => {
-	const g = grid('m');
-	scatter(g, 'd', 12, s);
-	scatter(g, 'l', 5, s + 20);
-	stamp(g, PUDDLE, 1 + (s % 2) * 2, 2);
-	stamp(g, PUDDLE, 8, 8);
-	stamp(g, PUDDLE, 2, 11);
-	for (let k = 0; k < 5; k++) {
-		stamp(g, REED, Math.floor(hash(s, k, 7) * 15), Math.floor(hash(s, k, 8) * 13));
+export const MARSH: Look[] = [12, 13].map((s) => {
+	const g = topGrid('m');
+	scatterIn(g, 'd', 24, s);
+	scatterIn(g, 'l', 9, s + 20);
+	stamp(g, PUDDLE, 7 + (s % 2) * 3, 3, true);
+	stamp(g, PUDDLE, 16, 7, true);
+	stamp(g, PUDDLE, 6, 9, true);
+	for (let k = 0; k < 6; k++) {
+		stamp(g, REED, Math.floor(hash(s, k, 7) * 30), Math.floor(hash(s, k, 8) * 12), true);
 	}
-	return def(g);
+	return look(g, 'earth');
 });
 
-const HUMP = [
-	'...mmmmm....',
-	'..mllllgm...',
-	'.mllllgggm..',
-	'mllllgggggdm',
-	'mlllgggggddm',
-	'.mgggggddddm',
-	'..mmdddddmm.'
-];
-const HUMP_SMALL = ['..mmmm..', '.mllggm.', 'mlgggdm.', 'mgggddm.', '.mmddmm.'];
-export const HILLS: SpriteDef[] = [
+const MOUND = ['....mmmmm....', '..mmllllgmm..', '.mllllgggggm.', 'mlllgggggddmm', '.mmdddddddmm.'];
+export const HILLS: Look[] = [
 	(() => {
-		const g = grassGrid(17);
-		stamp(g, HUMP_SMALL, 7, 1);
-		stamp(g, HUMP, 2, 7);
-		return def(g);
+		const g = grassTop(17);
+		stamp(g, MOUND, 6, 2, true);
+		stamp(g, MOUND, 13, 8, true);
+		return look(g, 'earth');
 	})(),
 	(() => {
-		const g = grassGrid(19);
-		stamp(g, HUMP, 0, 1);
-		stamp(g, ['c', 'rc'], 4, 1);
-		stamp(g, HUMP_SMALL, 7, 9);
-		return def(g);
+		const g = grassTop(19);
+		stamp(g, MOUND, 9, 1, true);
+		stamp(g, MOUND, 4, 6, true);
+		stamp(g, MOUND.slice(1), 16, 7, true);
+		return look(g, 'earth');
 	})()
 ];
 
-const PEAK_BIG = [
-	'......w......',
-	'.....wwc.....',
-	'....wwwcR....',
-	'...wwcccRR...',
-	'..wcccrrRRR..',
-	'..cccrrrrRRR.',
-	'.ccrrrRrrrRRR',
-	'ccrrrrrrRrrRR',
-	'crrrRrrrrrRRR',
-	'rrrrrrrRrrrRR'
-];
-const PEAK_SMALL = ['...wc...', '..wccR..', '.cccrRR.', 'ccrrrrRR', 'crrRrrRR'];
+// A rocky peak seen from the front: jagged sides, a lit left, a dark right
+// and (when `snow`) a white cap. Hand-shaped from a seed so every peak differs.
+function peak(seed: number, w: number, h: number, snow: 'cap' | 'all' | 'none'): string[] {
+	const apex = Math.floor(w / 2);
+	const cap = Math.round(h * 0.38) + (seed % 2);
+	const rows: string[] = [];
+	let left = 0;
+	let right = 0;
+	for (let r = 0; r < h; r++) {
+		const t = r / (h - 1);
+		// the sides only ever get wider going down, with some roughness
+		left = Math.max(left, Math.min(apex, Math.round(t * apex + (hash(seed, r, 1) - 0.5) * 2.2)));
+		right = Math.max(
+			right,
+			Math.min(w - 1 - apex, Math.round(t * (w - 1 - apex) + (hash(seed, r, 2) - 0.5) * 2.2))
+		);
+		const ridge = apex + Math.round(t * 2) - 1;
+		let line = '';
+		for (let x = 0; x < w; x++) {
+			if (x < apex - left || x > apex + right) {
+				line += '.';
+				continue;
+			}
+			const edge = x === apex - left || x === apex + right;
+			const white = snow === 'all' || (snow === 'cap' && r < cap - (x > ridge ? 0 : 1));
+			if (edge && r < h - 1) line += snow === 'all' ? 'R' : 'k';
+			else if (white)
+				line += x > ridge ? 'h' : snow === 'all' && hash(seed, x, r) < 0.15 ? 'c' : 'w';
+			else if (x < ridge - 1) line += r < h * 0.6 ? 'c' : 'r';
+			else if (x <= ridge) line += 'r';
+			else line += hash(seed, x, r + 9) < 0.18 ? 'r' : 'R';
+		}
+		rows.push(line);
+	}
+	return rows;
+}
 
-function rockGrid(seed: number): Grid {
-	const g = grid('r');
-	scatter(g, 'R', 10, seed);
-	scatter(g, 'c', 5, seed + 30);
+type Spot = [number, number];
+
+// Puts peaks on a standing grid by their foot (bottom middle), far ones first.
+function peaks(parts: { seed: number; w: number; h: number; at: Spot }[], snow: 'cap' | 'all') {
+	const g = standGrid();
+	for (const p of [...parts].sort((a, b) => a.at[1] - b.at[1])) {
+		const rows = peak(p.seed, p.w, p.h, snow);
+		standStamp(g, rows, p.at[0] - Math.floor(p.w / 2), p.at[1] - p.h + 1);
+	}
+	return def(g);
+}
+
+function rockTop(ground: string, seed: number): Grid {
+	const g = topGrid(ground);
+	scatterIn(g, 'R', 18, seed);
+	scatterIn(g, 'c', 8, seed + 30);
 	return g;
 }
 
-export const MOUNTAIN: SpriteDef[] = [
-	(() => {
-		const g = rockGrid(21);
-		stamp(g, PEAK_BIG, 1, 2);
-		stamp(g, PEAK_SMALL, 8, 10);
-		return def(g);
-	})(),
-	(() => {
-		const g = rockGrid(22);
-		stamp(g, PEAK_SMALL, 0, 1);
-		stamp(g, PEAK_BIG, 2, 5);
-		return def(g);
-	})()
+export const MOUNTAIN: Look[] = [
+	look(
+		rockTop('r', 21),
+		'rock',
+		peaks(
+			[
+				{ seed: 3, w: 22, h: 19, at: [13, 9] },
+				{ seed: 4, w: 12, h: 9, at: [24, 9] }
+			],
+			'cap'
+		)
+	),
+	look(
+		rockTop('r', 22),
+		'rock',
+		peaks(
+			[
+				{ seed: 5, w: 12, h: 10, at: [9, 8] },
+				{ seed: 6, w: 22, h: 20, at: [19, 10] }
+			],
+			'cap'
+		)
+	),
+	look(
+		rockTop('r', 23),
+		'rock',
+		peaks(
+			[
+				{ seed: 7, w: 14, h: 11, at: [10, 7] },
+				{ seed: 8, w: 14, h: 12, at: [22, 8] },
+				{ seed: 9, w: 12, h: 8, at: [16, 11] }
+			],
+			'cap'
+		)
+	)
 ];
 
-const SNOW_REMAP = { r: 'h', c: 'w', R: 'i' };
-export const SNOW_PEAK: SpriteDef[] = [
-	(() => {
-		const g = grid('w');
-		scatter(g, 'h', 8, 31);
-		scatter(g, 'i', 5, 32);
-		stamp(g, remap(PEAK_BIG, SNOW_REMAP), 1, 3);
-		stamp(g, remap(PEAK_SMALL, SNOW_REMAP), 8, 10);
-		scatter(g, 'R', 2, 33);
-		return def(g);
-	})(),
-	(() => {
-		const g = grid('w');
-		scatter(g, 'h', 8, 34);
-		scatter(g, 'i', 5, 35);
-		stamp(g, remap(PEAK_SMALL, SNOW_REMAP), 1, 1);
-		stamp(g, remap(PEAK_BIG, SNOW_REMAP), 2, 5);
-		return def(g);
-	})()
+export const SNOW_PEAK: Look[] = [
+	look(
+		(() => {
+			const g = topGrid('w');
+			scatterIn(g, 'h', 14, 31);
+			scatterIn(g, 'i', 8, 32);
+			return g;
+		})(),
+		'snow',
+		peaks(
+			[
+				{ seed: 11, w: 22, h: 19, at: [14, 9] },
+				{ seed: 12, w: 12, h: 9, at: [25, 9] }
+			],
+			'all'
+		)
+	),
+	look(
+		(() => {
+			const g = topGrid('w');
+			scatterIn(g, 'h', 14, 34);
+			scatterIn(g, 'i', 8, 35);
+			scatterIn(g, 'R', 2, 36);
+			return g;
+		})(),
+		'snow',
+		peaks(
+			[
+				{ seed: 13, w: 12, h: 10, at: [8, 8] },
+				{ seed: 14, w: 22, h: 20, at: [19, 10] }
+			],
+			'all'
+		)
+	)
 ];
 
 // ------------------------------------------------------------------ trees
 
-const BROAD = ['..uuuu..', '.ujjttu.', 'ujjtttuu', 'ujtttttu', 'utttttuu', '.uuttuu.', '..ubbu..'];
-const BROAD_SHADOW = ['.dddddd.', '..dddd..'];
+const BROAD = [
+	'..uuuuu..',
+	'.ujjjttu.',
+	'ujjjtttuu',
+	'ujjttttuu',
+	'uttttttuu',
+	'.uttttuu.',
+	'..uuuuu..',
+	'....b....',
+	'....B....'
+];
+const BROAD_SHADOW = ['.xxxxxx.', '..xxxx..'];
 const CONIFER = [
 	'...P...',
 	'..PQP..',
-	'..QppP.',
-	'.PQpppP',
+	'..QpP..',
+	'.PQppP.',
 	'..QppP.',
 	'.PQpppP',
 	'PQppppP',
+	'PQpppPP',
+	'...bB..',
 	'...bB..'
 ];
-const CONIFER_SHADOW = ['.ddddd.', '..ddd..'];
-
-type Spot = [number, number];
+const CONIFER_SHADOW = ['.xxxxx.', '..xxx..'];
 
 // Shadows go down first so a nearer tree is never cut by a farther one's.
-function planted(g: Grid, conifer: boolean, spots: Spot[]): SpriteDef {
+// A tree's foot is the bottom middle of its picture.
+function planted(conifer: boolean, spots: Spot[], dense: boolean): SpriteDef {
+	const g = standGrid();
 	const crown = conifer ? CONIFER : BROAD;
-	const shade = conifer ? CONIFER_SHADOW : BROAD_SHADOW;
-	const drop = crown.length - 1;
+	const shade = (conifer ? CONIFER_SHADOW : BROAD_SHADOW).map((r) =>
+		r.replace(/x/g, dense ? 'u' : 'd')
+	);
 	const sorted = [...spots].sort((a, b) => a[1] - b[1]);
-	for (const [x, y] of sorted) stamp(g, shade, x + (conifer ? 0 : 1), y + drop);
-	for (const [x, y] of sorted) stamp(g, crown, x, y);
+	const half = Math.floor(crown[0].length / 2);
+	for (const [x, y] of sorted) standStamp(g, shade, x - Math.floor(shade[0].length / 2), y - 1);
+	for (const [x, y] of sorted) standStamp(g, crown, x - half, y - crown.length + 1);
 	return def(g);
 }
 
-function treeGrid(dense: boolean, seed: number): Grid {
-	const g = grid(dense ? 'd' : 'g');
-	scatter(g, dense ? 'u' : 'l', dense ? 3 : 7, seed);
-	if (!dense) tufts(g, 3, seed + 9);
+function treeTop(dense: boolean, seed: number): Grid {
+	const g = topGrid(dense ? 'd' : 'g');
+	scatterIn(g, dense ? 'u' : 'l', dense ? 6 : 14, seed);
+	if (!dense) tuftsIn(g, 5, seed + 9);
 	return g;
 }
 
-const SPARSE_SPOTS: Spot[][] = [
+// where trees stand (their feet), kept well inside the diamond
+export const SPARSE_SPOTS: Spot[][] = [
 	[
-		[1, 1],
-		[8, 6]
+		[11, 9],
+		[21, 7]
 	],
 	[
-		[7, 1],
-		[2, 7]
+		[9, 7],
+		[19, 10]
 	]
 ];
-const DENSE_SPOTS: Spot[][] = [
+export const DENSE_SPOTS: Spot[][] = [
 	[
-		[0, 0],
-		[8, 0],
-		[4, 4],
-		[0, 8],
-		[8, 9]
+		[16, 4],
+		[9, 7],
+		[23, 7],
+		[13, 11],
+		[20, 11]
 	],
 	[
-		[1, 0],
-		[8, 1],
-		[0, 5],
-		[8, 6],
-		[4, 9]
-	]
-];
-const CONIFER_SPARSE_SPOTS: Spot[][] = [
-	[
-		[1, 0],
-		[8, 7]
-	],
-	[
-		[8, 0],
-		[2, 7]
-	]
-];
-const CONIFER_DENSE_SPOTS: Spot[][] = [
-	[
-		[0, 0],
-		[8, 0],
-		[4, 4],
-		[0, 8],
-		[9, 8]
-	],
-	[
-		[1, 1],
-		[9, 1],
-		[0, 6],
-		[8, 6],
-		[4, 9]
+		[12, 4],
+		[22, 6],
+		[7, 8],
+		[16, 9],
+		[24, 10]
 	]
 ];
 
-export const FOREST_SPARSE: SpriteDef[] = SPARSE_SPOTS.map((s, n) =>
-	planted(treeGrid(false, 40 + n), false, s)
-);
-export const FOREST_DENSE: SpriteDef[] = DENSE_SPOTS.map((s, n) =>
-	planted(treeGrid(true, 44 + n), false, s)
-);
-export const CONIFER_SPARSE: SpriteDef[] = CONIFER_SPARSE_SPOTS.map((s, n) =>
-	planted(treeGrid(false, 48 + n), true, s)
-);
-export const CONIFER_DENSE: SpriteDef[] = CONIFER_DENSE_SPOTS.map((s, n) =>
-	planted(treeGrid(true, 52 + n), true, s)
-);
+const woods = (spots: Spot[][], conifer: boolean, dense: boolean, seed: number): Look[] =>
+	spots.map((s, n) => look(treeTop(dense, seed + n), 'earth', planted(conifer, s, dense)));
+
+export const FOREST_SPARSE = woods(SPARSE_SPOTS, false, false, 40);
+export const FOREST_DENSE = woods(DENSE_SPOTS, false, true, 44);
+export const CONIFER_SPARSE = woods(SPARSE_SPOTS, true, false, 48);
+export const CONIFER_DENSE = woods(DENSE_SPOTS, true, true, 52);
+
 // a felled wood: grass with stumps
-export const CLEARING: SpriteDef = (() => {
-	const g = grassGrid(57);
-	stamp(g, ['WW', 'bb'], 3, 4);
-	stamp(g, ['WW', 'bb'], 10, 10);
-	return def(g);
+export const CLEARING: Look = (() => {
+	const g = grassTop(57);
+	stamp(g, ['WW', 'bb'], 10, 5, true);
+	stamp(g, ['WW', 'bb'], 19, 9, true);
+	return look(g, 'earth');
 })();
 
 // ------------------------------------------------------------------ water
 
-function waterGrid(base: string, wave: string, n: number, seed: number): Grid {
-	const g = grid(base);
-	ticks(g, wave, n, seed);
+function waterTop(base: string, wave: string, n: number, seed: number): Grid {
+	const g = topGrid(base);
+	ticksIn(g, wave, n, seed);
 	return g;
 }
 
-export const SEA_SHALLOW: SpriteDef[] = [60, 61, 62].map((s) => def(waterGrid('a', 'e', 5, s)));
-export const SEA_DEEP: SpriteDef[] = [63, 64, 65].map((s) => def(waterGrid('A', 'a', 6, s)));
-export const LAKE: SpriteDef[] = [66, 67, 68].map((s) => def(waterGrid('a', 'e', 7, s)));
-
-// Shores: land flags of the 8 neighbours, as bits.
-export const N = 1;
-export const E = 2;
-export const S = 4;
-export const W = 8;
-export const NE = 16;
-export const SE = 32;
-export const SW = 64;
-export const NW = 128;
-
-export type ShoreKind = 'none' | 'edgeV' | 'edgeH' | 'corner' | 'notch';
-
-// A corner only matters when both sides next to it are water, so the mask is
-// cleaned up to keep the set of different tiles small.
-export function normalizeShore(mask: number): number {
-	let m = mask;
-	if (m & (N | E)) m &= ~NE;
-	if (m & (S | E)) m &= ~SE;
-	if (m & (S | W)) m &= ~SW;
-	if (m & (N | W)) m &= ~NW;
-	return m;
-}
-
-// quarter 0 top left, 1 top right, 2 bottom left, 3 bottom right
-export function shoreQuarter(mask: number, quarter: number): ShoreKind {
-	const v = quarter < 2 ? N : S;
-	const h = quarter % 2 === 0 ? W : E;
-	const d = quarter === 0 ? NW : quarter === 1 ? NE : quarter === 2 ? SW : SE;
-	if (mask & v && mask & h) return 'corner';
-	if (mask & v) return 'edgeV';
-	if (mask & h) return 'edgeH';
-	if (mask & d) return 'notch';
-	return 'none';
-}
-
-// Top-left quarter pieces: sand bank, foam, a ring of lighter water. The
-// others are mirrored from these.
-const EDGE_V = [
-	'SSSSSSSS',
-	'ffffffff',
-	'zzz.zzzz',
-	'........',
-	'........',
-	'........',
-	'........',
-	'........'
-];
-const EDGE_H = EDGE_V.map((_, y) => [...EDGE_V].map((row) => row[y]).join(''));
-const CORNER = [
-	'SSSSSSSS',
-	'SSSSffff',
-	'SSfffzzz',
-	'SSfzz...',
-	'Sfzz....',
-	'Sfz.....',
-	'Sfz.....',
-	'Sfz.....'
-];
-const NOTCH = [
-	'SSf.....',
-	'Sff.....',
-	'ff......',
-	'........',
-	'........',
-	'........',
-	'........',
-	'........'
-];
-const BLANK_Q = Array<string>(8).fill('........');
-
-const PIECE: Record<ShoreKind, string[]> = {
-	none: BLANK_Q,
-	edgeV: EDGE_V,
-	edgeH: EDGE_H,
-	corner: CORNER,
-	notch: NOTCH
-};
-
-function quarterRows(kind: ShoreKind, quarter: number): string[] {
-	let rows = PIECE[kind];
-	if (quarter % 2 === 1) rows = flipH(rows);
-	if (quarter >= 2) rows = flipV(rows);
-	return rows;
-}
-
-const shoreCache = new Map<number, SpriteDef | null>();
-
-// The shoreline overlay for a water tile with these land neighbours.
-export function shoreTile(mask: number): SpriteDef | null {
-	const m = normalizeShore(mask);
-	if (m === 0) return null;
-	const hit = shoreCache.get(m);
-	if (hit !== undefined) return hit;
-	const q = [0, 1, 2, 3].map((n) => quarterRows(shoreQuarter(m, n), n));
-	const rows: string[] = [];
-	for (let y = 0; y < 8; y++) rows.push(q[0][y] + q[1][y]);
-	for (let y = 0; y < 8; y++) rows.push(q[2][y] + q[3][y]);
-	const made: SpriteDef = { rows, key: KEY };
-	shoreCache.set(m, made);
-	return made;
-}
-
-// ----------------------------------------------------------------- rivers
-
-// A river tile's channel, drawn from a code (see `riverCode`), cached by code.
-const riverCache = new Map<number, SpriteDef>();
-
-export function riverTile(code: number): SpriteDef {
-	const arms = code & 15;
-	const diag = code & 240;
-	const flare = (code >> 8) & arms;
-	const id = arms | diag | (flare << 8);
-	const hit = riverCache.get(id);
-	if (hit) return hit;
-
-	const wet: boolean[][] = Array.from({ length: TILE }, () => Array<boolean>(TILE).fill(false));
-	const fill = (x0: number, y0: number, x1: number, y1: number) => {
-		for (let y = Math.max(0, y0); y <= Math.min(TILE - 1, y1); y++) {
-			for (let x = Math.max(0, x0); x <= Math.min(TILE - 1, x1); x++) wet[y][x] = true;
-		}
-	};
-	fill(6, 6, 9, 9);
-	if (arms & N) fill(6, 0, 9, 5);
-	if (arms & E) fill(10, 6, 15, 9);
-	if (arms & S) fill(6, 10, 9, 15);
-	if (arms & W) fill(0, 6, 5, 9);
-	if (flare & N) fill(5, 0, 10, 2);
-	if (flare & E) fill(13, 5, 15, 10);
-	if (flare & S) fill(5, 13, 10, 15);
-	if (flare & W) fill(0, 5, 2, 10);
-	// a diagonal arm steps from the middle out to the shared corner, where the
-	// diagonal neighbour's mirrored arm picks it up
-	for (const [bit, dx, dy] of [
-		[NE, 1, -1],
-		[SE, 1, 1],
-		[SW, -1, 1],
-		[NW, -1, -1]
-	]) {
-		if (!(diag & bit)) continue;
-		for (let t = 0; t <= 6; t++) {
-			const x = dx > 0 ? 8 + t : 5 - t;
-			const y = dy > 0 ? 8 + t : 5 - t;
-			fill(x, y, x + 2, y + 2);
-		}
-	}
-	// round the corners of the middle that no river leaves through
-	if (!(arms & (N | W)) && !(diag & NW)) wet[6][6] = false;
-	if (!(arms & (N | E)) && !(diag & NE)) wet[6][9] = false;
-	if (!(arms & (S | W)) && !(diag & SW)) wet[9][6] = false;
-	if (!(arms & (S | E)) && !(diag & SE)) wet[9][9] = false;
-
-	// a darker rim, lighter water inside and a sand bank, so it reads at 1x
-	const g = grid('.');
-	const open = (x: number, y: number) => x >= 0 && y >= 0 && x < TILE && y < TILE && !wet[y][x];
-	for (let y = 0; y < TILE; y++) {
-		for (let x = 0; x < TILE; x++) {
-			if (wet[y][x]) {
-				const rim = open(x - 1, y) || open(x + 1, y) || open(x, y - 1) || open(x, y + 1);
-				g[y][x] = rim ? 'a' : (x * 3 + y * 5) % 7 === 0 ? 'f' : 'e';
-				continue;
-			}
-			for (let dy = -1; dy <= 1 && g[y][x] === '.'; dy++) {
-				for (let dx = -1; dx <= 1; dx++) {
-					if (wet[y + dy]?.[x + dx]) {
-						g[y][x] = 'S';
-						break;
-					}
-				}
-			}
-		}
-	}
-	const made = def(g);
-	riverCache.set(id, made);
-	return made;
-}
+export const SEA_SHALLOW: Look[] = [60, 61, 62].map((s) => look(waterTop('a', 'e', 6, s), 'earth'));
+export const SEA_DEEP: Look[] = [63, 64, 65].map((s) => look(waterTop('A', 'a', 7, s), 'earth'));
+export const LAKE: Look[] = [66, 67, 68].map((s) => look(waterTop('a', 'e', 8, s), 'earth'));
 
 // ------------------------------------------------------------------ icons
 
@@ -606,9 +382,19 @@ export const DEPOSIT_ICON: Partial<Record<number, SpriteDef>> = {
 	[Deposit.meteorite]: { rows: ['..L..', '.RR..', 'RkRR.'], key: KEY }
 };
 
+// where on the diamond a deposit's mark can sit (top-left of its 5 x 3)
+export const DEPOSIT_SPOTS: Spot[] = [
+	[7, 5],
+	[20, 5],
+	[9, 9],
+	[18, 9]
+];
+
+// Things that stand on a tile, written in tile rows (0 is the diamond's top
+// corner, rows above it are negative).
 function compose(parts: [string[], number, number][]): SpriteDef {
-	const g = grid('.');
-	for (const [rows, x, y] of parts) stamp(g, rows, x, y);
+	const g = standGrid();
+	for (const [rows, x, y] of parts) standStamp(g, rows, x, y);
 	return def(g);
 }
 
@@ -628,41 +414,46 @@ const HUT = [
 ];
 const STONE = ['.cc.', 'crrR', 'crrR', 'rrrR', 'rrRR', 'RRRR'];
 
-const fieldIcon = (): SpriteDef => {
-	const g = grid('.');
-	for (let y = 1; y <= 14; y++) {
-		for (let x = 1; x <= 14; x++) {
-			if (y % 3 === 0) g[y][x] = 'O';
-			else if (y % 3 === 1) g[y][x] = x % 3 === 0 ? 'l' : 'g';
-			else g[y][x] = 'o';
+// Distance of a pixel from the diamond's middle in "edge steps": 16 is the
+// diamond's own edge, so smaller numbers are rings inside it.
+const ring = (x: number, y: number): number => Math.abs(x - 15.5) + 2 * Math.abs(y - 7.5);
+
+// ploughed furrows along the tile's x axis, a headland of grass round them
+function fieldIcon(): SpriteDef {
+	const g = standGrid();
+	for (let y = 0; y < TILE_H; y++) {
+		for (let x = 0; x < TILE_W; x++) {
+			if (!inDiamond(x, y) || ring(x, y) > 13) continue;
+			const m = (((2 * y - x) % 6) + 6) % 6;
+			g[y + RISE][x] = m < 2 ? 'O' : m < 4 ? 'o' : x % 3 === 0 ? 'l' : 'g';
 		}
 	}
 	return def(g);
-};
+}
 
-const penIcon = (): SpriteDef => {
-	const g = grid('.');
-	for (let x = 1; x <= 14; x++) {
-		g[3][x] = x % 3 === 1 ? 'b' : 'W';
-		g[13][x] = x % 3 === 1 ? 'b' : 'W';
-	}
-	for (let y = 3; y <= 13; y++) {
-		g[y][1] = y % 3 === 0 ? 'b' : 'W';
-		g[y][14] = y % 3 === 0 ? 'b' : 'W';
-	}
-	for (let k = 0; k < 14; k++) {
-		g[4 + Math.floor(hash(3, k, 1) * 9)][2 + Math.floor(hash(3, k, 2) * 12)] =
-			k % 4 === 0 ? 'y' : 's';
+// a fence round the diamond with straw inside
+function penIcon(): SpriteDef {
+	const g = standGrid();
+	for (let y = 0; y < TILE_H; y++) {
+		for (let x = 0; x < TILE_W; x++) {
+			if (!inDiamond(x, y)) continue;
+			const r = ring(x, y);
+			if (r > 13 || r < 10.5) {
+				if (r < 10.5 && hash(x, y, 3) < 0.12) g[y + RISE][x] = hash(x, y, 4) < 0.3 ? 'y' : 's';
+				continue;
+			}
+			g[y + RISE][x] = (x >> 1) % 3 === 0 ? 'b' : 'W';
+		}
 	}
 	return def(g);
-};
+}
 
 export const BUILT_ICON: Partial<Record<number, SpriteDef>> = {
 	[Built.camp]: compose([
-		[TENT, 1, 5],
-		[FIRE, 11, 10]
+		[TENT, 8, 4],
+		[FIRE, 19, 8]
 	]),
-	[Built.hut]: compose([[HUT, 2, 3]]),
+	[Built.hut]: compose([[HUT, 10, 2]]),
 	[Built.field]: fieldIcon(),
 	[Built.kiln]: compose([
 		[
@@ -675,18 +466,18 @@ export const BUILT_ICON: Partial<Record<number, SpriteDef>> = {
 				'YYkEFFEkXX',
 				'XXXXXXXXXX'
 			],
-			3,
-			6
+			11,
+			5
 		],
-		[['.c', 'c.', '.c'], 11, 1]
+		[['.c', 'c.', '.c'], 14, 1]
 	]),
 	[Built.pen]: penIcon(),
 	[Built.shrine]: compose([
-		[STONE, 1, 6],
-		[STONE, 6, 3],
-		[STONE, 11, 7],
-		[['rr', 'Rr'], 7, 11],
-		[['n'], 7, 10]
+		[STONE, 8, 6],
+		[STONE, 13, 3],
+		[STONE, 19, 6],
+		[['rr', 'Rr'], 15, 10],
+		[['n'], 15, 9]
 	]),
 	[Built.store]: compose([
 		[
@@ -701,8 +492,8 @@ export const BUILT_ICON: Partial<Record<number, SpriteDef>> = {
 				'.bb......bb.',
 				'.b........b.'
 			],
-			2,
-			4
+			10,
+			3
 		]
 	]),
 	[Built.furnace]: compose([
@@ -719,19 +510,19 @@ export const BUILT_ICON: Partial<Record<number, SpriteDef>> = {
 				'.rrrrrrRR.',
 				'RRRRRRRRRR'
 			],
-			3,
-			3
+			11,
+			2
 		]
 	])
 };
 
-// A village's centre: huts, a tent, a flag in the village's colour.
+// A village's centre: a hut, a tent, a fire and a flag in the village's colour.
 export const VILLAGE_ICON: SpriteDef = compose([
-	[TENT, 7, 1],
-	[HUT, 0, 6],
-	[['W', 'W', 'W', 'W', 'W', 'W', 'W'], 13, 7],
-	[['MM', 'MM'], 14, 7],
-	[FIRE, 12, 13]
+	[HUT, 8, 1],
+	[TENT, 16, 6],
+	[FIRE, 13, 11],
+	[['W', 'W', 'W', 'W', 'W', 'W', 'W', 'W'], 5, 2],
+	[['MMM', 'MMM', 'MM.'], 6, 2]
 ]);
 
 // ------------------------------------------------------------ picking tiles
@@ -765,6 +556,17 @@ export function shoreMask(layers: MapLayers, tx: number, ty: number): number {
 		if (inside(layers, x, y) && !waterAt(layers, x, y)) mask |= bit;
 	}
 	return mask;
+}
+
+// Which land neighbours are high ground (above the beach level), where the
+// shore is the foot of a cliff rather than a beach.
+function rockyShore(layers: MapLayers, tx: number, ty: number, mask: number): number {
+	const levels = levelsOf(layers);
+	let rocky = 0;
+	for (const [dx, dy, bit] of DIRS) {
+		if (mask & bit && levels[(ty + dy) * layers.size + tx + dx] > 1) rocky |= bit;
+	}
+	return rocky;
 }
 
 const isRiver = (layers: MapLayers, i: number): boolean =>
@@ -829,9 +631,16 @@ export const riverCode = (layers: MapLayers, tx: number, ty: number): number =>
 	riverLinks(layers)[ty * layers.size + tx];
 
 export type TilePick = {
+	// the diamond's top face
 	base: SpriteDef;
-	// shoreline or river laid over the base
+	// trees or peaks standing on it
+	stand: SpriteDef | null;
+	// what the tile's cliffs are made of
+	face: FaceMat;
+	// shoreline or river laid over the top face
 	over: SpriteDef | null;
+	// the river's channel code (0 if not a river), for waterfalls
+	river: number;
 	deposit: SpriteDef | null;
 	depositX: number;
 	depositY: number;
@@ -839,8 +648,11 @@ export type TilePick = {
 };
 
 export const newPick = (): TilePick => ({
-	base: GRASS[0],
+	base: GRASS[0].top,
+	stand: null,
+	face: 'earth',
 	over: null,
+	river: 0,
 	deposit: null,
 	depositX: 0,
 	depositY: 0,
@@ -850,11 +662,11 @@ export const newPick = (): TilePick => ({
 const choose = <T>(list: T[], tx: number, ty: number, salt: number): T =>
 	list[Math.floor(hash(tx, ty, salt) * list.length)];
 
-function landBase(layers: MapLayers, living: Living, i: number, tx: number, ty: number): SpriteDef {
+function landLook(layers: MapLayers, living: Living, i: number, tx: number, ty: number): Look {
 	const biome = layers.biome[i];
 	const wood = living.wood[i];
 	const plants = living.plants[i];
-	const tree = (sparse: SpriteDef[], dense: SpriteDef[], conifers: [SpriteDef[], SpriteDef[]]) => {
+	const tree = (sparse: Look[], dense: Look[], conifers: [Look[], Look[]]) => {
 		// high ground and a share of the rest grow conifers
 		const pine = layers.height[i] > 0.62 || hash(tx >> 2, ty >> 2, 21) < 0.3;
 		const list = wood < 0.4 ? (pine ? conifers[0] : sparse) : pine ? conifers[1] : dense;
@@ -898,39 +710,52 @@ export function pickTile(
 ): void {
 	const i = ty * layers.size + tx;
 	out.over = null;
+	out.stand = null;
+	out.river = 0;
 	out.deposit = null;
 	out.built = null;
 	const water = layers.water[i];
 
 	if (water === Water.river || water === Water.spring) {
-		out.base = landBase(layers, living, i, tx, ty);
-		out.over = riverTile(riverCode(layers, tx, ty));
+		const land = landLook(layers, living, i, tx, ty);
+		out.base = land.top;
+		out.face = land.face;
+		// the channel stays in the open: no trees growing out of it
+		out.river = riverCode(layers, tx, ty);
+		out.over = riverOverlay(out.river);
 		return;
 	}
 	if (water !== Water.none || layers.biome[i] === Biome.ocean) {
 		const mask = shoreMask(layers, tx, ty);
-		if (water === Water.lake) out.base = choose(LAKE, tx, ty, 12);
-		else if (mask !== 0 || layers.height[i] > SEA_LEVEL * 0.7) {
-			out.base = choose(SEA_SHALLOW, tx, ty, 13);
-		} else out.base = choose(SEA_DEEP, tx, ty, 14);
-		out.over = shoreTile(mask);
+		let wet: Look;
+		if (water === Water.lake) wet = choose(LAKE, tx, ty, 12);
+		else if (mask !== 0 || layers.height[i] > SEA_LEVEL * 0.7)
+			wet = choose(SEA_SHALLOW, tx, ty, 13);
+		else wet = choose(SEA_DEEP, tx, ty, 14);
+		out.base = wet.top;
+		out.face = wet.face;
+		out.over = mask === 0 ? null : shoreOverlay(mask, rockyShore(layers, tx, ty, mask));
 		return;
 	}
 
-	out.base = landBase(layers, living, i, tx, ty);
+	const land = landLook(layers, living, i, tx, ty);
+	out.base = land.top;
+	out.stand = land.stand;
+	out.face = land.face;
 	const deposit = DEPOSIT_ICON[layers.deposit[i]];
 	if (deposit) {
-		const w = deposit.rows[0].length;
+		const spot = DEPOSIT_SPOTS[Math.floor(hash(tx, ty, 15) * DEPOSIT_SPOTS.length)];
 		out.deposit = deposit;
-		out.depositX = hash(tx, ty, 15) < 0.5 ? 1 : TILE - w - 1;
-		out.depositY = hash(tx, ty, 16) < 0.5 ? 1 : TILE - deposit.rows.length - 1;
+		out.depositX = spot[0];
+		out.depositY = spot[1];
 	}
 	out.built = BUILT_ICON[living.built[i]] ?? null;
 }
 
-// Every tile-sized sprite, for tests and tools.
+// Every sprite of a 32-wide tile (top faces, standing sprites, overlays and
+// icons), for tests and tools.
 export function allTileSprites(): SpriteDef[] {
-	const list = [
+	const looks: Look[] = [
 		...GRASS,
 		MEADOW,
 		...DRY_GRASS,
@@ -947,14 +772,19 @@ export function allTileSprites(): SpriteDef[] {
 		CLEARING,
 		...SEA_SHALLOW,
 		...SEA_DEEP,
-		...LAKE,
-		VILLAGE_ICON
+		...LAKE
 	];
+	const list: SpriteDef[] = [];
+	for (const l of looks) {
+		list.push(l.top);
+		if (l.stand) list.push(l.stand);
+	}
+	list.push(VILLAGE_ICON);
 	for (let m = 0; m < 256; m++) {
-		const shore = shoreTile(m);
+		const shore = shoreOverlay(m);
 		if (shore) list.push(shore);
 	}
-	for (let c = 0; c < 256; c++) list.push(riverTile(c | ((c & 15) << 8)));
+	for (let c = 0; c < 256; c++) list.push(riverOverlay(c | ((c & 15) << 8)));
 	for (const icon of Object.values(BUILT_ICON)) if (icon) list.push(icon);
 	return list;
 }
