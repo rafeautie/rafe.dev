@@ -39,10 +39,13 @@ export const DEATH_BY_AGE: [number, number][] = [
 	[2, 0.06],
 	[12, 0.01],
 	[35, 0.008],
-	[45, 0.03],
-	[55, 0.08],
-	[65, 0.18],
-	[Infinity, 0.35]
+	[45, 0.02],
+	[50, 0.03],
+	[55, 0.04],
+	[60, 0.07],
+	[65, 0.11],
+	[75, 0.22],
+	[Infinity, 0.4]
 ];
 // how fond two people must be before they pair, and how often they get round to it
 export const PAIR_AFFECTION = 0.55;
@@ -53,7 +56,7 @@ export const NOTABLE_MAX = 8;
 
 function yearlyRisk(age: number): number {
 	for (const [upTo, risk] of DEATH_BY_AGE) if (age <= upTo) return risk;
-	return 0.35;
+	return 0.4;
 }
 
 // What killed someone whose body gave out
@@ -240,21 +243,21 @@ function standing(world: World, p: Person): number {
 }
 
 function markNotable(world: World) {
-	const adults = living(world).filter((p) => ageOf(world, p) >= ADULT_AGE);
+	const adults = living(world).filter((p) => p.died === undefined && ageOf(world, p) >= ADULT_AGE);
 	for (const p of world.people) if (p.died === undefined) p.notable = false;
 	adults.sort((a, b) => standing(world, b) - standing(world, a) || a.id - b.id);
 	for (const p of adults.slice(0, NOTABLE_MAX)) p.notable = true;
 }
 
-// The oldest respected adult leads
+// The oldest respected adult leads. Only living adults can lead; a new one is
+// chosen only when there is none (or the leader has died), and named once.
 function chooseLeaders(world: World) {
 	for (const v of world.villages) {
 		const here = living(world).filter(
-			(p) => p.village === v.id && ageOf(world, p) >= ADULT_AGE + 4
+			(p) => p.died === undefined && p.village === v.id && ageOf(world, p) >= ADULT_AGE + 4
 		);
 		if (here.length === 0) continue;
-		const current = here.find((p) => p.id === v.leader);
-		if (current) continue;
+		if (here.some((p) => p.id === v.leader)) continue;
 		const score = (p: Person) => ageOf(world, p) + p.needs.respect * 10 + p.skills.leading * 20;
 		const leader = here.reduce((a, b) => (score(b) > score(a) ? b : a));
 		v.leader = leader.id;
@@ -270,7 +273,10 @@ function chooseLeaders(world: World) {
 
 export function dailyLife(world: World, rng: Rng) {
 	const day = dayOf(world);
+	// people who died earlier this tick are still in the cached list
+	refreshLiving(world);
 	ageDeaths(world, rng);
+	refreshLiving(world);
 	pairUp(world, rng);
 	births(world, rng);
 	// a new year takes a little from the old

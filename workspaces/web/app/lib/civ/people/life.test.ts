@@ -5,7 +5,7 @@ import { makePerson } from './create';
 import { causeOfDeath, dailyLife, die } from './life';
 import { ageOf, isAlive } from './village';
 import { ADULT_AGE, DAYS_PER_YEAR, POPULATION_CAP } from '../config';
-import type { World } from '../types';
+import type { Person, World } from '../types';
 
 function setup() {
 	const { world } = createWorld(2);
@@ -130,5 +130,44 @@ describe('life', () => {
 		expect(notable.length).toBeGreaterThan(0);
 		expect(notable.length).toBeLessThanOrEqual(8);
 		expect(notable.some((p) => p.id === world.villages[0].leader)).toBe(true);
+	});
+
+	it('never leads with the dead, and names a new leader once', () => {
+		const { world, rng } = setup();
+		const camp = world.villages[0];
+		dailyLife(world, rng);
+		const first = camp.leader;
+		expect(first).toBeDefined();
+		const leader = world.people.find((p) => p.id === first) as Person;
+		// the leader dies during a tick, before the day's life runs on a stale list
+		die(world, leader, 'old age');
+		expect(camp.leader).toBeUndefined();
+		world.tick += 4;
+		dailyLife(world, rng);
+		expect(camp.leader).toBeDefined();
+		expect(camp.leader).not.toBe(first);
+		const next = world.people.find((p) => p.id === camp.leader) as Person;
+		expect(isAlive(next)).toBe(true);
+		expect(ageOf(world, next)).toBeGreaterThanOrEqual(ADULT_AGE);
+		for (let d = 0; d < 30; d++) {
+			world.tick += 4;
+			dailyLife(world, rng);
+		}
+		// one announcement for the first leader, one for the next, none for the dead again
+		const named = world.chronicle.filter((e) => e.text.includes('became the leader'));
+		expect(named.length).toBe(2);
+		expect(named.filter((e) => e.people?.[0] === first).length).toBe(1);
+	});
+
+	it('does not wear out a healthy 55-year-old too fast', () => {
+		const { world, rng } = setup();
+		const group = Array.from({ length: 200 }, () => addPerson(world, rng, 'm', 55));
+		for (let d = 0; d < DAYS_PER_YEAR; d++) {
+			world.tick += 4;
+			for (const p of world.people) if (isAlive(p)) p.health = 1;
+			dailyLife(world, rng);
+		}
+		const dead = group.filter((p) => !isAlive(p)).length;
+		expect(dead).toBeLessThan(group.length * 0.1);
 	});
 });
