@@ -63,6 +63,8 @@ describe('life', () => {
 			dad.partner = mum.id;
 			return { mum, dad };
 		});
+		// a full granary, since a bare camp has no room for this many
+		world.villages[0].store.push({ material: 'wild-grain', count: 120 });
 		const mums = new Set(couples.map((c) => c.mum.id));
 		const before = world.people.length;
 		const kids = () => world.people.filter((p) => p.mother !== undefined && mums.has(p.mother));

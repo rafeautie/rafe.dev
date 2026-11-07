@@ -32,7 +32,7 @@ import {
 // ---- tuning knobs
 // chance per day that a partnered woman of child-bearing age conceives, before
 // food and room are counted
-export const BIRTH_BASE = 0.0023;
+export const BIRTH_BASE = 0.002;
 export const BIRTH_AGES = { min: 16, max: 40 };
 // Food know-how makes children likelier (more is surely fed): each adds this much
 // to the base rate, up to BIRTH_BOOST_MAX times it
@@ -44,7 +44,7 @@ export const BIRTH_BOOST: Record<string, number> = {
 	salting: 0.05,
 	pottery: 0.05
 };
-export const BIRTH_BOOST_MAX = 1.7;
+export const BIRTH_BOOST_MAX = 1.9;
 // a band this small or smaller has a harder time and a keener wish for children
 export const SMALL_BAND = 20;
 // a mother waits this many years between children
@@ -67,7 +67,7 @@ export const DEATH_BY_AGE: [number, number][] = [
 // What a village can feed. A band living off what it finds supports about this
 // many; know-how, fields, tame herds and a full store raise it. Births slow as
 // a village nears its capacity and stop above it (famine does the rest).
-export const CAPACITY_BASE = 16;
+export const CAPACITY_BASE = 14;
 export const CAPACITY_KNOW: Record<string, number> = {
 	cooking: 2,
 	drying: 2,
@@ -81,10 +81,10 @@ export const CAPACITY_KNOW: Record<string, number> = {
 };
 // the share of its capacity a village has left when births begin to taper
 export const CROWDING = 0.35;
-export const CAPACITY_PER_FIELD = 5;
+export const CAPACITY_PER_FIELD = 2.3;
 export const CAPACITY_PER_TAME = 2;
 // a full store adds up to this much room, one person for each few units of food
-export const CAPACITY_STORE_MAX = 30;
+export const CAPACITY_STORE_MAX = 12;
 export const CAPACITY_STORE_UNITS = 6;
 // How much each comfort cuts the sickness that kills, together at most this
 // much (cooked food, clean water kept in pots or wells, a roof)
@@ -297,7 +297,7 @@ function bear(world: World, rng: Rng, mother: Person, father: Person, v: Village
 export function birthBoost(know: Record<string, number>, heads: number): number {
 	let boost = 1;
 	for (const [id, more] of Object.entries(BIRTH_BOOST)) if ((know[id] ?? 0) > 0) boost += more;
-	if (heads < SMALL_BAND) boost += (0.5 * (SMALL_BAND - heads)) / SMALL_BAND;
+	if (heads < SMALL_BAND) boost += (0.9 * (SMALL_BAND - heads)) / SMALL_BAND;
 	return Math.min(BIRTH_BOOST_MAX, boost);
 }
 

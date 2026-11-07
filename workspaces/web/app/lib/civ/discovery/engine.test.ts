@@ -81,22 +81,46 @@ describe('resolve', () => {
 		expect(resolve(attempt('heat', ['wet-pot'], 0), new Rng(1)).reason).toMatch(/no fire/);
 	});
 
-	it('needs charcoal and 1100 degrees for copper', () => {
+	it('needs charcoal, a kiln and 1100 degrees for copper', () => {
 		const bare = resolve(attempt('heat', ['copper-ore'], 1500), new Rng(1));
 		expect(bare.result).toBe('fail');
 		expect(bare.reason).toMatch(/charcoal/);
-		const cool = resolve(attempt('heat', ['copper-ore', 'charcoal'], 900), new Rng(1));
+		const open = resolve(attempt('heat', ['copper-ore', 'charcoal'], 1500), new Rng(1));
+		expect(open.result).toBe('fail');
+		expect(open.reason).toMatch(/kiln/);
+		const cool = resolve(attempt('heat', ['copper-ore', 'charcoal', 'kiln'], 900), new Rng(1));
 		expect(cool.result).toBe('fail');
 		expect(cool.reason).toMatch(/not hot enough/);
-		const good = resolve(attempt('heat', ['copper-ore', 'charcoal'], 1100), new Rng(1));
+		const good = resolve(attempt('heat', ['copper-ore', 'charcoal', 'kiln'], 1100), new Rng(1));
 		expect(good.result).toBe('success');
 		expect(good.produces).toEqual([{ material: 'copper', count: 2 }]);
 		expect(good.learns).toBe('smelting-copper');
 		expect(good.consumes).toContainEqual({ material: 'charcoal', count: 1 });
+		// the kiln stays standing
+		expect(good.consumes.some((c) => c.material === 'kiln')).toBe(false);
 		// tin melts out lower
-		expect(resolve(attempt('heat', ['tin-ore', 'charcoal'], 900), new Rng(1)).result).toBe(
+		expect(resolve(attempt('heat', ['tin-ore', 'charcoal', 'kiln'], 900), new Rng(1)).result).toBe(
 			'success'
 		);
+	});
+
+	it('works out marks, cooking and planting only with their setting to hand', () => {
+		const lacks = (action: string, items: string[], word: RegExp) => {
+			const out = resolve(attempt(action, items), new Rng(1));
+			expect(out.result).toBe('fail');
+			expect(out.reason).toMatch(word);
+		};
+		lacks('shape', ['wet-clay', 'flake', 'tally-bone'], /seed store and kiln/);
+		lacks('heat', ['raw-meat'], /hearth/);
+		lacks('plant', ['wild-grain', 'earth', 'digging-stick'], /pit/);
+		const marked = resolve(
+			attempt('shape', ['wet-clay', 'flake', 'tally-bone', 'seed-store', 'kiln']),
+			new Rng(1)
+		);
+		expect(marked.result).toBe('success');
+		expect(marked.produces).toEqual([{ material: 'wet-tablet', count: 1 }]);
+		// the store, the kiln and the tools stay where they are
+		expect(marked.consumes).toEqual([{ material: 'wet-clay', count: 1 }]);
 	});
 
 	it('hammers sky iron cold into a blade', () => {

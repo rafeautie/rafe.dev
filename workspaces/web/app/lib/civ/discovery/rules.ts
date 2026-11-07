@@ -298,7 +298,8 @@ const RAW: Raw[] = [
 		id: 'smelt-ore',
 		action: 'heat',
 		in: ['#ore'],
-		needs: ['charcoal'],
+		// ore is smelted in a kiln, on charcoal: metal comes after the kiln, not before it
+		needs: ['charcoal', '~kiln'],
 		by: 'smeltsAt',
 		skill: 'crafting',
 		hard: 0.5,
@@ -312,7 +313,7 @@ const RAW: Raw[] = [
 		in: ['#unfired'],
 		by: 'firesAt',
 		skill: 'crafting',
-		hard: 0.4,
+		hard: 0.33,
 		ruins: true,
 		text: 'the fire hardened the clay',
 		fail: 'the clay cracked in the fire'
@@ -321,6 +322,8 @@ const RAW: Raw[] = [
 		id: 'cook-meat',
 		action: 'heat',
 		in: ['raw-meat'],
+		// cooking is worked out at a kept fire, so it comes after the hearth
+		needs: ['~hearth'],
 		heat: 300,
 		out: ['cooked-meat', 'fat'],
 		learns: 'cooking',
@@ -333,6 +336,7 @@ const RAW: Raw[] = [
 		id: 'cook-fish',
 		action: 'heat',
 		in: ['fish'],
+		needs: ['~hearth'],
 		heat: 300,
 		out: ['cooked-fish'],
 		learns: 'cooking',
@@ -344,6 +348,7 @@ const RAW: Raw[] = [
 		id: 'bake-roots',
 		action: 'heat',
 		in: ['roots'],
+		needs: ['~hearth'],
 		heat: 300,
 		out: ['baked-roots'],
 		learns: 'cooking',
@@ -525,7 +530,7 @@ const RAW: Raw[] = [
 		learns: 'kiln',
 		gives: 1100,
 		skill: 'building',
-		hard: 0.6,
+		hard: 0.5,
 		ruins: true,
 		text: 'built clay walls around the fire and it burned far hotter',
 		fail: 'the clay walls cracked and fell in'
@@ -570,10 +575,12 @@ const RAW: Raw[] = [
 		id: 'sow-field',
 		action: 'plant',
 		in: ['wild-grain|roots', 'earth', '~digging-stick'],
+		// seed goes into a dug hole, so planting comes after digging
+		needs: ['~pit'],
 		out: ['field'],
 		learns: 'planting',
 		skill: 'farming',
-		hard: 0.35,
+		hard: 0.45,
 		text: 'pressed seed into bare earth to grow',
 		fail: 'the seed rotted in the ground'
 	},
@@ -804,6 +811,9 @@ const RAW: Raw[] = [
 		id: 'mark-clay',
 		action: 'shape',
 		in: ['wet-clay', '~#sharp', '~tally-bone'],
+		// Marks are worth the clay only in a settled village: a seed store to count,
+		// and a kiln to fire the record hard. That puts writing behind farming and pottery.
+		needs: ['~seed-store', '~kiln'],
 		out: ['wet-tablet'],
 		learns: 'marks',
 		skill: 'crafting',

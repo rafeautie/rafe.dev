@@ -51,35 +51,57 @@ harmless.
 
 ## Pace now vs target
 
-Median in-game year a milestone first happened, over 8 seeds and 300 years:
+Median in-game year a milestone first happened, over 8 seeds and 300 years
+(seeds 1-8, after the second tuning pass):
 
-| Milestone | Target | Now (median, range) | Reached |
-| --- | --- | --- | --- |
-| fire | ~17 | 15 (5–40) | 8/8 |
-| cooking | ~50 | 25 (16–116) | 8/8 |
-| first named place | ~50 | 31 (1–58) | 8/8 |
-| planting | ~100 | 56 (25–119) | 8/8 |
-| pottery | ~100 | 131 (25–233) | 8/8 |
-| a village of 50 | ~170 | 99 (75–157) | 8/8 |
-| copper | ~230 | 183 (109–257) | **2/8** |
-| bronze | ~300 | – | **0/8** |
-| writing | ~300 | 173 (149–226) | 7/8, too early |
+| Milestone         | Target | Now (median, range) | Reached |
+| ----------------- | ------ | ------------------- | ------- |
+| fire              | ~17    | 11 (6-15)           | 8/8     |
+| cooking           | ~50    | 59 (23-74)          | 8/8     |
+| first named place | ~50    | 64 (13-112)         | 8/8     |
+| planting          | ~100   | 75 (19-118)         | 8/8     |
+| pottery           | ~100   | 81 (42-169)         | 8/8     |
+| a village of 50   | ~170   | 130 (87-160)        | 8/8     |
+| kiln              | -      | 166 (57-278)        | 8/8     |
+| copper            | ~230   | 200 (124-248)       | 5/8     |
+| tin smelted       | -      | 212 (168-268)       | 5/8     |
+| bronze            | ~300   | 242 (229-248)       | 3/8     |
+| writing           | ~300   | 205 (162-236)       | 4/8     |
 
-Population by year (median): 23 at year 50, 47 at 100, 98 at 170, 275 at 300,
-reaching the 300 limit. Causes of death: old age 68%, sickness 32%, cold 0%.
+Population by year (median): 22 at year 50, 36 at 100, 69 at 170, 172 at 300
+(peak 176, under the 300 limit). Causes of death: old age 69%, sickness 31%.
 
-The tuning pass was cut off by a container restart before it finished. What's
-left:
+What changed in this pass:
 
-1. **Writing comes before copper.** Make writing deeper, for example by
-   needing a settled village or a store.
-2. **Copper is rare and bronze never happens.** Tin is far away on purpose, so
-   people need to travel or trade, which is build step 5. Copper probably also
-   needs the kiln to arrive earlier.
-3. **Planting and fields come early and pottery comes late.** Swap their
-   weights.
-4. **Villages never split** (0/8), and the population fills the cap. Splitting
-   is build step 5.
+- **Writing** needs a seed store and a kiln in the village (`mark-clay` `needs`).
+  Built things now count as "to hand" for rules (`structuresAt` in
+  `people/village.ts`), so a rule can name `seed-store` or `kiln` as a need.
+- **Smelting** needs a kiln (`smelt-ore` `needs`), so metal comes after the kiln.
+- **Copper was rare because nobody went far enough**: a day's gathering only
+  reaches about 35 tiles (the walk home at dusk and thirst turn people back),
+  and copper is 28-129 tiles from the start. `people/trips.ts` adds long
+  walks (copper ore for the curious, tin ore for metalworkers) from any
+  distance, rare (`TRIP_CHANCE`). Tin stays far away.
+- **Cooking** needs a hearth, **planting** needs a dug pit (`needs` again).
+- `DEPTH_FACTOR` is gentler at depths 3-7 (it was 0.14 flat, 0.08 at 7).
+- Population: base capacity 14, a full store adds at most 12, a field adds 2.3,
+  births 0.002 a day with a stronger boost for tiny bands.
+- Naming a place is rarer (`NAME_DAILY` halved).
+
+What's left:
+
+1. **Results swing a lot between seeds.** Some bands stay tiny for 100+ years
+   (seeds 1, 2, 4 in earlier runs), which delays everything; medians over 8
+   seeds can move by 30% for a small tweak. Use 12 seeds x 150 years to check
+   the early milestones (about 3 minutes).
+2. **Copper 5/8, bronze 3/8, writing 4/8**: metal and writing wait on the kiln
+   (median 166, late in some seeds). Bronze lands a bit early (242).
+3. Village of 50 comes a little early (130 vs 170); first named place late (64).
+4. **Villages never split** (0/8). Splitting is build step 5.
+
+Diagnostics: `sim/geo.diag.test.ts` (`VITE_GEO=1`, and `VITE_GEO_PLAY=1,2,3`
+for the metals chain) prints how far each deposit is from the start. Add
+`--disableConsoleIntercept` to see `console.log` output from any of these.
 
 The settings to tune are named constants at the top of:
 
@@ -93,12 +115,12 @@ The settings to tune are named constants at the top of:
 
 0. Run `/civ/bench` on real hardware, then set the AI budget (calls a minute,
    E2B vs E4B).
-3. Connect the model worker to `decideIdea`, then add the Plan, Talk and Name
+1. Connect the model worker to `decideIdea`, then add the Plan, Talk and Name
    requests. The page side is `useMind` in `lib/llm/client.ts`.
-4. Felt god: prayers, favor, whispers (free text, filtered).
-5. Villages splitting, trade and raids (needed for tin and bronze).
-6. History: recap, timeline, save and load.
-7. Launch: a device check page ("explain and stop" if a device can't run the
+2. Felt god: prayers, favor, whispers (free text, filtered).
+3. Villages splitting, trade and raids (needed for tin and bronze).
+4. History: recap, timeline, save and load.
+5. Launch: a device check page ("explain and stop" if a device can't run the
    model), then remove `noindex`.
 
 ## Known issues

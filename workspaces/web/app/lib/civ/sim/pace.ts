@@ -11,17 +11,21 @@ export // what counts as each milestone: a piece of know-how, or something built
 const KNOWLEDGE = [
 	'fire-making',
 	'knapping',
+	'fire-keeping',
 	'cooking',
 	'pottery',
 	'planting',
 	'kiln',
+	'charcoal',
 	'smelting-copper',
+	'smelting-tin',
 	'bronze',
 	'writing'
 ];
 export const MILESTONES = [
 	'fire-making',
 	'knapping',
+	'fire-keeping',
 	'cooking',
 	'place',
 	'pottery',
@@ -29,7 +33,9 @@ export const MILESTONES = [
 	'field',
 	'store',
 	'kiln',
+	'charcoal',
 	'smelting-copper',
+	'smelting-tin',
 	'bronze',
 	'writing',
 	'pop50',

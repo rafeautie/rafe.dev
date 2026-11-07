@@ -15,6 +15,7 @@ import {
 	indexOf,
 	materialsAround,
 	mergedKnowledge,
+	structuresAt,
 	type Index
 } from './village';
 
@@ -63,11 +64,18 @@ export function updateVillageHeat(world: World, v: Village) {
 
 // ------------------------------------------------------------- insight
 
-function obtainable(person: Person, v: Village, index: Index, idea: Idea): boolean {
+function obtainable(
+	person: Person,
+	v: Village,
+	index: Index,
+	built: Set<string>,
+	idea: Idea
+): boolean {
 	const counts = new Map<string, number>();
 	for (const id of idea.items) counts.set(id, (counts.get(id) ?? 0) + 1);
 	for (const [id, n] of counts) {
 		if (countOf(person.carrying, id) + countOf(v.store, id) >= n) continue;
+		if (built.has(id)) continue;
 		if ((index.materials.get(id)?.length ?? 0) === 0) return false;
 	}
 	return true;
@@ -83,6 +91,8 @@ export function maybeInsight(world: World, rng: Rng, p: Person): boolean {
 	const nearby = materialsAround(world.map, p.x, p.y, 4);
 	for (const s of p.carrying) nearby.add(s.material);
 	for (const s of v.store) nearby.add(s.material);
+	const built = structuresAt(world, v);
+	for (const id of built) nearby.add(id);
 	// handling the same things day after day makes them familiar
 	let familiar = 0;
 	const counts: number[] = [];
@@ -106,7 +116,7 @@ export function maybeInsight(world: World, rng: Rng, p: Person): boolean {
 
 	const index = indexOf(world, v);
 	const options = ideaOptions(p, [...nearby], v.heat, rng, IDEA_COUNT).filter((idea) =>
-		obtainable(p, v, index, idea)
+		obtainable(p, v, index, built, idea)
 	);
 	const idea = decideIdea(world, p, options, rng);
 	if (!idea) return false;

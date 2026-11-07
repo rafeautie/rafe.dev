@@ -8,6 +8,7 @@ import type { Rng } from '../rng';
 import type { ActivityKind, Herd, Person, Village, World } from '../types';
 import { CURIOSITIES, endActivity, prayedRecently, startActivity, teachable } from './act';
 import { CAMP_RADIUS, nearWolf } from './needs';
+import { continueTrip, maybeStartTrip } from './trips';
 import {
 	ageOf,
 	clamp01,
@@ -152,6 +153,9 @@ export function choose(world: World, rng: Rng, p: Person) {
 	const v = world.villages[p.village];
 	if (!v) return endActivity(p);
 
+	// someone on a long walk for ore keeps going, day or night
+	if (p.trip && continueTrip(world, p, v)) return;
+
 	const age = ageOf(world, p);
 	const child = age < ADULT_AGE;
 	const d_camp = dist(p.x, p.y, v.x, v.y);
@@ -267,6 +271,7 @@ export function choose(world: World, rng: Rng, p: Person) {
 	// ---- stock the camp with useful materials, and see the world
 	const spare = n.food > 0.6 && n.water > 0.6 && n.rest > 0.4;
 	if (spare && !small) {
+		if (!child && maybeStartTrip(world, rng, p, v, age) && continueTrip(world, p, v)) return;
 		const short = STOCK_WANTED.filter((id) => countOf(v.store, id) < 6);
 		let material = short.length ? short[Math.floor(rng.next() * short.length)] : undefined;
 		let trip = false;

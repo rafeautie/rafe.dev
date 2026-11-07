@@ -24,6 +24,9 @@ export const COMPANY_FALL = 0.012;
 export const CURIOSITY_FALL = 0.008;
 // how far from the village centre counts as "at camp"
 export const CAMP_RADIUS = 5;
+// On a long walk they drink at streams, forage and doze as they go, so food, water
+// and rest never fall below this (a trip is not a way to die of thirst).
+export const ROAD_FLOOR = 0.4;
 
 const WORKING = new Set(['forage', 'hunt', 'fish', 'gather', 'craft', 'build', 'walk', 'flee']);
 
@@ -84,6 +87,11 @@ export function updateNeeds(world: World, p: Person) {
 	n.water = clamp01(n.water - WATER_FALL * effort * hot);
 	n.rest = clamp01(asleep ? n.rest + REST_GAIN : n.rest - REST_FALL * (working ? 1.3 : 1));
 	n.warmth = clamp01(n.warmth + (targetWarmth(world, p) - n.warmth) * 0.3);
+	if (p.trip) {
+		n.food = Math.max(n.food, ROAD_FLOOR);
+		n.water = Math.max(n.water, ROAD_FLOOR);
+		n.rest = Math.max(n.rest, ROAD_FLOOR);
+	}
 
 	const wolf = nearWolf(world, p);
 	// at camp, among others and by the fire, a wolf nearby is a worry, not a terror

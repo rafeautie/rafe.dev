@@ -6,6 +6,7 @@ import { DAYS_PER_YEAR, TICKS_PER_DAY } from '../config';
 import { foodValue, isFood, materialsFromDeposit, materialsFromTile } from '../discovery/sources';
 import {
 	Biome,
+	Built,
 	type Deposit,
 	type Ground,
 	Water,
@@ -322,6 +323,41 @@ export function stillGood(map: WorldMap, material: MaterialId | 'plants', i: num
 // ----------------------------------------------------------- the village
 
 export const hasShelter = (v: Village) => v.customs.includes('shelter');
+
+// Built things that a rule can name as an input without anyone carrying them (a
+// store to count what is in it, a kiln to build up from). They stay where they are.
+const STRUCTURE_ITEM: Record<number, MaterialId> = {
+	[Built.kiln]: 'kiln',
+	[Built.furnace]: 'furnace',
+	[Built.store]: 'seed-store'
+};
+const STRUCTURE_REACH = 10;
+const structureCache = new WeakMap<Village, { builtAt: number; items: Set<MaterialId> }>();
+
+export function structuresAt(world: World, v: Village): Set<MaterialId> {
+	const cached = structureCache.get(v);
+	if (cached && world.tick - cached.builtAt < REFRESH_TICKS) return cached.items;
+	const { map } = world;
+	const items = new Set<MaterialId>();
+	const cx = Math.floor(v.x);
+	const cy = Math.floor(v.y);
+	for (
+		let y = Math.max(0, cy - STRUCTURE_REACH);
+		y <= Math.min(map.size - 1, cy + STRUCTURE_REACH);
+		y++
+	) {
+		for (
+			let x = Math.max(0, cx - STRUCTURE_REACH);
+			x <= Math.min(map.size - 1, cx + STRUCTURE_REACH);
+			x++
+		) {
+			const item = STRUCTURE_ITEM[map.built[y * map.size + x]];
+			if (item) items.add(item);
+		}
+	}
+	structureCache.set(v, { builtAt: world.tick, items });
+	return items;
+}
 
 export function villageOf(world: World, p: Person): Village {
 	return world.villages[p.village];

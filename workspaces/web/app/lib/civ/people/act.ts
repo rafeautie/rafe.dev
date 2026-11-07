@@ -35,6 +35,7 @@ import {
 	peopleNear,
 	record,
 	stillGood,
+	structuresAt,
 	takeStack,
 	tileIndex,
 	tileMaterials,
@@ -578,9 +579,10 @@ function fetchInputs(
 	changes: Set<number>
 ): { missing?: MaterialId; walking?: boolean } {
 	const v = village(world, p);
+	const built = structuresAt(world, v);
 	for (const [id, n] of needed(items)) {
 		let short = n - countOf(p.carrying, id);
-		if (short <= 0) continue;
+		if (short <= 0 || built.has(id)) continue;
 		if (atCamp(world, p)) {
 			const got = takeStack(v.store, id, short);
 			addStack(p.carrying, id, got);

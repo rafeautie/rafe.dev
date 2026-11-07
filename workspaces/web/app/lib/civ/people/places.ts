@@ -11,7 +11,7 @@ import { dayOf, living, record } from './village';
 // ---- tuning knobs
 // chance per day, for each person standing at a notable spot, that the spot
 // gets a name
-export const NAME_DAILY = 0.00012;
+export const NAME_DAILY = 0.00006;
 // days that must pass between one naming and the next
 export const NAME_GAP_DAYS = 96;
 // the most places named (the list stays small)
