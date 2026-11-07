@@ -63,7 +63,7 @@ export type WorldMap = {
 	seed: number;
 	height: Float32Array; // 0..1, below SEA_LEVEL is sea
 	moisture: Float32Array; // 0..1
-	temperature: Float32Array; // mean yearly Â°C
+	temperature: Float32Array; // mean yearly °C
 	ground: Uint8Array; // Ground
 	water: Uint8Array; // Water
 	biome: Uint8Array; // Biome
@@ -249,7 +249,7 @@ export type Village = {
 	leader?: number;
 	// shared stores at camp
 	store: Stack[];
-	// the hottest heat source anyone here can make, Â°C
+	// the hottest heat source anyone here can make, °C
 	heat: number;
 	customs: string[];
 };

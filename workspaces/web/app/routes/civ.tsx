@@ -23,29 +23,36 @@ export const Route = createFileRoute('/civ')({
 	component: CivPage
 });
 
+// The way home and the theme switch live in the game's top bar, so the
+// route hands them to it, and shows the same pair while the game loads.
+const lead = (
+	<div className="flex items-center gap-3">
+		<SlashNav className="text-base font-medium">
+			<Link href="/">rafe</Link>
+			civ
+		</SlashNav>
+		<ThemeToggle />
+	</div>
+);
+
 function CivPage() {
 	return (
-		<div className="min-h-dvh p-6 text-base text-foreground sm:p-8">
-			<div className="flex items-center justify-between gap-4">
-				<SlashNav className="text-xl font-medium">
-					<Link href="/">rafe</Link>
-					civ
-				</SlashNav>
-				<ThemeToggle />
-			</div>
-			<div className="mt-6 sm:mt-8">
-				<ClientOnly fallback={<Placeholder />}>
-					<Suspense fallback={<Placeholder />}>
-						<CivApp />
-					</Suspense>
-				</ClientOnly>
-			</div>
+		<div className="fixed inset-0 overflow-hidden text-base text-foreground">
+			<ClientOnly fallback={<Placeholder />}>
+				<Suspense fallback={<Placeholder />}>
+					<CivApp lead={lead} />
+				</Suspense>
+			</ClientOnly>
 		</div>
 	);
 }
 
 function Placeholder() {
 	return (
-		<div className="h-[60dvh] w-full rounded-lg bg-foreground/[0.04] lg:h-[calc(100dvh-7rem)]" />
+		<div className="absolute inset-0 bg-foreground/[0.04]">
+			<div className="absolute top-3 left-3 rounded-xl border border-foreground/10 bg-background/85 px-3 py-1.5 backdrop-blur-md">
+				{lead}
+			</div>
+		</div>
 	);
 }
