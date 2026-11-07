@@ -1,6 +1,6 @@
 import { drawActorOverlays, collectActors } from './actors';
 import { drawAtmosphere } from './atmosphere';
-import { drawGround } from './ground';
+import { collectGround } from './ground';
 import { drawMap } from './mapview';
 import { collectObjects } from './objects';
 import { viewOf, type DrawState, type Standing, type View } from './scene';
@@ -30,14 +30,19 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: DrawState): void
 	if (view.x1 <= view.x0 || view.y1 <= view.y0) return;
 
 	ctx.imageSmoothingEnabled = false;
-	// the overview always goes down first, so nothing is ever blank while a
-	// layer above is still being drawn or cached
-	drawOverview(ctx, state, view);
+	// the top-down overview image only lines up in the overview itself
+	if (!view.iso) drawOverview(ctx, state, view);
+	// map mode: the iso map is pre-rendered in chunks (terrain covering
+	// terrain is baked in), and the tiny icons of people go on top
 	if (view.mode === 'map') drawMap(ctx, state, view);
-	if (view.mode === 'local') drawGround(ctx, state, view);
 
+	// local mode: ground tiles, objects, people and animals all go through
+	// one depth sort, so a raised hill in front covers what's behind it
 	standing.length = 0;
-	if (view.mode === 'local') collectObjects(state, view, standing);
+	if (view.mode === 'local') {
+		collectGround(state, view, standing);
+		collectObjects(state, view, standing);
+	}
 	collectActors(state, view, standing);
 	standing.sort((a, b) => a.y - b.y);
 	for (const thing of standing) thing.draw(ctx);

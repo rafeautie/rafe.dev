@@ -1038,6 +1038,19 @@ function makeCanvas(): HTMLCanvasElement | OffscreenCanvas {
 const drawn: { e: Entry; x: number; y: number }[] = [];
 let drawnCount = 0;
 
+// The ground's part in the depth-sorted pass (see Standing in scene.ts).
+// Stopgap until the isometric ground lands: the whole (top-down) ground
+// goes first, as one entry.
+const groundEntry = { y: -Infinity, draw: (_ctx: CanvasRenderingContext2D) => {} };
+export function collectGround(
+	state: DrawState,
+	view: View,
+	out: { y: number; draw: (ctx: CanvasRenderingContext2D) => void }[]
+): void {
+	groundEntry.draw = (ctx) => drawGround(ctx, state, view);
+	out.push(groundEntry);
+}
+
 export function drawGround(c: CanvasRenderingContext2D, state: DrawState, view: View): void {
 	if (view.mode !== 'local' || view.detail <= 0.001) return;
 	const { layers } = state;
