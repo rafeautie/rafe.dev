@@ -262,18 +262,63 @@ const BED = 0.075;
 
 const riverCache = new Map<number, SpriteDef>();
 
+type Bend = { u: number; v: number; half: number };
+
+// distance from (u, v) to the channel segment p-q, and how far along it (0..1)
+function nearOn(u: number, v: number, p: Bend, q: Bend): number {
+	const dx = q.u - p.u;
+	const dy = q.v - p.v;
+	const len2 = dx * dx + dy * dy || 1;
+	const t = Math.min(1, Math.max(0, ((u - p.u) * dx + (v - p.v) * dy) / len2));
+	const dist = Math.hypot(u - p.u - dx * t, v - p.v - dy * t);
+	return dist - (p.half + (q.half - p.half) * t);
+}
+
 // A river tile's channel as a 32 x 16 overlay, from a code (see `riverLinks`):
 // arms run from the middle to the edge middles and corners, and arms that open
-// into a lake or the sea flare out. Cached by code.
-export function riverOverlay(code: number): SpriteDef {
+// into a lake or the sea flare out. A channel that just passes through (two
+// arms) is one smooth bend from entry to exit, with the middle nudged a little
+// by `variant` so long runs wobble; the ends stay put so neighbours join.
+// Cached by code and variant.
+export function riverOverlay(code: number, variant = 0): SpriteDef {
 	const arms = code & 15;
 	const diag = code & 240;
 	const flare = (code >> 8) & arms;
-	const id = arms | diag | (flare << 8);
+	const id = arms | diag | (flare << 8) | (variant << 16);
 	const hit = riverCache.get(id);
 	if (hit) return hit;
 
-	const segments = RIVER_ENDS.filter(([bit]) => (arms | diag) & bit);
+	const ends = RIVER_ENDS.filter(([bit]) => (arms | diag) & bit);
+	const wide = (bit: number) => HALF * (flare & bit ? 1.9 : 1);
+	const lines: Bend[][] = [];
+	if (ends.length === 2) {
+		const [[ba, au, av], [bb, bu, bv]] = ends;
+		// a quadratic curve from one end to the other, pulled towards the middle
+		const nx = -(bv - av);
+		const ny = bu - au;
+		const norm = Math.hypot(nx, ny) || 1;
+		const wob = (hash(id, variant, 41) - 0.5) * 0.24;
+		const cu = 0.5 + (nx / norm) * wob;
+		const cv = 0.5 + (ny / norm) * wob;
+		const line: Bend[] = [];
+		for (let k = 0; k <= 12; k++) {
+			const t = k / 12;
+			const m = 1 - t;
+			line.push({
+				u: m * m * au + 2 * m * t * cu + t * t * bu,
+				v: m * m * av + 2 * m * t * cv + t * t * bv,
+				half: HALF + (wide(ba) - HALF) * m * m + (wide(bb) - HALF) * t * t
+			});
+		}
+		lines.push(line);
+	} else {
+		for (const [bit, eu, ev] of ends) {
+			lines.push([
+				{ u: 0.5, v: 0.5, half: HALF },
+				{ u: eu, v: ev, half: wide(bit) }
+			]);
+		}
+	}
 	const rows: string[] = [];
 	for (let y = 0; y < TILE_H; y++) {
 		let line = '';
@@ -284,15 +329,9 @@ export function riverOverlay(code: number): SpriteDef {
 			}
 			const { u, v } = tileUV(x, y);
 			// how far outside the water the pixel is (negative inside)
-			let e = segments.length === 0 ? Math.hypot(u - 0.5, v - 0.5) - HALF * 1.5 : Infinity;
-			for (const [bit, eu, ev] of segments) {
-				const dx = eu - 0.5;
-				const dy = ev - 0.5;
-				const len2 = dx * dx + dy * dy;
-				const t = Math.min(1, Math.max(0, ((u - 0.5) * dx + (v - 0.5) * dy) / len2));
-				const dist = Math.hypot(u - 0.5 - dx * t, v - 0.5 - dy * t);
-				const half = HALF * (flare & bit ? 1 + 0.9 * t * t : 1);
-				e = Math.min(e, dist - half);
+			let e = lines.length === 0 ? Math.hypot(u - 0.5, v - 0.5) - HALF * 1.5 : Infinity;
+			for (const l of lines) {
+				for (let k = 1; k < l.length; k++) e = Math.min(e, nearOn(u, v, l[k - 1], l[k]));
 			}
 			if (e < 0) line += e > -RIM ? 'a' : (x * 3 + y * 5) % 7 === 0 ? 'f' : 'e';
 			else if (e < BED) line += 'S';

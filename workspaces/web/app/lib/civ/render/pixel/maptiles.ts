@@ -517,13 +517,19 @@ export const BUILT_ICON: Partial<Record<number, SpriteDef>> = {
 };
 
 // A village's centre: a hut, a tent, a fire and a flag in the village's colour.
+// Two huts, a tent, a fire and a tall flag, so it reads at 1x.
 export const VILLAGE_ICON: SpriteDef = compose([
-	[HUT, 8, 1],
-	[TENT, 16, 6],
-	[FIRE, 13, 11],
-	[['W', 'W', 'W', 'W', 'W', 'W', 'W', 'W'], 5, 2],
-	[['MMM', 'MMM', 'MM.'], 6, 2]
+	[HUT, 3, 3],
+	[HUT, 17, 2],
+	[TENT, 10, 8],
+	[FIRE, 22, 11],
+	[['W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W'], 15, -6],
+	[['MMMMM', 'MMMMM', 'MMMMM', 'MMMM.', 'MMM..'], 16, -6]
 ]);
+
+// Whether a tile can be cleared for a village: only tree cover, not peaks.
+export const isWooded = (stand: SpriteDef | null, face: FaceMat): boolean =>
+	stand !== null && face === 'earth';
 
 // ------------------------------------------------------------ picking tiles
 
@@ -722,7 +728,7 @@ export function pickTile(
 		out.face = land.face;
 		// the channel stays in the open: no trees growing out of it
 		out.river = riverCode(layers, tx, ty);
-		out.over = riverOverlay(out.river);
+		out.over = riverOverlay(out.river, Math.floor(hash(tx, ty, 41) * 4));
 		return;
 	}
 	if (water !== Water.none || layers.biome[i] === Biome.ocean) {

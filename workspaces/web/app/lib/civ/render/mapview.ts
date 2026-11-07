@@ -16,7 +16,15 @@ import {
 	tileSpotY
 } from './pixel/mapiso';
 import { RISE } from './pixel/mapisokit';
-import { newPick, pickTile, seasonRecolor, VILLAGE_ICON, type TilePick } from './pixel/maptiles';
+import {
+	CLEARING,
+	isWooded,
+	newPick,
+	pickTile,
+	seasonRecolor,
+	VILLAGE_ICON,
+	type TilePick
+} from './pixel/maptiles';
 import { VILLAGE_CLOTH } from './pixel/palette';
 import { sprite, type SpriteDef } from './pixel/sprite';
 import { hash, type DrawState, type Living, type View } from './scene';
@@ -132,7 +140,19 @@ function drawChunk(chunk: Chunk, state: DrawState, cx: number, cy: number, seaso
 
 	// the villages in this chunk, by tile
 	const flags = new Map<number, string>();
+	// the tiles round a village, which are cleared of forest so it shows
+	const cleared = new Set<number>();
 	for (const v of state.villages) {
+		if (v.x < x0 - 1 || v.x > x0 + CHUNK_TILES || v.y < y0 - 1 || v.y > y0 + CHUNK_TILES) continue;
+		for (let dy = -1; dy <= 1; dy++) {
+			for (let dx = -1; dx <= 1; dx++) {
+				const i = v.x + dx - x0;
+				const j = v.y + dy - y0;
+				if (i >= 0 && j >= 0 && i < CHUNK_TILES && j < CHUNK_TILES) {
+					cleared.add(j * CHUNK_TILES + i);
+				}
+			}
+		}
 		if (v.x < x0 || v.x >= x0 + CHUNK_TILES || v.y < y0 || v.y >= y0 + CHUNK_TILES) continue;
 		const n = VILLAGE_CLOTH.length;
 		flags.set((v.y - y0) * CHUNK_TILES + (v.x - x0), VILLAGE_CLOTH[((v.id % n) + n) % n]);
@@ -161,10 +181,17 @@ function drawChunk(chunk: Chunk, state: DrawState, cx: number, cy: number, seaso
 			g.drawImage(bitmap(face, season), sx, sy + FACE_Y);
 		}
 
-		g.drawImage(bitmap(pick.base, season), sx, sy);
+		// forest is cleared round villages and under buildings, so they show
+		let stand = pick.stand;
+		let top = pick.base;
+		if (isWooded(stand, pick.face) && (pick.built || cleared.has(j * CHUNK_TILES + i))) {
+			stand = null;
+			top = CLEARING.top;
+		}
+		g.drawImage(bitmap(top, season), sx, sy);
 		if (pick.over) g.drawImage(bitmap(pick.over, season), sx, sy);
 		// what stands on the tile reaches up over the tiles behind it
-		if (pick.stand) g.drawImage(bitmap(pick.stand, season), sx, sy - RISE);
+		if (stand) g.drawImage(bitmap(stand, season), sx, sy - RISE);
 		if (pick.deposit) {
 			g.drawImage(bitmap(pick.deposit, season), sx + pick.depositX, sy + pick.depositY);
 		}

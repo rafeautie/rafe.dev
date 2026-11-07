@@ -4,21 +4,22 @@
 // There are three ways of looking at the world:
 // - overview: the whole region, one pixel per 40 m tile, zooming smoothly
 //   from 1.5 up to 16 screen pixels a tile;
-// - map: a pixel-art map where each tile is a 16 x 16 sprite (forest, hills,
-//   river, a village), shown at whole-number scales 1x..12x;
-// - local: close up, where a tile is 240 x 240 art pixels (6 art pixels a
+// - map: an isometric pixel-art map where each tile is a 32 x 16 diamond
+//   (forest, hills, river, a village), shown at whole-number scales 1x..6x;
+// - local: close up, where a tile is a 480 x 240 diamond (6 art pixels a
 //   metre) and every tree, person and hut is its own sprite, at 1x..4x.
 
 export type Mode = 'overview' | 'map' | 'local';
 
-// art pixels per tile in each pixel-art mode
+// art pixels for half a diamond's width in each pixel-art mode: a tile is a
+// diamond 2 * this wide and this tall (32 x 16 on the map, 480 x 240 close up)
 export const MAP_TILE_PX = 16;
 export const LOCAL_TILE_PX = 240;
 // art pixels per metre close up (a 40 m tile is 240 art pixels)
 export const LOCAL_PX_PER_M = LOCAL_TILE_PX / 40;
 
 export const MIN_ZOOM = 1.5;
-// past 6x the 16-pixel map tiles turn into big blocks; the close view takes over
+// past 6x the 32 x 16 map diamonds turn into big blocks; the close view takes over
 const MAP_SCALES = [1, 2, 3, 4, 6];
 const LOCAL_SCALES = [1, 2, 3, 4];
 export const LADDER: number[] = [
