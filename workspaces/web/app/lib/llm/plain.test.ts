@@ -19,7 +19,7 @@ describe('foreignTokens', () => {
 			['▁fire', 0],
 			['<eos>', 1],
 			['<turn|>', 2],
-			['#', 3],
+			['*', 3],
 			['\n', 4]
 		]);
 		expect(foreignTokens(vocab, [2])).toEqual([1, 3]);
