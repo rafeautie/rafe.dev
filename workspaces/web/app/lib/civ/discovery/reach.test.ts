@@ -110,7 +110,9 @@ describe('reachability', () => {
 
 	it('every rule is reachable by its own inputs (none is shadowed)', () => {
 		const pool = [
-			...reach(new Set([...camp([Deposit.tin, Deposit.bogIron]), 'kid', 'pup', 'calf'])).have
+			...reach(
+				new Set([...camp([Deposit.tin, Deposit.bogIron]), 'kid', 'pup', 'calf', 'meteorite-iron'])
+			).have
 		];
 		for (const rule of RULES) {
 			const hits = expandRule(rule, pool, 400).filter(
