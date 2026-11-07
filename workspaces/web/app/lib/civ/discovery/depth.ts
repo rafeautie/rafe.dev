@@ -15,7 +15,7 @@ import { materialsFromDeposit, materialsFromTile } from './sources';
 // something a camp can try with what it picks up; each step needs the one
 // before). Early things come quickly; later ones take generations. Anything
 // deeper than the table uses its last entry.
-export const DEPTH_FACTOR = [1, 1, 0.3, 0.12, 0.05, 0.025, 0.012, 0.006, 0.003, 0.002];
+export const DEPTH_FACTOR = [1, 0.8, 0.14, 0.14, 0.14, 0.14, 0.08, 0.05, 0.03, 0.02];
 // a rule nothing can reach (no ore, no fuel) counts as this deep
 const UNREACHABLE_DEPTH = DEPTH_FACTOR.length;
 

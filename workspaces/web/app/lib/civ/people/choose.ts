@@ -6,7 +6,7 @@
 import { ADULT_AGE, ELDER_AGE, TICKS_PER_DAY } from '../config';
 import type { Rng } from '../rng';
 import type { ActivityKind, Herd, Person, Village, World } from '../types';
-import { endActivity, prayedRecently, startActivity, teachable } from './act';
+import { CURIOSITIES, endActivity, prayedRecently, startActivity, teachable } from './act';
 import { CAMP_RADIUS, nearWolf } from './needs';
 import {
 	ageOf,
@@ -40,6 +40,12 @@ const SLEEP_TICKS = 2;
 const LOOK_AT = 24;
 const PANTRY_PER_PERSON = 3;
 // the materials a village likes to keep a few of
+// beyond this many tiles from camp a trip counts as an expedition
+const TRIP_FAR = 12;
+// but not through the night when it is further out than this, or when thirsty or hungry
+const TRIP_LIMIT = 40;
+// chance that a stocking trip goes after an odd stone
+const CURIOUS_TRIP = 0.004;
 const STOCK_WANTED = ['flint', 'river-stone', 'clay', 'wood', 'branch', 'grass', 'earth', 'reed'];
 
 type Option = {
@@ -146,16 +152,35 @@ export function choose(world: World, rng: Rng, p: Person) {
 	const v = world.villages[p.village];
 	if (!v) return endActivity(p);
 
-	if (isNight(world)) return startActivity(p, 'sleep', v.x, v.y, SLEEP_TICKS);
-
 	const age = ageOf(world, p);
 	const child = age < ADULT_AGE;
-	const small = age < SMALL_CHILD;
 	const d_camp = dist(p.x, p.y, v.x, v.y);
+
+	if (isNight(world)) {
+		// an adult on a long trip keeps going through the dusk rather than turning back
+		const kind = p.activity.kind;
+		const trip = !child && (kind === 'gather' || kind === 'hunt');
+		if (
+			trip &&
+			d_camp > TRIP_FAR &&
+			d_camp < TRIP_LIMIT &&
+			p.needs.water > 0.55 &&
+			p.needs.food > 0.3
+		) {
+			return;
+		}
+		return startActivity(p, 'sleep', v.x, v.y, SLEEP_TICKS);
+	}
+	const small = age < SMALL_CHILD;
 	const evening = phaseOf(world) === TICKS_PER_DAY - 2;
 	const n = p.needs;
 	const hungry = urgency(n.food);
 	const thirsty = urgency(n.water);
+
+	// a long way out and the day half gone: turn for home unless the body can't wait
+	if (!child && d_camp > TRIP_FAR + 8 && phaseOf(world) >= 1 && hungry < 0.5 && thirsty < 0.5) {
+		return startActivity(p, 'walk', v.x, v.y, 1);
+	}
 
 	// as the light goes, head back unless the body can't wait
 	if (evening && d_camp > EVENING_RANGE && hungry < 0.5 && thirsty < 0.5) {
@@ -243,7 +268,16 @@ export function choose(world: World, rng: Rng, p: Person) {
 	const spare = n.food > 0.6 && n.water > 0.6 && n.rest > 0.4;
 	if (spare && !small) {
 		const short = STOCK_WANTED.filter((id) => countOf(v.store, id) < 6);
-		const material = short.length ? short[Math.floor(rng.next() * short.length)] : undefined;
+		let material = short.length ? short[Math.floor(rng.next() * short.length)] : undefined;
+		let trip = false;
+		// now and then a curious adult goes after an odd stone instead
+		if (!child && rng.chance(CURIOUS_TRIP * (0.5 + p.traits.curious))) {
+			const odd = CURIOSITIES.filter((id) => index.materials.has(id) && countOf(v.store, id) < 4);
+			if (odd.length) {
+				material = rng.pick(odd);
+				trip = true;
+			}
+		}
 		const t =
 			material &&
 			nearestTile(
@@ -254,8 +288,11 @@ export function choose(world: World, rng: Rng, p: Person) {
 				around?.within,
 				around?.centre
 			);
-		if (t)
-			add({ kind: 'gather', x: t.x, y: t.y, score: (0.1 + 0.2 * p.traits.curious) * near(t.d) });
+		// a trip for an odd stone, once taken up, is worth the walk
+		if (t) {
+			const worth = trip ? 0.6 : (0.1 + 0.2 * p.traits.curious) * near(t.d);
+			add({ kind: 'gather', x: t.x, y: t.y, score: worth });
+		}
 	}
 	const restless = urgency(n.curiosity) * (0.3 + p.traits.curious);
 	if (restless > 0.02 || small) {

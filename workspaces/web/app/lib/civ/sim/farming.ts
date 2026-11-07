@@ -5,7 +5,7 @@
 
 import { DAYS_PER_SEASON, DAYS_PER_YEAR } from '../config';
 import { freeSpot } from '../people/act';
-import { addStack, living, mergedKnowledge } from '../people/village';
+import { addStack, countOf, living, mergedKnowledge } from '../people/village';
 import type { Rng } from '../rng';
 import { Built, type Village, type World } from '../types';
 
@@ -18,6 +18,8 @@ export const FIELDS_MAX = 60;
 // stored seed
 export const FIELD_GRAIN = 150;
 export const SEED_STORE_BONUS = 1.3;
+// grain a village keeps per person, about two years of eating
+export const GRAIN_PER_HEAD = 180;
 // tame animals breed this much a year, up to this many in a herd
 const TAME_BREED = 0.3;
 const TAME_MAX = 10;
@@ -57,11 +59,13 @@ function sow(world: World, v: Village, headcount: number, changes: Set<number>) 
 	}
 }
 
-function harvest(world: World, v: Village, know: Record<string, number>) {
+function harvest(world: World, v: Village, know: Record<string, number>, headcount: number) {
 	const fields = fieldsAt(world, v);
 	if (fields === 0) return;
 	const bonus = (know['seed-saving'] ?? 0) > 0 ? SEED_STORE_BONUS : 1;
-	addStack(v.store, 'wild-grain', Math.round(fields * FIELD_GRAIN * bonus));
+	// a granary only holds so much; the rest is lost to damp and mice
+	const room = Math.max(0, GRAIN_PER_HEAD * headcount - countOf(v.store, 'wild-grain'));
+	addStack(v.store, 'wild-grain', Math.min(room, Math.round(fields * FIELD_GRAIN * bonus)));
 }
 
 function tendHerds(world: World, rng: Rng, v: Village, autumn: boolean) {
@@ -92,7 +96,8 @@ export function dailyFarming(world: World, rng: Rng, day: number, changes: Set<n
 		const herding = (know.herding ?? 0) > 0 || (know['cattle-keeping'] ?? 0) > 0;
 		if (herding) tendHerds(world, rng, v, autumn);
 		if (!((know.planting ?? 0) > 0)) continue;
-		if (spring) sow(world, v, headcount, changes);
-		else harvest(world, v, know);
+		// without seed kept back, sowing stays a small plot made by hand
+		if (spring && (know['seed-saving'] ?? 0) > 0) sow(world, v, headcount, changes);
+		else if (autumn) harvest(world, v, know, headcount);
 	}
 }

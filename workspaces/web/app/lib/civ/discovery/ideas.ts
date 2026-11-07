@@ -52,9 +52,14 @@ export function ideaOptions(
 	for (const rule of RULES) {
 		const options = expandRule(rule, pool, 12);
 		if (options.length === 0) continue;
-		const items = rng.pick(options);
+		// of the ways to fill the rule, favour one that would teach this person something new
+		const fresh = options.filter(
+			(o) => !((person.knowledge[knowledgeOf(rule.action, o) ?? ''] ?? 0) > 0)
+		);
+		const items = rng.pick(fresh.length ? fresh : options);
 		const shuffled = shuffle([...items], rng);
-		const known = rule.knowledge && (person.knowledge[rule.knowledge] ?? 0) > 0;
+		const taught = knowledgeOf(rule.action, items);
+		const known = taught !== undefined && (person.knowledge[taught] ?? 0) > 0;
 		let weight = known ? 0.5 : 2;
 		// deeper techniques are rarer thoughts
 		if (!known) weight *= depthFactor(rule, items);

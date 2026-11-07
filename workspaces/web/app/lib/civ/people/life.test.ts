@@ -55,20 +55,28 @@ describe('life', () => {
 
 	it('gives partnered women children over the years, with parents set', () => {
 		const { world, rng } = setup();
-		const mum = addPerson(world, rng, 'f', 22);
-		const dad = addPerson(world, rng, 'm', 24);
-		mum.partner = dad.id;
-		dad.partner = mum.id;
+		// a few couples, since children come slowly in a small band
+		const couples = Array.from({ length: 4 }, () => {
+			const mum = addPerson(world, rng, 'f', 22);
+			const dad = addPerson(world, rng, 'm', 24);
+			mum.partner = dad.id;
+			dad.partner = mum.id;
+			return { mum, dad };
+		});
+		const mums = new Set(couples.map((c) => c.mum.id));
 		const before = world.people.length;
-		for (let n = 0; n < DAYS_PER_YEAR * 6; n++) {
+		const kids = () => world.people.filter((p) => p.mother !== undefined && mums.has(p.mother));
+		for (let n = 0; n < DAYS_PER_YEAR * 30 && kids().length === 0; n++) {
 			world.tick += 4;
 			for (const p of world.people) if (isAlive(p)) p.needs.food = 1;
 			dailyLife(world, rng);
 		}
-		const kids = world.people.filter((p) => p.mother === mum.id);
-		expect(kids.length).toBeGreaterThan(0);
+		expect(kids().length).toBeGreaterThan(0);
 		expect(world.people.length).toBeGreaterThan(before);
-		expect(kids[0].father).toBe(dad.id);
+		const child = kids()[0];
+		// the father is whoever she was paired with then
+		const father = world.people.find((p) => p.id === child.father);
+		expect(father?.sex).toBe('m');
 		expect(world.chronicle.some((e) => e.kind === 'birth')).toBe(true);
 	});
 
@@ -169,5 +177,40 @@ describe('life', () => {
 		}
 		const dead = group.filter((p) => !isAlive(p)).length;
 		expect(dead).toBeLessThan(group.length * 0.1);
+	});
+
+	it('lets a stranger join a lonely adult who has no one to pair with', () => {
+		const { world, rng } = setup();
+		for (const p of world.people) if (isAlive(p)) die(world, p, 'sickness');
+		const woman = addPerson(world, rng, 'f', 24);
+		const before = world.people.length;
+		for (let d = 0; d < 400 && woman.partner === undefined; d++) {
+			world.tick += 4;
+			for (const p of world.people) if (isAlive(p)) p.needs.food = 1;
+			dailyLife(world, rng);
+		}
+		const man = world.people.find((p) => p.id === woman.partner);
+		expect(man).toBeTruthy();
+		expect(man?.sex).toBe('m');
+		expect(man?.partner).toBe(woman.id);
+		expect(world.people.length).toBeGreaterThan(before);
+		expect(world.chronicle.some((e) => /came from another band/.test(e.text))).toBe(true);
+	});
+
+	it('births slow as a village fills to what it can feed', () => {
+		const { world, rng } = setup();
+		const mum = addPerson(world, rng, 'f', 22);
+		const dad = addPerson(world, rng, 'm', 24);
+		mum.partner = dad.id;
+		dad.partner = mum.id;
+		// far more people than a bare camp can feed
+		for (let n = 0; n < 40; n++) addPerson(world, rng, 'm', 30);
+		const kids = () => world.people.filter((p) => p.mother === mum.id).length;
+		for (let d = 0; d < DAYS_PER_YEAR * 3; d++) {
+			world.tick += 4;
+			for (const p of world.people) if (isAlive(p)) p.needs.food = 1;
+			dailyLife(world, rng);
+		}
+		expect(kids()).toBe(0);
 	});
 });

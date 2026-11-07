@@ -22,6 +22,7 @@ import {
 	dayOf,
 	foodCount,
 	hasShelter,
+	knowledgeByVillage,
 	living,
 	mergedKnowledge,
 	record,
@@ -31,8 +32,21 @@ import {
 // ---- tuning knobs
 // chance per day that a partnered woman of child-bearing age conceives, before
 // food and room are counted
-export const BIRTH_BASE = 0.011;
+export const BIRTH_BASE = 0.0023;
 export const BIRTH_AGES = { min: 16, max: 40 };
+// Food know-how makes children likelier (more is surely fed): each adds this much
+// to the base rate, up to BIRTH_BOOST_MAX times it
+export const BIRTH_BOOST: Record<string, number> = {
+	planting: 0.2,
+	'seed-saving': 0.2,
+	herding: 0.15,
+	drying: 0.05,
+	salting: 0.05,
+	pottery: 0.05
+};
+export const BIRTH_BOOST_MAX = 1.7;
+// a band this small or smaller has a harder time and a keener wish for children
+export const SMALL_BAND = 20;
 // a mother waits this many years between children
 export const BIRTH_GAP = 2;
 // chance per day that someone falls ill for no reason but luck (doubled in winter)
@@ -53,18 +67,20 @@ export const DEATH_BY_AGE: [number, number][] = [
 // What a village can feed. A band living off what it finds supports about this
 // many; know-how, fields, tame herds and a full store raise it. Births slow as
 // a village nears its capacity and stop above it (famine does the rest).
-export const CAPACITY_BASE = 22;
+export const CAPACITY_BASE = 16;
 export const CAPACITY_KNOW: Record<string, number> = {
-	cooking: 3,
-	drying: 4,
-	salting: 5,
-	pottery: 4,
+	cooking: 2,
+	drying: 2,
+	salting: 3,
+	pottery: 3,
 	'seed-saving': 6,
-	planting: 10,
-	herding: 6,
-	'cattle-keeping': 8,
-	fencing: 3
+	planting: 5,
+	herding: 4,
+	'cattle-keeping': 5,
+	fencing: 2
 };
+// the share of its capacity a village has left when births begin to taper
+export const CROWDING = 0.35;
 export const CAPACITY_PER_FIELD = 5;
 export const CAPACITY_PER_TAME = 2;
 // a full store adds up to this much room, one person for each few units of food
@@ -80,6 +96,8 @@ export const OUTSIDER_DAILY = 0.01;
 // how fond two people must be before they pair, and how often they get round to it
 export const PAIR_AFFECTION = 0.55;
 export const PAIR_DAILY = 0.2;
+// chance per day that a free person with no one fond of them is matched anyway
+export const MATCH_DAILY = 0.05;
 export const NOTABLE_MAX = 8;
 
 // ---------------------------------------------------------------- death
@@ -161,10 +179,10 @@ export function sicknessFactor(know: Record<string, number>, v: Village): number
 	return Math.max(SICK_FLOOR, f);
 }
 
-function ageDeaths(world: World, rng: Rng) {
+function ageDeaths(world: World, rng: Rng, know: Map<number, Record<string, number>>) {
 	const winter = season(dayOf(world)) === 3 ? 2 : 1;
 	const relief = new Map<number, number>();
-	for (const v of world.villages) relief.set(v.id, sicknessFactor(mergedKnowledge(world, v), v));
+	for (const v of world.villages) relief.set(v.id, sicknessFactor(know.get(v.id) ?? {}, v));
 	for (const p of living(world)) {
 		if (p.died !== undefined) continue;
 		const age = ageOf(world, p);
@@ -202,6 +220,25 @@ function pairUp(world: World, rng: Rng) {
 	const byId = new Map(people.map((o) => [o.id, o]));
 	const free = (o: Person, age: number) =>
 		o.died === undefined && o.partner === undefined && age >= FERTILE_MIN && age <= FERTILE_MAX;
+	// who is free in each village, for the match-making below
+	const singles = new Map<number, Person[]>();
+	for (const o of people) {
+		if (!free(o, ageOf(world, o))) continue;
+		const list = singles.get(o.village);
+		if (list) list.push(o);
+		else singles.set(o.village, [o]);
+	}
+	const pair = (p: Person, best: Person) => {
+		p.partner = best.id;
+		best.partner = p.id;
+		addMemory(world, p, `Paired with ${best.name}`, 0.9);
+		addMemory(world, best, `Paired with ${p.name}`, 0.9);
+		record(world, {
+			kind: 'pairing',
+			text: `${p.name} and ${best.name} became a pair.`,
+			people: [p.id, best.id]
+		});
+	};
 	for (const p of people) {
 		if (p.died !== undefined || !free(p, ageOf(world, p)) || !rng.chance(PAIR_DAILY)) continue;
 		let best: Person | undefined;
@@ -215,16 +252,19 @@ function pairUp(world: World, rng: Rng) {
 				best = o;
 			}
 		}
-		if (!best) continue;
-		p.partner = best.id;
-		best.partner = p.id;
-		addMemory(world, p, `Paired with ${best.name}`, 0.9);
-		addMemory(world, best, `Paired with ${p.name}`, 0.9);
-		record(world, {
-			kind: 'pairing',
-			text: `${p.name} and ${best.name} became a pair.`,
-			people: [p.id, best.id]
-		});
+		// In a bigger village few pairs get to know each other well, so every so
+		// often a free person is simply matched with someone free and not kin.
+		if (!best && rng.chance(MATCH_DAILY)) {
+			const options = (singles.get(p.village) ?? []).filter(
+				(o) => o.partner === undefined && o.sex !== p.sex && !kin(p, o)
+			);
+			if (options.length) {
+				best = rng.pick(options);
+				p.relations[best.id] = { trust: 0.6, affection: 0.6 };
+				best.relations[p.id] = { trust: 0.6, affection: 0.6 };
+			}
+		}
+		if (best) pair(p, best);
 	}
 }
 
@@ -253,7 +293,15 @@ function bear(world: World, rng: Rng, mother: Person, father: Person, v: Village
 	});
 }
 
-function births(world: World, rng: Rng) {
+// how much likelier children are in a village, from what its people know
+export function birthBoost(know: Record<string, number>, heads: number): number {
+	let boost = 1;
+	for (const [id, more] of Object.entries(BIRTH_BOOST)) if ((know[id] ?? 0) > 0) boost += more;
+	if (heads < SMALL_BAND) boost += (0.5 * (SMALL_BAND - heads)) / SMALL_BAND;
+	return Math.min(BIRTH_BOOST_MAX, boost);
+}
+
+function births(world: World, rng: Rng, know: Map<number, Record<string, number>>) {
 	const people = living(world);
 	if (people.length >= POPULATION_CAP) return;
 	const byId = new Map(people.map((o) => [o.id, o]));
@@ -265,6 +313,7 @@ function births(world: World, rng: Rng) {
 		if (c.mother !== undefined && ageOf(world, c) < BIRTH_GAP) littleOnes.add(c.mother);
 	}
 	const room = new Map<number, number>();
+	const boosts = new Map<number, number>();
 	let left = POPULATION_CAP - people.length;
 	for (const m of people) {
 		if (left <= 0) break;
@@ -279,14 +328,23 @@ function births(world: World, rng: Rng) {
 		// food and room make it likelier
 		let space = room.get(v.id);
 		if (space === undefined) {
-			space = clamp01(1 - (heads.get(v.id) ?? 0) / capacityOf(world, v));
+			// births hold at full rate until a village is within a third of its limit, then taper
+			space = clamp01(
+				(1 - (heads.get(v.id) ?? 0) / capacityOf(world, v, know.get(v.id) ?? {})) / CROWDING
+			);
 			room.set(v.id, space);
 		}
+		let boost = boosts.get(v.id);
+		if (boost === undefined) {
+			boost = birthBoost(know.get(v.id) ?? {}, heads.get(v.id) ?? 0);
+			boosts.set(v.id, boost);
+		}
 		const fed = clamp01(0.4 + 0.3 * m.needs.food + 0.3 * clamp01(foodCount(v.store) / 20));
-		if (!rng.chance(BIRTH_BASE * fed * space)) continue;
+		if (!rng.chance(BIRTH_BASE * boost * fed * space)) continue;
 		bear(world, rng, m, dad, v);
 		heads.set(v.id, (heads.get(v.id) ?? 0) + 1);
 		room.delete(v.id);
+		boosts.delete(v.id);
 		left--;
 	}
 }
@@ -296,7 +354,7 @@ function births(world: World, rng: Rng) {
 // A small band has few people it may pair with (brothers and sisters do not),
 // so now and then a young stranger from another band joins and pairs with
 // someone who would otherwise be left alone.
-function outsiders(world: World, rng: Rng) {
+function outsiders(world: World, rng: Rng, know: Map<number, Record<string, number>>) {
 	if (living(world).length >= POPULATION_CAP) return;
 	const heads = new Map<number, Person[]>();
 	for (const p of living(world)) {
@@ -306,7 +364,7 @@ function outsiders(world: World, rng: Rng) {
 	}
 	for (const [id, here] of heads) {
 		const v = world.villages[id];
-		if (!v || here.length >= capacityOf(world, v)) continue;
+		if (!v || here.length >= capacityOf(world, v, know.get(id) ?? {})) continue;
 		const single = (o: Person) =>
 			o.partner === undefined &&
 			ageOf(world, o) >= FERTILE_MIN &&
@@ -394,11 +452,12 @@ export function dailyLife(world: World, rng: Rng) {
 	const day = dayOf(world);
 	// people who died earlier this tick are still in the cached list
 	refreshLiving(world);
-	ageDeaths(world, rng);
+	const know = knowledgeByVillage(world);
+	ageDeaths(world, rng, know);
 	refreshLiving(world);
 	pairUp(world, rng);
-	outsiders(world, rng);
-	births(world, rng);
+	outsiders(world, rng, know);
+	births(world, rng, know);
 	// a new year takes a little from the old
 	if (day % DAYS_PER_YEAR === 0) {
 		for (const p of living(world)) {

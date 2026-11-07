@@ -206,8 +206,9 @@ const TABLE: Material[] = [
 		tags: ['wet']
 	}),
 	m('mould', 'fired mould', 'clay', { hardness: 4 }),
+	// tablets are fired hard in a kiln, so they keep for good
 	m('wet-tablet', 'marked wet tablet', 'clay', {
-		firesAt: 600,
+		firesAt: 1100,
 		yields: 'tablet',
 		teaches: 'writing',
 		tags: ['wet']

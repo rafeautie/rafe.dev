@@ -327,28 +327,21 @@ export function villageOf(world: World, p: Person): Village {
 	return world.villages[p.village];
 }
 
-// The best know-how anyone alive in each village has, by id. Worked out for
-// every village in one pass and kept for the tick, since several systems ask
-// for it every day.
-const knowledgeCache = new WeakMap<
-	World,
-	{ tick: number; size: number; by: Map<number, Record<string, number>> }
->();
+// The best know-how anyone alive in each village has, by id, worked out for
+// every village in one pass
+export function knowledgeByVillage(world: World): Map<number, Record<string, number>> {
+	const by = new Map<number, Record<string, number>>();
+	for (const p of living(world)) {
+		let merged = by.get(p.village);
+		if (!merged) by.set(p.village, (merged = {}));
+		for (const id in p.knowledge) {
+			const level = p.knowledge[id];
+			if (level > (merged[id] ?? 0)) merged[id] = level;
+		}
+	}
+	return by;
+}
 
 export function mergedKnowledge(world: World, v: Village): Record<string, number> {
-	let cached = knowledgeCache.get(world);
-	if (!cached || cached.tick !== world.tick || cached.size !== world.people.length) {
-		const by = new Map<number, Record<string, number>>();
-		for (const p of living(world)) {
-			let merged = by.get(p.village);
-			if (!merged) by.set(p.village, (merged = {}));
-			for (const id in p.knowledge) {
-				const level = p.knowledge[id];
-				if (level > (merged[id] ?? 0)) merged[id] = level;
-			}
-		}
-		cached = { tick: world.tick, size: world.people.length, by };
-		knowledgeCache.set(world, cached);
-	}
-	return cached.by.get(v.id) ?? {};
+	return knowledgeByVillage(world).get(v.id) ?? {};
 }

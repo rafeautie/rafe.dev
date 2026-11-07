@@ -9,6 +9,7 @@ import { foodValue, isFood, isPoisonous, materialsFromDeposit } from '../discove
 import type { Rng } from '../rng';
 import {
 	Built,
+	type ChronicleEvent,
 	type Deposit,
 	type ActivityKind,
 	type Herd,
@@ -279,6 +280,8 @@ function fish(world: World, rng: Rng, p: Person) {
 // ------------------------------------------------------------- gathering
 
 const WANTED_STOCK = ['flint', 'river-stone', 'clay', 'wood', 'branch', 'grass', 'earth', 'reed'];
+// odd stones the curious carry home from far off; some turn out to be ore
+export const CURIOSITIES = ['copper-ore', 'tin-ore', 'bog-iron', 'obsidian', 'ochre', 'salt'];
 
 // Take material from the tile under someone's feet. Returns how many units.
 export function gatherFrom(
@@ -316,6 +319,8 @@ export function gatherFrom(
 function wantedHere(world: World, p: Person, i: number): MaterialId | undefined {
 	const v = village(world, p);
 	const here = tileMaterials(world.map, i);
+	const odd = CURIOSITIES.find((id) => here.includes(id) && countOf(v.store, id) < 4);
+	if (odd) return odd;
 	const short = WANTED_STOCK.filter((id) => here.includes(id) && countOf(v.store, id) < 6);
 	return short[0] ?? here[0];
 }
@@ -410,8 +415,9 @@ function bondWith(a: Person, b: Person, rng: Rng) {
 export function teachable(teacher: Person, learner: Person): string | undefined {
 	let best: string | undefined;
 	let gap = 0.08;
-	for (const [id, level] of Object.entries(teacher.knowledge)) {
-		const diff = level - (learner.knowledge[id] ?? 0);
+	// (a plain loop: this runs for every idle choice)
+	for (const id in teacher.knowledge) {
+		const diff = teacher.knowledge[id] - (learner.knowledge[id] ?? 0);
 		if (diff > gap) {
 			gap = diff;
 			best = id;
@@ -701,10 +707,14 @@ const NOTE_LINES = [
 
 function murmur(world: World, rng: Rng, p: Person, _action: string, items: MaterialId[]) {
 	const day = dayOf(world);
-	const last = [...world.chronicle]
-		.reverse()
-		.slice(0, 40)
-		.find((e) => e.kind === 'note');
+	// only the latest few entries are worth looking through
+	let last: ChronicleEvent | undefined;
+	for (let i = world.chronicle.length - 1; i >= 0 && i >= world.chronicle.length - 40; i--) {
+		if (world.chronicle[i].kind === 'note') {
+			last = world.chronicle[i];
+			break;
+		}
+	}
 	if (last && day - last.day < NOTE_EVERY_DAYS) return;
 	if (!rng.chance(MURMUR * 0.3)) return;
 	const what = MATERIALS[items[0]]?.name ?? 'a stone';

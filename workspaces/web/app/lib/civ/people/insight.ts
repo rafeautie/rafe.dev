@@ -20,7 +20,7 @@ import {
 
 // ---- tuning knobs
 // scales the discovery engine's own daily chance; raise it to speed up discovery
-export const INSIGHT_BOOST = 0.3;
+export const INSIGHT_BOOST = 0.26;
 // ticks a person will keep at an experiment before giving up
 export const CRAFT_PATIENCE = 16;
 // how many ideas a flash of insight offers
