@@ -30,14 +30,14 @@ const label = (id: string) => id.replaceAll('-', ' ');
 export function PersonPanel({
 	person,
 	tick,
-	names,
+	nameOf,
 	onFollow,
 	onClose
 }: {
 	person: Person;
 	tick: number;
-	// names of people the record points to, by id
-	names: Map<number, string>;
+	// the name of someone the record points to
+	nameOf: (id: number) => string | undefined;
 	onFollow: (id: number) => void;
 	onClose: () => void;
 }) {
@@ -104,7 +104,7 @@ export function PersonPanel({
 								onClick={() => onFollow(id)}
 								className="cursor-pointer text-foreground/70 hover:text-foreground"
 							>
-								<span className="text-foreground/40">{role}</span> {names.get(id) ?? 'someone'}
+								<span className="text-foreground/40">{role}</span> {nameOf(id) ?? 'someone'}
 							</button>
 						))}
 					</div>

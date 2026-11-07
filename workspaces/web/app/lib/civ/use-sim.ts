@@ -17,6 +17,8 @@ const CHRONICLE_KEEP = 400;
 export function useSim(seed: number) {
 	const worker = useRef<Worker | undefined>(undefined);
 	const listeners = useRef(new Set<(frame: Frame) => void>());
+	// everyone's name by id, for family links; the dead keep theirs
+	const names = useRef(new Map<number, string>());
 	const [layers, setLayers] = useState<MapLayers>();
 	const [living, setLiving] = useState<Living>();
 	const [tick, setTick] = useState(0);
@@ -30,8 +32,6 @@ export function useSim(seed: number) {
 	useEffect(() => {
 		const next = new Worker(new URL('./sim/sim.worker.ts', import.meta.url), { type: 'module' });
 		worker.current = next;
-		setChronicle([]);
-		setFollowed(undefined);
 		next.onmessage = (event: MessageEvent<SimResponse>) => {
 			const message = event.data;
 			if (message.type === 'map') {
@@ -39,6 +39,7 @@ export function useSim(seed: number) {
 				setLiving(message.living);
 				return;
 			}
+			for (const person of message.people) names.current.set(person.id, person.name);
 			for (const listener of listeners.current) listener(message);
 			setTick(message.tick);
 			setPopulation(message.people.length);
@@ -55,6 +56,8 @@ export function useSim(seed: number) {
 		listeners.current.add(listener);
 		return () => void listeners.current.delete(listener);
 	}, []);
+
+	const nameOf = useCallback((id: number) => names.current.get(id), []);
 
 	const setSpeed = useCallback((next: Speed) => {
 		setSpeedState(next);
@@ -76,6 +79,7 @@ export function useSim(seed: number) {
 		speed,
 		setSpeed,
 		follow,
-		onFrame
+		onFrame,
+		nameOf
 	};
 }
