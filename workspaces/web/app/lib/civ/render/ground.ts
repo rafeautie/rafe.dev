@@ -142,7 +142,6 @@ const nC = new Float32Array(T * T);
 const chan = new Uint8Array(T * T);
 const lattice = new Float32Array(22 * 22);
 const smoothW = new Float32Array(T);
-const segBuf: number[] = new Array(63).fill(0);
 const segBuf2: number[] = new Array(63).fill(0);
 
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
@@ -823,36 +822,76 @@ function paintLandShore(tx: number, ty: number, land: number[], water: number[])
 
 // ------------------------------------------------------------ river channels
 
-// Which pixels of a river tile are the channel: 3 water, 2 the first pixel of
+// Which pixels of a tile are river channel: 3 water, 2 the first pixel of
 // bank, 1 the outer bank, 0 neither. Drawn from `riverChannel` as discs along
-// each curve, so it matches what `waterAt` says.
+// each curve, so it matches what `waterAt` says. A channel is wider than the
+// gap between it and a tile's edge, so it spills into the tiles beside it and
+// across corners: the segments of all eight neighbours (and the tile's own) are
+// drawn into each tile, clipped to it. Without that a river crossing at a
+// corner would pinch to a point there.
+const nbSegs: number[][] = Array.from({ length: 9 }, () => new Array(63).fill(0));
+const nbCount = new Int32Array(9);
+const nbX = new Int32Array(9);
+const nbY = new Int32Array(9);
+
+// Is there a river tile in the 3 x 3 around (tx, ty)?
+function riverNear(layers: WaterLayers, tx: number, ty: number): boolean {
+	const size = layers.size;
+	for (let dy = -1; dy <= 1; dy++) {
+		for (let dx = -1; dx <= 1; dx++) {
+			const nx = tx + dx;
+			const ny = ty + dy;
+			if (nx >= 0 && ny >= 0 && nx < size && ny < size && isRiver(layers, ny * size + nx))
+				return true;
+		}
+	}
+	return false;
+}
+
 export function channelMask(layers: WaterLayers, tx: number, ty: number, out: Uint8Array): void {
 	out.fill(0);
-	const n = riverChannel(layers, tx, ty, segBuf);
+	const size = layers.size;
+	let m = 0;
+	for (let dy = -1; dy <= 1; dy++) {
+		for (let dx = -1; dx <= 1; dx++) {
+			const nx = tx + dx;
+			const ny = ty + dy;
+			if (nx < 0 || ny < 0 || nx >= size || ny >= size || !isRiver(layers, ny * size + nx))
+				continue;
+			nbCount[m] = riverChannel(layers, nx, ny, nbSegs[m]);
+			nbX[m] = dx * T;
+			nbY[m] = dy * T;
+			m++;
+		}
+	}
 	for (const [grow, val] of [
 		[3, 1],
 		[1, 2],
 		[0, 3]
 	] as const) {
-		for (let s = 0; s < n; s++) {
-			const o = s * 7;
-			const r = (segBuf[o + 6] * T) / 2 + grow;
-			const len = Math.hypot(segBuf[o + 4] - segBuf[o], segBuf[o + 5] - segBuf[o + 1]) * T;
-			const steps = Math.max(6, Math.ceil(len / Math.max(1, r * 0.3)));
-			for (let k = 0; k <= steps; k++) {
-				const u = k / steps;
-				const a = (1 - u) * (1 - u);
-				const b = 2 * u * (1 - u);
-				const c = u * u;
-				const cx = (a * segBuf[o] + b * segBuf[o + 2] + c * segBuf[o + 4]) * T;
-				const cy = (a * segBuf[o + 1] + b * segBuf[o + 3] + c * segBuf[o + 5]) * T;
-				const y0 = Math.max(0, Math.ceil(cy - r));
-				const y1 = Math.min(T - 1, Math.floor(cy + r));
-				for (let y = y0; y <= y1; y++) {
-					const hw = Math.sqrt(r * r - (y - cy) * (y - cy));
-					const x0 = Math.max(0, Math.ceil(cx - hw));
-					const x1 = Math.min(T - 1, Math.floor(cx + hw));
-					if (x1 >= x0) out.fill(val, y * T + x0, y * T + x1 + 1);
+		for (let t = 0; t < m; t++) {
+			const seg = nbSegs[t];
+			for (let s = 0; s < nbCount[t]; s++) {
+				const o = s * SEG;
+				const r = (seg[o + 6] * T) / 2 + grow;
+				const len = Math.hypot(seg[o + 4] - seg[o], seg[o + 5] - seg[o + 1]) * T;
+				const steps = Math.max(6, Math.ceil(len / Math.max(1, r * 0.3)));
+				for (let k = 0; k <= steps; k++) {
+					const u = k / steps;
+					const a = (1 - u) * (1 - u);
+					const b = 2 * u * (1 - u);
+					const c = u * u;
+					const cx = (a * seg[o] + b * seg[o + 2] + c * seg[o + 4]) * T + nbX[t];
+					const cy = (a * seg[o + 1] + b * seg[o + 3] + c * seg[o + 5]) * T + nbY[t];
+					if (cy + r < 0 || cy - r > T - 1 || cx + r < 0 || cx - r > T - 1) continue;
+					const y0 = Math.max(0, Math.ceil(cy - r));
+					const y1 = Math.min(T - 1, Math.floor(cy + r));
+					for (let y = y0; y <= y1; y++) {
+						const hw = Math.sqrt(r * r - (y - cy) * (y - cy));
+						const x0 = Math.max(0, Math.ceil(cx - hw));
+						const x1 = Math.min(T - 1, Math.floor(cx + hw));
+						if (x1 >= x0) out.fill(val, y * T + x0, y * T + x1 + 1);
+					}
 				}
 			}
 		}
@@ -1057,7 +1096,8 @@ export function paintTile(env: GroundEnv, tx: number, ty: number, out: Uint32Arr
 		}
 	}
 	if (any && !isRiver(layers, i)) paintLandShore(tx, ty, [], water);
-	if (isRiver(layers, i)) paintRiver(env, tx, ty, i, sparks);
+	// the channel spills into the tiles beside it, so land next to a river may show some
+	if (riverNear(layers, tx, ty)) paintRiver(env, tx, ty, i, sparks);
 	return sparks;
 }
 
@@ -1401,7 +1441,7 @@ const DIAG = [
 	[-1, 1],
 	[-1, -1]
 ];
-const segCheck: number[] = new Array(SEG * 9).fill(0);
+const segCheck: number[] = new Array(63).fill(0);
 
 function waterish(layers: WaterLayers, x: number, y: number): boolean {
 	if (x < 0 || y < 0 || x >= layers.size || y >= layers.size) return false;
@@ -1546,6 +1586,18 @@ export function waterAt(layers: WaterLayers, x: number, y: number): boolean {
 	const ty = Math.floor(y);
 	if (tx < 0 || ty < 0 || tx >= layers.size || ty >= layers.size) return false;
 	const i = ty * layers.size + tx;
-	if (isRiver(layers, i)) return inChannel(layers, tx, ty, x - tx, y - ty);
-	return layers.water[i] !== Water.none || layers.biome[i] === Biome.ocean;
+	if (layers.water[i] !== Water.none && !isRiver(layers, i)) return true;
+	if (layers.biome[i] === Biome.ocean) return true;
+	// river channels spill over tile edges and corners into their neighbours
+	const size = layers.size;
+	for (let dy = -1; dy <= 1; dy++) {
+		for (let dx = -1; dx <= 1; dx++) {
+			const nx = tx + dx;
+			const ny = ty + dy;
+			if (nx < 0 || ny < 0 || nx >= size || ny >= size || !isRiver(layers, ny * size + nx))
+				continue;
+			if (inChannel(layers, nx, ny, x - nx, y - ny)) return true;
+		}
+	}
+	return false;
 }

@@ -314,11 +314,8 @@ function isOpenWater(layers: DrawState['layers'], i: number): boolean {
 // bushes) in a village clearing.
 function put(kind: number, v: number, x: number, y: number) {
 	const layers = cur.layers;
-	if (
-		layers.water[Math.floor(y) * layers.size + Math.floor(x)] === Water.river &&
-		waterAt(layers, x, y)
-	)
-		return;
+	// river channels spill into the tiles beside them, so ask about every tile
+	if (waterAt(layers, x, y)) return;
 	if (
 		villageCount > 0 &&
 		(kind === Kind.oak ||

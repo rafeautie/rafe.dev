@@ -104,6 +104,55 @@ describe('waterAt and river channels', () => {
 	});
 });
 
+describe('a river crossing a corner', () => {
+	const size = 8;
+	const n = size * size;
+	const layers = {
+		size,
+		water: new Uint8Array(n),
+		biome: new Uint8Array(n).fill(Biome.grassland)
+	};
+	// a river running diagonally: (2,2) -> (3,3) -> (4,4), joined only at corners
+	for (const k of [2, 3, 4]) layers.water[k * size + k] = Water.river;
+
+	it('keeps its full width at the shared corner', () => {
+		const out: number[] = [];
+		riverChannel(layers, 3, 3, out);
+		// the segment of tile (3, 3) that starts at its top left corner (0, 0)
+		let w = 0;
+		for (let o = 0; o + 6 < out.length; o += 7)
+			if (out[o] === 0 && out[o + 1] === 0) w = out[o + 6];
+		expect(w).toBeGreaterThan(0);
+		const r = w / 2 - 1 / T;
+		// every point within the channel's half width of the corner (3, 3) is water,
+		// including the parts that fall in the two tiles beside the diagonal
+		for (let k = 0; k < 24; k++) {
+			const a = (k / 24) * Math.PI * 2;
+			expect(waterAt(layers, 3 + Math.cos(a) * r, 3 + Math.sin(a) * r)).toBe(true);
+		}
+		// and the neighbours beside the diagonal are painted as water there
+		const mask = new Uint8Array(T * T);
+		channelMask(layers, 3, 2, mask);
+		expect(mask.includes(3)).toBe(true);
+		expect(layers.water[2 * size + 3]).toBe(Water.none);
+	});
+
+	it('is not wider than the channel (waterAt agrees with the mask)', () => {
+		const mask = new Uint8Array(T * T);
+		channelMask(layers, 2, 3, mask);
+		let agree = 0;
+		let total = 0;
+		for (let y = 0; y < T; y += 6) {
+			for (let x = 0; x < T; x += 6) {
+				total++;
+				if ((mask[y * T + x] === 3) === waterAt(layers, 2 + (x + 0.5) / T, 3 + (y + 0.5) / T))
+					agree++;
+			}
+		}
+		expect(agree / total).toBeGreaterThan(0.95);
+	});
+});
+
 // ------------------------------------------------------------ painting tiles
 
 function world(season = 1) {
