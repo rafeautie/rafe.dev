@@ -28,11 +28,11 @@ function shuffle<T>(list: T[], rng: Rng): T[] {
 export function newToThem(
 	person: { knowledge: Record<KnowledgeId, number> },
 	idea: Idea
-): { rule: Rule; fresh: boolean } | undefined {
+): { rule: Rule; fresh: boolean; factor: number } | undefined {
 	const rule = matchIdea(idea.action, idea.items);
 	if (!rule) return undefined;
 	const id = knowledgeOf(idea.action, idea.items);
-	return { rule, fresh: !id || !(person.knowledge[id] > 0) };
+	return { rule, fresh: !id || !(person.knowledge[id] > 0), factor: depthFactor(rule, idea.items) };
 }
 
 export function ideaOptions(
@@ -57,7 +57,7 @@ export function ideaOptions(
 		const known = rule.knowledge && (person.knowledge[rule.knowledge] ?? 0) > 0;
 		let weight = known ? 0.5 : 2;
 		// deeper techniques are rarer thoughts
-		if (!known) weight *= depthFactor(rule);
+		if (!known) weight *= depthFactor(rule, items);
 		if (requiredHeat(rule, items) > heat) weight *= 0.4;
 		promising.push({ idea: { action: rule.action, items: shuffled }, weight });
 	}

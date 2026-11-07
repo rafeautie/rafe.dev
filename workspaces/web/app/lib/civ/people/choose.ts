@@ -269,7 +269,7 @@ export function choose(world: World, rng: Rng, p: Person) {
 	}
 
 	// ---- danger and desperation
-	if (n.safety < 0.5 && nearWolf(world, p)) {
+	if (n.safety < 0.5 && d_camp > CAMP_RADIUS && nearWolf(world, p)) {
 		add({ kind: 'flee', x: v.x, y: v.y, score: 2 - p.traits.bold });
 	}
 	if (Math.min(n.food, n.water, n.warmth, n.safety) < 0.15 && !prayedRecently(world, p)) {

@@ -4,7 +4,6 @@
 
 import { ADULT_AGE } from '../config';
 import { heatAvailable, matchIdea } from '../discovery/engine';
-import { depthFactor } from '../discovery/depth';
 import { insightChance, ideaOptions, newToThem, type Idea } from '../discovery/ideas';
 import type { Rng } from '../rng';
 import type { Person, Village, World } from '../types';
@@ -114,7 +113,7 @@ export function maybeInsight(world: World, rng: Rng, p: Person): boolean {
 	// a technique several steps beyond what camp has is less likely to occur to
 	// anyone: the idea fades before it is tried
 	const novel = newToThem(p, idea);
-	if (novel?.fresh && !rng.chance(depthFactor(novel.rule))) return false;
+	if (novel?.fresh && !rng.chance(novel.factor)) return false;
 	startActivity(p, 'craft', v.x, v.y, CRAFT_PATIENCE, { craft: idea });
 	return true;
 }

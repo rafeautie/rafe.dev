@@ -79,6 +79,7 @@ export function createWorld(seed: number): { world: World; rng: Rng } {
 		people: [],
 		herds: [],
 		villages: [],
+		places: [],
 		weather: 'clear',
 		chronicle: [],
 		nextId: 1,

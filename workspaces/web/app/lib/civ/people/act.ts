@@ -498,11 +498,11 @@ const TAMED: Record<MaterialId, string> = {
 };
 
 // a free tile beside the village, working outward
-function freeSpot(world: World, v: Village): number | undefined {
+export function freeSpot(world: World, v: Village, reach = 8): number | undefined {
 	const { map } = world;
 	const cx = Math.floor(v.x);
 	const cy = Math.floor(v.y);
-	for (let r = 1; r <= 8; r++) {
+	for (let r = 1; r <= reach; r++) {
 		for (let dy = -r; dy <= r; dy++) {
 			for (let dx = -r; dx <= r; dx++) {
 				if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;

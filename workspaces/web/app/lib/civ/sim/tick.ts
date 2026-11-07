@@ -21,10 +21,12 @@ import {
 	walkable
 } from '../people/village';
 import { dailyEcology } from './ecology';
+import { dailyFarming } from './farming';
 import { updateWeather } from './weather';
 import { makeVillage } from './world';
 import { findStart } from '../world/generate';
 import { villageName } from '../people/names';
+import { namePlaces } from '../people/places';
 
 // ---- tuning knobs
 // years with nobody alive before another band wanders in
@@ -144,6 +146,7 @@ export function step(world: World, rng: Rng, changes: Set<number>) {
 	if (newDay) {
 		updateWeather(world, rng.fork(), day);
 		dailyEcology(world, rng.fork(), day, changes);
+		dailyFarming(world, rng.fork(), day, changes);
 		for (const v of world.villages) {
 			updateVillageHeat(world, v);
 			recordFirsts(world, v);
@@ -156,7 +159,10 @@ export function step(world: World, rng: Rng, changes: Set<number>) {
 		tickPerson(world, rng, p, newDay, changes);
 	}
 
-	if (newDay) dailyLife(world, rng.fork());
+	if (newDay) {
+		dailyLife(world, rng.fork());
+		namePlaces(world, rng.fork());
+	}
 	checkExtinction(world, rng);
 	world.rng = rng.state();
 }

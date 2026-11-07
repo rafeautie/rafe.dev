@@ -214,13 +214,14 @@ describe('crafting', () => {
 			{ material: 'branch', count: 60 },
 			{ material: 'grass', count: 60 },
 			{ material: 'kid', count: 40 },
-			{ material: 'roots', count: 40 }
+			{ material: 'roots', count: 40 },
+			{ material: 'flake', count: 2 }
 		);
 		p.knowledge.shelter = 1;
 		p.knowledge.herding = 1;
 		for (let n = 0; n < 40; n++) {
 			startActivity(p, 'craft', camp.x, camp.y, 8, {
-				craft: { action: 'build', items: ['branch', 'branch', 'grass'] }
+				craft: { action: 'build', items: ['flake', 'branch', 'branch', 'grass'] }
 			});
 			tick(world, rng, p, 3);
 			startActivity(p, 'craft', camp.x, camp.y, 8, {

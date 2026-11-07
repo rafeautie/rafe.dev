@@ -86,7 +86,8 @@ export function updateNeeds(world: World, p: Person) {
 	n.warmth = clamp01(n.warmth + (targetWarmth(world, p) - n.warmth) * 0.3);
 
 	const wolf = nearWolf(world, p);
-	n.safety = clamp01(wolf ? n.safety - 0.2 : n.safety + 0.05);
+	// at camp, among others and by the fire, a wolf nearby is a worry, not a terror
+	n.safety = clamp01(wolf ? n.safety - (atCamp(world, p) ? 0.03 : 0.2) : n.safety + 0.05);
 
 	const company = peopleNear(world, p.x, p.y, 4, p).length > 0;
 	n.company = clamp01(company ? n.company + 0.05 : n.company - COMPANY_FALL * (child ? 2 : 1));

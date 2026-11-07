@@ -120,7 +120,7 @@ describe('resolve', () => {
 		expect(matchIdea('shape', ['cord', 'cord'])?.id).toBe('make-rope');
 		expect(matchIdea('shape', ['flax', 'sinew'])?.id).toBe('twist-cord');
 		expect(matchIdea('shape', ['wet-clay', 'stone-axe'])?.id).toBe('shape-mould');
-		expect(matchIdea('shape', ['wet-clay', 'flake'])?.id).toBe('mark-clay');
+		expect(matchIdea('shape', ['wet-clay', 'flake', 'tally-bone'])?.id).toBe('mark-clay');
 	});
 
 	it('gives nothing, never throwing, for the unknown or the unworkable', () => {

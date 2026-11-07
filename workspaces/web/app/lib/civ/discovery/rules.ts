@@ -803,12 +803,12 @@ const RAW: Raw[] = [
 	{
 		id: 'mark-clay',
 		action: 'shape',
-		in: ['wet-clay', '~#sharp'],
+		in: ['wet-clay', '~#sharp', '~tally-bone'],
 		out: ['wet-tablet'],
 		learns: 'marks',
 		skill: 'crafting',
 		hard: 0.3,
-		text: 'scratched marks into a flat of wet clay'
+		text: 'copied the notches of a tally bone as marks in a flat of wet clay'
 	},
 
 	// ------------------------------------------------------------ blow

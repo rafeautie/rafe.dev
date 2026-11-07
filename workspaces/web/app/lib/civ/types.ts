@@ -273,12 +273,17 @@ export type ChronicleEvent = {
 
 export type WeatherKind = 'clear' | 'rain' | 'storm' | 'drought' | 'snow' | 'cold';
 
+// A spot the people have given a name: a ford, a lake shore, a flint hill
+export type Place = { name: string; kind: string; x: number; y: number; day: number };
+
 export type World = {
 	map: WorldMap;
 	tick: number;
 	people: Person[]; // the living and the dead (dead keep `died`)
 	herds: Herd[];
 	villages: Village[];
+	// named spots, in the order they were named (a handful, not a map layer)
+	places: Place[];
 	weather: WeatherKind;
 	chronicle: ChronicleEvent[];
 	nextId: number;

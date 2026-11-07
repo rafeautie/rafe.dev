@@ -35,6 +35,8 @@ const WOOD_RATE = 0.0015;
 // most a herd of each kind grows to
 const HERD_MAX: Record<string, number> = { deer: 14, aurochs: 10, boar: 8, goat: 12, wolf: 5 };
 const HERD_BREED = 0.35;
+// wolves keep this far from a camp, where people and fire are
+const WOLF_KEEPS_OFF = 14;
 // fewer wild herds than this and a new one wanders in
 const MIN_WILD_HERDS = 6;
 
@@ -88,6 +90,11 @@ function nextHerdId(world: World): number {
 	return world.herds.reduce((m, h) => Math.max(m, h.id), 0) + 1;
 }
 
+// the camp a wolf is too close to, if any
+function campNear(world: World, x: number, y: number) {
+	return world.villages.find((v) => dist(v.x, v.y, x, y) < WOLF_KEEPS_OFF);
+}
+
 function wanderHerd(world: World, rng: Rng, h: Herd, changes: Set<number>) {
 	const { map } = world;
 	if (h.tame) {
@@ -107,6 +114,7 @@ function wanderHerd(world: World, rng: Rng, h: Herd, changes: Set<number>) {
 		const y = Math.min(map.size - 1, Math.max(0, h.y + rng.range(-3, 3)));
 		const i = tileIndex(map, x, y);
 		if (!walkable(map, i) || map.water[i] !== Water.none) continue;
+		if (h.kind === 'wolf' && campNear(world, x, y)) continue;
 		const score = map.plants[i] + rng.range(0, 0.3);
 		if (score > bestScore) {
 			bestScore = score;
@@ -143,8 +151,12 @@ function seekPrey(world: World, wolves: Herd) {
 		}
 	}
 	if (best) {
-		wolves.x += Math.sign(best.x - wolves.x);
-		wolves.y += Math.sign(best.y - wolves.y);
+		const x = wolves.x + Math.sign(best.x - wolves.x);
+		const y = wolves.y + Math.sign(best.y - wolves.y);
+		if (!campNear(world, x, y)) {
+			wolves.x = x;
+			wolves.y = y;
+		}
 	}
 }
 
@@ -184,6 +196,12 @@ function herds(world: World, rng: Rng, day: number, changes: Set<number>) {
 		if (h.count <= 0) continue;
 		wanderHerd(world, rng, h, changes);
 		if (h.kind === 'wolf') {
+			// a pack that strays close to camp is driven back
+			const camp = campNear(world, h.x, h.y);
+			if (camp) {
+				h.x = Math.min(world.map.size - 1, Math.max(0, h.x + Math.sign(h.x - camp.x) * 2));
+				h.y = Math.min(world.map.size - 1, Math.max(0, h.y + Math.sign(h.y - camp.y) * 2));
+			}
 			seekPrey(world, h);
 			huntHerds(world, rng, h);
 		}

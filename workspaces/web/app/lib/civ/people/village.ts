@@ -27,8 +27,12 @@ export const ageOf = (world: World, p: Person) => (dayOf(world) - p.born) / DAYS
 export const isAlive = (p: Person) => p.died === undefined;
 
 export const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-export const dist = (ax: number, ay: number, bx: number, by: number) =>
-	Math.hypot(ax - bx, ay - by);
+// (Math.hypot is slow and this runs millions of times)
+export const dist = (ax: number, ay: number, bx: number, by: number) => {
+	const dx = ax - bx;
+	const dy = ay - by;
+	return Math.sqrt(dx * dx + dy * dy);
+};
 
 // ---------------------------------------------------------------- stacks
 
@@ -323,14 +327,28 @@ export function villageOf(world: World, p: Person): Village {
 	return world.villages[p.village];
 }
 
-// the best know-how anyone alive in a village has, by id
+// The best know-how anyone alive in each village has, by id. Worked out for
+// every village in one pass and kept for the tick, since several systems ask
+// for it every day.
+const knowledgeCache = new WeakMap<
+	World,
+	{ tick: number; size: number; by: Map<number, Record<string, number>> }
+>();
+
 export function mergedKnowledge(world: World, v: Village): Record<string, number> {
-	const merged: Record<string, number> = {};
-	for (const p of living(world)) {
-		if (p.village !== v.id) continue;
-		for (const [id, level] of Object.entries(p.knowledge)) {
-			if (level > (merged[id] ?? 0)) merged[id] = level;
+	let cached = knowledgeCache.get(world);
+	if (!cached || cached.tick !== world.tick || cached.size !== world.people.length) {
+		const by = new Map<number, Record<string, number>>();
+		for (const p of living(world)) {
+			let merged = by.get(p.village);
+			if (!merged) by.set(p.village, (merged = {}));
+			for (const id in p.knowledge) {
+				const level = p.knowledge[id];
+				if (level > (merged[id] ?? 0)) merged[id] = level;
+			}
 		}
+		cached = { tick: world.tick, size: world.people.length, by };
+		knowledgeCache.set(world, cached);
 	}
-	return merged;
+	return cached.by.get(v.id) ?? {};
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEPTH_FACTOR, depthFactor, ruleDepth, ruleDepths } from './depth';
+import { DEPTH_FACTOR, depthFactor, ideaDepth, ruleDepths } from './depth';
 import { RULES } from './rules';
 
 const rule = (id: string) => {
@@ -7,22 +7,33 @@ const rule = (id: string) => {
 	if (!r) throw new Error(id);
 	return r;
 };
+const depth = (id: string, items: string[]) => ideaDepth(rule(id), items);
 
-describe('rule depth', () => {
-	it('puts first-step rules at depth one and later ones deeper', () => {
-		expect(ruleDepth(rule('knap-flake'))).toBe(1);
-		expect(ruleDepth(rule('cook-meat'))).toBeGreaterThan(ruleDepth(rule('flint-sparks')));
-		expect(ruleDepth(rule('shape-pot'))).toBeLessThan(ruleDepth(rule('fire-clay')));
-		expect(ruleDepth(rule('alloy-bronze'))).toBeGreaterThan(ruleDepth(rule('smelt-ore')));
-		expect(ruleDepth(rule('build-furnace'))).toBeGreaterThan(ruleDepth(rule('build-kiln')));
+describe('depth', () => {
+	it('puts first-step tries at depth one and later ones deeper', () => {
+		expect(depth('knap-flake', ['flint', 'granite'])).toBe(1);
+		expect(depth('cook-meat', ['raw-meat'])).toBeGreaterThan(
+			depth('flint-sparks', ['flint', 'granite', 'dry-grass'])
+		);
+		expect(depth('fire-clay', ['wet-pot'])).toBeGreaterThan(depth('shape-pot', ['wet-clay']));
+		expect(depth('alloy-bronze', ['copper', 'tin'])).toBeGreaterThan(
+			depth('build-kiln', ['wet-clay', 'wet-clay', 'wood'])
+		);
 	});
 
-	it('gives every rule a depth, and deeper rules a smaller factor', () => {
+	it('counts what a try uses, not just which rule it is', () => {
+		// the same rule is a step deeper for something that must itself be made first
+		expect(depth('fire-clay', ['wet-tablet'])).toBeGreaterThan(depth('fire-clay', ['wet-pot']));
+	});
+
+	it('reaches every rule and slows deeper ones more', () => {
 		expect(ruleDepths().size).toBe(RULES.length);
 		for (let i = 1; i < DEPTH_FACTOR.length; i++) {
 			expect(DEPTH_FACTOR[i]).toBeLessThanOrEqual(DEPTH_FACTOR[i - 1]);
 		}
-		expect(depthFactor(rule('knap-flake'))).toBe(1);
-		expect(depthFactor(rule('alloy-bronze'))).toBeLessThan(depthFactor(rule('cook-meat')));
+		expect(depthFactor(rule('knap-flake'), ['flint', 'granite'])).toBe(1);
+		expect(depthFactor(rule('alloy-bronze'), ['copper', 'tin'])).toBeLessThan(
+			depthFactor(rule('cook-meat'), ['raw-meat'])
+		);
 	});
 });

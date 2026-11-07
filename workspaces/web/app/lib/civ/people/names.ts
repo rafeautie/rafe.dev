@@ -42,7 +42,16 @@ export function villageName(rng: Rng): string {
 
 const PLACE_KINDS = ['Ford', 'Hill', 'Spring', 'Meadow', 'Bend', 'Grove', 'Stones', 'Shallows'];
 
+// the word a kind of feature takes, so a lake is not called a hill
+const FEATURE_KINDS: Record<string, string[]> = {
+	ford: ['Ford', 'Bend'],
+	lake: ['Shallows', 'Meadow'],
+	spring: ['Spring'],
+	hill: ['Hill', 'Stones'],
+	stones: ['Stones']
+};
+
 // a named place: "Kemar Ford"
-export function placeName(rng: Rng): string {
-	return `${word(rng, 2)} ${rng.pick(PLACE_KINDS)}`;
+export function placeName(rng: Rng, feature?: string): string {
+	return `${word(rng, 2)} ${rng.pick(FEATURE_KINDS[feature ?? ''] ?? PLACE_KINDS)}`;
 }
