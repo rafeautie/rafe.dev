@@ -890,7 +890,10 @@ export function drawActorOverlays(
 	const halo = theme === 'dark' ? 'rgba(10, 12, 14, 0.85)' : 'rgba(255, 255, 255, 0.9)';
 	const mode = view.mode ?? 'overview';
 	// one "pixel" of the selection mark: an art pixel, or a device pixel zoomed out
-	const unit = mode === 'overview' ? Math.max(1, Math.round(dpr)) : view.scale;
+	// one art pixel thick, but never chunkier than about 2 CSS pixels, so the
+	// bracket stays a light frame when the art is scaled way up
+	const thin = Math.max(1, Math.round(dpr));
+	const unit = mode === 'overview' ? thin : Math.min(view.scale, 2 * thin);
 	ctx.font = `500 ${12 * dpr}px ${FONT}`;
 	ctx.textAlign = 'center';
 	ctx.textBaseline = 'top';

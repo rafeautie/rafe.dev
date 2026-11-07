@@ -18,7 +18,8 @@ export const LOCAL_TILE_PX = 240;
 export const LOCAL_PX_PER_M = LOCAL_TILE_PX / 40;
 
 export const MIN_ZOOM = 1.5;
-const MAP_SCALES = [1, 2, 3, 4, 5, 6, 8, 10, 12];
+// past 6x the 16-pixel map tiles turn into big blocks; the close view takes over
+const MAP_SCALES = [1, 2, 3, 4, 6];
 const LOCAL_SCALES = [1, 2, 3, 4];
 export const LADDER: number[] = [
 	...MAP_SCALES.map((s) => s * MAP_TILE_PX),
