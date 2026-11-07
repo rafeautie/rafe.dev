@@ -130,7 +130,9 @@ export function MapCanvas(props: Props) {
 			s.dpr = window.devicePixelRatio || 1;
 			canvas.width = Math.max(1, Math.round(rect.width * s.dpr));
 			canvas.height = Math.max(1, Math.round(rect.height * s.dpr));
-			camera.setViewport(rect.width, rect.height);
+			// The camera works in device pixels, so whole-number pixel-art scales
+			// land on whole screen pixels even at 125% or 150% display scaling.
+			camera.setViewport(canvas.width, canvas.height);
 			if (!s.fitted && s.layers && rect.width > 0) {
 				camera.fit(s.layers.size);
 				s.fitted = true;
@@ -192,8 +194,9 @@ export function MapCanvas(props: Props) {
 		let start = { x: 0, y: 0 };
 		let moved = false;
 		const local = (e: PointerEvent | WheelEvent) => {
+			// in device pixels, like the camera
 			const rect = canvas.getBoundingClientRect();
-			return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+			return { x: (e.clientX - rect.left) * s.dpr, y: (e.clientY - rect.top) * s.dpr };
 		};
 		const cursor = () => {
 			canvas.style.cursor = s.hoveredId !== null ? 'pointer' : s.dragging ? 'grabbing' : 'grab';
@@ -215,7 +218,14 @@ export function MapCanvas(props: Props) {
 			const before = pointers.get(e.pointerId);
 			if (!before) {
 				if (e.pointerType === 'mouse') {
-					s.hoveredId = nearestPerson(s.people, camera, performance.now(), at.x, at.y, PICK_RADIUS);
+					s.hoveredId = nearestPerson(
+						s.people,
+						camera,
+						performance.now(),
+						at.x,
+						at.y,
+						PICK_RADIUS * s.dpr
+					);
 					cursor();
 				}
 				return;
@@ -235,7 +245,7 @@ export function MapCanvas(props: Props) {
 				return;
 			}
 			pointers.set(e.pointerId, at);
-			if (!moved && Math.hypot(at.x - start.x, at.y - start.y) > CLICK_SLOP) moved = true;
+			if (!moved && Math.hypot(at.x - start.x, at.y - start.y) > CLICK_SLOP * s.dpr) moved = true;
 			if (moved) {
 				camera.panBy(at.x - before.x, at.y - before.y);
 				s.dragging = true;
@@ -249,7 +259,7 @@ export function MapCanvas(props: Props) {
 				if (!moved && e.type === 'pointerup') {
 					const at = local(e);
 					propsRef.current.onSelect(
-						nearestPerson(s.people, camera, performance.now(), at.x, at.y, PICK_RADIUS)
+						nearestPerson(s.people, camera, performance.now(), at.x, at.y, PICK_RADIUS * s.dpr)
 					);
 				}
 				s.dragging = false;

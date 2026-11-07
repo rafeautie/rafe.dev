@@ -18,11 +18,13 @@ const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 const standing: Standing[] = [];
 
 export function drawFrame(ctx: CanvasRenderingContext2D, state: DrawState): void {
-	const { camera, dpr } = state;
+	const { camera } = state;
 	const { width, height } = camera;
 	const view = viewOf(state);
 
-	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+	// the camera is in device pixels, so no scaling here; `dpr` is only for
+	// sizing text and lines that should look the same at any display scaling
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
 	ctx.fillStyle = state.theme === 'dark' ? '#14171a' : '#e9ecee';
 	ctx.fillRect(0, 0, width, height);
 	if (view.x1 <= view.x0 || view.y1 <= view.y0) return;
@@ -62,17 +64,20 @@ function drawOverview(ctx: CanvasRenderingContext2D, state: DrawState, view: Vie
 }
 
 function drawVillageNames(ctx: CanvasRenderingContext2D, state: DrawState): void {
-	const { camera, villages, theme } = state;
-	const size = Math.max(11, Math.min(16, 9 + camera.zoom * 0.35));
+	const { camera, villages, theme, dpr } = state;
+	// sizes in CSS pixels, scaled to the device pixels the camera works in
+	const css = camera.zoom / dpr;
+	const size = Math.max(11, Math.min(16, 9 + css * 0.35)) * dpr;
 	ctx.font = `600 ${size}px ${FONT}`;
 	ctx.textAlign = 'center';
 	ctx.textBaseline = 'bottom';
 	ctx.lineJoin = 'round';
-	ctx.lineWidth = 3.5;
+	ctx.lineWidth = 3.5 * dpr;
 	for (const village of villages) {
 		const p = camera.toScreen(village.x + 0.5, village.y + 0.5);
-		if (p.x < -100 || p.y < -30 || p.x > camera.width + 100 || p.y > camera.height + 30) continue;
-		const y = p.y - Math.min(camera.zoom * 0.7, 60) - 4;
+		if (p.x < -100 * dpr || p.y < -30 * dpr || p.x > camera.width + 100 * dpr) continue;
+		if (p.y > camera.height + 30 * dpr) continue;
+		const y = p.y - Math.min(camera.zoom * 0.7, 60 * dpr) - 4 * dpr;
 		ctx.strokeStyle = theme === 'dark' ? 'rgba(10, 12, 14, 0.85)' : 'rgba(255, 255, 255, 0.9)';
 		ctx.strokeText(village.name, p.x, y);
 		ctx.fillStyle = theme === 'dark' ? '#f2f4f5' : '#1b1f23';
