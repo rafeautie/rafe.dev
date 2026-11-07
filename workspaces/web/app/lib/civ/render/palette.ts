@@ -1,5 +1,6 @@
 import { SEA_LEVEL } from '../config';
 import { Biome, Water, type MapLayers, type WorldMap } from '../types';
+import { PALETTE, type ColorName } from './pixel/palette';
 
 // Colors for the flat, minimal map. Everything here returns packed 0xRRGGBB
 // numbers so the terrain image can be filled without allocating per tile.
@@ -8,28 +9,36 @@ type Living = Pick<WorldMap, 'plants' | 'wood'>;
 type Rgb = readonly [number, number, number];
 
 const hex = (value: number): Rgb => [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+// Every colour comes from the pixel-art palette, so zooming from the overview
+// into the pixel map doesn't jump in colour.
+const pal = (name: ColorName): Rgb => hex(parseInt(PALETTE[name].slice(1), 16));
+const mix = (a: Rgb, b: Rgb, t: number): Rgb => [
+	a[0] + (b[0] - a[0]) * t,
+	a[1] + (b[1] - a[1]) * t,
+	a[2] + (b[2] - a[2]) * t
+];
 
 const BIOME: Record<number, Rgb> = {
-	[Biome.ocean]: hex(0x3a6f9e),
-	[Biome.coast]: hex(0xdccb9c),
-	[Biome.grassland]: hex(0x9cc06b),
-	[Biome.forest]: hex(0x6a9a55),
-	[Biome.wetland]: hex(0x86a98a),
-	[Biome.scrub]: hex(0xb7b56f),
-	[Biome.hills]: hex(0xaaa774),
-	[Biome.mountain]: hex(0x908d88),
-	[Biome.snow]: hex(0xeff3f6)
+	[Biome.ocean]: pal('water'),
+	[Biome.coast]: pal('sand'),
+	[Biome.grassland]: pal('grass'),
+	[Biome.forest]: pal('grass'),
+	[Biome.wetland]: mix(pal('moss'), pal('water'), 0.25),
+	[Biome.scrub]: mix(pal('moss'), pal('straw'), 0.4),
+	[Biome.hills]: mix(pal('grass'), pal('moss'), 0.6),
+	[Biome.mountain]: pal('stone'),
+	[Biome.snow]: pal('white')
 };
 
 // the sea gets darker the further it drops below sea level
-const SEA_SHALLOW = hex(0x62a2c8);
-const SEA_DEEP = hex(0x2c5f8d);
-const LAKE = hex(0x6fb0d2);
-const RIVER = hex(0x7bbbdc);
-const SPRING = hex(0x93cde4);
+const SEA_SHALLOW = pal('water');
+const SEA_DEEP = pal('deep');
+const LAKE = pal('water');
+const RIVER = pal('waterLight');
+const SPRING = pal('foam');
 
-const DRY = hex(0xb9a26c); // where plants are thin the ground shows through
-const CANOPY = hex(0x2f5d3a); // where trees are thick
+const DRY = mix(pal('straw'), pal('soilLight'), 0.7); // where plants are thin the ground shows through
+const CANOPY = pal('leaf'); // where trees are thick
 
 // A gentle push per season: multiply the color, then mix toward a tint.
 // Water feels only a part of it so lakes don't turn gold in autumn.
