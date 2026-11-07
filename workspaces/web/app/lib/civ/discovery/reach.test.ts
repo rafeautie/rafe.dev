@@ -111,7 +111,13 @@ describe('reachability', () => {
 	it('every rule is reachable by its own inputs (none is shadowed)', () => {
 		const pool = [
 			...reach(
-				new Set([...camp([Deposit.tin, Deposit.bogIron]), 'kid', 'pup', 'calf', 'meteorite-iron'])
+				new Set([
+					...camp([Deposit.tin, Deposit.bogIron, Deposit.salt]),
+					'kid',
+					'pup',
+					'calf',
+					'meteorite-iron'
+				])
 			).have
 		];
 		for (const rule of RULES) {
