@@ -83,6 +83,10 @@ export type MindResponse =
 // a free line's sampling: a little randomness, so two people in the same spot
 // don't say the same thing. Fields are always the model's likeliest option.
 const TEMPERATURE = 0.7;
+// Tokens far less likely than the likeliest are never picked. Transformers.js
+// samples from the 64 likeliest whatever top_p says, and small models' long
+// tail is where the nonsense words are ("I'Wish" for "I wish").
+const MIN_P = 0.1;
 // kept readings of different openings, the most recently used first
 const OPENINGS = 4;
 // the most a kept reading may differ from a whole one and still count as the same
@@ -113,6 +117,7 @@ const openings = new Map<string, Opening>();
 // the request being answered, and whether it was stopped on the way
 type Turn = { ask: Ask; stopping: InterruptableStoppingCriteria; stopped: boolean };
 let current: Turn | undefined;
+let pumping = false;
 
 function post(message: MindResponse) {
 	postMessage(message);
@@ -227,7 +232,11 @@ const encode = (tokenizer: PreTrainedTokenizer, text: string): number[] =>
 	tokenizer.encode(text, { add_special_tokens: false });
 
 const idsTensor = (ids: number[]) =>
-	new Tensor('int64', BigInt64Array.from(ids, (id) => BigInt(id)), [1, ids.length]);
+	new Tensor(
+		'int64',
+		BigInt64Array.from(ids, (id) => BigInt(id)),
+		[1, ids.length]
+	);
 
 // The prompt's tokens, and how many of them are the shared opening
 function promptIds(tokenizer: PreTrainedTokenizer, system: string, prompt: string) {
@@ -255,10 +264,7 @@ type GenerateOptions = {
 	stopping_criteria?: StoppingCriteria[];
 };
 
-async function generate(
-	{ model }: Pick<Loaded, 'model'>,
-	options: GenerateOptions
-): Promise<Run> {
+async function generate({ model }: Pick<Loaded, 'model'>, options: GenerateOptions): Promise<Run> {
 	const logits_processor = new LogitsProcessorList();
 	logits_processor.extend(options.logits_processor ?? []);
 	const stopping_criteria = new StoppingCriteriaList();
@@ -312,7 +318,10 @@ const fromOpening = (opening: Opening) =>
 	);
 
 // The kept reading for an opening, read now if it isn't kept yet
-async function openingFor(ready: Loaded, ids: number[]): Promise<{ opening: Opening; new: boolean }> {
+async function openingFor(
+	ready: Loaded,
+	ids: number[]
+): Promise<{ opening: Opening; new: boolean }> {
 	const key = ids.join(',');
 	const kept = openings.get(key);
 	if (kept) {
@@ -400,6 +409,11 @@ class Shaped extends LogitsProcessor {
 			// not a blank line, and not the end while fields are still to come
 			if (step.count === 0) scores[this.shape.newline] = -Infinity;
 			if (!step.last) for (const token of this.ready.end) scores[token] = -Infinity;
+			// the scores have been divided by the temperature already
+			let top = -Infinity;
+			for (const score of scores) if (score > top) top = score;
+			const floor = top + Math.log(MIN_P);
+			for (let i = 0; i < scores.length; i++) if (scores[i] < floor) scores[i] = -Infinity;
 		} else if (step.kind === 'only') {
 			restrict(scores, [best(scores, step.tokens)]);
 		}
@@ -495,7 +509,7 @@ async function answer(turn: Turn): Promise<MindResult | undefined> {
 	const firstAt = shaped.firstAt ?? ended;
 	return {
 		id: ask.id,
-		text: freeLine(tokenizer.decode(free, { skip_special_tokens: true })),
+		text: free.length ? freeLine(tokenizer.decode(free, { skip_special_tokens: true })) : '',
 		fields,
 		speed: {
 			promptTokens: ids.length,
@@ -507,10 +521,18 @@ async function answer(turn: Turn): Promise<MindResult | undefined> {
 	};
 }
 
+// Lets the messages already sent arrive. On the processor (WebAssembly) a run
+// of the model doesn't give way to them until it's done, so without this the
+// next request to arrive would go next, whatever its priority, and a stop
+// sent meanwhile would come too late for what was waiting.
+const arrivals = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 // Answers what's waiting, one at a time, until nothing is
 async function pump() {
-	if (current) return;
+	if (pumping) return;
+	pumping = true;
 	for (;;) {
+		await arrivals();
 		const { next, expired } = queue.take(Date.now());
 		for (const ask of expired) post({ type: 'dropped', id: ask.id, reason: 'deadline' });
 		if (!next) break;
@@ -525,6 +547,7 @@ async function pump() {
 			current = undefined;
 		}
 	}
+	pumping = false;
 }
 
 onmessage = (event: MessageEvent<MindRequest>) => {

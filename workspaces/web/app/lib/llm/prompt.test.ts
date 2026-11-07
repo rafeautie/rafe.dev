@@ -7,7 +7,7 @@ describe('openingText', () => {
 		expect(openingText(marked)).toBe('<bos><|turn>system\nThe world.<turn|>\n<|turn>user\n');
 	});
 
-	it("fails when the template lost the prompt", () => {
+	it('fails when the template lost the prompt', () => {
 		expect(() => openingText('<bos>nothing here')).toThrow();
 	});
 });

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { optionTrie } from './options';
-import { checkAsk, fieldLine, freeLine, parseReply, planReply, type Ask, type Shape } from './reply';
+import {
+	checkAsk,
+	fieldLine,
+	freeLine,
+	parseReply,
+	planReply,
+	type Ask,
+	type Shape
+} from './reply';
 
 // one token per character, so a line break is its own token
 const encode = (text: string) => [...text].map((char) => char.charCodeAt(0));
@@ -79,7 +87,10 @@ describe('planReply', () => {
 	});
 
 	it('ends a free line that runs out of room before the fields', () => {
-		const shape = shapeOf({ free: { maxTokens: 3 }, fields: [{ label: 'NEED', options: ['rain'] }] });
+		const shape = shapeOf({
+			free: { maxTokens: 3 },
+			fields: [{ label: 'NEED', options: ['rain'] }]
+		});
 		expect(planReply(shape, encode('abc'))).toEqual({ kind: 'only', tokens: [NEWLINE] });
 		expect(planReply(shape, encode('abc\n'))).toEqual({
 			kind: 'done',
@@ -97,7 +108,11 @@ describe('planReply', () => {
 	it('ends a lone free line at its line break or its limit', () => {
 		const shape = shapeOf({ free: { maxTokens: 5 } });
 		expect(planReply(shape, encode('ab'))).toMatchObject({ kind: 'free', last: true });
-		expect(planReply(shape, encode('ab\n'))).toEqual({ kind: 'done', free: encode('ab'), fields: {} });
+		expect(planReply(shape, encode('ab\n'))).toEqual({
+			kind: 'done',
+			free: encode('ab'),
+			fields: {}
+		});
 		expect(planReply(shape, encode('abcde'))).toEqual({
 			kind: 'done',
 			free: encode('abcde'),
@@ -169,7 +184,12 @@ describe('parseReply', () => {
 	it('reads what the shape writes', () => {
 		const line = fieldLine('NEED', 'rain');
 		expect(line).toBe('NEED: rain\n');
-		expect(parseReply(`Please.\n${line}`, { free: { maxTokens: 9 }, fields: [{ label: 'NEED', options: ['rain'] }] }).fields).toEqual({ NEED: 'rain' });
+		expect(
+			parseReply(`Please.\n${line}`, {
+				free: { maxTokens: 9 },
+				fields: [{ label: 'NEED', options: ['rain'] }]
+			}).fields
+		).toEqual({ NEED: 'rain' });
 	});
 });
 

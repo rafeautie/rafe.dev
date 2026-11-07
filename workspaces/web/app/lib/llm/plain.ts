@@ -4,8 +4,7 @@
 // with accents, curly quotes and the ellipsis are fine. A line break may only
 // come as a token of its own, which ends the line; tokens that carry one
 // along with other text would end it somewhere in the middle.
-const PLAIN =
-	/^[\x20-\x23\x25\x27-\x29\x2B-\x3B\x3D\x3F-\x5B\x5D\x61-\x7AÀ-ɏ‘’“”…]*$/;
+const PLAIN = /^[\x20-\x23\x25\x27-\x29\x2B-\x3B\x3D\x3F-\x5B\x5D\x61-\x7AÀ-ɏ‘’“”…]*$/;
 
 // Whether a token from the vocabulary, as the tokenizer lists it, is plain.
 // Gemma spells a space as ▁, and anything it has no token for byte by byte.

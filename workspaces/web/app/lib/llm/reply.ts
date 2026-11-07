@@ -1,4 +1,4 @@
-import { follow, settled, type OptionTrie } from './options';
+import { settled, type OptionTrie } from './options';
 
 // What a person in the simulation is asked, and how the model's reply is
 // shaped and read back. A reply is at most one free line of plain text, then

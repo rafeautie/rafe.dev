@@ -14,6 +14,7 @@ import { Route as ShmoneyRouteImport } from './routes/shmoney'
 import { Route as SeenRouteImport } from './routes/seen'
 import { Route as PhotographyRouteImport } from './routes/photography'
 import { Route as DevelopmentRouteImport } from './routes/development'
+import { Route as CivRouteImport } from './routes/civ'
 import { Route as ChessRouteImport } from './routes/chess'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
@@ -21,6 +22,7 @@ import { Route as WritingIndexRouteImport } from './routes/writing/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as WritingFeedDotxmlRouteImport } from './routes/writing/feed[.]xml'
 import { Route as WritingSlugRouteImport } from './routes/writing/$slug'
+import { Route as CivBenchRouteImport } from './routes/civ_.bench'
 import { Route as AdminPhotosRouteImport } from './routes/admin/photos'
 import { Route as AdminLogoutRouteImport } from './routes/admin/logout'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
@@ -53,6 +55,11 @@ const PhotographyRoute = PhotographyRouteImport.update({
 const DevelopmentRoute = DevelopmentRouteImport.update({
   id: '/development',
   path: '/development',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CivRoute = CivRouteImport.update({
+  id: '/civ',
+  path: '/civ',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChessRoute = ChessRouteImport.update({
@@ -88,6 +95,11 @@ const WritingFeedDotxmlRoute = WritingFeedDotxmlRouteImport.update({
 const WritingSlugRoute = WritingSlugRouteImport.update({
   id: '/writing/$slug',
   path: '/writing/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CivBenchRoute = CivBenchRouteImport.update({
+  id: '/civ_/bench',
+  path: '/civ/bench',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminPhotosRoute = AdminPhotosRouteImport.update({
@@ -135,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/chess': typeof ChessRoute
+  '/civ': typeof CivRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
   '/seen': typeof SeenRoute
@@ -144,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
+  '/civ/bench': typeof CivBenchRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
   '/admin/': typeof AdminIndexRoute
@@ -156,6 +170,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/chess': typeof ChessRoute
+  '/civ': typeof CivRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
   '/seen': typeof SeenRoute
@@ -165,6 +180,7 @@ export interface FileRoutesByTo {
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
+  '/civ/bench': typeof CivBenchRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
   '/admin': typeof AdminIndexRoute
@@ -179,6 +195,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/chess': typeof ChessRoute
+  '/civ': typeof CivRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
   '/seen': typeof SeenRoute
@@ -188,6 +205,7 @@ export interface FileRoutesById {
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
+  '/civ_/bench': typeof CivBenchRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
   '/admin/': typeof AdminIndexRoute
@@ -203,6 +221,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/chess'
+    | '/civ'
     | '/development'
     | '/photography'
     | '/seen'
@@ -212,6 +231,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
+    | '/civ/bench'
     | '/writing/$slug'
     | '/writing/feed.xml'
     | '/admin/'
@@ -224,6 +244,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/chess'
+    | '/civ'
     | '/development'
     | '/photography'
     | '/seen'
@@ -233,6 +254,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
+    | '/civ/bench'
     | '/writing/$slug'
     | '/writing/feed.xml'
     | '/admin'
@@ -246,6 +268,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/chess'
+    | '/civ'
     | '/development'
     | '/photography'
     | '/seen'
@@ -255,6 +278,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
+    | '/civ_/bench'
     | '/writing/$slug'
     | '/writing/feed.xml'
     | '/admin/'
@@ -269,11 +293,13 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   ChessRoute: typeof ChessRoute
+  CivRoute: typeof CivRoute
   DevelopmentRoute: typeof DevelopmentRoute
   PhotographyRoute: typeof PhotographyRoute
   SeenRoute: typeof SeenRoute
   ShmoneyRoute: typeof ShmoneyRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  CivBenchRoute: typeof CivBenchRoute
   WritingSlugRoute: typeof WritingSlugRoute
   WritingFeedDotxmlRoute: typeof WritingFeedDotxmlRoute
   WritingIndexRoute: typeof WritingIndexRoute
@@ -314,6 +340,13 @@ declare module '@tanstack/react-router' {
       path: '/development'
       fullPath: '/development'
       preLoaderRoute: typeof DevelopmentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/civ': {
+      id: '/civ'
+      path: '/civ'
+      fullPath: '/civ'
+      preLoaderRoute: typeof CivRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chess': {
@@ -363,6 +396,13 @@ declare module '@tanstack/react-router' {
       path: '/writing/$slug'
       fullPath: '/writing/$slug'
       preLoaderRoute: typeof WritingSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/civ_/bench': {
+      id: '/civ_/bench'
+      path: '/civ/bench'
+      fullPath: '/civ/bench'
+      preLoaderRoute: typeof CivBenchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/photos': {
@@ -456,11 +496,13 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRouteRoute: AdminRouteRouteWithChildren,
   ChessRoute: ChessRoute,
+  CivRoute: CivRoute,
   DevelopmentRoute: DevelopmentRoute,
   PhotographyRoute: PhotographyRoute,
   SeenRoute: SeenRoute,
   ShmoneyRoute: ShmoneyRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  CivBenchRoute: CivBenchRoute,
   WritingSlugRoute: WritingSlugRoute,
   WritingFeedDotxmlRoute: WritingFeedDotxmlRoute,
   WritingIndexRoute: WritingIndexRoute,
