@@ -1,6 +1,7 @@
 import { Biome, Built, Deposit, Ground, Water } from '../types';
 import { waterAt } from './ground';
 import {
+	FENCE_RUN,
 	FIRE_FRAMES,
 	Kind,
 	chunkLook,
@@ -14,10 +15,11 @@ import {
 	spriteOf
 } from './pixel/localsprites';
 import { drawSprite } from './pixel/sprite';
-import { hash, snapToArt, type DrawState, type Standing, type View } from './scene';
+import { depthOf, hash, snapToArt, type DrawState, type Standing, type View } from './scene';
 
 // Things that stand on the ground: trees, bushes, rocks, ore, and what people
-// have built. Each is a `Standing` entry (foot y in tiles + a draw closure).
+// have built. Each is a `Standing` entry (its foot's depth, x + y in tiles in
+// the isometric view, + a draw closure).
 // To keep a frame cheap the entries come from a fixed pool: nothing is
 // allocated per object per frame, and the closures only read from typed
 // arrays filled during collect.
@@ -28,8 +30,10 @@ import { hash, snapToArt, type DrawState, type Standing, type View } from './sce
 // flowers) share what is left, an equal share per visible tile, which is zero
 // when many tiles are on screen. So small things only show up when zoomed in.
 //
-// Every entry is a pixel sprite drawn at a whole art pixel (`snapToArt`) and a
-// whole scale, with a flat oval shadow under it.
+// Every entry is a pixel sprite drawn at a whole art pixel (`snapToArt`, which
+// lifts it to its tile's height) and a whole scale, with a flat 2:1 oval shadow
+// under it. Footprints on the ground follow the diamond axes: a pen is a square
+// of fence runs along x and y, with its posts as entries of their own.
 
 export const MAX_OBJECTS = 3000;
 const POOL = MAX_OBJECTS + 400;
@@ -39,6 +43,23 @@ const MAX_TREES_PER_TILE = 26;
 const EDGE = 0.04;
 
 const TAU = Math.PI * 2;
+// A pen is a square of fence along the tile's axes, a fifth of a tile (48 art
+// pixels, one rail run) between posts, on a 4 x 4 grid of posts in tile
+// fractions. Posts (x, y) are on the square's edge; runs are [x, y, alongY]:
+// where they start, and whether they run along y (down and left) or x (down and
+// right). The middle of the front is left open for a gate.
+export const PEN_POSTS: [number, number][] = [];
+export const PEN_RUNS: [number, number, boolean][] = [];
+for (let i = 1; i <= 4; i++) {
+	for (let j = 1; j <= 4; j++)
+		if (i === 1 || i === 4 || j === 1 || j === 4) PEN_POSTS.push([i / 5, j / 5]);
+}
+for (let k = 1; k <= 3; k++) {
+	PEN_RUNS.push([k / 5, 1 / 5, false], [1 / 5, k / 5, true], [4 / 5, k / 5, true]);
+	if (k !== 2) PEN_RUNS.push([k / 5, 4 / 5, false]);
+}
+// a fence run sorts at its middle: after the post it starts at, before the one it ends at
+const RUN_MID = FENCE_RUN / 240 / 2;
 
 // ---------------------------------------------------------------- pure parts
 
@@ -146,11 +167,39 @@ function add(kind: number, v: number, x: number, y: number, sortOff = 0) {
 	pVar[i] = v;
 	pX[i] = x;
 	pY[i] = y;
-	e.y = y + sortOff;
+	e.y = depthOf(curView, x, y) + sortOff;
 	outList.push(e);
 }
 
 // ------------------------------------------------------------------ collecting
+
+// How far past a tile's diamond its things can reach on screen, in art
+// pixels: sideways (wide huts, shadows), up (tall trees, smoke) and down
+const REACH_X = 60;
+const REACH_UP = 90;
+const REACH_DOWN = 20;
+
+// Could anything standing on this tile show on screen? The screen is a
+// rotated rectangle on the ground, so the view's tile box has many tiles
+// that are off it; counting only the visible ones keeps the share of small
+// things per tile true.
+export function tileOnScreen(view: View, width: number, height: number, tx: number, ty: number) {
+	const art = view.artPerTile;
+	const s = view.scale;
+	const size = Math.sqrt(view.levels.length);
+	const top = (tx + ty) * (art / 2) - view.levels[ty * size + tx] * view.liftArt;
+	const left = view.originX + ((tx - ty) * art - art - REACH_X) * s;
+	const y = view.originY + (top - REACH_UP) * s;
+	return (
+		left + (art * 2 + REACH_X * 2) * s > 0 &&
+		left < width &&
+		y + (art + REACH_UP + REACH_DOWN) * s > 0 &&
+		y < height
+	);
+}
+
+const visX: number[] = [];
+const visY: number[] = [];
 
 const DEPOSIT_KIND: Record<number, Kind> = {
 	[Deposit.flint]: Kind.flint,
@@ -177,15 +226,25 @@ export function collectObjects(state: DrawState, view: View, out: Standing[]): v
 	curSeason = state.season & 3;
 	const size = layers.size;
 
-	// tiles that can touch the screen (objects reach a few metres past their tile)
-	const a = camera.toWorld(0, 0);
-	const b = camera.toWorld(camera.width, camera.height);
-	const bx0 = Math.max(view.x0, Math.floor(a.x - 0.5));
-	const by0 = Math.max(view.y0, Math.floor(a.y - 0.5));
-	const bx1 = Math.min(view.x1, Math.ceil(b.x + 0.5));
-	const by1 = Math.min(view.y1, Math.ceil(b.y + 0.5));
-	if (bx1 <= bx0 || by1 <= by0) return;
-	const nTiles = (bx1 - bx0) * (by1 - by0);
+	// tiles that can touch the screen
+	let nTiles = 0;
+	let bx0 = size;
+	let by0 = size;
+	let bx1 = 0;
+	let by1 = 0;
+	for (let ty = view.y0; ty < view.y1; ty++) {
+		for (let tx = view.x0; tx < view.x1; tx++) {
+			if (!tileOnScreen(view, camera.width, camera.height, tx, ty)) continue;
+			visX[nTiles] = tx;
+			visY[nTiles] = ty;
+			nTiles++;
+			bx0 = Math.min(bx0, tx);
+			by0 = Math.min(by0, ty);
+			bx1 = Math.max(bx1, tx + 1);
+			by1 = Math.max(by1, ty + 1);
+		}
+	}
+	if (nTiles === 0) return;
 
 	// villages whose clearing can reach the tiles being drawn
 	villageCount = 0;
@@ -197,40 +256,38 @@ export function collectObjects(state: DrawState, view: View, out: Standing[]): v
 	}
 
 	// 1. buildings and ore
-	for (let ty = by0; ty < by1; ty++) {
-		for (let tx = bx0; tx < bx1; tx++) {
-			const i = ty * size + tx;
-			const built = living.built[i];
-			const dep = layers.deposit[i];
-			if (built !== Built.none) addBuilt(built, tx, ty);
-			if (dep !== Deposit.none) addDeposit(dep, tx, ty);
-		}
+	for (let k = 0; k < nTiles; k++) {
+		const tx = visX[k];
+		const ty = visY[k];
+		const i = ty * size + tx;
+		const built = living.built[i];
+		const dep = layers.deposit[i];
+		if (built !== Built.none) addBuilt(built, tx, ty);
+		if (dep !== Deposit.none) addDeposit(dep, tx, ty);
 	}
 
 	// 2. trees, thinned into bigger clumps when there are too many
 	let total = 0;
-	for (let ty = by0; ty < by1; ty++) {
-		for (let tx = bx0; tx < bx1; tx++) {
-			const i = ty * size + tx;
-			if (living.built[i] !== Built.none || isOpenWater(layers, i)) continue;
-			total += treeCount(living.wood[i]);
-		}
+	for (let k = 0; k < nTiles; k++) {
+		const i = visY[k] * size + visX[k];
+		if (living.built[i] !== Built.none || isOpenWater(layers, i)) continue;
+		total += treeCount(living.wood[i]);
 	}
 	const ratio = keepRatio(total, Math.floor(MAX_OBJECTS * TREE_SHARE) - count);
 	if (ratio > 0) {
-		for (let ty = by0; ty < by1; ty++) {
-			for (let tx = bx0; tx < bx1; tx++) {
-				const i = ty * size + tx;
-				if (living.built[i] !== Built.none || isOpenWater(layers, i)) continue;
-				const n = treeCount(living.wood[i]);
-				if (n === 0) continue;
-				const k = keptCount(n, ratio, tx, ty);
-				const biome = layers.biome[i];
-				for (let j = 0; j < k && count < MAX_OBJECTS; j++) {
-					scatter(tx, ty, j, 0, spot);
-					const kind = treeKind(biome, hash(tx, ty, j, 5));
-					put(kind, Math.floor(hash(tx, ty, j, 7) * 4), tx + spot[0], ty + spot[1]);
-				}
+		for (let t = 0; t < nTiles; t++) {
+			const tx = visX[t];
+			const ty = visY[t];
+			const i = ty * size + tx;
+			if (living.built[i] !== Built.none || isOpenWater(layers, i)) continue;
+			const n = treeCount(living.wood[i]);
+			if (n === 0) continue;
+			const k = keptCount(n, ratio, tx, ty);
+			const biome = layers.biome[i];
+			for (let j = 0; j < k && count < MAX_OBJECTS; j++) {
+				scatter(tx, ty, j, 0, spot);
+				const kind = treeKind(biome, hash(tx, ty, j, 5));
+				put(kind, Math.floor(hash(tx, ty, j, 7) * 4), tx + spot[0], ty + spot[1]);
 			}
 		}
 	}
@@ -238,12 +295,12 @@ export function collectObjects(state: DrawState, view: View, out: Standing[]): v
 	// 3. small things share what is left, evenly per tile
 	const cap = Math.floor((MAX_OBJECTS - count) / nTiles);
 	if (cap <= 0) return;
-	for (let ty = by0; ty < by1; ty++) {
-		for (let tx = bx0; tx < bx1; tx++) {
-			const i = ty * size + tx;
-			if (living.built[i] !== Built.none || isOpenWater(layers, i)) continue;
-			addSmall(state, tx, ty, i, cap);
-		}
+	for (let k = 0; k < nTiles; k++) {
+		const tx = visX[k];
+		const ty = visY[k];
+		const i = ty * size + tx;
+		if (living.built[i] !== Built.none || isOpenWater(layers, i)) continue;
+		addSmall(state, tx, ty, i, cap);
 	}
 }
 
@@ -425,27 +482,22 @@ function addBuilt(built: number, tx: number, ty: number) {
 			add(Kind.kiln, v, tx + 0.5, ty + 0.56);
 			add(LIVE_KILN, 0, tx + 0.5, ty + 0.56, 0.0005);
 			break;
-		case Built.pen: {
-			// fence runs: back, front with a gap for the gate, and two sides
-			for (let k = -2; k <= 2; k++) add(Kind.fenceH, 0, tx + 0.5 + (k * 36) / 240, ty + 0.25);
-			for (const k of [-2, -1, 1, 2]) add(Kind.fenceH, 0, tx + 0.5 + (k * 36) / 240, ty + 0.75);
-			// the ends of each run get a post of their own
-			add(Kind.fenceH, 1, tx + 0.5 + 90 / 240, ty + 0.25);
-			add(Kind.fenceH, 1, tx + 0.5 + 90 / 240, ty + 0.75);
-			add(Kind.fenceH, 1, tx + 0.5 - 18 / 240, ty + 0.75);
-			add(Kind.fenceV, 0, tx + 0.5 - 90 / 240, ty + 0.75);
-			add(Kind.fenceV, 0, tx + 0.5 + 90 / 240, ty + 0.75);
+		case Built.pen:
+			for (const [x, y] of PEN_POSTS) add(Kind.fenceV, 0, tx + x, ty + y);
+			// a run starts at its post; mirrored (FLIP) it runs down and left, along y
+			for (const [x, y, alongY] of PEN_RUNS)
+				add(Kind.fenceH, alongY ? FLIP : 0, tx + x, ty + y, RUN_MID);
 			break;
-		}
 		case Built.shrine: {
 			add(Kind.altar, 0, tx + 0.5, ty + 0.5, -0.3);
+			// a ring of stones, round on the ground
 			for (let j = 0; j < 8; j++) {
 				const ang = (j / 8) * TAU + 0.2;
 				add(
 					Kind.standing,
 					j,
-					tx + 0.5 + (36 * Math.sin(ang)) / 240,
-					ty + 0.5 + (20 * Math.cos(ang)) / 240
+					tx + 0.5 + (30 * Math.sin(ang)) / 240,
+					ty + 0.5 + (30 * Math.cos(ang)) / 240
 				);
 			}
 			break;

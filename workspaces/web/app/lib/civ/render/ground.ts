@@ -2,20 +2,35 @@ import { SEA_LEVEL } from '../config';
 import { Biome, Built, Deposit, Ground, Water, type MapLayers } from '../types';
 import { PALETTE, type ColorName } from './pixel/palette';
 import { N, NE, riverLinks } from './pixel/maptiles';
-import { LOCAL_TILE_PX } from './pixel/scale';
-import { hash, type DrawState, type Living, type View } from './scene';
+import { hash, type DrawState, type Living, type Standing, type View } from './scene';
+import {
+	DIAMOND_H,
+	DIAMOND_W,
+	Face,
+	K,
+	LIFT,
+	MAX_TILE_H,
+	TILE as T,
+	cliffDrop,
+	fallColumns,
+	paintFace,
+	tileHeight,
+	toDiamond,
+	type FaceStyle
+} from './pixel/localiso';
 
-// The ground up close, as pixel art. Each tile is painted once into a
-// 240 x 240 canvas at one canvas pixel per art pixel (grass texture, shores,
-// fields, worn earth, river channels) and kept in a cache; every frame a tile
-// is just one `drawImage` at a whole-number scale with smoothing off.
+// The ground up close, as isometric pixel art. Each tile is painted once, top
+// down, on a 240 x 240 grid (6 pixels a metre: grass texture, shores, fields,
+// worn earth, river channels), then turned into its 480 x 240 diamond one
+// pixel to one pixel (pixel/localiso.ts), given the cliff faces that hang
+// below it where the tile in front is lower, and kept in a cache. Every frame
+// a tile is one `drawImage` at a whole-number scale with smoothing off, as its
+// own entry in the depth sort (its depth is its back corner, tx + ty).
 //
 // Everything is deterministic from `hash`, so a tile always paints the same
-// way. The painting itself (`paintTile`) works on a plain pixel array, with no
-// canvas, so it can be tested. Only moving water is drawn live: a handful of
-// shimmer dashes per water tile, chosen from `state.now`.
-
-const T = LOCAL_TILE_PX;
+// way. The painting (`paintTile`, `paintDiamond`) works on plain pixel arrays,
+// with no canvas, so it can be tested. Only moving water is drawn live: a
+// handful of shimmer dashes per water tile, chosen from `state.now`.
 
 type GroundLayers = Pick<MapLayers, 'size' | 'height' | 'water' | 'biome' | 'ground' | 'deposit'>;
 type VillageSpot = { x: number; y: number };
@@ -26,19 +41,11 @@ export type GroundEnv = {
 	living: Living;
 	villages: VillageSpot[];
 	season: number;
+	// every tile's height level (pixel/iso.ts levelsOf)
+	levels: Uint8Array;
 };
 
 // ------------------------------------------------------------------ colours
-
-// colours packed for a Uint32Array over RGBA bytes (little-endian: ABGR)
-const K = {} as Record<ColorName, number>;
-for (const name of Object.keys(PALETTE) as ColorName[]) {
-	const h = PALETTE[name];
-	const r = parseInt(h.slice(1, 3), 16);
-	const g = parseInt(h.slice(3, 5), 16);
-	const b = parseInt(h.slice(5, 7), 16);
-	K[name] = ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
-}
 
 // [base, dark, light, accent] by season (spring, summer, autumn, winter)
 type Look = readonly [ColorName, ColorName, ColorName, ColorName];
@@ -180,7 +187,8 @@ function noiseField(tx: number, ty: number, cell: number, salt: number, out: Flo
 
 const level = (v: number, steps: number) => Math.min(steps - 1, Math.max(0, Math.floor(v * steps)));
 
-// land base: three shades in soft, dithered patches
+// land base: mostly the base colour, with the two close shades in small
+// clumps (a little dither on their edges, not a speckle)
 function fillLand(tx: number, ty: number, look: Look): void {
 	const base = K[look[0]];
 	const dark = K[look[1]];
@@ -190,8 +198,8 @@ function fillLand(tx: number, ty: number, look: Look): void {
 	for (let y = 0; y < T; y++) {
 		for (let x = 0; x < T; x++) {
 			const p = y * T + x;
-			const v = nA[p] * 0.65 + nB[p] * 0.35 + (bay(x, y) - 0.5) * 0.1;
-			B[p] = v < 0.33 ? light : v > 0.67 ? dark : base;
+			const v = nA[p] * 0.6 + nB[p] * 0.4 + (bay(x, y) - 0.5) * 0.08;
+			B[p] = v < 0.27 ? light : v > 0.73 ? dark : base;
 		}
 	}
 }
@@ -216,16 +224,20 @@ function snowOver(tx: number, ty: number, cover: number): void {
 	}
 }
 
-const BLEND = 14;
+// how far into a tile its neighbour's ground reaches, in pixels
+const BLEND = 44;
 // how far a lake corner is rounded off, in pixels
 const ROUND = 30;
 
-// Soft edges: near a border, some pixels take the neighbour's ground colour,
-// more of them the closer to the border, in an ordered dither. The neighbour
-// does the same from its side, so the two meet in the middle.
+// Soft edges between different ground. Across a border the share of the far
+// side's colour falls from half at the border to nothing BLEND pixels in, and
+// which pixels take it follows a noise field that carries on over the border.
+// Both tiles read the same field (flipped on one side), so the two halves
+// meet as one set of blobs, not a seam.
 function blendEdges(tx: number, ty: number, env: GroundEnv, look: Look): void {
 	const { layers } = env;
 	const size = layers.size;
+	let ready = false;
 	for (let side = 0; side < 4; side++) {
 		const nx = tx + (side === 1 ? 1 : side === 3 ? -1 : 0);
 		const ny = ty + (side === 2 ? 1 : side === 0 ? -1 : 0);
@@ -235,14 +247,24 @@ function blendEdges(tx: number, ty: number, env: GroundEnv, look: Look): void {
 		if (env.living.built[ni] === Built.field) continue;
 		const nl = landLook(layers, ni, env.season);
 		if (nl[0] === look[0] && nl[1] === look[1]) continue;
+		if (!ready) {
+			noiseField(tx, ty, 10, 11, nA);
+			noiseField(tx, ty, 24, 12, nB);
+			ready = true;
+		}
 		const c = K[nl[0]];
+		// the east and south tiles read the field as it is, the others upside down
+		const flip = side === 0 || side === 3;
 		for (let d = 0; d < BLEND; d++) {
-			const p = (BLEND - d) / BLEND / 2;
+			const share = 0.5 - (d + 0.5) / (BLEND * 2);
 			for (let a = 0; a < T; a++) {
 				const x = side === 1 ? T - 1 - d : side === 3 ? d : a;
 				const y = side === 2 ? T - 1 - d : side === 0 ? d : a;
+				const p = y * T + x;
+				let m = 0.5 + (nA[p] * 0.6 + nB[p] * 0.4 - 0.5) * 2 + (bay(x, y) - 0.5) * 0.08;
+				if (flip) m = 1 - m;
 				// snow is left alone: it carries on over the border by itself
-				if (bay(x, y) < p && !isSnow(B[y * T + x])) B[y * T + x] = c;
+				if (m < share && !isSnow(B[p])) B[p] = c;
 			}
 		}
 	}
@@ -299,42 +321,40 @@ function wornGround(cx: number, cy: number, rx: number, ry: number, seed: number
 	}
 }
 
+// Footprints are round on the ground (a circle here is the 2:1 oval of the
+// iso view) or square along the tile's sides.
 function paintBuilt(built: number, tx: number, ty: number): void {
 	const s = tx * 977 + ty * 31;
 	switch (built) {
 		case Built.camp:
-			wornGround(120, 132, 78, 48, s);
-			patch(120, 126, 9, 5, 'stoneDark', 'soil', s + 1);
+			wornGround(120, 122, 62, 56, s);
+			patch(120, 125, 9, 9, 'stoneDark', 'soil', s + 1);
 			break;
 		case Built.hut:
 		case Built.store:
-			wornGround(120, 140, 50, 30, s);
+			wornGround(120, 139, 38, 38, s);
 			break;
 		case Built.kiln:
 		case Built.furnace:
-			wornGround(120, 138, 46, 28, s);
-			patch(120, 146, 18, 8, 'soilDark', 'soil', s + 2);
+			wornGround(120, 135, 36, 36, s);
+			patch(120, 140, 13, 13, 'soilDark', 'soil', s + 2);
 			break;
 		case Built.shrine:
-			wornGround(120, 120, 62, 40, s);
+			wornGround(120, 120, 56, 56, s);
 			for (let j = 0; j < 40; j++) {
 				const a = hash(s, j, 5) * Math.PI * 2;
 				const d = 14 + hash(s, j, 6) * 36;
-				px(
-					Math.round(120 + Math.cos(a) * d),
-					Math.round(120 + Math.sin(a) * d * 0.6),
-					K.stoneLight
-				);
+				px(Math.round(120 + Math.cos(a) * d), Math.round(120 + Math.sin(a) * d), K.stoneLight);
 			}
 			break;
 		case Built.pen: {
-			// trodden straw inside the fence
+			// trodden straw inside the fence, a square along the tile's axes
 			noiseField(tx, ty, 12, 9, nB);
-			for (let y = 62; y < 180; y++)
-				for (let x = 32; x < 208; x++) B[y * T + x] = nB[y * T + x] < 0.4 ? K.soil : K.soilLight;
+			for (let y = 48; y < 192; y++)
+				for (let x = 48; x < 192; x++) B[y * T + x] = nB[y * T + x] < 0.4 ? K.soil : K.soilLight;
 			for (let j = 0; j < 70; j++) {
-				const x = 34 + Math.floor(hash(tx, ty, j, 23) * 168);
-				const y = 64 + Math.floor(hash(tx, ty, j, 24) * 112);
+				const x = 50 + Math.floor(hash(tx, ty, j, 23) * 138);
+				const y = 50 + Math.floor(hash(tx, ty, j, 24) * 138);
 				px(x, y, K.straw);
 				px(x + 1, y, K.straw);
 				if (j % 3 === 0) px(x + 2, y, K.sand);
@@ -406,7 +426,7 @@ function paintVillage(env: GroundEnv, tx: number, ty: number): void {
 		if (Math.abs(v.x - tx) > 1 || Math.abs(v.y - ty) > 1) continue;
 		const cx = (v.x + 0.5 - tx) * T;
 		const cy = (v.y + 0.5 - ty) * T;
-		wornGround(cx, cy, 80, 56, v.x * 131 + v.y * 17);
+		wornGround(cx, cy, 68, 68, v.x * 131 + v.y * 17);
 	}
 	const n = pathsFor(env, tx, ty);
 	for (let s = 0; s < n; s++) {
@@ -442,15 +462,10 @@ function paintVillage(env: GroundEnv, tx: number, ty: number): void {
 
 const isSnow = (c: number) => c === K.white || c === K.ice;
 
-function paintDecals(env: GroundEnv, tx: number, ty: number, i: number, look: Look): void {
-	const { layers, living, season } = env;
+function isLeafy(layers: GroundLayers, i: number): boolean {
 	const biome = layers.biome[i];
 	const ground = layers.ground[i];
-	const plants = level(living.plants[i], 4);
-	const dark = K[look[1]];
-	const light = K[look[2]];
-	const accent = K[look[3]];
-	const leafy =
+	return (
 		ground !== Ground.rock &&
 		ground !== Ground.sand &&
 		ground !== Ground.clay &&
@@ -459,22 +474,53 @@ function paintDecals(env: GroundEnv, tx: number, ty: number, i: number, look: Lo
 			biome === Biome.forest ||
 			biome === Biome.scrub ||
 			biome === Biome.hills ||
-			biome === Biome.wetland);
+			biome === Biome.wetland)
+	);
+}
+
+// Little tufts of grass, a dark V with a light tip. They stand up, so they are
+// drawn on the finished diamond (rotated they would lie on their side), and
+// only over plain ground: never on snow, water, tracks or a river bank.
+const TUFTS = [2, 10, 22, 36];
+function paintTufts(env: GroundEnv, tx: number, ty: number, i: number, look: Look, D: Uint32Array) {
+	if (!isLeafy(env.layers, i)) return;
+	const n = TUFTS[level(env.living.plants[i], 4)];
+	const base = K[look[0]];
+	const dark = K[look[1]];
+	const light = K[look[2]];
+	const grass = (x: number, y: number) => {
+		if (x < 0 || y < 0 || x >= DIAMOND_W || y >= DIAMOND_H) return false;
+		const c = D[y * DIAMOND_W + x];
+		return c === base || c === dark || c === light;
+	};
+	for (let j = 0; j < n; j++) {
+		const wx = Math.floor(hash(tx, ty, j, 16) * T);
+		const wy = Math.floor(hash(tx, ty, j, 17) * T);
+		const x = T + wx - wy;
+		const y = (wx + wy) >> 1;
+		const tip = x + (j & 1 ? 1 : -1);
+		if (!grass(x, y) || !grass(x - 1, y - 1) || !grass(x + 1, y - 1) || !grass(tip, y - 2))
+			continue;
+		D[y * DIAMOND_W + x] = dark;
+		D[(y - 1) * DIAMOND_W + x - 1] = dark;
+		D[(y - 1) * DIAMOND_W + x + 1] = dark;
+		D[(y - 2) * DIAMOND_W + tip] = light;
+	}
+}
+
+function paintDecals(env: GroundEnv, tx: number, ty: number, i: number, look: Look): void {
+	const { layers, living, season } = env;
+	const biome = layers.biome[i];
+	const ground = layers.ground[i];
+	const plants = level(living.plants[i], 4);
+	const dark = K[look[1]];
+	const light = K[look[2]];
+	const accent = K[look[3]];
+	const leafy = isLeafy(layers, i);
 	const free = (x: number, y: number) =>
 		x > 0 && y > 1 && x < T - 1 && y < T && !isSnow(B[y * T + x]);
 
 	if (leafy) {
-		// little tufts of grass: a dark V with a light tip
-		const n = [2, 10, 22, 36][plants];
-		for (let j = 0; j < n; j++) {
-			const x = Math.floor(hash(tx, ty, j, 16) * T);
-			const y = 2 + Math.floor(hash(tx, ty, j, 17) * (T - 2));
-			if (!free(x, y)) continue;
-			px(x, y, dark);
-			px(x - 1, y - 1, dark);
-			px(x + 1, y - 1, dark);
-			px(x + (j & 1 ? 1 : -1), y - 2, light);
-		}
 		// season: flowers in spring, a few in summer, fallen leaves in autumn
 		const flowers = season === 0 ? 14 : season === 1 ? 5 : 0;
 		for (let j = 0; j < flowers; j++) {
@@ -714,13 +760,17 @@ function paintBeach(
 	for (let y = 0; y < T; y++) {
 		for (let x = 0; x < T; x++) {
 			const r = bd(x, y);
-			if (r > 2) continue;
+			if (r > 4) continue;
 			const p = y * T + x;
 			if (r < -1) B[p] = K.sand;
 			else if (r === -1) B[p] = K.sandLight;
 			else if (r === 0) B[p] = bay(x, y) < 0.75 ? K.foam : K.sandLight;
 			else if (r === 1) B[p] = bay(x, y) < 0.5 ? K.foam : K.waterLight;
-			else if (bay(x, y) < 0.4) B[p] = K.waterLight;
+			else if (r === 2) {
+				if (bay(x, y) < 0.4) B[p] = K.waterLight;
+			}
+			// a thin dark line where the shore drops away
+			else if (r === 3 ? bay(x, y) < 0.7 : bay(x, y) < 0.25) B[p] = K.deep;
 		}
 	}
 }
@@ -824,9 +874,11 @@ function paintPool(env: GroundEnv, tx: number, ty: number, i: number, sparks: nu
 	const { layers, season } = env;
 	const size = layers.size;
 	const look = waterLook(layers, i, season);
-	fillLand(tx, ty, look);
 	const frozen = isFrozen(layers, i, season);
 	const base = K[look[0]];
+	// open water is flat; ice keeps a little texture
+	if (frozen) fillLand(tx, ty, look);
+	else B.fill(base, 0, T * T);
 	if (frozen) {
 		// cracks in the ice
 		for (let j = 0; j < 5; j++) {
@@ -842,7 +894,7 @@ function paintPool(env: GroundEnv, tx: number, ty: number, i: number, sparks: nu
 		}
 	} else {
 		// short lighter swells
-		for (let j = 0; j < 26; j++) {
+		for (let j = 0; j < 16; j++) {
 			const x = Math.floor(hash(tx, ty, j, 21) * (T - 8));
 			const y = Math.floor(hash(tx, ty, j, 22) * T);
 			const len = 3 + Math.floor(hash(tx, ty, j, 23) * 4);
@@ -898,9 +950,11 @@ function paintPool(env: GroundEnv, tx: number, ty: number, i: number, sparks: nu
 	}
 }
 
+// pools of different depth meet in a short dithered band
+const POOL_BLEND = 14;
 function blendSide(side: number, c: number): void {
-	for (let d = 0; d < BLEND; d++) {
-		const p = (BLEND - d) / BLEND / 2;
+	for (let d = 0; d < POOL_BLEND; d++) {
+		const p = (POOL_BLEND - d) / POOL_BLEND / 2;
 		for (let a = 0; a < T; a++) {
 			const x = side === 1 ? T - 1 - d : side === 3 ? d : a;
 			const y = side === 2 ? T - 1 - d : side === 0 ? d : a;
@@ -980,13 +1034,108 @@ export function paintTile(env: GroundEnv, tx: number, ty: number, out: Uint32Arr
 	return sparks;
 }
 
-// The cache key for a tile: what the picture depends on besides the fixed
-// map and the season (plants, what is built, neighbouring fields, tracks).
-export function tileSig(env: GroundEnv, tx: number, ty: number): number {
-	const { layers, living, season } = env;
+// ------------------------------------------------------------- the diamond
+
+const worldScratch = new Uint32Array(T * T);
+
+// Paints tile (tx, ty) as its diamond into `out` (DIAMOND_W wide, at least
+// `tileHeight` rows tall): the top face, then the cliff faces hanging below.
+// Returns the shimmer spots as [x, y, phase, length] runs in diamond pixels.
+export function paintDiamond(
+	env: GroundEnv,
+	tx: number,
+	ty: number,
+	out: Uint32Array,
+	world: Uint32Array = worldScratch
+): number[] {
+	const { layers, levels, season } = env;
 	const size = layers.size;
 	const i = ty * size + tx;
-	let mask = 0;
+	const raw = paintTile(env, tx, ty, world);
+	toDiamond(world, out);
+	const rows = tileHeight(levels, size, tx, ty);
+	out.fill(0, DIAMOND_W * DIAMOND_H, DIAMOND_W * rows);
+	if (!isPool(layers, i) && env.living.built[i] !== Built.field)
+		paintTufts(env, tx, ty, i, landLook(layers, i, season), out);
+	paintFaces(env, tx, ty, i, out);
+
+	// shimmer dashes sit on water: check the diamond itself, the water may have
+	// been covered by a beach or a bank
+	const isWater = (c: number) => c === K.water || c === K.deep || c === K.waterLight;
+	const sparks: number[] = [];
+	for (let j = 0; j < raw.length; j += 4) {
+		const len = raw[j + 3];
+		const x = T + raw[j] - raw[j + 1];
+		const y = (raw[j] + raw[j + 1]) >> 1;
+		if (x + len >= DIAMOND_W) continue;
+		if (isWater(out[y * DIAMOND_W + x]) && isWater(out[y * DIAMOND_W + x + len - 1]))
+			sparks.push(x, y, raw[j + 2], len);
+	}
+	return sparks;
+}
+
+// The mouth of a river tile's channel on its +x (right) or +y (left) edge, as
+// [centre, half width] in world pixels along that edge, or null
+function edgeMouth(layers: GroundLayers, tx: number, ty: number, right: boolean) {
+	const n = riverChannel(layers, tx, ty, segBuf2);
+	for (let s = 0; s < n; s++) {
+		const o = s * SEG;
+		if (right && segBuf2[o] === 1) return [segBuf2[o + 1] * T, (segBuf2[o + 6] * T) / 2];
+		if (!right && segBuf2[o + 1] === 1) return [segBuf2[o] * T, (segBuf2[o + 6] * T) / 2];
+	}
+	return null;
+}
+
+function faceStyle(env: GroundEnv, i: number, wet: boolean): FaceStyle {
+	const { layers } = env;
+	const biome = layers.biome[i];
+	if (biome === Biome.snow) return Face.snow;
+	if (biome === Biome.coast || layers.ground[i] === Ground.sand || wet) return Face.sand;
+	if (biome === Biome.mountain || layers.ground[i] === Ground.rock) return Face.rock;
+	if (layers.ground[i] === Ground.chalk) return Face.rock;
+	return Face.earth;
+}
+
+// The cliff faces under a tile's two front edges, where the tile in front
+// (+x for the right face, +y for the left) is lower.
+function paintFaces(env: GroundEnv, tx: number, ty: number, i: number, out: Uint32Array): void {
+	const { layers, levels, season } = env;
+	const size = layers.size;
+	for (let k = 0; k < 2; k++) {
+		const right = k === 0;
+		const drop = cliffDrop(levels, size, tx, ty, right);
+		if (drop === 0) continue;
+		const ni = right ? i + 1 : i + size;
+		// a low bank beside the water is sand
+		const wet = isPool(layers, ni) && drop <= 1;
+		const style = faceStyle(env, i, wet);
+		const look = isPool(layers, i) ? SAND : landLook(layers, i, season);
+		// snow on the lip in winter, otherwise the tile's own grass
+		const snowy = season === 3 && (WINTER_SNOW[layers.biome[i]] ?? 0.5) >= 0.45;
+		const grassy = style === Face.earth || style === Face.rock;
+		let fall: [number, number] | null = null;
+		if (isRiver(layers, i) && isOpenWater(layers, ni)) {
+			const m = edgeMouth(layers, tx, ty, right);
+			if (m) fall = fallColumns(right, m[0], m[1]);
+		}
+		paintFace(out, right, {
+			drop,
+			style,
+			lipLeft: snowy ? K.white : grassy ? K[look[0]] : undefined,
+			lipRight: snowy ? K.ice : grassy ? K[look[1]] : undefined,
+			seed: tx * 4099 + ty * 131 + k,
+			fall
+		});
+	}
+}
+
+// The cache key for a tile: what the picture depends on besides the fixed
+// map and the season (plants, what is built, neighbouring fields, tracks, and
+// the cliff faces).
+export function tileSig(env: GroundEnv, tx: number, ty: number): number {
+	const { layers, living, season, levels } = env;
+	const size = layers.size;
+	const i = ty * size + tx;
 	const f = (dx: number, dy: number) => {
 		const nx = tx + dx;
 		const ny = ty + dy;
@@ -998,9 +1147,11 @@ export function tileSig(env: GroundEnv, tx: number, ty: number): number {
 			? 1
 			: 0;
 	};
-	if (living.built[i] === Built.field)
-		mask = f(0, -1) | (f(1, 0) << 1) | (f(0, 1) << 2) | (f(-1, 0) << 3);
+	// fields join their neighbours, and soft edges stop at them
+	const mask = f(0, -1) | (f(1, 0) << 1) | (f(0, 1) << 2) | (f(-1, 0) << 3);
 	let sig = living.built[i] | (level(living.plants[i], 4) << 4) | (mask << 8) | (season << 12);
+	sig |= cliffDrop(levels, size, tx, ty, true) << 16;
+	sig |= cliffDrop(levels, size, tx, ty, false) << 20;
 	if (isPool(layers, i)) return sig;
 	const n = pathsFor(env, tx, ty);
 	for (const v of env.villages) {
@@ -1015,6 +1166,8 @@ export function tileSig(env: GroundEnv, tx: number, ty: number): number {
 
 type Entry = {
 	sig: number;
+	// rows of the picture: the diamond and its tallest cliff face
+	h: number;
 	canvas: HTMLCanvasElement | OffscreenCanvas;
 	g: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 	sparks: number[];
@@ -1022,38 +1175,51 @@ type Entry = {
 
 const cache = new Map<number, Entry>();
 let cacheLayers: unknown = null;
-let scratchImg: ImageData | null = null;
+const diamond = new Uint32Array(DIAMOND_W * MAX_TILE_H);
+const images = new Map<number, ImageData>();
 // how long, per frame, we may spend painting new tiles (ms)
 const BUDGET_MS = 9;
-const MIN_CACHE = 80;
+const MIN_CACHE = 56;
 
-function makeCanvas(): HTMLCanvasElement | OffscreenCanvas {
-	if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(T, T);
-	const c = document.createElement('canvas');
-	c.width = T;
-	c.height = T;
-	return c;
+function imageFor(h: number): ImageData {
+	let im = images.get(h);
+	if (!im) {
+		im = new ImageData(new Uint8ClampedArray(diamond.buffer, 0, DIAMOND_W * h * 4), DIAMOND_W, h);
+		images.set(h, im);
+	}
+	return im;
 }
 
-const drawn: { e: Entry; x: number; y: number }[] = [];
-let drawnCount = 0;
-
-// The ground's part in the depth-sorted pass (see Standing in scene.ts).
-// Stopgap until the isometric ground lands: the whole (top-down) ground
-// goes first, as one entry.
-const groundEntry = { y: -Infinity, draw: (_ctx: CanvasRenderingContext2D) => {} };
-export function collectGround(
-	state: DrawState,
-	view: View,
-	out: { y: number; draw: (ctx: CanvasRenderingContext2D) => void }[]
-): void {
-	groundEntry.draw = (ctx) => drawGround(ctx, state, view);
-	out.push(groundEntry);
+function newEntry(key: number, h: number): Entry {
+	const canvas: Entry['canvas'] =
+		typeof OffscreenCanvas !== 'undefined'
+			? new OffscreenCanvas(DIAMOND_W, h)
+			: Object.assign(document.createElement('canvas'), { width: DIAMOND_W, height: h });
+	const g = canvas.getContext('2d') as CanvasRenderingContext2D;
+	const e: Entry = { sig: 0, h, canvas, g, sparks: [] };
+	cache.set(key, e);
+	return e;
 }
 
-export function drawGround(c: CanvasRenderingContext2D, state: DrawState, view: View): void {
+// What the draw closures read, filled by collectGround: one slot per tile on
+// screen, so nothing is allocated per tile per frame.
+const slots: Standing[] = [];
+const slotEntry: (Entry | null)[] = [];
+const slotX: number[] = [];
+const slotY: number[] = [];
+const slotColour: string[] = [];
+let slotScale = 1;
+let slotNow = 0;
+
+// The ground's part in the depth-sorted pass (see Standing in scene.ts): one
+// entry per tile on screen, at the depth of its back corner (tx + ty), so it
+// is drawn before whatever stands on it and after the tiles behind it. A raised
+// tile in front covers what is behind it, as it should. Each tile is its top
+// face plus the cliff faces under its front edges, positioned from the
+// projection on whole pixels.
+export function collectGround(state: DrawState, view: View, out: Standing[]): void {
 	if (view.mode !== 'local' || view.detail <= 0.001) return;
-	const { layers } = state;
+	const { layers, camera } = state;
 	const size = layers.size;
 	if (cacheLayers !== layers) {
 		cache.clear();
@@ -1063,55 +1229,68 @@ export function drawGround(c: CanvasRenderingContext2D, state: DrawState, view: 
 		layers,
 		living: state.living,
 		villages: state.villages,
-		season: state.season & 3
+		season: state.season & 3,
+		levels: view.levels
 	};
-	const cam = state.camera;
 	const scale = view.scale;
-	const side = T * scale;
-	if (!scratchImg) scratchImg = new ImageData(new Uint8ClampedArray(scratch.buffer), T, T);
 	const start = performance.now();
 	let built = 0;
-	drawnCount = 0;
-	c.imageSmoothingEnabled = false;
+	let n = 0;
+	slotScale = scale;
+	slotNow = state.now;
 
 	for (let ty = view.y0; ty < view.y1; ty++) {
-		const sy = view.originY + ty * side;
-		if (sy + side <= 0 || sy >= cam.height) continue;
 		for (let tx = view.x0; tx < view.x1; tx++) {
-			const sx = view.originX + tx * side;
-			if (sx + side <= 0 || sx >= cam.width) continue;
-			const key = ty * size + tx;
+			const i = ty * size + tx;
+			const h = tileHeight(view.levels, size, tx, ty);
+			// the picture's top left: the diamond's top corner is the tile's (x, y)
+			// corner, lifted by the tile's level; the diamond is 240 left of that
+			const sx = view.originX + ((tx - ty) * T - T) * scale;
+			const sy = view.originY + ((tx + ty) * (T / 2) - view.levels[i] * LIFT) * scale;
+			if (sx + DIAMOND_W * scale <= 0 || sx >= camera.width) continue;
+			if (sy + h * scale <= 0 || sy >= camera.height) continue;
+
 			const sig = tileSig(env, tx, ty);
-			let e = cache.get(key);
+			let e = cache.get(i);
 			if (e) {
-				cache.delete(key);
-				cache.set(key, e);
+				cache.delete(i);
+				cache.set(i, e);
 			}
-			if (!e || e.sig !== sig) {
-				// paint a few new tiles a frame; the rest wait, with the overview showing
-				if (built > 0 && performance.now() - start > BUDGET_MS) continue;
-				if (!e) e = newEntry(key);
-				scratch.fill(0);
-				e.sparks = paintTile(env, tx, ty, scratch);
-				e.g.putImageData(scratchImg, 0, 0);
-				e.sig = sig;
-				built++;
-			}
-			c.drawImage(e.canvas as CanvasImageSource, 0, 0, T, T, sx, sy, side, side);
-			if (e.sparks.length > 0) {
-				if (drawnCount >= drawn.length) drawn.push({ e, x: sx, y: sy });
-				else {
-					drawn[drawnCount].e = e;
-					drawn[drawnCount].x = sx;
-					drawn[drawnCount].y = sy;
+			if (!e || e.sig !== sig || e.h !== h) {
+				// paint a few new tiles a frame; the rest wait (an older picture, or a
+				// flat diamond, stands in)
+				if (built === 0 || performance.now() - start <= BUDGET_MS) {
+					if (!e) e = newEntry(i, h);
+					if (e.h !== h) {
+						e.canvas.height = h;
+						e.h = h;
+					}
+					e.sparks = paintDiamond(env, tx, ty, diamond);
+					e.g.putImageData(imageFor(h), 0, 0);
+					e.sig = sig;
+					built++;
 				}
-				drawnCount++;
 			}
+			let slot = slots[n];
+			if (!slot) {
+				const k = n;
+				slot = { y: 0, draw: (ctx) => drawTile(ctx, k) };
+				slots[n] = slot;
+			}
+			slot.y = tx + ty;
+			slotEntry[n] = e ?? null;
+			slotX[n] = sx;
+			slotY[n] = sy;
+			if (!e)
+				slotColour[n] = isPool(layers, i)
+					? PALETTE.water
+					: PALETTE[landLook(layers, i, env.season)[0]];
+			out.push(slot);
+			n++;
 		}
 	}
-	shimmer(c, state.now, scale);
 	// keep the cache from growing without bound, but never below the tiles on screen
-	const cap = Math.max(MIN_CACHE, (view.x1 - view.x0) * (view.y1 - view.y0) + 16);
+	const cap = Math.max(MIN_CACHE, n + 24);
 	while (cache.size > cap) {
 		const first = cache.keys().next().value;
 		if (first === undefined) break;
@@ -1119,30 +1298,56 @@ export function drawGround(c: CanvasRenderingContext2D, state: DrawState, view: 
 	}
 }
 
-function newEntry(key: number): Entry {
-	const canvas = makeCanvas();
-	const g = canvas.getContext('2d') as CanvasRenderingContext2D;
-	const e: Entry = { sig: 0, canvas, g, sparks: [] };
-	cache.set(key, e);
-	return e;
+function drawTile(ctx: CanvasRenderingContext2D, n: number): void {
+	const scale = slotScale;
+	const x = slotX[n];
+	const y = slotY[n];
+	const e = slotEntry[n];
+	if (!e) {
+		// not painted yet: a flat diamond of the tile's colour
+		ctx.fillStyle = slotColour[n];
+		ctx.beginPath();
+		ctx.moveTo(x + T * scale, y);
+		ctx.lineTo(x + DIAMOND_W * scale, y + (DIAMOND_H / 2) * scale);
+		ctx.lineTo(x + T * scale, y + DIAMOND_H * scale);
+		ctx.lineTo(x, y + (DIAMOND_H / 2) * scale);
+		ctx.closePath();
+		ctx.fill();
+		return;
+	}
+	ctx.imageSmoothingEnabled = false;
+	ctx.drawImage(
+		e.canvas as CanvasImageSource,
+		0,
+		0,
+		DIAMOND_W,
+		e.h,
+		x,
+		y,
+		DIAMOND_W * scale,
+		e.h * scale
+	);
+	if (e.sparks.length > 0) shimmer(ctx, e.sparks, x, y, slotNow, scale);
 }
 
 // Moving water: a few dashes per water tile, three frames, a third of them
 // lit at a time. Cheap, and the baked tiles are never redrawn.
-function shimmer(c: CanvasRenderingContext2D, now: number, scale: number): void {
-	if (drawnCount === 0) return;
+function shimmer(
+	c: CanvasRenderingContext2D,
+	s: number[],
+	x: number,
+	y: number,
+	now: number,
+	scale: number
+): void {
 	const frame = Math.floor(now / 260) % 3;
 	for (let pass = 0; pass < 2; pass++) {
 		c.fillStyle = pass === 0 ? PALETTE.foam : PALETTE.waterLight;
-		for (let k = 0; k < drawnCount; k++) {
-			const { e, x, y } = drawn[k];
-			const s = e.sparks;
-			for (let j = 0; j < s.length; j += 4) {
-				const phase = (frame + s[j + 2]) % 3;
-				if (pass === 0 ? phase !== 0 : phase !== 1) continue;
-				const len = pass === 0 ? s[j + 3] : 2;
-				c.fillRect(x + s[j] * scale, y + s[j + 1] * scale, len * scale, scale);
-			}
+		for (let j = 0; j < s.length; j += 4) {
+			const phase = (frame + s[j + 2]) % 3;
+			if (pass === 0 ? phase !== 0 : phase !== 1) continue;
+			const len = pass === 0 ? s[j + 3] : 2;
+			c.fillRect(x + s[j] * scale, y + s[j + 1] * scale, len * scale, scale);
 		}
 	}
 }

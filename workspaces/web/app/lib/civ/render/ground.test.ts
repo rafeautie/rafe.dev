@@ -1,29 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { Biome, Built, Ground, Water } from '../types';
-import { channelMask, drawGround, paintTile, riverChannel, tileSig, waterAt } from './ground';
-import { viewOf, type DrawState } from './scene';
+import {
+	channelMask,
+	collectGround,
+	paintDiamond,
+	paintTile,
+	riverChannel,
+	tileSig,
+	waterAt
+} from './ground';
+import { viewOf, type DrawState, type Standing } from './scene';
 import { Camera } from './camera';
+import { DIAMOND_H, DIAMOND_W, LIFT, diamondBottom, tileHeight } from './pixel/localiso';
 import { PALETTE } from './pixel/palette';
 
 const T = 240;
 
-describe('drawGround', () => {
+describe('collectGround', () => {
 	it('does nothing (and touches no canvas) when zoomed out', () => {
 		const camera = new Camera();
 		camera.zoom = 5;
-		const state = { camera, layers: { size: 8 } } as unknown as DrawState;
+		const layers = { size: 8, water: new Uint8Array(64), biome: new Uint8Array(64) };
+		const state = { camera, layers } as unknown as DrawState;
 		const view = viewOf(state);
 		expect(view.detail).toBe(0);
-		// a context that explodes if used
-		const ctx = new Proxy(
-			{},
-			{
-				get: () => {
-					throw new Error('used');
-				}
-			}
-		) as CanvasRenderingContext2D;
-		expect(() => drawGround(ctx, state, view)).not.toThrow();
+		const out: Standing[] = [];
+		expect(() => collectGround(state, view, out)).not.toThrow();
+		expect(out.length).toBe(0);
 	});
 });
 
@@ -119,7 +122,9 @@ function world(season = 1) {
 		wood: new Float32Array(n),
 		built: new Uint8Array(n)
 	};
-	return { size, layers, living, env: { layers, living, villages: [], season } };
+	// every tile is level 1 land unless a test raises it
+	const levels = new Uint8Array(n).fill(1);
+	return { size, layers, living, levels, env: { layers, living, villages: [], season, levels } };
 }
 
 const paint = (env: ReturnType<typeof world>['env'], tx: number, ty: number) => {
@@ -157,6 +162,15 @@ describe('paintTile', () => {
 		const used = colours(a).size;
 		expect(used).toBeGreaterThanOrEqual(3);
 		expect(used).toBeLessThanOrEqual(14);
+	});
+
+	it('is mostly one colour, with the close shades in small clumps', () => {
+		const w = world();
+		const a = paint(w.env, 2, 2).out;
+		const count = new Map<number, number>();
+		for (const c of a) count.set(c, (count.get(c) ?? 0) + 1);
+		const biggest = Math.max(...count.values());
+		expect(biggest / a.length).toBeGreaterThan(0.4);
 	});
 
 	it('makes sand, rock, clay and grass look different', () => {
@@ -204,12 +218,35 @@ describe('paintTile', () => {
 		for (let y = 0; y < T; y++) {
 			for (let x = 0; x < T; x++) {
 				if (plain[y * T + x] === next[y * T + x]) continue;
-				if (x >= T - 14) diffEast++;
+				if (x >= T - 44) diffEast++;
 				else diffMiddle++;
 			}
 		}
-		expect(diffEast).toBeGreaterThan(200);
+		expect(diffEast).toBeGreaterThan(1000);
 		expect(diffMiddle).toBe(0);
+	});
+
+	it('mixes the two grounds across a border in blobs, from both sides', () => {
+		const w = world();
+		w.layers.ground[2 * 6 + 3] = Ground.rock;
+		const grass = paint(w.env, 2, 2).out;
+		const rock = paint(w.env, 3, 2).out;
+		const rockColours = new Set([hex('stone'), hex('stoneDark'), hex('stoneLight')]);
+		// the last column of the grass tile and the first of the rock tile
+		let rockInGrass = 0;
+		let grassInRock = 0;
+		for (let y = 0; y < T; y++) {
+			if (rockColours.has(grass[y * T + T - 1])) rockInGrass++;
+			if (!rockColours.has(rock[y * T])) grassInRock++;
+		}
+		expect(rockInGrass / T).toBeGreaterThan(0.15);
+		expect(rockInGrass / T).toBeLessThan(0.85);
+		expect(grassInRock / T).toBeGreaterThan(0.15);
+		expect(grassInRock / T).toBeLessThan(0.85);
+		// well inside each tile the ground is its own
+		let far = 0;
+		for (let y = 0; y < T; y++) if (rockColours.has(grass[y * T + T - 60])) far++;
+		expect(far).toBe(0);
 	});
 
 	it('draws crop rows in a field, by season', () => {
@@ -282,12 +319,181 @@ describe('tileSig', () => {
 		expect(tileSig({ ...w.env, season: 2 }, 2, 2)).not.toBe(tileSig(w.env, 2, 2));
 	});
 
+	it('changes when the cliff in front of the tile changes', () => {
+		const w = world();
+		const a = tileSig(w.env, 2, 2);
+		w.levels[2 * 6 + 2] = 3;
+		const b = tileSig(w.env, 2, 2);
+		expect(b).not.toBe(a);
+		w.levels[2 * 6 + 3] = 2;
+		expect(tileSig(w.env, 2, 2)).not.toBe(b);
+	});
+
+	it('changes when a neighbour becomes a field', () => {
+		const w = world();
+		const a = tileSig(w.env, 2, 2);
+		w.living.built[2 * 6 + 3] = Built.field;
+		expect(tileSig(w.env, 2, 2)).not.toBe(a);
+	});
+
 	it('changes when a new building adds a track across the tile', () => {
 		const w = world();
 		w.env.villages = [{ x: 1, y: 2 } as never];
 		const a = tileSig(w.env, 2, 2);
 		w.living.built[2 * 6 + 4] = Built.hut;
 		expect(tileSig(w.env, 2, 2)).not.toBe(a);
+	});
+});
+
+// ------------------------------------------------------------ the diamond
+
+describe('paintDiamond', () => {
+	const rows = (drop: number) => DIAMOND_H + drop * LIFT;
+	const buffer = () => new Uint32Array(DIAMOND_W * rows(8));
+	const diamond = (env: ReturnType<typeof world>['env'], tx: number, ty: number) => {
+		const out = buffer();
+		const sparks = paintDiamond(env, tx, ty, out);
+		return { out, sparks };
+	};
+	// how many pixels are painted below the diamond, in the columns of one side
+	const faceRows = (out: Uint32Array, right: boolean) => {
+		let n = 0;
+		for (let sx = right ? 240 : 1; sx < (right ? 480 : 240); sx++) {
+			const top = diamondBottom(sx);
+			for (let y = top + 1; y < rows(8); y++) if (out[y * DIAMOND_W + sx] !== 0) n++;
+		}
+		return n;
+	};
+
+	it('is deterministic, uses palette colours, and leaves the corners empty', () => {
+		const w = world();
+		const a = diamond(w.env, 2, 2).out;
+		const b = diamond(w.env, 2, 2).out;
+		expect(a).toEqual(b);
+		for (const c of colours(a)) expect(c === 0 || paletteSet.has(c)).toBe(true);
+		expect(a[0]).toBe(0);
+		expect(a[DIAMOND_W - 1]).toBe(0);
+		expect(a[(DIAMOND_H - 1) * DIAMOND_W]).toBe(0);
+		// the middle of the diamond is ground
+		expect(a[120 * DIAMOND_W + 240]).not.toBe(0);
+	});
+
+	it('draws no cliff face on level ground', () => {
+		const w = world();
+		const { out } = diamond(w.env, 2, 2);
+		expect(tileHeight(w.levels, 6, 2, 2)).toBe(DIAMOND_H);
+		expect(faceRows(out, true)).toBe(0);
+		expect(faceRows(out, false)).toBe(0);
+	});
+
+	it('draws a face exactly where the tile in front is lower', () => {
+		const w = world();
+		w.levels[2 * 6 + 2] = 4;
+		// +x neighbour two levels down: a right face; +y neighbour higher: none
+		w.levels[2 * 6 + 3] = 2;
+		w.levels[3 * 6 + 2] = 5;
+		let { out } = diamond(w.env, 2, 2);
+		expect(tileHeight(w.levels, 6, 2, 2)).toBe(rows(2));
+		expect(faceRows(out, true)).toBeGreaterThan(40 * 2 * LIFT);
+		expect(faceRows(out, false)).toBe(0);
+		// now the +y neighbour is lower, but less than the +x one: both faces
+		w.levels[3 * 6 + 2] = 3;
+		out = diamond(w.env, 2, 2).out;
+		expect(faceRows(out, false)).toBeGreaterThan(40 * LIFT);
+		expect(faceRows(out, false)).toBeLessThan(faceRows(out, true));
+		for (const c of colours(out)) expect(c === 0 || paletteSet.has(c)).toBe(true);
+	});
+
+	it('uses sand on a coast, earth on a hill, and rock on stony ground', () => {
+		const w = world();
+		w.levels[2 * 6 + 2] = 3;
+		w.levels[2 * 6 + 3] = 1;
+		const earth = diamond(w.env, 2, 2).out;
+		expect(colours(earth).has(hex('soilLight'))).toBe(true);
+		expect(colours(earth).has(hex('sandLight'))).toBe(false);
+		w.layers.ground[2 * 6 + 2] = Ground.rock;
+		const rock = diamond(w.env, 2, 2).out;
+		expect(colours(rock).has(hex('stoneLight'))).toBe(true);
+		w.layers.ground[2 * 6 + 2] = Ground.loam;
+		w.layers.biome[2 * 6 + 2] = Biome.coast;
+		const sand = diamond(w.env, 2, 2).out;
+		expect(colours(sand).has(hex('sandLight'))).toBe(true);
+	});
+
+	it('pours a river over a step in a small waterfall', () => {
+		const w = world();
+		for (let x = 0; x < 6; x++) {
+			w.layers.water[3 * 6 + x] = Water.river;
+			// the river runs east, downhill
+			w.layers.height[3 * 6 + x] = 0.6 - x * 0.02;
+		}
+		w.levels[3 * 6 + 2] = 3;
+		w.levels[3 * 6 + 3] = 2;
+		const { out } = diamond(w.env, 2, 3);
+		const wet = new Set([hex('water'), hex('deep'), hex('waterLight'), hex('foam')]);
+		let water = 0;
+		let earth = 0;
+		for (let sx = 240; sx < 480; sx++) {
+			const y = diamondBottom(sx) + 12;
+			const c = out[y * DIAMOND_W + sx];
+			if (wet.has(c)) water++;
+			else if (c !== 0) earth++;
+		}
+		// the fall is the width of the channel mouth: a part of the face, not all of it
+		expect(water).toBeGreaterThan(8);
+		expect(earth).toBeGreaterThan(water);
+		// the same river on level ground has no face at all
+		w.levels[3 * 6 + 3] = 3;
+		expect(faceRows(diamond(w.env, 2, 3).out, true)).toBe(0);
+	});
+
+	it('keeps shimmer dashes on water, in diamond pixels', () => {
+		const w = world();
+		for (let y = 2; y <= 3; y++)
+			for (let x = 2; x <= 3; x++) {
+				w.layers.water[y * 6 + x] = Water.lake;
+				w.levels[y * 6 + x] = 0;
+			}
+		const { out, sparks } = diamond(w.env, 3, 3);
+		expect(sparks.length).toBeGreaterThan(0);
+		expect(sparks.length % 4).toBe(0);
+		const wet = new Set([hex('water'), hex('deep'), hex('waterLight')]);
+		for (let j = 0; j < sparks.length; j += 4) {
+			const x = sparks[j];
+			const y = sparks[j + 1];
+			expect(wet.has(out[y * DIAMOND_W + x])).toBe(true);
+			expect(wet.has(out[y * DIAMOND_W + x + sparks[j + 3] - 1])).toBe(true);
+		}
+		expect(diamond(world().env, 2, 2).sparks.length).toBe(0);
+	});
+
+	it('paints open water flat, with only a few lighter dashes', () => {
+		const w = world();
+		for (let y = 1; y <= 4; y++)
+			for (let x = 1; x <= 4; x++) w.layers.water[y * 6 + x] = Water.lake;
+		const { out } = paint(w.env, 2, 2);
+		const base = hex('water');
+		let same = 0;
+		for (const c of out) if (c === base) same++;
+		expect(same / (T * T)).toBeGreaterThan(0.9);
+	});
+
+	it('stands grass tufts up, not on their side', () => {
+		const w = world();
+		w.living.plants.fill(1);
+		const { out } = diamond(w.env, 2, 2);
+		const dark = hex('leaf');
+		// a tuft is a dark V: a dark pixel with a dark pixel up-left and up-right
+		let tufts = 0;
+		for (let y = 3; y < DIAMOND_H; y++)
+			for (let x = 2; x < DIAMOND_W - 2; x++)
+				if (
+					out[y * DIAMOND_W + x] === dark &&
+					out[(y - 1) * DIAMOND_W + x - 1] === dark &&
+					out[(y - 1) * DIAMOND_W + x + 1] === dark
+				)
+					tufts++;
+		expect(tufts).toBeGreaterThan(10);
 	});
 });
 

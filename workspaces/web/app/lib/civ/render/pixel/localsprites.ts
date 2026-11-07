@@ -889,49 +889,46 @@ const STORES = [store(0), store(1)];
 
 // ---------------------------------------------------------- pens and shrines
 
-function fenceH(post: boolean): SpriteDef {
-	const w = post ? 3 : 36;
-	const h = 11;
-	const g = mk(w, h);
-	const posts = post ? [0] : [0, 18];
-	if (!post) {
-		for (const y of [3, 7]) for (let x = 0; x < w; x++) put(g, x, y, y === 3 ? 'u' : 't');
-		for (const y of [4, 8]) for (let x = 0; x < w; x++) put(g, x, y, 'T');
-	}
-	for (const px of posts) {
-		for (let y = 0; y < h; y++) {
-			put(g, px, y, 'u');
-			put(g, px + 1, y, 't');
-			put(g, px + 2, y, 'T');
-		}
-		put(g, px, 0, 'k');
-		put(g, px + 1, 0, 'u');
+// Pens are fenced along the diamond axes. A run of two rails goes from one
+// post down and to the right (the x axis, 2 across and 1 down); mirrored, it
+// goes down and to the left (the y axis). Posts are separate sprites, so they
+// sort with whatever stands beside them.
+export const FENCE_RUN = 48; // art pixels across a run, which is 24 down
+function fenceRun(): SpriteDef {
+	const top = 8; // the ground at the run's start sits this far down the sprite
+	const g = mk(FENCE_RUN + 1, top + FENCE_RUN / 2 - 2);
+	for (let i = 0; i <= FENCE_RUN; i++) {
+		const ground = top + (i >> 1);
+		put(g, i, ground - 8, 'u');
+		put(g, i, ground - 7, 'T');
+		put(g, i, ground - 4, 't');
+		put(g, i, ground - 3, 'T');
 	}
 	return {
 		rows: toRows(g),
-		key: { u: 'wood', t: 'bark', T: 'barkDark', k: 'soilLight' },
-		foot: [post ? 1 : 18, h - 1]
+		key: { u: 'wood', t: 'bark', T: 'barkDark' },
+		foot: [0, top]
 	};
 }
-const FENCE_H = fenceH(false);
-const FENCE_POST = fenceH(true);
+const FENCE_RUN_DEF = fenceRun();
 
-// the side fence runs away from the viewer: a rail seen end on and posts
-function fenceV(): SpriteDef {
-	const h = 122;
-	const g = mk(5, h);
+function fencePost(): SpriteDef {
+	const h = 12;
+	const g = mk(3, h);
 	for (let y = 0; y < h; y++) {
-		put(g, 1, y, 'u');
-		put(g, 2, y, 't');
-		put(g, 3, y, 'T');
-		if ((h - 1 - y) % 18 < 8) {
-			put(g, 0, y, 'u');
-			put(g, 4, y, 'T');
-		}
+		put(g, 0, y, 'u');
+		put(g, 1, y, 't');
+		put(g, 2, y, 'T');
 	}
-	return { rows: toRows(g), key: { u: 'wood', t: 'bark', T: 'barkDark' }, foot: [2, h - 1] };
+	put(g, 0, 0, 'k');
+	put(g, 1, 0, 'u');
+	return {
+		rows: toRows(g),
+		key: { u: 'wood', t: 'bark', T: 'barkDark', k: 'soilLight' },
+		foot: [1, h - 1]
+	};
 }
-const FENCE_V = fenceV();
+const FENCE_POST = fencePost();
 
 // standing stones: tall slabs, each a bit different
 const STANDING: SpriteDef[] = [
@@ -1123,8 +1120,8 @@ export const Kind = {
 	tent: 19,
 	hut: 20,
 	kiln: 21,
-	fenceH: 22,
-	fenceV: 23,
+	fenceH: 22, // a run of two rails along the x axis (mirrored: the y axis)
+	fenceV: 23, // a fence post
 	altar: 24,
 	standing: 25,
 	store: 26,
@@ -1164,8 +1161,8 @@ export const DEFS: Record<number, SpriteDef[]> = {
 	[Kind.tent]: [TENT],
 	[Kind.hut]: [HUT],
 	[Kind.kiln]: [KILN],
-	[Kind.fenceH]: [FENCE_H, FENCE_POST],
-	[Kind.fenceV]: [FENCE_V],
+	[Kind.fenceH]: [FENCE_RUN_DEF],
+	[Kind.fenceV]: [FENCE_POST],
 	[Kind.altar]: [ALTAR],
 	[Kind.standing]: STANDING,
 	[Kind.store]: STORES,
@@ -1298,31 +1295,32 @@ export function chunkLook(ore: number): Look {
 
 // ------------------------------------------------------------ shadows, fire
 
-// flat oval shadows [rx, ry] under things that stand, in art pixels
+// flat 2:1 oval shadows [rx, ry] under things that stand, in art pixels (a
+// round footprint on the ground is a 2:1 oval in the isometric view)
 export const SHADOW: Partial<Record<number, [number, number]>> = {
-	[Kind.oak]: [9, 3],
-	[Kind.conifer]: [6, 2],
+	[Kind.oak]: [9, 4],
+	[Kind.conifer]: [6, 3],
 	[Kind.scrub]: [5, 2],
-	[Kind.bush]: [4, 1],
-	[Kind.berry]: [4, 1],
-	[Kind.boulder]: [5, 1],
-	[Kind.flint]: [8, 2],
-	[Kind.clay]: [8, 2],
-	[Kind.copper]: [8, 2],
-	[Kind.tin]: [8, 2],
-	[Kind.bogIron]: [8, 2],
-	[Kind.obsidian]: [6, 2],
-	[Kind.salt]: [8, 2],
-	[Kind.ochre]: [8, 2],
-	[Kind.meteorite]: [8, 2],
-	[Kind.tent]: [11, 3],
-	[Kind.hut]: [16, 4],
-	[Kind.kiln]: [8, 2],
-	[Kind.standing]: [4, 1],
-	[Kind.altar]: [8, 2],
-	[Kind.store]: [10, 2],
-	[Kind.furnace]: [9, 2],
-	[Kind.fenceH]: [16, 1]
+	[Kind.bush]: [4, 2],
+	[Kind.berry]: [4, 2],
+	[Kind.boulder]: [5, 2],
+	[Kind.flint]: [8, 4],
+	[Kind.clay]: [8, 4],
+	[Kind.copper]: [8, 4],
+	[Kind.tin]: [8, 4],
+	[Kind.bogIron]: [8, 4],
+	[Kind.obsidian]: [6, 3],
+	[Kind.salt]: [8, 4],
+	[Kind.ochre]: [8, 4],
+	[Kind.meteorite]: [8, 4],
+	[Kind.tent]: [11, 5],
+	[Kind.hut]: [16, 8],
+	[Kind.kiln]: [8, 4],
+	[Kind.standing]: [4, 2],
+	[Kind.altar]: [8, 4],
+	[Kind.store]: [10, 5],
+	[Kind.furnace]: [9, 4],
+	[Kind.fenceV]: [2, 1]
 };
 
 const shadows = new Map<number, Look>();
