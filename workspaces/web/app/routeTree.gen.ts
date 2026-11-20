@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ShmoneyRouteImport } from './routes/shmoney'
 import { Route as SeenRouteImport } from './routes/seen'
+import { Route as RaceRouteImport } from './routes/race'
 import { Route as PhotographyRouteImport } from './routes/photography'
 import { Route as DevelopmentRouteImport } from './routes/development'
 import { Route as ChessRouteImport } from './routes/chess'
@@ -43,6 +44,11 @@ const ShmoneyRoute = ShmoneyRouteImport.update({
 const SeenRoute = SeenRouteImport.update({
   id: '/seen',
   path: '/seen',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RaceRoute = RaceRouteImport.update({
+  id: '/race',
+  path: '/race',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PhotographyRoute = PhotographyRouteImport.update({
@@ -137,6 +143,7 @@ export interface FileRoutesByFullPath {
   '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
+  '/race': typeof RaceRoute
   '/seen': typeof SeenRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
+  '/race': typeof RaceRoute
   '/seen': typeof SeenRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -181,6 +189,7 @@ export interface FileRoutesById {
   '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
+  '/race': typeof RaceRoute
   '/seen': typeof SeenRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -205,6 +214,7 @@ export interface FileRouteTypes {
     | '/chess'
     | '/development'
     | '/photography'
+    | '/race'
     | '/seen'
     | '/shmoney'
     | '/sitemap.xml'
@@ -226,6 +236,7 @@ export interface FileRouteTypes {
     | '/chess'
     | '/development'
     | '/photography'
+    | '/race'
     | '/seen'
     | '/shmoney'
     | '/sitemap.xml'
@@ -248,6 +259,7 @@ export interface FileRouteTypes {
     | '/chess'
     | '/development'
     | '/photography'
+    | '/race'
     | '/seen'
     | '/shmoney'
     | '/sitemap.xml'
@@ -271,6 +283,7 @@ export interface RootRouteChildren {
   ChessRoute: typeof ChessRoute
   DevelopmentRoute: typeof DevelopmentRoute
   PhotographyRoute: typeof PhotographyRoute
+  RaceRoute: typeof RaceRoute
   SeenRoute: typeof SeenRoute
   ShmoneyRoute: typeof ShmoneyRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
@@ -300,6 +313,13 @@ declare module '@tanstack/react-router' {
       path: '/seen'
       fullPath: '/seen'
       preLoaderRoute: typeof SeenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/race': {
+      id: '/race'
+      path: '/race'
+      fullPath: '/race'
+      preLoaderRoute: typeof RaceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/photography': {
@@ -458,6 +478,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChessRoute: ChessRoute,
   DevelopmentRoute: DevelopmentRoute,
   PhotographyRoute: PhotographyRoute,
+  RaceRoute: RaceRoute,
   SeenRoute: SeenRoute,
   ShmoneyRoute: ShmoneyRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
