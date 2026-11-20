@@ -7,7 +7,15 @@ export default defineConfig({
 		projects: [
 			// App code runs in workerd, as it does in production.
 			{
-				plugins: [cloudflareTest({ wrangler: { configPath: './wrangler.jsonc' } })],
+				plugins: [
+					cloudflareTest({
+						// The Worker's real entry is the whole site, which only
+						// builds through Vite. The tests need just the Durable
+						// Object it exports.
+						main: './app/lib/race/room.server.ts',
+						wrangler: { configPath: './wrangler.jsonc' }
+					})
+				],
 				resolve: {
 					alias: {
 						'~/': path.resolve('./app') + '/'

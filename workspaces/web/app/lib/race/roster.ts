@@ -84,3 +84,39 @@ export const ROSTER: Entry[] = [
 		reliability: 0.8
 	}
 ];
+
+// How a car turns up on the day. The stats above never change; each race,
+// every car draws a condition that nudges one of them for that race only,
+// and everyone can see it before they bet.
+
+export type Condition = {
+	label: string;
+	stat?: 'speed' | 'grip' | 'aggression' | 'reliability';
+	by: number;
+};
+
+export const CONDITIONS: Record<string, Condition> = {
+	normal: { label: 'As usual', by: 0 },
+	tuned: { label: 'Engine tuned', stat: 'speed', by: 0.25 },
+	rough: { label: 'Engine running rough', stat: 'speed', by: -0.25 },
+	fresh: { label: 'Fresh tyres', stat: 'grip', by: 0.25 },
+	worn: { label: 'Worn tyres', stat: 'grip', by: -0.25 },
+	fired: { label: 'Driver fired up', stat: 'aggression', by: 0.25 },
+	wary: { label: 'Driver wary', stat: 'aggression', by: -0.25 },
+	braced: { label: 'Bodywork braced', stat: 'reliability', by: 0.25 },
+	patched: { label: 'Patched up', stat: 'reliability', by: -0.25 }
+};
+
+/** A condition for each of `count` cars: half the time nothing special. */
+export function drawConditions(rand: () => number, count: number): string[] {
+	const special = Object.keys(CONDITIONS).filter((id) => id !== 'normal');
+	return Array.from({ length: count }, () =>
+		rand() < 0.5 ? 'normal' : special[Math.floor(rand() * special.length)]
+	);
+}
+
+/** A car as it is for one race, in the condition it drew. */
+export function inCondition(entry: Entry, condition: string): Entry {
+	const { stat, by } = CONDITIONS[condition];
+	return stat ? { ...entry, [stat]: Math.max(0, Math.min(1, entry[stat] + by)) } : entry;
+}

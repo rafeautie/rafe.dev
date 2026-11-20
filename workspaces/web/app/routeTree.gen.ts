@@ -12,16 +12,17 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ShmoneyRouteImport } from './routes/shmoney'
 import { Route as SeenRouteImport } from './routes/seen'
-import { Route as RaceRouteImport } from './routes/race'
 import { Route as PhotographyRouteImport } from './routes/photography'
 import { Route as DevelopmentRouteImport } from './routes/development'
 import { Route as ChessRouteImport } from './routes/chess'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WritingIndexRouteImport } from './routes/writing/index'
+import { Route as RaceIndexRouteImport } from './routes/race/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as WritingFeedDotxmlRouteImport } from './routes/writing/feed[.]xml'
 import { Route as WritingSlugRouteImport } from './routes/writing/$slug'
+import { Route as RaceSandboxRouteImport } from './routes/race/sandbox'
 import { Route as AdminPhotosRouteImport } from './routes/admin/photos'
 import { Route as AdminLogoutRouteImport } from './routes/admin/logout'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
@@ -44,11 +45,6 @@ const ShmoneyRoute = ShmoneyRouteImport.update({
 const SeenRoute = SeenRouteImport.update({
   id: '/seen',
   path: '/seen',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RaceRoute = RaceRouteImport.update({
-  id: '/race',
-  path: '/race',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PhotographyRoute = PhotographyRouteImport.update({
@@ -81,6 +77,11 @@ const WritingIndexRoute = WritingIndexRouteImport.update({
   path: '/writing/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RaceIndexRoute = RaceIndexRouteImport.update({
+  id: '/race/',
+  path: '/race/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -94,6 +95,11 @@ const WritingFeedDotxmlRoute = WritingFeedDotxmlRouteImport.update({
 const WritingSlugRoute = WritingSlugRouteImport.update({
   id: '/writing/$slug',
   path: '/writing/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RaceSandboxRoute = RaceSandboxRouteImport.update({
+  id: '/race/sandbox',
+  path: '/race/sandbox',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminPhotosRoute = AdminPhotosRouteImport.update({
@@ -143,7 +149,6 @@ export interface FileRoutesByFullPath {
   '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
-  '/race': typeof RaceRoute
   '/seen': typeof SeenRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -151,9 +156,11 @@ export interface FileRoutesByFullPath {
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
+  '/race/sandbox': typeof RaceSandboxRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
   '/admin/': typeof AdminIndexRoute
+  '/race/': typeof RaceIndexRoute
   '/writing/': typeof WritingIndexRoute
   '/admin/writing/$slug': typeof AdminWritingSlugRoute
   '/admin/stats/': typeof AdminStatsIndexRoute
@@ -165,7 +172,6 @@ export interface FileRoutesByTo {
   '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
-  '/race': typeof RaceRoute
   '/seen': typeof SeenRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -173,9 +179,11 @@ export interface FileRoutesByTo {
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
+  '/race/sandbox': typeof RaceSandboxRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
   '/admin': typeof AdminIndexRoute
+  '/race': typeof RaceIndexRoute
   '/writing': typeof WritingIndexRoute
   '/admin/writing/$slug': typeof AdminWritingSlugRoute
   '/admin/stats': typeof AdminStatsIndexRoute
@@ -189,7 +197,6 @@ export interface FileRoutesById {
   '/chess': typeof ChessRoute
   '/development': typeof DevelopmentRoute
   '/photography': typeof PhotographyRoute
-  '/race': typeof RaceRoute
   '/seen': typeof SeenRoute
   '/shmoney': typeof ShmoneyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -197,9 +204,11 @@ export interface FileRoutesById {
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
+  '/race/sandbox': typeof RaceSandboxRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
   '/admin/': typeof AdminIndexRoute
+  '/race/': typeof RaceIndexRoute
   '/writing/': typeof WritingIndexRoute
   '/admin/writing/$slug': typeof AdminWritingSlugRoute
   '/admin/stats/': typeof AdminStatsIndexRoute
@@ -214,7 +223,6 @@ export interface FileRouteTypes {
     | '/chess'
     | '/development'
     | '/photography'
-    | '/race'
     | '/seen'
     | '/shmoney'
     | '/sitemap.xml'
@@ -222,9 +230,11 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
+    | '/race/sandbox'
     | '/writing/$slug'
     | '/writing/feed.xml'
     | '/admin/'
+    | '/race/'
     | '/writing/'
     | '/admin/writing/$slug'
     | '/admin/stats/'
@@ -236,7 +246,6 @@ export interface FileRouteTypes {
     | '/chess'
     | '/development'
     | '/photography'
-    | '/race'
     | '/seen'
     | '/shmoney'
     | '/sitemap.xml'
@@ -244,9 +253,11 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
+    | '/race/sandbox'
     | '/writing/$slug'
     | '/writing/feed.xml'
     | '/admin'
+    | '/race'
     | '/writing'
     | '/admin/writing/$slug'
     | '/admin/stats'
@@ -259,7 +270,6 @@ export interface FileRouteTypes {
     | '/chess'
     | '/development'
     | '/photography'
-    | '/race'
     | '/seen'
     | '/shmoney'
     | '/sitemap.xml'
@@ -267,9 +277,11 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
+    | '/race/sandbox'
     | '/writing/$slug'
     | '/writing/feed.xml'
     | '/admin/'
+    | '/race/'
     | '/writing/'
     | '/admin/writing/$slug'
     | '/admin/stats/'
@@ -283,12 +295,13 @@ export interface RootRouteChildren {
   ChessRoute: typeof ChessRoute
   DevelopmentRoute: typeof DevelopmentRoute
   PhotographyRoute: typeof PhotographyRoute
-  RaceRoute: typeof RaceRoute
   SeenRoute: typeof SeenRoute
   ShmoneyRoute: typeof ShmoneyRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  RaceSandboxRoute: typeof RaceSandboxRoute
   WritingSlugRoute: typeof WritingSlugRoute
   WritingFeedDotxmlRoute: typeof WritingFeedDotxmlRoute
+  RaceIndexRoute: typeof RaceIndexRoute
   WritingIndexRoute: typeof WritingIndexRoute
 }
 
@@ -313,13 +326,6 @@ declare module '@tanstack/react-router' {
       path: '/seen'
       fullPath: '/seen'
       preLoaderRoute: typeof SeenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/race': {
-      id: '/race'
-      path: '/race'
-      fullPath: '/race'
-      preLoaderRoute: typeof RaceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/photography': {
@@ -364,6 +370,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WritingIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/race/': {
+      id: '/race/'
+      path: '/race'
+      fullPath: '/race/'
+      preLoaderRoute: typeof RaceIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/': {
       id: '/admin/'
       path: '/'
@@ -383,6 +396,13 @@ declare module '@tanstack/react-router' {
       path: '/writing/$slug'
       fullPath: '/writing/$slug'
       preLoaderRoute: typeof WritingSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/race/sandbox': {
+      id: '/race/sandbox'
+      path: '/race/sandbox'
+      fullPath: '/race/sandbox'
+      preLoaderRoute: typeof RaceSandboxRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/photos': {
@@ -478,12 +498,13 @@ const rootRouteChildren: RootRouteChildren = {
   ChessRoute: ChessRoute,
   DevelopmentRoute: DevelopmentRoute,
   PhotographyRoute: PhotographyRoute,
-  RaceRoute: RaceRoute,
   SeenRoute: SeenRoute,
   ShmoneyRoute: ShmoneyRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  RaceSandboxRoute: RaceSandboxRoute,
   WritingSlugRoute: WritingSlugRoute,
   WritingFeedDotxmlRoute: WritingFeedDotxmlRoute,
+  RaceIndexRoute: RaceIndexRoute,
   WritingIndexRoute: WritingIndexRoute,
 }
 export const routeTree = rootRouteImport
