@@ -13,7 +13,7 @@ export const LAPS = 3;
 /** Seconds the cars sit on the grid before the start. */
 export const LIGHTS = 2;
 /** The race is called off this long after the start, whoever is still out. */
-const TIME_CAP = 120;
+export const TIME_CAP = 120;
 /** Once someone has won, the rest get this long to finish. */
 const AFTER_WINNER = 8;
 
@@ -48,7 +48,7 @@ export type Car = {
 	/** Forward speed, m/s. Negative when rolling backwards. */
 	speed: number;
 	steer: number;
-	/** 0 while the tyres grip, rising to 1 as they slide. */
+	/** How fast the tyres are sliding sideways over the road, m/s; 0 while they grip. */
 	slip: number;
 	/** The outline as it is now, dents and all. */
 	hull: Float32Array;
@@ -85,16 +85,15 @@ export type Car = {
 	reverseUntil: number;
 };
 
-export type RaceEvent = {
-	time: number;
-	kind: 'hit' | 'retire' | 'lap' | 'finish';
-	/** Index into `cars`. */
-	car: number;
-	x: number;
-	y: number;
-	/** For a hit, how hard, as the speed (m/s) knocked off the car. */
-	force: number;
-};
+type Happening =
+	/** A knock: where, how hard (the m/s it took off the car), and the car's damage after it. */
+	| { kind: 'hit'; x: number; y: number; force: number; damage: number }
+	/** A lap completed, and the seconds it took. */
+	| { kind: 'lap'; lap: number }
+	| { kind: 'retire' | 'finish' };
+
+/** Something that happened to a car (an index into `cars`) at a race time. */
+export type RaceEvent = Happening & { time: number; car: number };
 
 export type Race = ReturnType<typeof createRace>;
 
@@ -111,6 +110,15 @@ export function random(seed: number) {
 		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
 		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 	};
+}
+
+/** Cars in finishing order: by time at the flag, then by distance covered. */
+export function rank<T extends { finishTime: number; progress: number }>(cars: T[]): T[] {
+	return [...cars].sort((a, b) => {
+		if (a.finishTime && b.finishTime) return a.finishTime - b.finishTime;
+		if (a.finishTime || b.finishTime) return a.finishTime ? -1 : 1;
+		return b.progress - a.progress;
+	});
 }
 
 /** The roster in a starting order drawn from the seed, pole first. */
@@ -224,17 +232,11 @@ export function createRace(seed: number, grid: Entry[]) {
 		/** What has happened since the caller last emptied this. */
 		events: [] as RaceEvent[],
 		step,
-		/** The cars in finishing order: by time at the flag, then by distance. */
-		order: () =>
-			[...cars].sort((a, b) => {
-				if (a.finishTime && b.finishTime) return a.finishTime - b.finishTime;
-				if (a.finishTime || b.finishTime) return a.finishTime ? -1 : 1;
-				return b.progress - a.progress;
-			})
+		order: () => rank(cars)
 	};
 
-	function note(kind: RaceEvent['kind'], car: Car, x = car.x, y = car.y, force = 0) {
-		race.events.push({ time: race.time, kind, car: cars.indexOf(car), x, y, force });
+	function note(car: Car, what: Happening) {
+		race.events.push({ ...what, time: race.time, car: cars.indexOf(car) });
 	}
 
 	function step() {
@@ -277,10 +279,10 @@ export function createRace(seed: number, grid: Entry[]) {
 		if (laps > 0) {
 			const lap = race.time - car.lapStart;
 			if (!car.bestLap || lap < car.bestLap) car.bestLap = lap;
-			note('lap', car);
+			note(car, { kind: 'lap', lap });
 			if (laps === LAPS) {
 				car.finishTime = race.time;
-				note('finish', car);
+				note(car, { kind: 'finish' });
 			}
 		}
 		car.lapStart = race.time;
@@ -422,15 +424,15 @@ export function createRace(seed: number, grid: Entry[]) {
 			car.hull[k + 1] = HULL[k + 1] + my;
 		}
 		reshape(car);
-		note('hit', car, x, y, blow + SHRUG);
-		if (car.retired) return;
-		car.damage = Math.min(1, car.damage + blow / (14 * car.tough));
-		if (car.damage < 1) return;
+		const wrecked = car.retired;
+		if (!wrecked) car.damage = Math.min(1, car.damage + blow / (14 * car.tough));
+		note(car, { kind: 'hit', x, y, force: blow + SHRUG, damage: car.damage });
+		if (wrecked || car.damage < 1) return;
 		car.retired = true;
 		car.slip = 0;
 		car.body.setLinearDamping(1.5);
 		car.body.setAngularDamping(2.5);
-		note('retire', car);
+		note(car, { kind: 'retire' });
 	}
 
 	return race;
@@ -476,7 +478,7 @@ function reshape(car: Car) {
  * One axle's tyres for one step. They stop the axle sliding sideways and
  * apply `push` (N, along the wheels) and up to `stop` (N) of braking, but
  * can pass no more than `most` (N) to the road in total; asked for more,
- * they slide. Returns how far past the limit they were asked to go, 0 to 1.
+ * they slide. Returns how fast they are left sliding sideways, in m/s.
  */
 function tyres(body: Body, at: number, steer: number, push: number, stop: number, most: number) {
 	const point = body.getWorldPoint({ x: at, y: 0 });
@@ -488,20 +490,22 @@ function tyres(body: Body, at: number, steer: number, push: number, stop: number
 	const arm = (point.x - centre.x) * sideY - (point.y - centre.y) * sideX;
 	// the impulses that would stop the axle's sideways slide outright, and
 	// brake its roll without reversing it
-	let sideways = -(velocity.x * sideX + velocity.y * sideY) / (1 / MASS + arm ** 2 / INERTIA);
+	const drift = velocity.x * sideX + velocity.y * sideY;
+	let sideways = -drift / (1 / MASS + arm ** 2 / INERTIA);
 	const rolling = velocity.x * along.x + velocity.y * along.y;
 	let forward = push * DT + clamp((-rolling * MASS) / 2, -stop * DT, stop * DT);
 	const asked = Math.hypot(sideways, forward);
 	const limit = most * DT;
-	if (asked > limit) {
-		// sliding tyres grip a little less than rolling ones
-		sideways *= (0.9 * limit) / asked;
-		forward *= (0.9 * limit) / asked;
-	}
+	// the share of what was asked that the tyres deliver; sliding tyres grip
+	// a little less than rolling ones
+	const held = asked > limit ? (0.9 * limit) / asked : 1;
+	sideways *= held;
+	forward *= held;
 	body.applyLinearImpulse(
 		{ x: sideX * sideways + along.x * forward, y: sideY * sideways + along.y * forward },
 		point,
 		true
 	);
-	return clamp(asked / limit - 1, 0, 1);
+	// whatever sideways movement they could not stop is rubber sliding on road
+	return Math.abs(drift) * (1 - held);
 }

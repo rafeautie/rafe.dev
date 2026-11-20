@@ -10,6 +10,14 @@ export const SCALE = 4;
 export const WIDTH = WORLD_W * SCALE;
 export const HEIGHT = WORLD_H * SCALE;
 
+/**
+ * How fast (m/s) tyres must slide sideways to leave rubber on the road, and
+ * to smoke. Tyres near their limit slide a few m/s all the time without
+ * either.
+ */
+const MARKS_FROM = 4;
+const SMOKE_FROM = 9;
+
 /** What the renderer needs to know about a car. */
 export type CarView = Pick<
 	Car,
@@ -247,24 +255,34 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 
 		/** Draws one frame, `dt` seconds after the last. */
 		draw(cars: CarView[], dt: number, show: { line: boolean; hulls: boolean }) {
-			for (const car of cars) {
+			// nothing new is thrown up while the race is paused
+			for (const car of dt > 0 ? cars : []) {
 				const cos = Math.cos(car.angle);
 				const sin = Math.sin(car.angle);
 				const offRoad = Math.abs(lateral(car.x, car.y, nearest(car.x, car.y))) > HALF_ROAD;
-				if (car.slip > 0.2 && Math.abs(car.speed) > 3) {
-					// rubber laid down by the rear tyres
-					for (const side of [-0.8, 0.8]) {
-						const k = pixel(car.x - 1.3 * cos - side * sin, car.y - 1.3 * sin + side * cos);
+				// where the two rear tyres meet the road
+				const rear = [-0.85, 0.85].map((side) => ({
+					x: car.x - 1.3 * cos - side * sin,
+					y: car.y - 1.3 * sin + side * cos
+				}));
+				if (car.slip > MARKS_FROM) {
+					// rubber laid down by them, and smoke off each once they
+					// slide fast enough to burn; on the verge, dust
+					const thick = offRoad ? 0.5 : Math.min(1, (car.slip - SMOKE_FROM) / 8 + 0.25) * 0.6;
+					for (const tyre of rear) {
+						const k = pixel(tyre.x, tyre.y);
 						if (k >= 0 && worn[k] < 3) {
 							worn[k]++;
 							ground[k] = mix(ground[k], BLACK, 0.3);
 						}
+						if ((offRoad || car.slip > SMOKE_FROM) && Math.random() < thick) {
+							puff(tyre.x, tyre.y, 1.5, 0.5, offRoad ? DUST : SMOKE, true);
+						}
 					}
-					if (Math.random() < car.slip) {
-						puff(car.x - 1.3 * cos, car.y - 1.3 * sin, 1.5, 0.5, offRoad ? DUST : SMOKE, true);
+				} else if (offRoad && Math.abs(car.speed) > 6) {
+					for (const tyre of rear) {
+						if (Math.random() < 0.5) puff(tyre.x, tyre.y, 1, 0.4, DUST, true);
 					}
-				} else if (offRoad && Math.abs(car.speed) > 6 && Math.random() < 0.5) {
-					puff(car.x - 1.3 * cos, car.y - 1.3 * sin, 1, 0.4, DUST, true);
 				}
 				if (car.retired && Math.random() < 0.25) {
 					puff(car.x + 1.2 * cos, car.y + 1.2 * sin, 1.2, 0.9, SOOT, true);

@@ -1,13 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
+import {
+	createReplay,
+	pack,
+	record,
+	type RecordedEvent,
+	type Recording,
+	type Replay
+} from '~/lib/race/recording';
 import { createRenderer } from '~/lib/race/render';
 import { ROSTER, type Entry } from '~/lib/race/roster';
-import { createRace, drawGrid, DT, LAPS, LIGHTS, type Race } from '~/lib/race/sim';
+import { drawGrid, LAPS, LIGHTS, rank } from '~/lib/race/sim';
+import { createSound, type Sound } from '~/lib/race/sound';
 
-// The race on its own, with nothing networked: pick a seed, watch it run, and
-// read what every car is doing. This is the bench the physics, the drivers and
-// the drawing are tuned on; the betting game is built round the same race.
+// The race on its own, with nothing networked: pick a seed, and the whole
+// race is run and recorded at once, then played back here the way everyone
+// watching will see and hear it. This is the bench the physics, the drivers,
+// the drawing and the sound are tuned on.
 
 type Row = {
 	entry: Entry;
@@ -15,25 +25,47 @@ type Row = {
 	lap: number;
 	gap: string;
 	kmh: number;
+	/** How fast the tyres are sliding sideways, m/s. */
+	slide: number;
 	damage: number;
 	best: number;
 	status: string;
 };
 
-type View = { time: number; done: boolean; rows: Row[]; log: string[] };
+type View = {
+	/** Seconds into the recording, and how long it is. */
+	time: number;
+	duration: number;
+	/** The recording's size once packed, in bytes. */
+	size: number;
+	/** How loud the sound is, in decibels, when it is on. */
+	level?: number;
+	rows: Row[];
+	log: string[];
+};
 
 const RATES = [1, 2, 4, 8];
 
-function read(race: Race, log: string[]): View {
-	const order = race.order();
+function describe(event: RecordedEvent, replay: Replay) {
+	const at = `${Math.max(0, event.time - LIGHTS).toFixed(1)} s  ${replay.cars[event.car].entry.name}`;
+	if (event.kind === 'hit') return `${at} hit at ${(event.force * 3.6).toFixed(0)} km/h`;
+	return `${at} ${event.kind === 'retire' ? 'retired' : 'finished'}`;
+}
+
+function read(recording: Recording, replay: Replay, time: number, size: number): View {
+	const order = rank(replay.cars);
 	const leader = order[0];
 	return {
-		time: Math.max(0, race.time - LIGHTS),
-		done: race.done,
-		log: log.slice(-8),
+		time,
+		duration: replay.duration,
+		size,
+		log: recording.events
+			.filter((event) => event.time <= time && event.kind !== 'lap')
+			.slice(-8)
+			.map((event) => describe(event, replay)),
 		rows: order.map((car, place) => ({
 			entry: car.entry,
-			grid: race.cars.indexOf(car) + 1,
+			grid: replay.cars.indexOf(car) + 1,
 			lap: Math.min(LAPS, Math.max(1, car.laps + 1)),
 			gap:
 				place === 0
@@ -42,6 +74,7 @@ function read(race: Race, log: string[]): View {
 						? `+${(car.finishTime - leader.finishTime).toFixed(2)} s`
 						: `+${Math.max(0, leader.progress - car.progress).toFixed(0)} m`,
 			kmh: Math.round(Math.abs(car.speed) * 3.6),
+			slide: car.slip,
 			damage: Math.round(car.damage * 100),
 			best: car.bestLap,
 			status: car.retired ? 'retired' : car.finishTime ? 'finished' : 'racing'
@@ -52,59 +85,70 @@ function read(race: Race, log: string[]): View {
 export default function Sandbox() {
 	const canvas = useRef<HTMLCanvasElement>(null);
 	const [seed, setSeed] = useState(1);
-	// bumped to run the same seed again
-	const [run, setRun] = useState(0);
 	const [paused, setPaused] = useState(false);
 	const [rate, setRate] = useState(1);
 	const [show, setShow] = useState({ line: false, hulls: false });
+	const [sound, setSound] = useState(false);
 	const [view, setView] = useState<View | null>(null);
-	// what the running loop reads each frame, so changing a control does not
-	// restart the race
-	const live = useRef({ paused, rate, show, stepOnce: false });
+	// What the running loop reads each frame, so changing a control does not
+	// start the race again. `seekTo` and `stepOnce` are requests it clears.
+	const live = useRef({ paused, rate, show, seekTo: null as number | null, stepOnce: false });
+	const audio = useRef<Sound | null>(null);
 	useEffect(() => {
 		live.current = { ...live.current, paused, rate, show };
 	}, [paused, rate, show]);
 
+	// made on the click that turns it on, as browsers require
+	useEffect(() => {
+		if (!sound) return;
+		const made = createSound(ROSTER.length);
+		audio.current = made;
+		return () => {
+			audio.current = null;
+			made.close();
+		};
+	}, [sound]);
+
 	useEffect(() => {
 		const renderer = createRenderer(canvas.current!);
-		const race = createRace(seed, drawGrid(seed, ROSTER));
-		const log: string[] = [];
+		const recording = record(seed, drawGrid(seed, ROSTER));
+		const replay = createReplay(recording, ROSTER);
+		const size = pack(recording).length;
+		let time = 0;
 		let last = performance.now();
-		let owed = 0;
 		let shown = 0;
 		let frame = requestAnimationFrame(function tick(now) {
 			frame = requestAnimationFrame(tick);
 			const elapsed = Math.min(0.1, (now - last) / 1000);
 			last = now;
-			if (!live.current.paused) owed += elapsed * live.current.rate;
-			if (live.current.stepOnce) owed = DT;
+			const { paused, rate, show, seekTo, stepOnce } = live.current;
+			live.current.seekTo = null;
 			live.current.stepOnce = false;
 
-			let stepped = 0;
-			for (; owed >= DT && !race.done; owed -= DT, stepped += DT) {
-				race.step();
-				for (const event of race.events) {
-					const car = race.cars[event.car];
-					renderer.event(event, car);
-					const at = `${Math.max(0, event.time - LIGHTS).toFixed(1)} s  ${car.entry.name}`;
-					if (event.kind === 'hit' && event.force > 4) {
-						log.push(`${at} hit at ${(event.force * 3.6).toFixed(0)} km/h`);
-					} else if (event.kind === 'retire') {
-						log.push(`${at} retired`);
-					} else if (event.kind === 'finish') {
-						log.push(`${at} finished`);
-					}
+			let moved = 0;
+			if (seekTo !== null) {
+				// a jump: the marks on the track belong to another moment
+				renderer.reset();
+				time = seekTo;
+				replay.seek(time);
+			} else {
+				moved = stepOnce ? 1 / recording.rate : paused ? 0 : elapsed * rate;
+				moved = Math.min(moved, replay.duration - time);
+				time += moved;
+				for (const event of replay.seek(time)) {
+					renderer.event(event, replay.cars[event.car]);
+					audio.current?.event(event);
 				}
-				race.events.length = 0;
 			}
-			renderer.draw(race.cars, stepped, live.current.show);
+			renderer.draw(replay.cars, moved, show);
+			audio.current?.update(replay.cars, moved);
 			if (now - shown > 150) {
 				shown = now;
-				setView(read(race, log));
+				setView({ ...read(recording, replay, time, size), level: audio.current?.level() });
 			}
 		});
 		return () => cancelAnimationFrame(frame);
-	}, [seed, run]);
+	}, [seed]);
 
 	return (
 		<div className="mx-auto flex max-w-6xl flex-col gap-4">
@@ -112,6 +156,27 @@ export default function Sandbox() {
 				ref={canvas}
 				className="aspect-video w-full rounded-lg bg-black [image-rendering:pixelated]"
 			/>
+
+			{view && (
+				<div className="flex items-center gap-3 text-sm tabular-nums">
+					<input
+						type="range"
+						aria-label="Race time"
+						className="grow"
+						min={0}
+						max={view.duration}
+						step={0.05}
+						value={view.time}
+						onChange={(event) => {
+							live.current.seekTo = Number(event.target.value);
+						}}
+					/>
+					<span className="w-40 text-right text-foreground/60">
+						{Math.max(0, view.time - LIGHTS).toFixed(1)} s
+						{view.time >= view.duration ? ' · race over' : ''}
+					</span>
+				</div>
+			)}
 
 			<div className="flex flex-wrap items-center gap-2 text-sm">
 				<label className="flex items-center gap-2">
@@ -126,7 +191,12 @@ export default function Sandbox() {
 				<Button variant="outline" onClick={() => setSeed(seed + 1)}>
 					Next seed
 				</Button>
-				<Button variant="outline" onClick={() => setRun(run + 1)}>
+				<Button
+					variant="outline"
+					onClick={() => {
+						live.current.seekTo = 0;
+					}}
+				>
 					Restart
 				</Button>
 				<Button variant="outline" onClick={() => setPaused(!paused)}>
@@ -152,6 +222,9 @@ export default function Sandbox() {
 						</Button>
 					))}
 				</div>
+				<Button variant={sound ? 'default' : 'outline'} onClick={() => setSound(!sound)}>
+					{sound ? 'Sound on' : 'Sound off'}
+				</Button>
 				<label className="flex items-center gap-1.5">
 					<input
 						type="checkbox"
@@ -170,7 +243,8 @@ export default function Sandbox() {
 				</label>
 				{view && (
 					<span className="ml-auto text-foreground/60 tabular-nums">
-						{view.time.toFixed(1)} s{view.done ? ' · race over' : ''}
+						Recording {(view.size / 1000).toFixed(0)} KB
+						{view.level !== undefined && ` · sound ${view.level.toFixed(0)} dB`}
 					</span>
 				)}
 			</div>
@@ -186,6 +260,7 @@ export default function Sandbox() {
 								<th className="font-normal">Lap</th>
 								<th className="font-normal">Gap</th>
 								<th className="font-normal">km/h</th>
+								<th className="font-normal">Slide m/s</th>
 								<th className="font-normal">Damage</th>
 								<th className="font-normal">Best lap</th>
 								<th className="font-normal">Spd / Grip / Aggr / Rel</th>
@@ -210,6 +285,7 @@ export default function Sandbox() {
 									</td>
 									<td>{row.gap}</td>
 									<td>{row.kmh}</td>
+									<td>{row.slide.toFixed(1)}</td>
 									<td>{row.damage}%</td>
 									<td>{row.best ? `${row.best.toFixed(2)} s` : ''}</td>
 									<td className="text-foreground/60">
