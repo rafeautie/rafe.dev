@@ -27,6 +27,8 @@ const MAX_STEER = 0.55;
 const VERGE_GRIP = 0.6;
 /** Sideways room one car leaves another when passing, centre to centre. */
 const CLEAR = 2.5;
+/** Extra room given to a wrecked car, which may be lying across the road. */
+const WRECK = 1.5;
 /** A knock slower than this (m/s) leaves no mark. */
 const SHRUG = 2.5;
 /** The furthest any corner of the bodywork can be pushed in. */
@@ -97,6 +99,12 @@ export type RaceEvent = Happening & { time: number; car: number };
 
 export type Race = ReturnType<typeof createRace>;
 
+/** Which way the track bends at each sample: 1 to the left, -1 to the right. */
+const TURN = TRACK.tx.map((tx, i) => {
+	const j = (i + 1) % TRACK.n;
+	return Math.sign(tx * TRACK.ty[j] - TRACK.ty[i] * TRACK.tx[j]);
+});
+
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
@@ -151,6 +159,10 @@ export function createRace(seed: number, grid: Entry[]) {
 		walls.createFixture({ shape: new ChainShape(loop, true), friction: 0.3, restitution: 0.2 });
 	}
 
+	// How long each driver takes to react to the lights: mostly quick, now
+	// and then slow enough to lose a place or two before the first corner.
+	const reaction = grid.map(() => rand() ** 2 * 0.4);
+
 	const cars = grid.map((entry, slot): Car => {
 		// two by two behind the line
 		const behind = -(6 + 6.5 * slot);
@@ -166,8 +178,11 @@ export function createRace(seed: number, grid: Entry[]) {
 			angularDamping: 0.2,
 			userData: slot
 		});
-		const grip = 1.9 * lerp(0.97, 1.03, entry.grip);
-		const errorEvery = lerp(60, 20, entry.aggression);
+		// The stats spread the cars wide enough apart that a quicker one can
+		// catch and pass a slower one in three laps. The engine is weak enough
+		// that power, not only grip, sets how fast a car leaves each corner.
+		const grip = 1.9 * lerp(0.94, 1.06, entry.grip);
+		const errorEvery = lerp(30, 14, entry.aggression);
 		const car: Car = {
 			entry,
 			x,
@@ -189,12 +204,14 @@ export function createRace(seed: number, grid: Entry[]) {
 			across,
 			lapStart: 0,
 			grip,
-			power: 180_000 * lerp(0.85, 1.15, entry.speed),
+			power: 110_000 * lerp(0.6, 1.4, entry.speed),
 			tough: lerp(0.7, 1.4, entry.reliability),
 			nerve: lerp(0.9, 1.05, entry.aggression),
 			follow: lerp(7, 4.6, entry.aggression),
 			errorEvery,
-			pace: paceFor(grip * G * lerp(0.76, 0.82, entry.aggression)),
+			// the most aggressive driver runs right at what the tyres can do,
+			// which is quickest; past it they only slide
+			pace: paceFor(grip * G * lerp(0.73, 0.79, entry.aggression)),
 			offset: 0,
 			errorAt: LIGHTS - Math.log(1 - rand()) * errorEvery,
 			errorUntil: 0,
@@ -300,16 +317,24 @@ export function createRace(seed: number, grid: Entry[]) {
 		const offRoad = Math.abs(car.across) > HALF_ROAD;
 		const grip = car.grip * (offRoad ? VERGE_GRIP : 1) * (1 - 0.2 * car.damage);
 
-		if (race.time >= LIGHTS) {
+		if (race.time >= LIGHTS + reaction[cars.indexOf(car)]) {
 			// The car in the way: the nearest one ahead or alongside that the
-			// racing line would run into.
+			// racing line, or the line this car is taking now, would run into.
+			// A wreck may be lying across the road, so it is given more room.
 			let blocker: Car | undefined;
 			let gap = 8 + car.speed * 0.8;
 			for (const other of cars) {
 				if (other === car) continue;
 				const ahead = (((other.sample - car.sample + n * 1.5) % n) - n / 2) * spacing;
 				if (ahead < -5 || Math.abs(ahead) >= Math.abs(gap)) continue;
-				if (Math.abs(TRACK.line[other.sample] - other.across) >= CLEAR) continue;
+				const room = CLEAR + (other.retired ? WRECK : 0);
+				const line = TRACK.line[other.sample];
+				if (
+					Math.abs(line - other.across) >= room &&
+					Math.abs(line + car.offset - other.across) >= room
+				) {
+					continue;
+				}
 				blocker = other;
 				gap = ahead;
 			}
@@ -317,17 +342,47 @@ export function createRace(seed: number, grid: Entry[]) {
 			let limit = Infinity;
 			if (blocker) {
 				// go round it on whichever side is nearer the line already held
+				const room = CLEAR + (blocker.retired ? WRECK : 0);
 				const line = TRACK.line[blocker.sample];
-				const sides = [blocker.across + CLEAR - line, blocker.across - CLEAR - line]
+				const sides = [blocker.across + room - line, blocker.across - room - line]
 					.filter((o) => Math.abs(line + o) <= MAX_OFFSET)
 					.sort((p, q) => Math.abs(p - car.offset) - Math.abs(q - car.offset));
-				offset = sides[0] ?? 0;
-				// and hold back while still tucked in behind it
-				if (gap > 0 && Math.abs(blocker.across - car.across) < 2.1) {
+				// Once to one side of it, stay there, even where the road runs out
+				// on that side: crossing back behind it throws the move away, and
+				// a car alongside will be given room. But until close enough to be
+				// held up, keep to its wheel tracks, which are quicker than any
+				// way round it.
+				const apart = car.across - blocker.across;
+				const closing = Math.max(0, car.speed - Math.max(0, blocker.speed));
+				if (gap < car.follow + 3 + closing * 1.5) {
+					offset =
+						Math.abs(apart) > 1 ? blocker.across + Math.sign(apart) * room - line : (sides[0] ?? 0);
+				}
+				// And hold back while tucked in behind it. A car most of the way
+				// out to one side goes for the gap: it may rub, but it does not
+				// sit and wait.
+				if (gap > 0 && Math.abs(apart) < (blocker.retired ? room : 1.5)) {
 					limit = Math.max(3, Math.max(0, blocker.speed) + (gap - car.follow) * 1.5);
 				}
 			}
-			car.offset += clamp(offset - car.offset, -3 * DT, 3 * DT);
+			// Leave room for a car alongside rather than turn in on it: the one
+			// on the inside keeps the inside, and the one being passed has to
+			// give up the line. Where that runs out of road, lift and let it
+			// through rather than be squeezed onto the verge.
+			for (const other of cars) {
+				if (other === car || other.retired) continue;
+				const ahead = (((other.sample - car.sample + n * 1.5) % n) - n / 2) * spacing;
+				const apart = car.across - other.across;
+				if (Math.abs(ahead) >= 4 || Math.abs(apart) >= CLEAR + 0.5) continue;
+				const room = other.across + Math.sign(apart) * CLEAR;
+				offset =
+					apart > 0
+						? Math.max(offset, room - TRACK.line[car.sample])
+						: Math.min(offset, room - TRACK.line[car.sample]);
+				if (Math.abs(room) > MAX_OFFSET + 0.3 && ahead > -1)
+					limit = Math.min(limit, Math.max(0, other.speed) - 1);
+			}
+			car.offset += clamp(offset - car.offset, -4 * DT, 4 * DT);
 
 			// steer for a point on the line a little way ahead
 			const ahead = (car.sample + Math.round((5 + Math.abs(car.speed) * 0.3) / spacing)) % n;
@@ -339,10 +394,14 @@ export function createRace(seed: number, grid: Entry[]) {
 			const bearing = Math.atan2(aim.y, aim.x);
 			let steer = Math.atan2(4 * AXLE * Math.sin(bearing), Math.hypot(aim.x, aim.y));
 
+			// Off the line, the arc through a bend is tighter on the inside and
+			// wider on the outside, and so is the speed it can be taken at.
+			const inside = (car.across - TRACK.line[car.sample]) * TURN[car.sample];
+			const arc = Math.sqrt(clamp(1 - TRACK.bend[car.sample] * inside, 0.5, 1.5));
 			// A mistake: once one is due, the driver misjudges the next braking
 			// point and arrives at the corner too fast. Most are small; a few
 			// are not.
-			let want = car.pace[car.sample] * Math.sqrt(grip / car.grip);
+			let want = car.pace[car.sample] * Math.sqrt(grip / car.grip) * arc;
 			if (race.time >= car.errorAt && car.speed > want + 0.5) {
 				car.errorUntil = race.time + 0.3 + rand() ** 2 * 0.7;
 				car.errorAt = race.time - Math.log(1 - rand()) * car.errorEvery;
@@ -400,8 +459,18 @@ export function createRace(seed: number, grid: Entry[]) {
 			tyres(body, -AXLE, 0, 0, 1e5, 1e5);
 		}
 
-		// air and rolling resistance, and the drag of the verge
-		const drag = 30 + 2.2 * Math.hypot(velocity.x, velocity.y) + (offRoad ? 400 : 0);
+		// Air and rolling resistance, and the drag of the verge. Close behind
+		// another car the air is already moving, so there is less of it to
+		// push: the tow that lets a quicker car draw alongside on a straight.
+		let tow = 0;
+		for (const other of cars) {
+			if (other === car || other.retired) continue;
+			const ahead = (((other.sample - car.sample + n * 1.5) % n) - n / 2) * spacing;
+			if (ahead > 0 && Math.abs(other.across - car.across) < 1.6)
+				tow = Math.max(tow, 1 - ahead / 25);
+		}
+		const air = 2.2 * (1 - 0.7 * tow);
+		const drag = 30 + air * Math.hypot(velocity.x, velocity.y) + (offRoad ? 400 : 0);
 		body.applyForceToCenter({ x: -velocity.x * drag, y: -velocity.y * drag });
 	}
 
@@ -425,7 +494,7 @@ export function createRace(seed: number, grid: Entry[]) {
 		}
 		reshape(car);
 		const wrecked = car.retired;
-		if (!wrecked) car.damage = Math.min(1, car.damage + blow / (14 * car.tough));
+		if (!wrecked) car.damage = Math.min(1, car.damage + blow / (9 * car.tough));
 		note(car, { kind: 'hit', x, y, force: blow + SHRUG, damage: car.damage });
 		if (wrecked || car.damage < 1) return;
 		car.retired = true;
