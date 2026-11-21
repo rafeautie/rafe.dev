@@ -1,8 +1,7 @@
 import { createPainter, hex, mix, type Painter } from './pixels';
 import { standing, type ReplayTruck } from './recording';
 import { GARAGE, HALF_LANE, NEARSIDE, RING, SLIP, TRUCK, serviceFor, type Route } from './service';
-import { neutral, type Car, type Flag, type RaceEvent } from './sim';
-import { HULL } from './sim';
+import { HULL, neutral, type Car, type Flag, type RaceEvent } from './sim';
 import {
 	HALF_CORRIDOR,
 	HALF_ROAD,

@@ -12,6 +12,8 @@ import { Tuning } from '~/components/admin/race/Tuning';
 import { Subsections } from '~/components/admin/Subsections';
 import { readSection, sectionId } from '~/lib/admin/section';
 import { Badge } from '~/components/ui/badge';
+import { FLAGS } from '~/components/race/shared';
+import { neutral } from '~/lib/race/sim';
 import { Button } from '~/components/ui/button';
 import { errorMessage } from '~/lib/admin/format';
 import { requireAdmin } from '~/lib/admin/guard';
@@ -180,8 +182,9 @@ function RacePage() {
 								</>
 							)}
 						</span>
-						{loop.flag === 'yellow' && <Badge variant="secondary">Caution</Badge>}
-						{loop.flag === 'restart' && <Badge variant="secondary">Going green</Badge>}
+						{loop.flag && neutral(loop.flag) && (
+							<Badge variant="secondary">{FLAGS[loop.flag]}</Badge>
+						)}
 						{loop.paused && <Badge variant="secondary">Paused</Badge>}
 						<ProblemBadge text={problem} onDismiss={() => setProblem(null)} />
 					</>

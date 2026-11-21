@@ -361,7 +361,7 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 		}
 		// the order it is in as it starts going green is the order it restarts in
 		const order = running(race);
-		let field: ReturnType<typeof rank<(typeof race.cars)[number]>> = [];
+		let field: typeof race.cars = [];
 		while (!race.done && race.flag === 'restart') {
 			field = rank(race.cars.filter((car) => !car.retired));
 			race.step();

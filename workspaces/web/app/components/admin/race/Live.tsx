@@ -124,9 +124,7 @@ function Status({ loop }: { loop: Loop }) {
 				<div className="flex flex-col gap-1.5">
 					<PhaseBar
 						restart={loop.round}
-						tone={
-							loop.flag === 'yellow' ? 'caution' : loop.flag === 'restart' ? 'restart' : undefined
-						}
+						tone={loop.flag}
 						className="bg-foreground/10"
 						phases={PHASES.map((phase, i) => ({
 							name: phase,

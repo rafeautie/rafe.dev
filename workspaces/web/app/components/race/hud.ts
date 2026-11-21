@@ -5,7 +5,7 @@ import { HEIGHT, SCALE, WIDTH, type CarView } from '~/lib/race/render';
 import type { Bet, RoomState, Standing } from '~/lib/race/room';
 import { CONDITIONS, ROSTER, inCondition } from '~/lib/race/roster';
 import { STATS } from '~/lib/race/settings';
-import { LAPS, LIGHTS, rank, type Flag } from '~/lib/race/sim';
+import { LAPS, LIGHTS, neutral, rank, type Flag } from '~/lib/race/sim';
 import { ASKS, FLAGS, SHORT, chips, entry, holding, label, signed } from './shared';
 import type { Running, Selection, Tick } from './shared';
 
@@ -310,6 +310,13 @@ const ALARM = hex('#c8382f');
 /** The caution flag, and the green one, which is also the colour of going green. */
 const FLAG = hex('#f7e135');
 const GO = hex('#27a84a');
+/** Each flag's own colour: going green shows the green flag that is coming. */
+const FACE: Record<Flag, ReturnType<typeof hex>> = {
+	green: GO,
+	yellow: FLAG,
+	restart: GO,
+	checkered: PAPER
+};
 const BODY = Object.fromEntries(ROSTER.map((car) => [car.id, hex(car.color)]));
 
 const clock = (seconds: number) =>
@@ -363,17 +370,10 @@ export function createHud() {
 		flying: Flag | null = null
 	) {
 		const ink = alarm ? PAPER : INK;
-		const neutralised = flying === 'yellow' || flying === 'restart';
-		p.fill(x, y, w, 15, neutralised ? FLAG : alarm ? ALARM : PAPER);
+		p.fill(x, y, w, 15, flying && neutral(flying) ? FLAG : alarm ? ALARM : PAPER);
 		if (flying) {
 			p.fill(x + 3, y + 3, 14, 8, INK);
-			p.fill(
-				x + 4,
-				y + 4,
-				12,
-				6,
-				flying === 'green' || flying === 'restart' ? GO : flying === 'yellow' ? FLAG : PAPER
-			);
+			p.fill(x + 4, y + 4, 12, 6, FACE[flying]);
 			// the checks: every other square of two pixels dark
 			for (let square = flying === 'checkered' ? 0 : 18; square < 18; square++) {
 				const [column, row] = [square % 6, Math.floor(square / 6)];
@@ -411,21 +411,21 @@ export function createHud() {
 		const urgent = phase === 'betting' && left <= 10;
 		const leader = field ? rank(field)[0] : null;
 		const lap = leader && replay ? replay.lap(leader) : 1;
+		const flying = phase === 'racing' && replay && replay.time >= LIGHTS ? replay.flag : null;
 		if (!room) head(p, at, 'Connecting', '');
 		else if (phase === 'betting')
 			head(p, at, urgent ? 'Last call' : 'Bets open', clock(left), urgent);
-		else if (phase === 'racing' && replay && replay.time >= LIGHTS)
+		else if (flying)
 			// the flag that is flying, and its name: a caution, and going green
 			// after it, turn the whole bar yellow
-			head(p, at, FLAGS[replay.flag], `Lap ${lap}/${LAPS}`, false, replay.flag);
+			head(p, at, FLAGS[flying], `Lap ${lap}/${LAPS}`, false, flying);
 		else if (phase === 'racing') head(p, at, 'On the grid', `Race ${room.round}`);
 		else if (phase === 'results') head(p, at, 'Result', clock(left), false, 'checkered');
 		else head(p, at, 'Waiting', '');
 
 		// bet, race, result: each as long as it lasts, filled as far as it has
 		// got; the race, while it is neutralised, in the colour of the flag
-		const flying = phase === 'racing' && replay && replay.time >= LIGHTS ? replay.flag : null;
-		const racing = flying === 'yellow' ? FLAG : flying === 'restart' ? GO : PAPER;
+		const racing = flying && neutral(flying) ? FACE[flying] : PAPER;
 		const betting = room?.settings.bettingSeconds ?? 45;
 		const results = room?.settings.resultsSeconds ?? 15;
 		const raced = leader && replay ? replay.raced(leader) : 0;
