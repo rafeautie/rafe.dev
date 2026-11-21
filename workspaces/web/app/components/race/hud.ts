@@ -61,8 +61,9 @@ const CAR = 14;
 /** How many players the leaderboard shows at once, and how many of everybody's bets. The rest scroll. */
 export const BOARD_ROWS = 6;
 export const TICKS = 5;
-/** How wide the bet slip is, and the settings. */
+/** How wide and how tall the bet slip is, and how wide the settings. */
 const SLIP = 300;
+const SLIP_H = 218;
 const MENU = 232;
 
 /** What the four bars beside each car are, by the letter over them. */
@@ -96,12 +97,12 @@ export function layout({ width, height }: View) {
 		x: LEFT - 4 + Math.floor((width - MIN_W) / 2),
 		y: Math.floor((height - HEIGHT) / 2)
 	};
-	const tower = box(4, 4, LEFT, 24 + ROSTER.length * ROW);
+	const tower = box(4, 4, LEFT, 35 + ROSTER.length * ROW);
 	const board = box(4, tower.y + tower.h + 4, LEFT, 18 + BOARD_ROWS * LINE);
 	const ticker = box(4, board.y + board.h + 4, LEFT, 17 + TICKS * TICK);
-	// the slip covers the middle of the track and leaves the grid, at the bottom, in view
+	// the slip is in the middle of the track, both ways
 	const x = track.x + (WIDTH - SLIP) / 2;
-	const y = track.y + 10;
+	const y = track.y + (HEIGHT - SLIP_H) / 2;
 	const widths = MARKETS.map((market) => measure(SHORT[market]) + 9);
 	// the settings open over the middle of everything
 	const mx = (width - MENU) >> 1;
@@ -127,7 +128,7 @@ export function layout({ width, height }: View) {
 		bets: box(width - 148, 32, 144, 0),
 		// the middle of the track, like the slip: the race is over, so nothing is hidden by it
 		card: box(track.x + (WIDTH - 160) / 2, track.y + (HEIGHT - 92) / 2, 160, 92),
-		slip: box(x, y, SLIP, 218),
+		slip: box(x, y, SLIP, SLIP_H),
 		tabs: MARKETS.map((_, index) =>
 			box(
 				x + 6 + widths.slice(0, index).reduce((sum, w) => sum + w + 2, 0),
@@ -267,8 +268,9 @@ export function createHud() {
 		return x;
 	}
 
-	// The tower: the phase and its clock on top, the cycle as a bar, and a row
-	// per car in the order they are running. Rows slide to their new place.
+	// The tower: the phase and its clock on top, the cycle as a bar, a line
+	// saying what the rows and their figures are, and a row per car in the
+	// order they are running. Rows slide to their new place.
 	function tower(p: Painter, at: Box, scene: Scene, dt: number) {
 		const { room, left, replay, pools, slip } = scene;
 		const field = replay?.cars ?? null;
@@ -307,6 +309,19 @@ export function createHud() {
 			sx += width + 2;
 		});
 
+		// what the rows are and what the figure beside each is, which changes
+		// with the phase and, while betting is open, with the market on the slip
+		const priced = single(slip.market) ? slip.market : 'win';
+		const [rows, figure] = field
+			? phase === 'results'
+				? ['Finish', 'Time']
+				: ['Order', 'Gap']
+			: phase === 'betting'
+				? ['Grid', `${SHORT[priced]} pays`]
+				: ['', ''];
+		p.text(x + 5, y + 24, rows, DIM);
+		p.right(x + w - 4, y + 24, figure, DIM);
+
 		let order = room?.result?.order ?? room?.grid ?? [];
 		if (field) {
 			const car = (id: string) => field.find((car) => car.entry.id === id)!;
@@ -339,7 +354,7 @@ export function createHud() {
 		}
 		const backed = new Set(scene.bets.flatMap((bet) => bet.outcome.split('>')));
 		order.forEach((id, place) => {
-			const ry = y + 23 + Math.round(glide(`row ${id}`, place * ROW, dt));
+			const ry = y + 34 + Math.round(glide(`row ${id}`, place * ROW, dt));
 			const car = field?.find((car) => car.entry.id === id);
 			if (backed.has(id)) p.fill(x, ry, 2, ROW - 1, GOLD);
 			p.text(x + 5, ry + 3, String(place + 1), place === 0 ? PAPER : DIM);
@@ -363,8 +378,7 @@ export function createHud() {
 				// before the race: how each car turned up, and what it pays
 				const by = CONDITIONS[room.conditions[place]].by;
 				if (by) p.text(x + 62, ry + 3, by > 0 ? '↑' : '↓', by > 0 ? GOOD : BAD);
-				const market = single(slip.market) ? slip.market : 'win';
-				const odds = glide(`${market} ${id}`, pays(pools[market], market, id), dt);
+				const odds = glide(`${priced} ${id}`, pays(pools[priced], priced, id), dt);
 				p.right(x + w - 4, ry + 3, times(odds), PAPER);
 			}
 		});
@@ -542,17 +556,11 @@ export function createHud() {
 		p.text(x + 6, y + 36, ASKS[market], DIM);
 
 		const [first, second] = picked?.split('>') ?? [];
-		const oddsOf = single(market) ? market : 'win';
 		p.text(x + 6, y + 48, 'Cars', DIM);
 		p.text(x + 213, y + 48, 'SGAR', legend ? PAPER : DIM);
 		// dotted under, as a word with more to say
 		for (let dot = 0; dot < 23; dot += 2) p.fill(x + 213 + dot, y + 56, 1, 1, DIM);
-		p.right(
-			x + w - 6,
-			y + 48,
-			market === 'exacta' ? 'Pick' : single(market) ? 'Pays' : 'Win pays',
-			DIM
-		);
+		p.right(x + w - 6, y + 48, market === 'exacta' ? 'Pick' : 'Pays', DIM);
 		room.grid.forEach((id, place) => {
 			const row = at.cars[place];
 			const ry = row.y;
@@ -582,8 +590,12 @@ export function createHud() {
 			if (market === 'exacta') {
 				button(p, at.firsts[place], '1st', first === id);
 				button(p, at.seconds[place], '2nd', second === id, !first || first === id);
+			} else if (market === 'clean') {
+				// a clean race is not a bet on a car: the cars are there as the
+				// form guide, and the column says no car pays anything
+				p.right(x + w - 6, ry + 3, '--', FAINT);
 			} else {
-				const odds = glide(`${oddsOf} ${id}`, pays(pools[oddsOf], oddsOf, id), dt);
+				const odds = glide(`${market} ${id}`, pays(pools[market], market, id), dt);
 				p.right(x + w - 6, ry + 3, times(odds), PAPER);
 			}
 		});
@@ -597,7 +609,12 @@ export function createHud() {
 			});
 		} else if (complete && picked) {
 			const after = outcome(p, x + 6, y + 149, market, picked);
-			p.text(after + 2, y + 150, label(market, picked), PAPER);
+			const named = p.text(after + 2, y + 150, label(market, picked), PAPER);
+			// a pair has no row to show what it pays, so it is said here
+			if (market === 'exacta') {
+				const odds = glide(`exacta ${picked}`, pays(pools.exacta, 'exacta', picked), dt);
+				p.text(named + 5, y + 150, times(odds), DIM);
+			}
 		} else {
 			p.text(x + 6, y + 150, market === 'exacta' ? 'Pick 1st, then 2nd' : 'Pick a car', DIM);
 		}
