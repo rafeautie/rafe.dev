@@ -4,7 +4,7 @@ import { Game, type Paint } from './Game';
 import { MIN_H, MIN_W, fit, layout } from './hud';
 import { entry, type Running, type Tick } from './shared';
 import { createReplay, unpack, type Replay } from '~/lib/race/recording';
-import { createRenderer, type CarView } from '~/lib/race/render';
+import { STANDING_BY, createRenderer, type CarView } from '~/lib/race/render';
 import type { Bet, FromRoom, RoomState, Standing, ToRoom } from '~/lib/race/room';
 import { ROSTER } from '~/lib/race/roster';
 import { LAPS, createRace, rank } from '~/lib/race/sim';
@@ -107,8 +107,13 @@ export default function Live() {
 				ws.send(JSON.stringify({ type: 'sync', sent: Date.now() } satisfies ToRoom));
 			ws.onmessage = ({ data }) => {
 				if (typeof data !== 'string') {
-					replay = createReplay(unpack(new Uint8Array(data)), ROSTER);
-					shown = -1;
+					const next = createReplay(unpack(new Uint8Array(data)), ROSTER);
+					// A second recording of the race being shown: a caution has been
+					// thrown by hand, and the race from there on is another one. It is
+					// the same up to now, so it carries on from where this one is.
+					if (replay && state?.phase === 'racing' && shown >= 0) next.seek(shown);
+					else shown = -1;
+					replay = next;
 					return;
 				}
 				const message = JSON.parse(data) as FromRoom;
@@ -196,28 +201,38 @@ export default function Live() {
 				if (now - lifted > 250) {
 					lifted = now;
 					const order = rank(replay.cars);
+					// laps ended under caution are run again, so they are not counted
+					const { extra } = replay;
 					setRunning({
 						order: order.map((car) => car.entry.id),
 						cars: Object.fromEntries(
 							replay.cars.map((car) => [
 								car.entry.id,
 								{
-									fraction: Math.max(0, Math.min(1, car.progress / (TRACK.length * LAPS))),
-									lap: car.laps,
+									fraction: Math.max(
+										0,
+										Math.min(1, car.progress / TRACK.length / LAPS - extra / LAPS)
+									),
+									lap: car.laps - extra,
 									retired: car.retired,
 									finished: car.finishTime > 0
 								}
 							])
 						),
-						anyOut: replay.cars.some((car) => car.retired)
+						anyOut: replay.cars.some((car) => car.retired),
+						flag: replay.flag
 					});
 				}
 			}
 			const now = performance.now();
 			const dt = Math.min(0.1, (now - drawn) / 1000);
 			drawn = now;
-			renderer.draw(cars, moved, { line: false, hulls: false }, (painter) =>
-				paint.current?.(painter, cars, showing, dt)
+			renderer.draw(
+				cars,
+				moved,
+				{ line: false, hulls: false },
+				showing ? { trucks: showing.trucks, caution: showing.flag === 'yellow' } : STANDING_BY,
+				(painter) => paint.current?.(painter, cars, showing, dt)
 			);
 			audio.current?.update(replay?.cars ?? [], moved);
 		});

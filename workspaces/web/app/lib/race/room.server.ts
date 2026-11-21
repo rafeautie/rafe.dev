@@ -10,7 +10,7 @@ import {
 	type Pools,
 	type Result
 } from './betting';
-import { createReplay, pack, record, type Recording } from './recording';
+import { createReplay, pack, record, unpack, type Recording } from './recording';
 import {
 	LEAD_MS,
 	type Bet,
@@ -21,7 +21,7 @@ import {
 } from './room';
 import { drawConditions, inCondition, ROSTER } from './roster';
 import { checkSettings, DEFAULT_SETTINGS, tuned, type Settings } from './settings';
-import { drawGrid, random, rank } from './sim';
+import { drawGrid, LIGHTS, random, rank } from './sim';
 
 // The one room everybody at /race is in. It runs the cycle (betting, the
 // race, the result, and round again) on an alarm, keeps a socket open to
@@ -31,9 +31,10 @@ import { drawGrid, random, rank } from './sim';
 // at the moment the room's clock says, so they all see the same thing.
 //
 // Between alarms the room is put to sleep and forgets everything in memory,
-// so all it knows is in storage. The cycle is in three keys: 'state' (a
-// RoomState), and for a race that has started, 'recording' (its bytes) and
-// 'result'. The money is in the tables made in the constructor. What
+// so all it knows is in storage. The cycle is in four keys: 'state' (a
+// RoomState), and for a race that has started, 'recording' (its bytes),
+// 'result', and 'flags' (when the admin has thrown a caution in it, so it can
+// be run again the same). The money is in the tables made in the constructor. What
 // /admin/race has set is in 'settings' (settings.ts) and 'paused'.
 
 const IDLE: RoomState = {
@@ -48,6 +49,9 @@ const IDLE: RoomState = {
 };
 
 const seed = () => crypto.getRandomValues(new Uint32Array(1))[0];
+
+/** From the admin throwing a caution to it coming out, so the race with it in reaches every page first. */
+const CAUTION_LEAD_MS = 1_000;
 
 /** What a recorded race came to, for the betting. */
 function resultOf(recording: Recording): Result {
@@ -287,27 +291,22 @@ export class RaceRoom extends DurableObject<Env> {
 	}
 
 	/**
-	 * Closes betting and runs the race, all of it, now. Its seed is drawn
-	 * here and never leaves the room, so nobody could have run it first.
+	 * Runs a race from its seed, all of it, with a caution thrown at each of
+	 * the race times in `flags`, and keeps the recording and how it came out.
+	 * Run again with one more flag, it is the same race up to that moment.
 	 */
-	private async start(state: RoomState) {
+	private run(state: RoomState, raceSeed: number, flags: number[]) {
 		const roster = tuned(state.settings);
 		const cars = state.grid.map((id, slot) =>
 			inCondition(roster.find((entry) => entry.id === id)!, state.conditions[slot])
 		);
-		const raceSeed = seed();
-		const recording = record(raceSeed, cars);
+		const recording = record(raceSeed, cars, flags);
 		const result = resultOf(recording);
 		const bytes = pack(recording);
 		this.ctx.storage.kv.put('recording', bytes);
 		this.ctx.storage.kv.put('result', result);
-		const startsAt = Date.now() + LEAD_MS;
-		this.sql.exec(
-			'INSERT INTO races (round, started, seed) VALUES (?, ?, ?)',
-			state.round,
-			startsAt,
-			raceSeed
-		);
+		this.ctx.storage.kv.put('flags', flags);
+		this.sql.exec('DELETE FROM results WHERE round = ?', state.round);
 		state.grid.forEach((car, slot) =>
 			this.sql.exec(
 				'INSERT INTO results VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -320,12 +319,11 @@ export class RaceRoom extends DurableObject<Env> {
 				Number(result.fastest === car)
 			)
 		);
-		await this.move({
-			...state,
-			phase: 'racing',
-			startsAt,
-			endsAt: startsAt + ((recording.frames - 1) / recording.rate) * 1000
-		});
+		return { bytes, lasts: ((recording.frames - 1) / recording.rate) * 1000 };
+	}
+
+	/** Sends everyone the recording of the race, after the state that says what it is. */
+	private show(bytes: Uint8Array) {
 		for (const socket of this.ctx.getWebSockets()) {
 			try {
 				socket.send(bytes);
@@ -333,6 +331,24 @@ export class RaceRoom extends DurableObject<Env> {
 				// one that is on its way out
 			}
 		}
+	}
+
+	/**
+	 * Closes betting and runs the race, all of it, now. Its seed is drawn
+	 * here and never leaves the room, so nobody could have run it first.
+	 */
+	private async start(state: RoomState) {
+		const raceSeed = seed();
+		const { bytes, lasts } = this.run(state, raceSeed, []);
+		const startsAt = Date.now() + LEAD_MS;
+		this.sql.exec(
+			'INSERT INTO races (round, started, seed) VALUES (?, ?, ?)',
+			state.round,
+			startsAt,
+			raceSeed
+		);
+		await this.move({ ...state, phase: 'racing', startsAt, endsAt: startsAt + lasts });
+		this.show(bytes);
 	}
 
 	/** The race has been shown to its end: the result goes up and the bets are paid. */
@@ -654,6 +670,35 @@ export class RaceRoom extends DurableObject<Env> {
 		return null;
 	}
 
+	/**
+	 * Throws a caution in the race being shown. That race was run to its end
+	 * when betting closed, so it is run again from the same seed with the
+	 * caution in it, a moment from now: the same race until then, and another
+	 * from there on, with whatever result that one comes to. Nobody has seen
+	 * the result it replaces, and every bet stands.
+	 */
+	async adminCaution() {
+		const state = this.state;
+		const bytes = this.ctx.storage.kv.get<Uint8Array>('recording');
+		if (state.phase !== 'racing' || !bytes) return 'No race is running';
+		const at = (Date.now() + CAUTION_LEAD_MS - state.startsAt) / 1000;
+		if (at <= LIGHTS) return 'The race has not started';
+		const shown = createReplay(unpack(bytes), ROSTER);
+		shown.seek(at);
+		if (shown.flag === 'yellow') return 'A caution is already out';
+		if (at >= shown.duration || shown.cars.some((car) => car.finishTime)) {
+			return 'The race is as good as over';
+		}
+		const { seed: raceSeed } = this.sql
+			.exec<{ seed: number }>('SELECT seed FROM races WHERE round = ?', state.round)
+			.one();
+		const flags = this.ctx.storage.kv.get<number[]>('flags') ?? [];
+		const again = this.run(state, raceSeed, [...flags, at]);
+		await this.move({ ...state, endsAt: state.startsAt + again.lasts });
+		this.show(again.bytes);
+		return null;
+	}
+
 	adminSaveSettings(input: unknown) {
 		const settings = checkSettings(input);
 		if (typeof settings === 'string') return settings;
@@ -677,6 +722,18 @@ export class RaceRoom extends DurableObject<Env> {
 			if (socket.deserializeAttachment() === id) this.send(socket, this.you(id));
 		}
 		this.tell(this.board());
+	}
+
+	/** Whether the race being shown is under caution at this moment. */
+	private caution(state: RoomState) {
+		const bytes = this.ctx.storage.kv.get<Uint8Array>('recording');
+		if (state.phase !== 'racing' || !bytes) return false;
+		const at = (Date.now() - state.startsAt) / 1000;
+		// the last flag to have been shown, yellow or green
+		const flags = unpack(bytes).events.filter(
+			(event) => (event.kind === 'caution' || event.kind === 'green') && event.time <= at
+		);
+		return flags.at(-1)?.kind === 'caution';
 	}
 
 	private loopView() {
@@ -704,6 +761,7 @@ export class RaceRoom extends DurableObject<Env> {
 			}[state.phase],
 			endsAt: state.endsAt,
 			now: Date.now(),
+			caution: this.caution(state),
 			paused: this.paused,
 			viewers: sockets.length,
 			players: new Set(sockets.map((socket) => socket.deserializeAttachment()).filter(Boolean))

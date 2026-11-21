@@ -1,16 +1,21 @@
 import type { Entry } from './roster';
-import { createRace, DT, HULL, LIGHTS, TIME_CAP, type RaceEvent } from './sim';
+import { HOMES, parked } from './service';
+import { createRace, DT, HULL, LIGHTS, TIME_CAP, type Flag, type RaceEvent } from './sim';
 import { TRACK } from './track';
 
 // A whole race, run ahead of time and written down so it can be played back
-// anywhere: where every car was thirty times a second, and what happened to
-// it. Whoever runs the race keeps the result; everyone watching gets the
+// anywhere: where every car and tow truck was thirty times a second, and what
+// happened. Whoever runs the race keeps the result; everyone watching gets the
 // recording and sees exactly the same thing, without running any physics.
 
 /** Positions are written down every other step of the race. */
 const EVERY = 2;
 /** Bytes for one car at one moment: x, y, angle and progress as 16 bits each, speed and slip as 8. */
 const POSE = 10;
+/** Bytes for one truck at one moment: x, y and angle as 16 bits each, what it is doing, and the gate it has open. */
+const TRUCK = 8;
+/** What a truck is doing: the car on its hook, counted from 1, in the low bits, and this one set while it is out. */
+const BUSY = 128;
 /** Recorded dents are whole numbers of this many metres. */
 const DENT = 0.005;
 
@@ -25,8 +30,23 @@ export type Recording = {
 	/** The cars' ids in starting order, which is the order of everything else here. */
 	grid: string[];
 	events: RecordedEvent[];
-	/** `frames` moments of `grid.length` cars, each car POSE bytes. */
+	/** How many tow trucks are recorded. A recording from before there were any has none. */
+	trucks?: number;
+	/** `frames` moments, each `grid.length` cars of POSE bytes and then the trucks, of TRUCK bytes. */
 	poses: Uint8Array;
+};
+
+/** A tow truck as it is at the moment the replay is showing. */
+export type ReplayTruck = {
+	x: number;
+	y: number;
+	angle: number;
+	/** Out on a job, rather than parked in its garage. */
+	busy: boolean;
+	/** The car on its hook, as an index into the cars, or -1. */
+	towing: number;
+	/** The gate open for it to go through, as an index into the gates, or -1. */
+	gate: number;
 };
 
 /** A car as it is at the moment the replay is showing. */
@@ -51,24 +71,39 @@ export type Replay = ReturnType<typeof createReplay>;
 // adding 0 turns the -0 that rounding can give into 0, which JSON would do anyway
 const round = (value: number, places = 0) => Math.round(value * 10 ** places) / 10 ** places + 0;
 
-/** Runs the race for a seed and starting order to its end, and returns it recorded. */
-export function record(seed: number, grid: Entry[]): Recording {
-	const race = createRace(seed, grid);
+/**
+ * Runs the race for a seed and starting order to its end, and returns it
+ * recorded. `flags` are the race times at which a caution is thrown by hand.
+ */
+export function record(seed: number, grid: Entry[], flags: number[] = []): Recording {
+	const race = createRace(seed, grid, flags);
 	const longest = Math.ceil((LIGHTS + TIME_CAP) / DT / EVERY) + 2;
-	const view = new DataView(new ArrayBuffer(longest * grid.length * POSE));
+	const moment = grid.length * POSE + race.trucks.length * TRUCK;
+	const view = new DataView(new ArrayBuffer(longest * moment));
+	const heading = (angle: number) => {
+		const turn = angle / (2 * Math.PI);
+		return (turn - Math.floor(turn)) * 65536;
+	};
 	const events: RecordedEvent[] = [];
 	let frames = 0;
 
 	const write = () => {
 		race.cars.forEach((car, index) => {
-			const at = (frames * grid.length + index) * POSE;
-			const turn = car.angle / (2 * Math.PI);
+			const at = frames * moment + index * POSE;
 			view.setUint16(at, car.x * 256, true);
 			view.setUint16(at + 2, car.y * 256, true);
-			view.setUint16(at + 4, (turn - Math.floor(turn)) * 65536, true);
+			view.setUint16(at + 4, heading(car.angle), true);
 			view.setUint16(at + 6, (car.progress + 100) * 20, true);
 			view.setInt8(at + 8, Math.max(-127, Math.min(127, car.speed * 2)));
 			view.setUint8(at + 9, Math.min(255, car.slip * 10));
+		});
+		race.trucks.forEach((truck, index) => {
+			const at = frames * moment + grid.length * POSE + index * TRUCK;
+			view.setUint16(at, truck.x * 256, true);
+			view.setUint16(at + 2, truck.y * 256, true);
+			view.setUint16(at + 4, heading(truck.angle), true);
+			view.setUint8(at + 6, (truck.busy ? BUSY : 0) | (truck.towing + 1));
+			view.setUint8(at + 7, truck.gate + 1);
 		});
 		frames++;
 	};
@@ -100,7 +135,8 @@ export function record(seed: number, grid: Entry[]): Recording {
 		frames,
 		grid: grid.map((entry) => entry.id),
 		events,
-		poses: new Uint8Array(view.buffer, 0, frames * grid.length * POSE)
+		trucks: race.trucks.length,
+		poses: new Uint8Array(view.buffer, 0, frames * moment)
 	};
 }
 
@@ -122,10 +158,12 @@ export function unpack(bytes: Uint8Array): Recording {
 }
 
 /**
- * Plays a recording back. `seek` moves the cars to how they were at a race
- * time and returns what happened since the time it was last at, so stepping
- * forward a little each frame yields every event once. Seeking backwards
- * returns nothing. `gap` is the time between two cars as it now stands.
+ * Plays a recording back. `seek` moves the cars and the trucks to how they
+ * were at a race time and returns what happened since the time it was last
+ * at, so stepping forward a little each frame yields every event once.
+ * Seeking backwards returns nothing. `gap` is the time between two cars as it
+ * now stands, `flag` the flag that is flying, `extra` how many laps have been
+ * ended under caution, which do not count, and `time` the race time it is at.
  */
 export function createReplay(recording: Recording, roster: Entry[]) {
 	const { rate, frames, grid, events, poses } = recording;
@@ -147,7 +185,16 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			finishTime: 0
 		})
 	);
+	// one that was never called out stays parked
+	const trucks = HOMES.map(
+		(home): ReplayTruck => ({ ...parked(home), busy: false, towing: -1, gate: -1 })
+	);
+	const recorded = recording.trucks ?? 0;
+	const moment = grid.length * POSE + recorded * TRUCK;
 	const duration = (frames - 1) / rate;
+	let flag: Flag = 'green';
+	/** Laps ended under caution so far, which the race is longer by. */
+	let extra = 0;
 	let last = -1;
 	let next = 0;
 
@@ -160,6 +207,8 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 				car.damage = car.bestLap = car.finishTime = 0;
 				car.retired = false;
 			}
+			flag = 'green';
+			extra = 0;
 			next = 0;
 		}
 		const from = next;
@@ -167,13 +216,18 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		for (; next < events.length && events[next].time <= time + 0.001; next++) {
 			const event = events[next];
 			const car = cars[event.car];
-			if (event.kind === 'hit') {
+			if (event.kind === 'caution' || event.kind === 'green') {
+				flag = event.kind === 'green' ? 'green' : 'yellow';
+			} else if (event.kind === 'again') {
+				extra++;
+			} else if (event.kind === 'hit') {
 				car.damage = event.damage;
 				event.hull?.forEach((moved, k) => (car.hull[k] = HULL[k] + moved * DENT));
 			} else if (event.kind === 'lap') {
 				if (!car.bestLap || event.lap < car.bestLap) car.bestLap = event.lap;
 			} else if (event.kind === 'finish') {
 				car.finishTime = event.time;
+				flag = 'checkered';
 			} else {
 				car.retired = true;
 			}
@@ -184,21 +238,35 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		// between the two recorded moments either side of this time
 		const frame = Math.min(frames - 2, Math.floor(time * rate));
 		const t = time * rate - frame;
+		/** The 16 bits at byte `a` of this moment, on their way to those of the next. */
+		const between = (a: number) =>
+			view.getUint16(a, true) * (1 - t) + view.getUint16(a + moment, true) * t;
+		/** The same for a heading, the short way round from the one to the next. */
+		const facing = (a: number) => {
+			const heading = view.getUint16(a, true);
+			const turned = ((view.getUint16(a + moment, true) - heading + 98304) % 65536) - 32768;
+			return ((heading + turned * t) / 65536) * 2 * Math.PI;
+		};
 		cars.forEach((car, index) => {
-			const a = (frame * grid.length + index) * POSE;
-			const b = a + grid.length * POSE;
-			const between = (at: number) =>
-				view.getUint16(a + at, true) * (1 - t) + view.getUint16(b + at, true) * t;
-			car.x = between(0) / 256;
-			car.y = between(2) / 256;
-			// the short way round from one heading to the next
-			const heading = view.getUint16(a + 4, true);
-			const turned = ((view.getUint16(b + 4, true) - heading + 98304) % 65536) - 32768;
-			car.angle = ((heading + turned * t) / 65536) * 2 * Math.PI;
-			car.progress = between(6) / 20 - 100;
+			const a = frame * moment + index * POSE;
+			const b = a + moment;
+			car.x = between(a) / 256;
+			car.y = between(a + 2) / 256;
+			car.angle = facing(a + 4);
+			car.progress = between(a + 6) / 20 - 100;
 			car.laps = Math.floor(car.progress / TRACK.length);
 			car.speed = (view.getInt8(a + 8) * (1 - t) + view.getInt8(b + 8) * t) / 2;
 			car.slip = (view.getUint8(a + 9) * (1 - t) + view.getUint8(b + 9) * t) / 10;
+		});
+		trucks.slice(0, recorded).forEach((truck, index) => {
+			const a = frame * moment + grid.length * POSE + index * TRUCK;
+			truck.x = between(a) / 256;
+			truck.y = between(a + 2) / 256;
+			truck.angle = facing(a + 4);
+			const doing = view.getUint8(a + 6);
+			truck.busy = doing >= BUSY;
+			truck.towing = (doing & (BUSY - 1)) - 1;
+			truck.gate = view.getUint8(a + 7) - 1;
 		});
 		return passed;
 	}
@@ -209,8 +277,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 	 * there, as on the grid, where it started further up the road.
 	 */
 	function gap(behind: number, ahead: number): number | null {
-		const stored = (frame: number) =>
-			view.getUint16((frame * grid.length + ahead) * POSE + 6, true);
+		const stored = (frame: number) => view.getUint16(frame * moment + ahead * POSE + 6, true);
 		const target = (cars[behind].progress + 100) * 20;
 		// the first moment recorded at which the car ahead had come this far
 		let from = 0;
@@ -227,5 +294,20 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 	}
 
 	seek(0);
-	return { duration, cars, seek, gap };
+	return {
+		duration,
+		cars,
+		trucks,
+		seek,
+		gap,
+		get flag() {
+			return flag;
+		},
+		get time() {
+			return last;
+		},
+		get extra() {
+			return extra;
+		}
+	};
 }

@@ -11,7 +11,8 @@ import {
 } from '~/lib/race/recording';
 import { createRenderer } from '~/lib/race/render';
 import { ROSTER, type Entry } from '~/lib/race/roster';
-import { drawGrid, LAPS, LIGHTS, rank } from '~/lib/race/sim';
+import { drawGrid, LAPS, LIGHTS, rank, type Flag } from '~/lib/race/sim';
+import { FLAGS } from './shared';
 import { createSound, type Sound } from '~/lib/race/sound';
 
 // The race on its own, with nothing networked: pick a seed, and the whole
@@ -36,6 +37,8 @@ type View = {
 	/** Seconds into the recording, and how long it is. */
 	time: number;
 	duration: number;
+	/** The flag flying, once the lights have gone out. */
+	flag: Flag | null;
 	/** The recording's size once packed, in bytes. */
 	size: number;
 	/** How loud the sound is, in decibels, when it is on. */
@@ -47,7 +50,13 @@ type View = {
 const RATES = [1, 2, 4, 8];
 
 function describe(event: RecordedEvent, replay: Replay) {
-	const at = `${Math.max(0, event.time - LIGHTS).toFixed(1)} s  ${replay.cars[event.car].entry.name}`;
+	const when = `${Math.max(0, event.time - LIGHTS).toFixed(1)} s `;
+	if (event.kind === 'caution') {
+		return `${when} caution, ${event.by === 'wreck' ? 'for a wreck' : 'thrown by hand'}`;
+	}
+	if (event.kind === 'green') return `${when} green flag`;
+	if (event.kind === 'again') return `${when} lap ended under caution, to be run again`;
+	const at = `${when} ${replay.cars[event.car].entry.name}`;
 	if (event.kind === 'hit') return `${at} hit at ${(event.force * 3.6).toFixed(0)} km/h`;
 	return `${at} ${event.kind === 'retire' ? 'retired' : 'finished'}`;
 }
@@ -58,6 +67,7 @@ function read(recording: Recording, replay: Replay, time: number, size: number):
 	return {
 		time,
 		duration: replay.duration,
+		flag: time < LIGHTS ? null : replay.flag,
 		size,
 		log: recording.events
 			.filter((event) => event.time <= time && event.kind !== 'lap')
@@ -66,7 +76,7 @@ function read(recording: Recording, replay: Replay, time: number, size: number):
 		rows: order.map((car, place) => ({
 			entry: car.entry,
 			grid: replay.cars.indexOf(car) + 1,
-			lap: Math.min(LAPS, Math.max(1, car.laps + 1)),
+			lap: Math.min(LAPS, Math.max(1, car.laps + 1 - replay.extra)),
 			gap:
 				place === 0
 					? ''
@@ -85,6 +95,8 @@ function read(recording: Recording, replay: Replay, time: number, size: number):
 export default function Sandbox() {
 	const canvas = useRef<HTMLCanvasElement>(null);
 	const [seed, setSeed] = useState(1);
+	// the race times at which a caution has been thrown by hand
+	const [flags, setFlags] = useState<number[]>([]);
 	const [paused, setPaused] = useState(false);
 	const [rate, setRate] = useState(1);
 	const [show, setShow] = useState({ line: false, hulls: false });
@@ -92,7 +104,17 @@ export default function Sandbox() {
 	const [view, setView] = useState<View | null>(null);
 	// What the running loop reads each frame, so changing a control does not
 	// start the race again. `seekTo` and `stepOnce` are requests it clears.
-	const live = useRef({ paused, rate, show, seekTo: null as number | null, stepOnce: false });
+	// `time` is where the playback has got to, and `resume` where a race run
+	// again with one more caution in it picks up.
+	const live = useRef({
+		paused,
+		rate,
+		show,
+		seekTo: null as number | null,
+		stepOnce: false,
+		time: 0,
+		resume: 0
+	});
 	const audio = useRef<Sound | null>(null);
 	useEffect(() => {
 		live.current = { ...live.current, paused, rate, show };
@@ -111,10 +133,12 @@ export default function Sandbox() {
 
 	useEffect(() => {
 		const renderer = createRenderer(canvas.current!);
-		const recording = record(seed, drawGrid(seed, ROSTER));
+		const recording = record(seed, drawGrid(seed, ROSTER), flags);
 		const replay = createReplay(recording, ROSTER);
 		const size = pack(recording).length;
-		let time = 0;
+		let time = Math.min(live.current.resume, replay.duration);
+		live.current.resume = 0;
+		replay.seek(time);
 		let last = performance.now();
 		let shown = 0;
 		let frame = requestAnimationFrame(function tick(now) {
@@ -140,7 +164,11 @@ export default function Sandbox() {
 					audio.current?.event(event);
 				}
 			}
-			renderer.draw(replay.cars, moved, show);
+			live.current.time = time;
+			renderer.draw(replay.cars, moved, show, {
+				trucks: replay.trucks,
+				caution: replay.flag === 'yellow'
+			});
 			audio.current?.update(replay.cars, moved);
 			if (now - shown > 150) {
 				shown = now;
@@ -148,7 +176,13 @@ export default function Sandbox() {
 			}
 		});
 		return () => cancelAnimationFrame(frame);
-	}, [seed]);
+	}, [seed, flags]);
+
+	/** Another race altogether, with none of the cautions thrown in this one. */
+	const race = (next: number) => {
+		setFlags([]);
+		setSeed(next);
+	};
 
 	return (
 		<div className="mx-auto flex max-w-6xl flex-col gap-4">
@@ -173,6 +207,7 @@ export default function Sandbox() {
 					/>
 					<span className="w-40 text-right text-foreground/60">
 						{Math.max(0, view.time - LIGHTS).toFixed(1)} s
+						{view.flag && ` · ${FLAGS[view.flag].toLowerCase()}`}
 						{view.time >= view.duration ? ' · race over' : ''}
 					</span>
 				</div>
@@ -185,11 +220,22 @@ export default function Sandbox() {
 						type="number"
 						className="w-24"
 						value={seed}
-						onChange={(event) => setSeed(Number(event.target.value) || 0)}
+						onChange={(event) => race(Number(event.target.value) || 0)}
 					/>
 				</label>
-				<Button variant="outline" onClick={() => setSeed(seed + 1)}>
+				<Button variant="outline" onClick={() => race(seed + 1)}>
 					Next seed
+				</Button>
+				<Button
+					variant="outline"
+					disabled={view?.flag !== 'green'}
+					onClick={() => {
+						// the race is run again with a caution a moment from now, and picked up where it is
+						live.current.resume = live.current.time;
+						setFlags([...flags, live.current.time + 0.5]);
+					}}
+				>
+					Throw caution
 				</Button>
 				<Button
 					variant="outline"

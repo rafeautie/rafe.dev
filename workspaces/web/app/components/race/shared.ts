@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Market } from '~/lib/race/betting';
 import type { Bet } from '~/lib/race/room';
 import { ROSTER } from '~/lib/race/roster';
+import type { Flag } from '~/lib/race/sim';
 
 // What the pieces of the race UI have in common: how a bet and a number are
 // written, and the two small shapes Live hands down.
@@ -19,6 +20,20 @@ export type Running = {
 	cars: Record<string, { fraction: number; lap: number; retired: boolean; finished: boolean }>;
 	/** Whether any car has retired so far. */
 	anyOut: boolean;
+	/** The flag that is flying. */
+	flag: Flag;
+};
+
+/** What each flag is called where it is shown, and what it means, said in full. */
+export const FLAGS: Record<Flag, string> = {
+	green: 'Green',
+	yellow: 'Caution',
+	checkered: 'Finish'
+};
+export const FLAG_MEANS: Record<Flag, string> = {
+	green: 'Green flag: the race is on.',
+	yellow: 'Caution: the field is held in order behind the leader.',
+	checkered: 'Checkered flag: the race has been won.'
 };
 
 /** Whether a bet would win if the race ended now, where the running order says. */

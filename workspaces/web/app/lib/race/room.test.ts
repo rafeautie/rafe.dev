@@ -571,6 +571,58 @@ describe('the admin', () => {
 		expect(await room.adminVoid()).toBe('This race is over and paid out');
 	});
 
+	it(
+		'throws a caution in the race being run: the same race until then, another after',
+		SLOW,
+		async () => {
+			const room = await quick('admin caution');
+			const viewer = await watch(room);
+			await vi.waitFor(() => expect(viewer.states()).toHaveLength(1));
+			expect(await room.adminCaution()).toBe('No race is running');
+			await ring(room);
+			await vi.waitFor(() => expect(viewer.recordings).toHaveLength(1));
+			// the cars are still on the grid
+			expect(await room.adminCaution()).toBe('The race has not started');
+
+			// two and a half seconds in, the lights just out: nothing has happened yet
+			await runInDurableObject(room, (_, { storage }) => {
+				const state = storage.kv.get<RoomState>('state')!;
+				const startsAt = Date.now() - 2500;
+				const endsAt = state.endsAt - state.startsAt + startsAt;
+				storage.kv.put('state', { ...state, startsAt, endsAt });
+			});
+			expect((await room.adminView('')).loop.caution).toBe(false);
+			expect(await room.adminCaution()).toBeNull();
+			await vi.waitFor(() => expect(viewer.recordings).toHaveLength(2));
+			const [before, after] = viewer.recordings.map(unpack);
+			const thrown = after.events.find((event) => event.kind === 'caution')!;
+			expect(thrown).toMatchObject({ by: 'control', car: -1 });
+			// a second after it was asked for
+			expect(thrown.time).toBeGreaterThan(3.4);
+			expect(thrown.time).toBeLessThan(4.5);
+			const moment = after.poses.length / after.frames;
+			const until = Math.floor(thrown.time * after.rate) * moment;
+			expect(after.poses.subarray(0, until)).toEqual(before.poses.subarray(0, until));
+			expect(after.poses).not.toEqual(before.poses);
+			// the phase lasts as long as the race now does, and late arrivals get this one
+			const state = viewer.states().at(-1)!;
+			expect(state.phase).toBe('racing');
+			expect(state.endsAt - state.startsAt).toBeCloseTo(((after.frames - 1) / after.rate) * 1000);
+			const late = await watch(room);
+			await vi.waitFor(() => expect(late.recordings).toHaveLength(1));
+			expect(late.recordings[0]).toEqual(viewer.recordings[1]);
+			expect(await room.adminCaution()).toBe('A caution is already out');
+
+			// and it is settled as the race everyone saw
+			await ring(room);
+			await vi.waitFor(() => expect(viewer.states().at(-1)!.phase).toBe('results'));
+			const { races } = (await room.adminView('')).history;
+			expect(races[0].order).toEqual(viewer.states().at(-1)!.result!.order);
+			expect(races[0].order).toHaveLength(ROSTER.length);
+			expect(await room.adminCaution()).toBe('No race is running');
+		}
+	);
+
 	it('refuses settings that will not do', async () => {
 		const room = env.RACE_ROOM.getByName('admin bad settings');
 		const vixen = DEFAULT_SETTINGS.cars.vixen;

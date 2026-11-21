@@ -86,6 +86,11 @@ export const voidRace = createServerFn({ method: 'POST' }).handler(async () => {
 	return done(await room().adminVoid());
 });
 
+export const cautionRace = createServerFn({ method: 'POST' }).handler(async () => {
+	await requireToken();
+	return done(await room().adminCaution());
+});
+
 export const saveRaceSettings = createServerFn({ method: 'POST' })
 	.inputValidator((input: unknown) => {
 		const settings = checkSettings(object(input).settings);

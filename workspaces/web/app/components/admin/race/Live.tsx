@@ -99,6 +99,7 @@ function Status({ loop }: { loop: Loop }) {
 				<span suppressHydrationWarning>
 					{WAITING[loop.phase]}
 					{loop.phase !== 'idle' && ` · ${left}s left`}
+					{loop.caution && ' · under caution'}
 					{loop.paused && ' · stops after this race'}
 				</span>
 			}

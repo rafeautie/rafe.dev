@@ -5,9 +5,9 @@ import { HEIGHT, SCALE, WIDTH, type CarView } from '~/lib/race/render';
 import type { Bet, RoomState, Standing } from '~/lib/race/room';
 import { CONDITIONS, ROSTER, inCondition } from '~/lib/race/roster';
 import { STATS } from '~/lib/race/settings';
-import { LAPS, LIGHTS, rank } from '~/lib/race/sim';
+import { LAPS, LIGHTS, rank, type Flag } from '~/lib/race/sim';
 import { TRACK } from '~/lib/race/track';
-import { ASKS, SHORT, chips, entry, holding, label, signed } from './shared';
+import { ASKS, FLAGS, SHORT, chips, entry, holding, label, signed } from './shared';
 import type { Running, Selection, Tick } from './shared';
 
 // The broadcast graphics, drawn into the race's own frame in the race's own
@@ -308,6 +308,9 @@ const GOLD = hex('#ffd24a');
 const GOOD = hex('#6fdc7a');
 const BAD = hex('#ff6b61');
 const ALARM = hex('#c8382f');
+/** The caution flag, and the green one. */
+const FLAG = hex('#f7e135');
+const GO = hex('#27a84a');
 const BODY = Object.fromEntries(ROSTER.map((car) => [car.id, hex(car.color)]));
 
 const clock = (seconds: number) =>
@@ -345,11 +348,39 @@ export function createHud() {
 		p.fill(x, y, w, h, INK, 0.88);
 	}
 
-	/** The bar across the top of a panel: what it is on the left, a figure on the right. */
-	function head(p: Painter, { x, y, w }: Box, title: string, figure: string, alarm = false) {
-		p.fill(x, y, w, 15, alarm ? ALARM : PAPER);
-		p.text(x + 4, y + 4, title, alarm ? PAPER : INK);
-		p.right(x + w - 4, y + 4, figure, alarm ? PAPER : INK);
+	/**
+	 * The bar across the top of a panel: what it is on the left, a figure on
+	 * the right. With `alarm` it is red, or the yellow of the flag. With
+	 * `flying` it starts with that flag, as a small one: green, yellow, or
+	 * checked black and white.
+	 */
+	function head(
+		p: Painter,
+		{ x, y, w }: Box,
+		title: string,
+		figure: string,
+		alarm: boolean | 'caution' = false,
+		flying: Flag | null = null
+	) {
+		const ink = alarm === true ? PAPER : INK;
+		p.fill(x, y, w, 15, alarm === 'caution' ? FLAG : alarm ? ALARM : PAPER);
+		if (flying) {
+			p.fill(x + 3, y + 3, 14, 8, INK);
+			for (let square = 0; square < 18; square++) {
+				const [column, row] = [square % 6, Math.floor(square / 6)];
+				const colour =
+					flying === 'checkered'
+						? (column + row) & 1
+							? INK
+							: PAPER
+						: flying === 'green'
+							? GO
+							: FLAG;
+				p.fill(x + 4 + column * 2, y + 4 + row * 2, 2, 2, colour);
+			}
+		}
+		p.text(x + (flying ? 21 : 4), y + 4, title, ink);
+		p.right(x + w - 4, y + 4, figure, ink);
 	}
 
 	/** A car: its colour with its number on it. */
@@ -378,18 +409,32 @@ export function createHud() {
 		const phase = room?.phase;
 		const urgent = phase === 'betting' && left <= 10;
 		const leader = field ? rank(field)[0] : null;
-		const lap = leader ? Math.min(LAPS, Math.max(1, leader.laps + 1)) : 1;
+		// laps ended under caution are run again, so they are not counted here either
+		const extra = replay?.extra ?? 0;
+		const lap = leader ? Math.min(LAPS, Math.max(1, leader.laps + 1 - extra)) : 1;
 		if (!room) head(p, at, 'Connecting', '');
 		else if (phase === 'betting')
 			head(p, at, urgent ? 'Last call' : 'Bets open', clock(left), urgent);
-		else if (phase === 'racing') head(p, at, `Lap ${lap}/${LAPS}`, `Race ${room.round}`);
-		else if (phase === 'results') head(p, at, 'Result', clock(left));
+		else if (phase === 'racing' && replay && replay.time >= LIGHTS)
+			// the flag that is flying, and its name: a caution turns the whole bar yellow
+			head(
+				p,
+				at,
+				FLAGS[replay.flag],
+				`Lap ${lap}/${LAPS}`,
+				replay.flag === 'yellow' && 'caution',
+				replay.flag
+			);
+		else if (phase === 'racing') head(p, at, 'On the grid', `Race ${room.round}`);
+		else if (phase === 'results') head(p, at, 'Result', clock(left), false, 'checkered');
 		else head(p, at, 'Waiting', '');
 
 		// bet, race, result: each as long as it lasts, filled as far as it has got
 		const betting = room?.settings.bettingSeconds ?? 45;
 		const results = room?.settings.resultsSeconds ?? 15;
-		const raced = leader ? Math.max(0, Math.min(1, leader.progress / (TRACK.length * LAPS))) : 0;
+		const raced = leader
+			? Math.max(0, Math.min(1, leader.progress / TRACK.length / LAPS - extra / LAPS))
+			: 0;
 		const stretches = [
 			[
 				betting,
