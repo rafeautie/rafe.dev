@@ -18,6 +18,7 @@ import {
 	lateral,
 	nearest,
 	TRACK_IDS,
+	triangle,
 	type Track,
 	type TrackId
 } from './track';
@@ -135,10 +136,8 @@ describe.each(TRACK_IDS)('the service road on the %s', (id) => {
 
 	it('bends no tighter than a truck can steer', () => {
 		for (let sample = 0; sample < n; sample++) {
-			const [[ax, ay], [bx, by], [cx, cy]] = [-3, 0, 3].map((d) => place(sample + d, -RING));
-			const cross = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-			const sides =
-				Math.hypot(bx - ax, by - ay) * Math.hypot(cx - bx, cy - by) * Math.hypot(cx - ax, cy - ay);
+			const [a, b, c] = [-3, 0, 3].map((d) => place(sample + d, -RING));
+			const [cross, sides] = triangle(...a, ...b, ...c);
 			expect(sides / Math.abs(2 * cross || 1e-9)).toBeGreaterThan(TIGHTEST - 0.5);
 		}
 	});

@@ -7,7 +7,7 @@ import { createReplay, unpack, type Replay } from '~/lib/race/recording';
 import { createRenderer, type CarView } from '~/lib/race/render';
 import type { Bet, FromRoom, RoomState, Standing, ToRoom } from '~/lib/race/room';
 import { ROSTER } from '~/lib/race/roster';
-import { LAPS, createRace, rank } from '~/lib/race/sim';
+import { createRace, rank } from '~/lib/race/sim';
 import { createSound, type Sound } from '~/lib/race/sound';
 import { DEFAULT_SETTINGS } from '~/lib/race/settings';
 import { getTrack } from '~/lib/race/track';
@@ -207,17 +207,14 @@ export default function Live() {
 					lifted = now;
 					const order = rank(replay.cars);
 					// laps ended under caution are run again, so they are not counted
-					const { extra, track: raced } = replay;
+					const { extra, raced } = replay;
 					setRunning({
 						order: order.map((car) => car.entry.id),
 						cars: Object.fromEntries(
 							replay.cars.map((car) => [
 								car.entry.id,
 								{
-									fraction: Math.max(
-										0,
-										Math.min(1, car.progress / raced.length / LAPS - extra / LAPS)
-									),
+									fraction: raced(car),
 									lap: car.laps - extra,
 									retired: car.retired,
 									finished: car.finishTime > 0
@@ -232,12 +229,8 @@ export default function Live() {
 			const now = performance.now();
 			const dt = Math.min(0.1, (now - drawn) / 1000);
 			drawn = now;
-			renderer.draw(
-				cars,
-				moved,
-				{ line: false, hulls: false },
-				showing ? { trucks: showing.trucks, caution: showing.flag === 'yellow' } : undefined,
-				(painter) => paint.current?.(painter, cars, showing, dt)
+			renderer.draw(cars, moved, { line: false, hulls: false }, showing ?? undefined, (painter) =>
+				paint.current?.(painter, cars, showing, dt)
 			);
 			audio.current?.update(replay?.cars ?? [], track, moved);
 		});

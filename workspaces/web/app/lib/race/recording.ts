@@ -1,7 +1,17 @@
 import type { Entry } from './roster';
 import { serviceFor } from './service';
-import { createRace, DT, HULL, LIGHTS, TIME_CAP, type Flag, type RaceEvent } from './sim';
-import { getTrack, type Track, type TrackId } from './track';
+import {
+	createRace,
+	DT,
+	flown,
+	HULL,
+	LAPS,
+	LIGHTS,
+	TIME_CAP,
+	type Flag,
+	type RaceEvent
+} from './sim';
+import { clamp, getTrack, type Track, type TrackId } from './track';
 
 // A whole race, run ahead of time and written down so it can be played back
 // anywhere: where every car and tow truck was thirty times a second, and what
@@ -70,6 +80,12 @@ export type ReplayCar = {
 
 export type Replay = ReturnType<typeof createReplay>;
 
+/** The trucks as they stand when none is out: each parked in its garage. */
+export function standing(track: Track): ReplayTruck[] {
+	const { homes, parked } = serviceFor(track);
+	return homes.map((home) => ({ ...parked(home), busy: false, towing: -1, gate: -1 }));
+}
+
 // adding 0 turns the -0 that rounding can give into 0, which JSON would do anyway
 const round = (value: number, places = 0) => Math.round(value * 10 ** places) / 10 ** places + 0;
 
@@ -89,6 +105,8 @@ export function record(seed: number, grid: Entry[], track: Track, flags: number[
 	};
 	const events: RecordedEvent[] = [];
 	let frames = 0;
+	/** Whether any truck has been out of its garage. */
+	let called = false;
 
 	const write = () => {
 		race.cars.forEach((car, index) => {
@@ -107,6 +125,7 @@ export function record(seed: number, grid: Entry[], track: Track, flags: number[
 			view.setUint16(at + 4, heading(truck.angle), true);
 			view.setUint8(at + 6, (truck.busy ? BUSY : 0) | (truck.towing + 1));
 			view.setUint8(at + 7, truck.gate + 1);
+			called ||= truck.busy;
 		});
 		frames++;
 	};
@@ -133,14 +152,22 @@ export function record(seed: number, grid: Entry[], track: Track, flags: number[
 	}
 	write();
 
+	// Most races no truck goes out in, and they have no need of the trucks'
+	// share of every moment: it is left out, and they are shown parked.
+	const kept = called ? moment : grid.length * POSE;
+	const poses = new Uint8Array(frames * kept);
+	for (let frame = 0; frame < frames; frame++) {
+		poses.set(new Uint8Array(view.buffer, frame * moment, kept), frame * kept);
+	}
+
 	return {
 		track: track.id,
 		rate: 1 / (DT * EVERY),
 		frames,
 		grid: grid.map((entry) => entry.id),
 		events,
-		trucks: race.trucks.length,
-		poses: new Uint8Array(view.buffer, 0, frames * moment)
+		trucks: called ? race.trucks.length : 0,
+		poses
 	};
 }
 
@@ -168,7 +195,8 @@ export function unpack(bytes: Uint8Array): Recording {
  * at, so stepping forward a little each frame yields every event once.
  * Seeking backwards returns nothing. `gap` is the time between two cars as it
  * now stands, `flag` the flag that is flying, `extra` how many laps have been
- * ended under caution, which do not count, and `time` the race time it is at.
+ * ended under caution, `lap` and `raced` how far through the race a car is
+ * without them, and `time` the race time it is at.
  */
 export function createReplay(recording: Recording, roster: Entry[]) {
 	const { rate, frames, grid, events, poses } = recording;
@@ -192,10 +220,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		})
 	);
 	// one that was never called out stays parked
-	const { homes, parked } = serviceFor(track);
-	const trucks = homes.map(
-		(home): ReplayTruck => ({ ...parked(home), busy: false, towing: -1, gate: -1 })
-	);
+	const trucks = standing(track);
 	const recorded = recording.trucks ?? 0;
 	const moment = grid.length * POSE + recorded * TRUCK;
 	const duration = (frames - 1) / rate;
@@ -223,9 +248,8 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		for (; next < events.length && events[next].time <= time + 0.001; next++) {
 			const event = events[next];
 			const car = cars[event.car];
-			if (event.kind === 'caution' || event.kind === 'green') {
-				flag = event.kind === 'green' ? 'green' : 'yellow';
-			} else if (event.kind === 'again') {
+			flag = flown(flag, event.kind);
+			if (event.kind === 'again') {
 				extra++;
 			} else if (event.kind === 'hit') {
 				car.damage = event.damage;
@@ -234,8 +258,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 				if (!car.bestLap || event.lap < car.bestLap) car.bestLap = event.lap;
 			} else if (event.kind === 'finish') {
 				car.finishTime = event.time;
-				flag = 'checkered';
-			} else {
+			} else if (event.kind === 'retire') {
 				car.retired = true;
 			}
 		}
@@ -265,7 +288,8 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			car.speed = (view.getInt8(a + 8) * (1 - t) + view.getInt8(b + 8) * t) / 2;
 			car.slip = (view.getUint8(a + 9) * (1 - t) + view.getUint8(b + 9) * t) / 10;
 		});
-		trucks.slice(0, recorded).forEach((truck, index) => {
+		for (let index = 0; index < recorded; index++) {
+			const truck = trucks[index];
 			const a = frame * moment + grid.length * POSE + index * TRUCK;
 			truck.x = between(a) / 256;
 			truck.y = between(a + 2) / 256;
@@ -274,7 +298,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			truck.busy = doing >= BUSY;
 			truck.towing = (doing & (BUSY - 1)) - 1;
 			truck.gate = view.getUint8(a + 7) - 1;
-		});
+		}
 		return passed;
 	}
 
@@ -316,6 +340,10 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		},
 		get extra() {
 			return extra;
-		}
+		},
+		/** The lap of the race a car is on: one ended under caution is run again, so it is not counted. */
+		lap: (car: ReplayCar) => clamp(car.laps + 1 - extra, 1, LAPS),
+		/** How much of the race a car has run, 0 to 1, counted the same way. */
+		raced: (car: ReplayCar) => clamp(car.progress / track.length / LAPS - extra / LAPS, 0, 1)
 	};
 }

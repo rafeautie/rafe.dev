@@ -601,10 +601,17 @@ describe('the admin', () => {
 			// a second after it was asked for
 			expect(thrown.time).toBeGreaterThan(3.4);
 			expect(thrown.time).toBeLessThan(4.5);
-			const moment = after.poses.length / after.frames;
-			const until = Math.floor(thrown.time * after.rate) * moment;
-			expect(after.poses.subarray(0, until)).toEqual(before.poses.subarray(0, until));
-			expect(after.poses).not.toEqual(before.poses);
+			// The cars at each moment up to it, in both. A recording has the trucks
+			// in every moment too only if one went out, which need not be so of both.
+			const cars = (recording: typeof after, frames: number) => {
+				const moment = recording.poses.length / recording.frames;
+				return Array.from({ length: frames }, (_, frame) =>
+					recording.poses.subarray(frame * moment, frame * moment + recording.grid.length * 10)
+				);
+			};
+			const until = Math.floor(thrown.time * after.rate);
+			expect(cars(after, until)).toEqual(cars(before, until));
+			expect(cars(after, after.frames)).not.toEqual(cars(before, before.frames));
 			// the phase lasts as long as the race now does, and late arrivals get this one
 			const state = viewer.states().at(-1)!;
 			expect(state.phase).toBe('racing');
