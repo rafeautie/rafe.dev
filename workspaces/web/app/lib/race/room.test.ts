@@ -74,7 +74,10 @@ describe('the race room', () => {
 		await vi.waitFor(() => expect(first.states()).toHaveLength(1));
 		const [state] = first.states();
 		expect(state).toMatchObject({ round: 1, phase: 'betting', result: null });
-		expect([...state.grid].sort()).toEqual(ROSTER.map((entry) => entry.id).sort());
+		// as many cars as the settings ask for, each from the roster and none twice
+		expect(state.grid).toHaveLength(DEFAULT_SETTINGS.count);
+		expect(new Set(state.grid).size).toBe(state.grid.length);
+		for (const car of state.grid) expect(ROSTER.map((entry) => entry.id)).toContain(car);
 		expect(state.conditions).toHaveLength(state.grid.length);
 		expect(state.endsAt).toBeGreaterThanOrEqual(before + BETTING_MS);
 		expect(await runInDurableObject(room, (_, { storage }) => storage.getAlarm())).toBe(
@@ -564,7 +567,7 @@ describe('the admin', () => {
 			[1, true, 100, 100]
 		]);
 		// the one that was run has its result; the other never had one
-		expect(races[0].order).toHaveLength(ROSTER.length);
+		expect(races[0].order).toHaveLength(DEFAULT_SETTINGS.count);
 		expect(races[1].grid).toEqual([]);
 
 		await ring(room);
@@ -626,7 +629,7 @@ describe('the admin', () => {
 			await vi.waitFor(() => expect(viewer.states().at(-1)!.phase).toBe('results'));
 			const { races } = (await room.adminView('')).history;
 			expect(races[0].order).toEqual(viewer.states().at(-1)!.result!.order);
-			expect(races[0].order).toHaveLength(ROSTER.length);
+			expect(races[0].order).toHaveLength(DEFAULT_SETTINGS.count);
 			expect(await room.adminCaution()).toBe('No race is running');
 		}
 	);
@@ -637,6 +640,9 @@ describe('the admin', () => {
 		for (const bad of [
 			{ ...DEFAULT_SETTINGS, track: 'figure-eight' },
 			{ ...DEFAULT_SETTINGS, track: 'toString' },
+			{ ...DEFAULT_SETTINGS, count: 2 },
+			{ ...DEFAULT_SETTINGS, count: ROSTER.length + 1 },
+			{ ...DEFAULT_SETTINGS, count: 4.5 },
 			{ ...DEFAULT_SETTINGS, trials: 4 },
 			{ ...DEFAULT_SETTINGS, trials: 61 },
 			{ ...DEFAULT_SETTINGS, start: 10.5 },
@@ -663,6 +669,7 @@ describe('the admin', () => {
 		const tuned = {
 			...DEFAULT_SETTINGS,
 			track: 'circuit' as const,
+			count: 3,
 			cars: {
 				...DEFAULT_SETTINGS.cars,
 				vixen: { speed: 0.1, grip: 0.2, aggression: 0.3, reliability: 0.4 }
@@ -690,14 +697,21 @@ describe('the admin', () => {
 		const next = viewer.states()[3];
 		// pages are sent the tuned track, stats and money rules with the race
 		expect(next).toMatchObject({ round: 2, phase: 'betting', settings: tuned });
+		// three cars, and the markets are theirs: three to win, six pairs for the first two
+		expect(next.grid).toHaveLength(3);
+		expect(next.conditions).toHaveLength(3);
+		const { pools } = viewer.last('state');
+		expect(Object.keys(pools.win).sort()).toEqual([...next.grid].sort());
+		expect(Object.keys(pools.exacta)).toHaveLength(6);
 		expect(next.endsAt).toBeGreaterThanOrEqual(before + 20_000);
 		expect(next.endsAt).toBeLessThanOrEqual(Date.now() + 20_000);
 		for (const pool of Object.values(viewer.last('state').pools)) {
 			expect(Object.values(pool).reduce((sum, chips) => sum + chips, 0)).toBeCloseTo(600);
 		}
-		expect((await room.adminView('')).loop.grid.find((car) => car.car === 'vixen')).toMatchObject(
-			tuned.cars.vixen
-		);
+		// whichever three were drawn, each has the stats tuned for it
+		for (const car of (await room.adminView('')).loop.grid) {
+			expect(car).toMatchObject((tuned.cars as Record<string, object>)[car.car]);
+		}
 
 		const late = await watch(room, 'secret-of-the-newcomer');
 		await vi.waitFor(() => expect(late.all('you')).toHaveLength(1));
@@ -779,14 +793,17 @@ describe('the admin', () => {
 				resets: reset
 			});
 			expect(races.reduce((sum, race) => sum + race.net, 0)).toBe(totals.net);
-			expect(cars).toHaveLength(ROSTER.length);
+			// each race draws its field from the roster, so between them they may have run any of it
+			expect(cars.length).toBeGreaterThanOrEqual(DEFAULT_SETTINGS.count);
+			expect(cars.length).toBeLessThanOrEqual(ROSTER.length);
 			const sum = (key: 'wins' | 'podiums' | 'starts') =>
 				cars.reduce((total, car) => total + car[key], 0);
 			expect(sum('wins')).toBe(totals.run);
 			expect(sum('podiums')).toBe(3 * totals.run);
-			expect(sum('starts')).toBe(ROSTER.length * totals.run);
+			expect(sum('starts')).toBe(DEFAULT_SETTINGS.count * totals.run);
 			for (const car of cars) {
 				expect(car.winRate).toBeCloseTo(car.wins / car.starts);
+				expect(car.fair).toBeCloseTo(1 / DEFAULT_SETTINGS.count);
 				expect(car.averagePlace).toBeGreaterThanOrEqual(1);
 			}
 			expect(cars.find((car) => car.car === first.order[0])!.wins).toBeGreaterThanOrEqual(1);

@@ -138,7 +138,7 @@ export default function Sandbox() {
 	useEffect(() => {
 		const track = getTrack(trackId);
 		const renderer = createRenderer(canvas.current!, track);
-		const recording = record(seed, drawGrid(seed, ROSTER), track, flags);
+		const recording = record(seed, drawGrid(seed, ROSTER, DEFAULT_SETTINGS.count), track, flags);
 		const replay = createReplay(recording, ROSTER);
 		const size = pack(recording).length;
 		let time = Math.min(live.current.resume, replay.duration);
