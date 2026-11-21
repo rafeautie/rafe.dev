@@ -7,6 +7,7 @@ import { Input } from '~/components/ui/input';
 import { resetRaceSettings, saveRaceSettings } from '~/lib/race/admin';
 import { ROSTER } from '~/lib/race/roster';
 import { DEFAULT_SETTINGS, LIMITS, STATS, type Settings } from '~/lib/race/settings';
+import { getTrack, TRACK_IDS, trackName, WORLD_H, WORLD_W, type TrackId } from '~/lib/race/track';
 import { cn } from '~/lib/utils';
 import { Panel } from '~/components/admin/cards';
 import { Car, Table, Heading } from './parts';
@@ -14,13 +15,27 @@ import { NUMBER, PERCENT } from '~/lib/admin/format';
 import { cell, type Act, type View } from './format';
 
 // The numbers the game runs on, edited here and saved together, from the
-// next race on. They come in three kinds: the cars, which decide who wins;
+// next race on, and the track it is run on. They come in three kinds: the
+// cars, which decide who wins;
 // the money, which decides what winning is worth; and the timing of the loop.
 // Each car's record sits beside its stats, since that is what a change to
 // them is meant to move. The room checks everything again and says what is
 // wrong.
 
 type Key = keyof typeof LIMITS;
+
+/** A track's centre line, as an SVG path in its world's metres. */
+function outline(id: TrackId) {
+	const { n, x, y } = getTrack(id);
+	let path = '';
+	for (let i = 0; i < n; i += 3) path += `${i ? 'L' : 'M'}${x[i].toFixed(1)} ${y[i].toFixed(1)}`;
+	return `${path}Z`;
+}
+const OUTLINES = new Map<TrackId, string>();
+const outlineOf = (id: TrackId) => {
+	if (!OUTLINES.has(id)) OUTLINES.set(id, outline(id));
+	return OUTLINES.get(id)!;
+};
 
 const GROUPS: { title: string; description: string; fields: [Key, string][] }[] = [
 	{
@@ -72,6 +87,44 @@ export const Tuning = memo(function Tuning({
 	return (
 		<div className="@container flex flex-col gap-4">
 			<Heading>tuning</Heading>
+			<Panel title="track" description="where the races are run">
+				<div className="grid grid-cols-2 gap-3 @2xl:grid-cols-4">
+					{TRACK_IDS.map((id) => {
+						const chosen = draft.track === id;
+						return (
+							<button
+								key={id}
+								type="button"
+								aria-pressed={chosen}
+								onClick={() => setDraft({ ...draft, track: id })}
+								className={cn(
+									'flex flex-col gap-2 rounded-md border p-2 text-left transition-colors',
+									chosen
+										? 'border-foreground bg-foreground/5'
+										: 'border-foreground/15 text-foreground/60 hover:border-foreground/40'
+								)}
+							>
+								<svg viewBox={`0 0 ${WORLD_W} ${WORLD_H}`} className="w-full" aria-hidden>
+									<path
+										d={outlineOf(id)}
+										fill="none"
+										stroke="currentColor"
+										strokeWidth={9}
+										strokeLinejoin="round"
+										opacity={chosen ? 0.9 : 0.5}
+									/>
+								</svg>
+								<span className="flex items-baseline justify-between gap-2">
+									<span className={cn(chosen && 'text-foreground')}>{trackName(id)}</span>
+									{id === DEFAULT_SETTINGS.track && (
+										<span className="text-foreground/50">default</span>
+									)}
+								</span>
+							</button>
+						);
+					})}
+				</div>
+			</Panel>
 			<Panel title="cars" description="stats from 0 to 1, and how each car has done" flush>
 				<Table head={['car', ...STATS, 'wins']}>
 					{ROSTER.map((car) => {

@@ -1,23 +1,18 @@
 import { createPainter, hex, mix, type Painter } from './pixels';
 import { standing, type ReplayTruck } from './recording';
-import {
-	GARAGE,
-	GATES,
-	HALF_LANE,
-	HOMES,
-	NEARSIDE,
-	RING,
-	SLIP,
-	TRUCK,
-	layby,
-	parked,
-	place,
-	route,
-	type Route
-} from './service';
+import { GARAGE, HALF_LANE, NEARSIDE, RING, SLIP, TRUCK, serviceFor, type Route } from './service';
 import type { Car, Flag, RaceEvent } from './sim';
 import { HULL } from './sim';
-import { HALF_CORRIDOR, HALF_ROAD, TRACK, WORLD_H, WORLD_W, lateral, nearest } from './track';
+import {
+	HALF_CORRIDOR,
+	HALF_ROAD,
+	WORLD_H,
+	WORLD_W,
+	lateral,
+	nearest,
+	type Track,
+	type TrackId
+} from './track';
 
 // Draws the race as pixel art. Everything is plotted pixel by pixel into one
 // small frame (4 px to the metre) that is scaled up with hard edges; nothing
@@ -48,8 +43,8 @@ export type CarView = Pick<
 /** What the renderer needs to know besides the cars: the trucks, and the flag that is flying. A replay is one. */
 export type Service = { trucks: ReplayTruck[]; flag: Flag };
 
-/** Nothing happening: every truck in its garage, no caution. */
-export const STANDING_BY: Service = { trucks: standing(), flag: 'green' };
+/** Nothing happening on a track: every truck in its garage, no caution. */
+const standingBy = (track: Track): Service => ({ trucks: standing(track), flag: 'green' });
 
 /** A caution lamp stands on the wall this far before its gate. */
 const LAMP_BEFORE = 6;
@@ -117,13 +112,28 @@ function grass(px: number, py: number) {
 	return GRASS[((px + py) >> 5) & 1][grain(px, py)];
 }
 
+type Painting = ReturnType<typeof paint>;
+
+const painted = new Map<TrackId, Painting>();
+
+/** A track from above, painted the first time it is shown. */
+function paintTrack(track: Track) {
+	let painting = painted.get(track.id);
+	if (!painting) {
+		painting = paint(track);
+		painted.set(track.id, painting);
+	}
+	return painting;
+}
+
 /**
- * The track from above, painted once, and what is drawn over it each frame:
+ * A track from above, and what is drawn over it each frame:
  * the barrier across each gate while it is shut, the caution lamp beside each
  * gate, and the garages' roofs, which the trucks park under.
  */
-function paintTrack() {
-	const { n, step, x, y, tx, ty, bend, length } = TRACK;
+function paint(track: Track) {
+	const { n, step, x, y, tx, ty, bend, length } = track;
+	const { homes, gates, layby, parked, place, route } = serviceFor(track);
 	// the nearest centre-line sample to every pixel near the track
 	const near = new Float32Array(WIDTH * HEIGHT).fill(Infinity);
 	const which = new Int16Array(WIDTH * HEIGHT);
@@ -154,7 +164,7 @@ function paintTrack() {
 			const i = which[k];
 			const wx = (px + 0.5) / SCALE;
 			const wy = (py + 0.5) / SCALE;
-			const across = near[k] === Infinity ? Infinity : Math.abs(lateral(wx, wy, i));
+			const across = near[k] === Infinity ? Infinity : Math.abs(lateral(track, wx, wy, i));
 			if (across > HALF_CORRIDOR + 0.8) {
 				ground[k] = grass(px, py);
 				surface[k] = GRASS_;
@@ -223,9 +233,9 @@ function paintTrack() {
 			[n, -RING]
 		])
 	);
-	for (const home of HOMES) pave(layby(home));
+	for (const home of homes) pave(layby(home));
 	// each gate: the way out onto the track and the way back off it, through the wall
-	const barriers = GATES.map((gate) => [
+	const barriers = gates.map((gate) => [
 		...pave(
 			route([
 				[gate - SLIP, -RING],
@@ -242,7 +252,7 @@ function paintTrack() {
 		)
 	]);
 	// a lamp on the wall before each gate, two pixels square
-	const lamps = GATES.flatMap((gate) => {
+	const lamps = gates.flatMap((gate) => {
 		const [lx, ly] = place(gate - LAMP_BEFORE, -HALF_CORRIDOR - 0.3).map((at) =>
 			Math.floor(at * SCALE)
 		);
@@ -252,7 +262,7 @@ function paintTrack() {
 	// The garages: a roof over the lay-by, lit from the top left like the
 	// cars, with its shadow on the ground beside it.
 	const roofs: Dab[] = [];
-	for (const home of HOMES) {
+	for (const home of homes) {
 		const { x: gx, y: gy, angle } = parked(home);
 		const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
 		const reach = Math.ceil(Math.hypot(GARAGE.length, GARAGE.width) * 0.5 * SCALE) + 2;
@@ -317,9 +327,12 @@ function edge(hull: Float32Array, x: number, y: number) {
 	return least;
 }
 
-export function createRenderer(canvas: HTMLCanvasElement) {
+/** Draws on `canvas`, starting with `track`; `setTrack` changes it. */
+export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 	const context = canvas.getContext('2d')!;
-	const { ground: track, barriers, lamps, roofs } = paintTrack();
+	let track = initial;
+	let painting = paintTrack(track);
+	let idle = standingBy(track);
 	// the frame's size, and where in it the track's corner is
 	let width = 0;
 	let height = 0;
@@ -353,7 +366,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 				const tx = px - ox;
 				const ty = py - oy;
 				const on = tx >= 0 && ty >= 0 && tx < WIDTH && ty < HEIGHT;
-				clean[py * width + px] = on ? track[ty * WIDTH + tx] : grass(tx, ty);
+				clean[py * width + px] = on ? painting.ground[ty * WIDTH + tx] : grass(tx, ty);
 			}
 		}
 		ground = clean.slice();
@@ -378,6 +391,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 		}
 	}
 	resize(WIDTH, HEIGHT, 0, 0, 0);
+
+	function reset() {
+		ground.set(clean);
+		worn.fill(0);
+		particles = [];
+	}
 
 	/** Puts the finished frame on the screen. */
 	function present() {
@@ -538,10 +557,16 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 		resize,
 
 		/** Wipes the marks and litter of the last race. */
-		reset() {
-			ground.set(clean);
-			worn.fill(0);
-			particles = [];
+		reset,
+
+		/** Shows another track, clean. */
+		setTrack(next: Track) {
+			if (next === track) return;
+			track = next;
+			painting = paintTrack(track);
+			idle = standingBy(track);
+			resize(width, height, ox, oy, zoom);
+			reset();
 		},
 
 		/** Shows something that happened: a knock throws sparks and bits of car. */
@@ -563,14 +588,15 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 			cars: CarView[],
 			dt: number,
 			show: { line: boolean; hulls: boolean },
-			service: Service = STANDING_BY,
+			service: Service = idle,
 			over?: (painter: Painter) => void
 		) {
 			// nothing new is thrown up while the race is paused
 			for (const car of dt > 0 ? cars : []) {
 				const cos = Math.cos(car.angle);
 				const sin = Math.sin(car.angle);
-				const offRoad = Math.abs(lateral(car.x, car.y, nearest(car.x, car.y))) > HALF_ROAD;
+				const offRoad =
+					Math.abs(lateral(track, car.x, car.y, nearest(track, car.x, car.y))) > HALF_ROAD;
 				// where the two rear tyres meet the road
 				const rear = [-0.85, 0.85].map((side) => ({
 					x: car.x - 1.3 * cos - side * sin,
@@ -603,11 +629,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 			frame.set(ground);
 			// A gate is shut, its barrier across it, unless it has been opened
 			// for a truck to go through. Under caution the lamps flash.
-			barriers.forEach((barrier, index) => {
+			painting.barriers.forEach((barrier, index) => {
 				if (!service.trucks.some((truck) => truck.gate === index)) barrier.forEach(dab);
 			});
 			const lit = service.flag === 'yellow' && Math.floor(performance.now() / 300) & 1;
-			for (const lamp of lamps) dab({ ...lamp, colour: lit ? LAMP : LAMP_OUT });
+			for (const lamp of painting.lamps) dab({ ...lamp, colour: lit ? LAMP : LAMP_OUT });
 			// a truck in its garage is under the roof, and need not be drawn at all
 			const trucks = service.trucks.filter((truck) => truck.busy);
 			for (const truck of trucks) haul(truck, true);
@@ -615,7 +641,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 			for (const truck of trucks) haul(truck, false);
 			for (const car of cars) plot(car, false);
 			for (const truck of trucks) if (cars[truck.towing]) cable(truck, cars[truck.towing]);
-			roofs.forEach(dab);
+			painting.roofs.forEach(dab);
 
 			for (const p of particles) {
 				p.life -= dt;
@@ -637,10 +663,10 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 			particles = particles.filter((p) => p.life > 0);
 
 			if (show.line) {
-				for (let i = 0; i < TRACK.n; i += 2) {
+				for (let i = 0; i < track.n; i += 2) {
 					const k = pixel(
-						TRACK.x[i] + TRACK.nx[i] * TRACK.line[i],
-						TRACK.y[i] + TRACK.ny[i] * TRACK.line[i]
+						track.x[i] + track.nx[i] * track.line[i],
+						track.y[i] + track.ny[i] * track.line[i]
 					);
 					if (k >= 0) frame[k] = DEBUG_LINE;
 				}

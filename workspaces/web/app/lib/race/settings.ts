@@ -1,6 +1,7 @@
 import { DEBT_CAP, SEED, START } from './betting';
 import { BETTING_MS, RESULTS_MS } from './room';
 import { ROSTER, type Entry } from './roster';
+import { isTrackId, type TrackId } from './track';
 
 // The numbers /admin/race can change without a deploy. The room keeps the
 // admin's choice in storage, and every race takes a copy of them when it
@@ -11,6 +12,8 @@ export const STATS = ['speed', 'grip', 'aggression', 'reliability'] as const;
 export type CarStats = Pick<Entry, (typeof STATS)[number]>;
 
 export type Settings = {
+	/** The track the races run on. */
+	track: TrackId;
 	/** Each car's stats by id, 0 to 1. */
 	cars: Record<string, CarStats>;
 	/** Chips the house spreads over each market's outcomes. */
@@ -26,6 +29,7 @@ export type Settings = {
 };
 
 export const DEFAULT_SETTINGS: Settings = {
+	track: 'oval',
 	cars: Object.fromEntries(
 		ROSTER.map(({ id, speed, grip, aggression, reliability }) => [
 			id,
@@ -63,6 +67,7 @@ const NAMES: Record<keyof typeof LIMITS, string> = {
 export function checkSettings(input: unknown): Settings | string {
 	if (!input || typeof input !== 'object') return 'Settings missing';
 	const given = input as Record<string, unknown>;
+	if (!isTrackId(given.track)) return 'No such track';
 	const cars: Record<string, CarStats> = {};
 	for (const { id, name } of ROSTER) {
 		const car = (given.cars as Record<string, Record<string, unknown>> | undefined)?.[id];
@@ -77,7 +82,7 @@ export function checkSettings(input: unknown): Settings | string {
 		}
 		cars[id] = stats;
 	}
-	const settings = { cars } as Settings;
+	const settings = { track: given.track, cars } as Settings;
 	for (const key of Object.keys(LIMITS) as (keyof typeof LIMITS)[]) {
 		const [low, high] = LIMITS[key];
 		const value = given[key];

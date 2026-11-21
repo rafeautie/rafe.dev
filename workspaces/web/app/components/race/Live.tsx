@@ -4,11 +4,13 @@ import { Game, type Paint } from './Game';
 import { MIN_H, MIN_W, fit, layout } from './hud';
 import { entry, type Running, type Tick } from './shared';
 import { createReplay, unpack, type Replay } from '~/lib/race/recording';
-import { STANDING_BY, createRenderer, type CarView } from '~/lib/race/render';
+import { createRenderer, type CarView } from '~/lib/race/render';
 import type { Bet, FromRoom, RoomState, Standing, ToRoom } from '~/lib/race/room';
 import { ROSTER } from '~/lib/race/roster';
 import { createRace, rank } from '~/lib/race/sim';
 import { createSound, type Sound } from '~/lib/race/sound';
+import { DEFAULT_SETTINGS } from '~/lib/race/settings';
+import { getTrack } from '~/lib/race/track';
 
 // The race everybody is watching. The page holds a socket to the race room
 // and shows whatever the room says is happening: the cars waiting on the
@@ -64,7 +66,9 @@ export default function Live() {
 	}, []);
 
 	useEffect(() => {
-		const renderer = createRenderer(canvas.current!);
+		// the track the room's races run on, once it has said which
+		let track = getTrack(DEFAULT_SETTINGS.track);
+		const renderer = createRenderer(canvas.current!, track);
 		let state: RoomState | null = null;
 		let replay: Replay | null = null;
 		// the cars sitting on the grid, shown until there is a race to show
@@ -145,11 +149,13 @@ export default function Live() {
 				}
 				state = message.state;
 				setPools(message.pools);
+				track = getTrack(state.settings.track);
+				renderer.setTrack(track);
 				if (state.phase === 'betting') {
 					replay = null;
 					setRunning(null);
 					renderer.reset();
-					waiting = createRace(0, state.grid.map(entry)).cars;
+					waiting = createRace(0, state.grid.map(entry), track).cars;
 					// the state is repeated during betting; only a new round clears the ticker
 					if (state.round !== ticked) {
 						setTicker([]);
@@ -223,10 +229,10 @@ export default function Live() {
 			const now = performance.now();
 			const dt = Math.min(0.1, (now - drawn) / 1000);
 			drawn = now;
-			renderer.draw(cars, moved, { line: false, hulls: false }, showing ?? STANDING_BY, (painter) =>
+			renderer.draw(cars, moved, { line: false, hulls: false }, showing ?? undefined, (painter) =>
 				paint.current?.(painter, cars, showing, dt)
 			);
-			audio.current?.update(replay?.cars ?? [], moved);
+			audio.current?.update(replay?.cars ?? [], track, moved);
 		});
 
 		return () => {
