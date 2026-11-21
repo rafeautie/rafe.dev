@@ -21,8 +21,10 @@ import {
 	SelectValue
 } from '~/components/ui/select';
 import { Switch } from '~/components/ui/switch';
+import { commitSubject } from '~/lib/admin/config';
+import { plural } from '~/lib/admin/format';
 import type { PostFields } from '~/lib/admin/frontmatter';
-import { readingMinutes, type PostStats } from '~/lib/admin/post-stats';
+import { postGaps, readingMinutes, type PostStats } from '~/lib/admin/post-stats';
 import { timeAgo } from '~/lib/admin/time';
 import type { Commit } from '~/lib/admin/types';
 import { cn } from '~/lib/utils';
@@ -39,7 +41,6 @@ export function StatusCard({
 	slug,
 	address,
 	stats,
-	gaps,
 	busy,
 	onDelete
 }: {
@@ -49,10 +50,10 @@ export function StatusCard({
 	slug: string | null;
 	address?: ReactNode;
 	stats: PostStats;
-	gaps: string[];
 	busy: boolean;
 	onDelete?: () => void;
 }) {
+	const gaps = postGaps(fields, stats);
 	return (
 		<Card size="sm">
 			<CardHeader>
@@ -114,7 +115,7 @@ export function StatusCard({
 				</Row>
 				<Row label="length">
 					<span className="text-foreground/60 tabular-nums">
-						{stats.words.toLocaleString('en-US')} {stats.words === 1 ? 'word' : 'words'}
+						{plural(stats.words, 'word')}
 						{stats.words > 0 && ` · ${readingMinutes(stats.words)} min`}
 					</span>
 				</Row>
@@ -335,6 +336,6 @@ export function VersionsCard({
 // messages all name the post, which this card is already about; the full
 // message shows on hover. Commits made outside the admin show as written.
 function whatChanged(message: string) {
-	const text = message.replace(/^content:\s*/, '');
+	const text = commitSubject(message);
 	return text.replace(/(?: of)? post ".*"$/, '') || text;
 }

@@ -25,7 +25,14 @@ import {
 } from '~/components/ui/sidebar';
 import { setWritingTheme, useWritingTheme } from '~/lib/writing-theme';
 import { cn } from '~/lib/utils';
-import { foldAway, sidebarFooter, sidebarItem, sidebarMenu, sidebarTop } from './sidebar-style';
+import {
+	foldAway,
+	PAGE_TRANSITION,
+	sidebarFooter,
+	sidebarItem,
+	sidebarMenu,
+	sidebarTop
+} from './sidebar-style';
 
 const ADMIN_PAGES = [
 	{ href: '/admin', label: 'overview', icon: HouseIcon },
@@ -34,12 +41,6 @@ const ADMIN_PAGES = [
 	{ href: '/admin/stats', label: 'stats', icon: ChartLineIcon },
 	{ href: '/admin/race', label: 'race', icon: FlagIcon }
 ] as const;
-
-// Moving between the admin's pages stays in the page (the sidebar, and whether
-// it is folded, carry over) and plays as a view transition of this type, which
-// styles/app.css times: the page crossfades while the sidebar holds still, and
-// a page's own sidebar (Subsections) slides out from under it or back.
-const PAGE_TRANSITION = { types: ['admin-page'] };
 
 // The admin's navigation: every page down the left, held in place while the
 // page scrolls, with the theme and signing out at the foot, drawn as the same

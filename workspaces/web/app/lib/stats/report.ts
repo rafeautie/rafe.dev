@@ -53,8 +53,8 @@ export type Visit = {
 
 export type Point = { at: number } & Record<Metric, number | null>;
 
-const DAY = 24 * 60 * 60 * 1000;
-const VISITOR = 'coalesce(visitor, session)';
+export const DAY = 24 * 60 * 60 * 1000;
+export const VISITOR = 'coalesce(visitor, session)';
 // the same match as `${VISITOR} = ?1`, in a form the indexes on visitor and
 // session can serve
 const IS_VISITOR = '(visitor = ?1 OR (visitor IS NULL AND session = ?1))';

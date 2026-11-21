@@ -18,8 +18,9 @@ import { deletePost, getPost, getPostVersions, savePost } from '~/lib/admin/api'
 import { rawUrl, SLUG_PATTERN, WRITING_DIR } from '~/lib/admin/config';
 import { preparePostImage, type Prepared } from '~/lib/admin/files';
 import { joinPost, type PostFields, readFields, splitPost } from '~/lib/admin/frontmatter';
+import { errorMessage } from '~/lib/admin/format';
 import { requireAdmin } from '~/lib/admin/guard';
-import { postGaps, postStats } from '~/lib/admin/post-stats';
+import { postStats } from '~/lib/admin/post-stats';
 import { today } from '~/lib/admin/time';
 import { clearUnsaved, readUnsaved, writeUnsaved } from '~/lib/admin/unsaved';
 
@@ -62,12 +63,6 @@ function Path({ slug, title }: { slug: string; title: string }) {
 	return (
 		<AdminHeader
 			path={[
-				<Link key="rafe" href="/">
-					rafe
-				</Link>,
-				<Link key="admin" href="/admin">
-					admin
-				</Link>,
 				<Link key="writing" href="/admin/writing">
 					writing
 				</Link>,
@@ -160,7 +155,6 @@ function PostForm({
 		recountTimer.current = setTimeout(() => setStats(postStats(current.current)), 400);
 	}
 	useEffect(() => () => clearTimeout(recountTimer.current), []);
-	const gaps = postGaps(fields, stats);
 
 	// a publish that brought the page here
 	useEffect(() => {
@@ -247,7 +241,7 @@ function PostForm({
 			setProblem(null);
 			clearUnsaved(storageKey);
 		} catch (error) {
-			setProblem(message(error));
+			setProblem(errorMessage(error));
 		}
 	}
 
@@ -268,7 +262,7 @@ function PostForm({
 				setUploads((previous) => new Map(previous).set(prepared.name, prepared));
 				paths.push(prepared.name);
 			} catch (error) {
-				setProblem(message(error));
+				setProblem(errorMessage(error));
 			}
 		}
 		return paths;
@@ -357,7 +351,7 @@ function PostForm({
 			});
 			await router.invalidate();
 		} catch (error) {
-			setProblem(message(error));
+			setProblem(errorMessage(error));
 		} finally {
 			setSaving(false);
 		}
@@ -371,7 +365,7 @@ function PostForm({
 			clearUnsaved(storageKey);
 			await router.navigate({ to: '/admin/writing' });
 		} catch (error) {
-			setProblem(message(error));
+			setProblem(errorMessage(error));
 			setSaving(false);
 		}
 	}
@@ -477,7 +471,6 @@ function PostForm({
 						setField={setField}
 						slug={isNew ? null : slug}
 						stats={stats}
-						gaps={gaps}
 						busy={saving}
 						onDelete={isNew ? undefined : () => setConfirm('delete')}
 						address={
@@ -551,8 +544,4 @@ function PostForm({
 			/>
 		</div>
 	);
-}
-
-function message(error: unknown) {
-	return error instanceof Error ? error.message : 'Something went wrong';
 }

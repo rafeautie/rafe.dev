@@ -15,14 +15,3 @@ export function dimensions(source: Source) {
 	const built = BUILT.get(source.file);
 	return built ? { width: built.picture.img.w, height: built.picture.img.h } : null;
 }
-
-const SHORT_DATE = new Intl.DateTimeFormat('en-US', {
-	month: 'short',
-	day: 'numeric',
-	year: 'numeric',
-	timeZone: 'UTC'
-});
-
-export function shortDate(date: string) {
-	return date ? SHORT_DATE.format(new Date(date)) : '';
-}

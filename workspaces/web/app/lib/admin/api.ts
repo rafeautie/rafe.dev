@@ -31,14 +31,6 @@ export type PhotoEntry = {
 	date: string;
 };
 
-export type PostSummary = {
-	slug: string;
-	title: string;
-	description: string;
-	date: string;
-	draft: boolean;
-};
-
 export type Upload = { name: string; base64: string };
 
 const DATE = /^(\d{4}-\d{2}-\d{2})?$/;
@@ -187,32 +179,6 @@ export const getBuild = createServerFn({ method: 'GET' })
 
 const postDir = (name: string) => `${WRITING_DIR}/${name}`;
 const postPath = (name: string) => `${postDir(name)}/index.md`;
-
-export const listPosts = createServerFn({ method: 'GET' }).handler(async () => {
-	const github = gitHub(await requireToken());
-	const { files } = await github.contentTree(await github.head());
-	const pattern = new RegExp(`^${WRITING_DIR}/([^/]+)/index\\.md$`);
-	const posts = await Promise.all(
-		[...files].flatMap(([path, sha]) => {
-			const match = path.match(pattern);
-			if (!match) return [];
-			return [
-				github.blobText(sha).then((source): PostSummary => {
-					const fields = readFields(splitPost(source).yaml);
-					return {
-						slug: match[1],
-						title: fields.title,
-						description: fields.description,
-						date: fields.date,
-						draft: fields.draft
-					};
-				})
-			];
-		})
-	);
-	// drafts first, then newest first, as /writing lists them
-	return posts.sort((a, b) => Number(b.draft) - Number(a.draft) || b.date.localeCompare(a.date));
-});
 
 // A post as it stands now, or as it was at an older commit. `sha` is always the
 // file's blob on the branch today, since publishing replaces that.

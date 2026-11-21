@@ -1,8 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { Link } from '~/components/Link';
 import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
-import { DATE, duration, NUMBER } from '~/components/admin/stats/format';
-import { NumberCard } from '~/components/admin/stats/Metrics';
+import { NUMBER } from '~/lib/admin/format';
+import { DATE, duration } from '~/components/admin/stats/format';
+import { StatCard } from '~/components/admin/cards';
 import { Ranking, StatsCard } from '~/components/admin/stats/Cards';
 import { TimeChart } from '~/components/admin/stats/TimeChart';
 import { VisitList } from '~/components/admin/stats/Visits';
@@ -27,12 +28,6 @@ function VisitorPage() {
 		<div className="mx-auto max-w-4xl">
 			<AdminHeader
 				path={[
-					<Link key="rafe" href="/">
-						rafe
-					</Link>,
-					<Link key="admin" href="/admin">
-						admin
-					</Link>,
 					<Link key="stats" href="/admin/stats">
 						stats
 					</Link>,
@@ -43,8 +38,7 @@ function VisitorPage() {
 				status={
 					visitor ? (
 						<span suppressHydrationWarning>
-							first seen {DATE.format(visitor.first)} · last seen{' '}
-							{timeAgo(new Date(visitor.last).toISOString())}
+							first seen {DATE.format(visitor.first)} · last seen {timeAgo(visitor.last)}
 							{visitor.anonymous && ' · not tracked, so this is one visit'}
 						</span>
 					) : (
@@ -57,10 +51,10 @@ function VisitorPage() {
 				// the widths are the column's own, as on /admin/stats
 				<div className="@container mt-10 flex flex-col gap-4">
 					<div className="grid grid-cols-2 gap-3 @xl:grid-cols-4">
-						<NumberCard label="visits" value={NUMBER.format(visitor.visits.length)} />
-						<NumberCard label="page views" value={NUMBER.format(visitor.views)} />
-						<NumberCard label="time reading" value={duration(visitor.engaged)} />
-						<NumberCard label="pages read" value={NUMBER.format(visitor.pages.length)} />
+						<StatCard label="visits" value={NUMBER.format(visitor.visits.length)} />
+						<StatCard label="page views" value={NUMBER.format(visitor.views)} />
+						<StatCard label="time reading" value={duration(visitor.engaged)} />
+						<StatCard label="pages read" value={NUMBER.format(visitor.pages.length)} />
 					</div>
 
 					<div className="grid gap-4 @2xl:grid-cols-5">

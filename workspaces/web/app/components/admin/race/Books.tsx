@@ -1,7 +1,9 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
 import { cn } from '~/lib/utils';
-import { Empty, Panel, Stat, Heading } from './parts';
-import { NUMBER, PERCENT, type View } from './format';
+import { Empty, Panel, StatCard } from '~/components/admin/cards';
+import { Heading } from './parts';
+import { NUMBER, PERCENT } from '~/lib/admin/format';
+import { type View } from './format';
 
 // The house's books: what has gone through it, what it kept, and what it gave
 // away to keep players playing; then race by race, so a run of losses (odds
@@ -15,20 +17,20 @@ export function Books({ history }: { history: History }) {
 		<div className="@container flex flex-col gap-4">
 			<Heading>books</Heading>
 			<div className="grid grid-cols-2 gap-4 @2xl:grid-cols-3">
-				<Stat label="races run" value={NUMBER.format(totals.run)} />
-				<Stat label="staked" value={NUMBER.format(totals.staked)} />
-				<Stat label="paid out" value={NUMBER.format(totals.paid)} />
-				<Stat
+				<StatCard label="races run" value={NUMBER.format(totals.run)} />
+				<StatCard label="staked" value={NUMBER.format(totals.staked)} />
+				<StatCard label="paid out" value={NUMBER.format(totals.paid)} />
+				<StatCard
 					label="house net"
 					value={NUMBER.format(totals.net)}
 					tone={totals.net < 0 ? 'bad' : undefined}
 				/>
-				<Stat
+				<StatCard
 					label="house margin"
 					value={totals.staked ? PERCENT.format(totals.net / totals.staked) : '–'}
 					hint="of every chip staked"
 				/>
-				<Stat
+				<StatCard
 					label="chips given"
 					value={NUMBER.format(totals.bankruptcies + totals.resets)}
 					hint={`${NUMBER.format(totals.bankruptcies)} bankrupt, ${NUMBER.format(totals.resets)} reset`}

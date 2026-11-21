@@ -44,7 +44,7 @@ function AdminLayout() {
 	useWritingTheme();
 	const { admin, sidebarOpen } = Route.useRouteContext();
 	const page = (
-		<div className="min-w-0 flex-1 px-6 py-8 sm:px-8 lg:px-12 lg:has-[[data-subsections]]:p-0">
+		<div className="flex-1 px-6 py-8 sm:px-8 lg:px-12 lg:has-[[data-subsections]]:p-0">
 			<Outlet />
 		</div>
 	);
@@ -59,7 +59,8 @@ function AdminLayout() {
 				className="text-base text-foreground"
 			>
 				<AdminSidebar />
-				<SidebarInset>{page}</SidebarInset>
+				{/* min-w-0: a wide table scrolls inside its card instead of pushing the page sideways */}
+				<SidebarInset className="min-w-0">{page}</SidebarInset>
 			</SidebarProvider>
 		</TooltipProvider>
 	);

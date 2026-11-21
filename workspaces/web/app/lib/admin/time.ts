@@ -1,6 +1,7 @@
 const RELATIVE = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
 const SHORT_DATE = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
 const LONG_DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeZone: 'UTC' });
+const MEDIUM_DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' });
 
 const STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
 	['minute', 60],
@@ -8,9 +9,10 @@ const STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
 	['day', 24]
 ];
 
-// "just now", "5 minutes ago", "yesterday", then "Oct 19".
-export function timeAgo(iso: string, now = Date.now()) {
-	const then = Date.parse(iso);
+// "just now", "5 minutes ago", "yesterday", then "Oct 19". Takes an ISO
+// string (GitHub's dates) or a timestamp in ms (the stats' and the race's).
+export function timeAgo(at: string | number, now = Date.now()) {
+	const then = typeof at === 'number' ? at : Date.parse(at);
 	if (Number.isNaN(then)) return '';
 	let value = (now - then) / 1000;
 	if (value < 60) return 'just now';
@@ -28,6 +30,12 @@ export function timeAgo(iso: string, now = Date.now()) {
 // A post date (yyyy-mm-dd) as /writing shows it.
 export function formatPostDate(date: string) {
 	return date ? LONG_DATE.format(new Date(date)) : '';
+}
+
+// A post or photo date (yyyy-mm-dd) as Sep 27, 2026, where the admin has less
+// room than /writing. A date is a day, not a moment, so it is read as UTC.
+export function shortDate(date: string) {
+	return date ? MEDIUM_DATE.format(new Date(date)) : '';
 }
 
 // Today in the reader's own calendar, yyyy-mm-dd.

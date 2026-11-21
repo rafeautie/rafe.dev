@@ -1,7 +1,7 @@
 import { TrendingDownIcon, TrendingUpIcon } from 'lucide-react';
 import { Ranking } from '~/components/admin/stats/Cards';
 import { TimeChart } from '~/components/admin/stats/TimeChart';
-import { NUMBER } from '~/components/admin/stats/format';
+import { NUMBER, PERCENT } from '~/lib/admin/format';
 import type { getVisitsSummary } from '~/lib/admin/overview';
 import { cn } from '~/lib/utils';
 import { Area, Figure, type Loaded, SubLead } from './Area';
@@ -11,7 +11,6 @@ import { Area, Figure, type Loaded, SubLead } from './Area';
 
 type Visits = Awaited<ReturnType<typeof getVisitsSummary>>;
 
-const PERCENT = new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 0 });
 const count = (value: number | null) => (value === null ? '–' : NUMBER.format(value));
 
 export function TrafficCard({ loaded, className }: { loaded: Loaded<Visits>; className?: string }) {

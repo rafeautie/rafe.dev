@@ -1,5 +1,6 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
-import { DAYS, hourLabel, NUMBER } from './format';
+import { NUMBER } from '~/lib/admin/format';
+import { DAYS, hourLabel } from './format';
 
 // When people visit: visitors in each hour of each day of the week, darker
 // for more, so the busy times stand out.

@@ -1,8 +1,7 @@
 import { arrayMove } from '@dnd-kit/sortable';
 import { createFileRoute, useRouter } from '@tanstack/react-router';
 import { Columns2Icon, Columns3Icon, RectangleVerticalIcon } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Link } from '~/components/Link';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AdminHeader, ControlsRail, ProblemBadge } from '~/components/admin/AdminHeader';
 import { BuildBadge, useBuildWatch } from '~/components/admin/BuildStatus';
 import { ConfirmDialog } from '~/components/admin/ConfirmDialog';
@@ -27,6 +26,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group';
 import { getPhotos, getPhotoVersions, type PhotoEntry, savePhotos } from '~/lib/admin/api';
 import { preparePhoto, type Prepared } from '~/lib/admin/files';
+import { errorMessage } from '~/lib/admin/format';
 import { requireAdmin } from '~/lib/admin/guard';
 import { toPhotoFile } from '~/lib/admin/jpeg';
 import { describeChanges, photoChanges } from '~/lib/admin/photo-changes';
@@ -148,7 +148,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 			setProblem(null);
 			clearUnsaved(STORAGE_KEY);
 		} catch (error) {
-			setProblem(message(error));
+			setProblem(errorMessage(error));
 		}
 	}
 
@@ -174,7 +174,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 				setUploads(nextUploads);
 				update(next, nextUploads);
 			} catch (error) {
-				setProblem(message(error));
+				setProblem(errorMessage(error));
 			} finally {
 				setPreparing((count) => count - 1);
 			}
@@ -234,13 +234,14 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 			await router.navigate({ to: '/admin/photos', search: { built: commit }, replace: true });
 			await router.invalidate();
 		} catch (error) {
-			setProblem(message(error));
+			setProblem(errorMessage(error));
 		} finally {
 			setSaving(false);
 		}
 	}
 
-	const changes = photoChanges(loaded.photos, photos);
+	// worked out again only when the photos change, not on every key typed in a caption
+	const changes = useMemo(() => photoChanges(loaded.photos, photos), [loaded.photos, photos]);
 	const summary = describeChanges(changes);
 	const source = (file: string) => ({ file, upload: uploads.get(file), ref: viewRef });
 	const index = photos.findIndex((photo) => photo.file === selected);
@@ -282,17 +283,7 @@ function PhotosEditor({ loaded }: { loaded: Loaded }) {
 				add([...event.dataTransfer.files]);
 			}}
 		>
-			<AdminHeader
-				path={[
-					<Link key="rafe" href="/">
-						rafe
-					</Link>,
-					<Link key="admin" href="/admin">
-						admin
-					</Link>,
-					'photos'
-				]}
-			/>
+			<AdminHeader path={['photos']} />
 			<ControlsRail
 				status={
 					<>
@@ -436,8 +427,4 @@ function useWiderThan(width: number) {
 		return () => observer.disconnect();
 	}, [element, width]);
 	return [setElement, wider] as const;
-}
-
-function message(error: unknown) {
-	return error instanceof Error ? error.message : 'Something went wrong';
 }

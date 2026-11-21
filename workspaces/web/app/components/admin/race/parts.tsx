@@ -1,76 +1,10 @@
 import type { ReactNode } from 'react';
-import {
-	Card,
-	CardAction,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle
-} from '~/components/ui/card';
 import { carColor, carName } from './format';
 import { cn } from '~/lib/utils';
 
-// The pieces /admin/race's sections are built from: a card with a heading, a
-// figure, a table that scrolls inside its card, and a car as the game shows it.
-
-export function Panel({
-	title,
-	description,
-	action,
-	flush = false,
-	className,
-	children
-}: {
-	title: ReactNode;
-	description?: ReactNode;
-	action?: ReactNode;
-	/** For a table, which runs to the card's edges. */
-	flush?: boolean;
-	className?: string;
-	children: ReactNode;
-}) {
-	return (
-		<Card className={className}>
-			<CardHeader>
-				<CardTitle>{title}</CardTitle>
-				{description && <CardDescription>{description}</CardDescription>}
-				{action && <CardAction>{action}</CardAction>}
-			</CardHeader>
-			<CardContent className={cn(flush && 'px-0 group-data-[size=sm]/card:px-0')}>
-				{children}
-			</CardContent>
-		</Card>
-	);
-}
-
-export function Stat({
-	label,
-	value,
-	hint,
-	tone
-}: {
-	label: ReactNode;
-	value: ReactNode;
-	hint?: ReactNode;
-	tone?: 'bad';
-}) {
-	return (
-		<Card size="sm">
-			<CardContent className="flex flex-col gap-1">
-				<span className="text-foreground/50">{label}</span>
-				<span
-					className={cn(
-						'text-2xl font-medium tracking-tight tabular-nums',
-						tone === 'bad' && 'text-destructive'
-					)}
-				>
-					{value}
-				</span>
-				{hint && <span className="text-foreground/50">{hint}</span>}
-			</CardContent>
-		</Card>
-	);
-}
+// The pieces /admin/race's sections are built from, beside the shared cards
+// (components/admin/cards): a table that scrolls inside its card, a car as
+// the game shows it, and a heading for each section when they stack.
 
 // a table that scrolls sideways inside its card rather than the page
 export function Table({
@@ -120,10 +54,6 @@ export function Car({ id, name = true }: { id: string; name?: boolean }) {
 			{name && carName(id)}
 		</span>
 	);
-}
-
-export function Empty({ children }: { children: ReactNode }) {
-	return <p className="text-foreground/50">{children}</p>;
 }
 
 // Below lg the sections stack with no sidebar to name them, so each names itself.

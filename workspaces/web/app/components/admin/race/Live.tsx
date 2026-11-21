@@ -1,11 +1,14 @@
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { MARKET_NAMES } from '~/lib/race/betting';
-import { CONDITIONS } from '~/lib/race/roster';
+import { CONDITIONS, inCondition } from '~/lib/race/roster';
 import { STATS } from '~/lib/race/settings';
 import { cn } from '~/lib/utils';
-import { Car, Empty, Panel, Table, Heading } from './parts';
-import { cell, condition, number, NUMBER, time, type View } from './format';
+import { Empty, Panel } from '~/components/admin/cards';
+import { Car, Table, Heading } from './parts';
+import { NUMBER } from '~/lib/admin/format';
+import { timeAgo } from '~/lib/admin/time';
+import { cell, condition, number, type View } from './format';
 
 // What is happening right now, the part of the page that is watched rather
 // than worked: where the loop is and how long is left, who is there, what
@@ -31,7 +34,7 @@ export function Live({
 	view: View;
 	/** The room's time now, as near as this page knows it. */
 	clock: number;
-	go: (section: string) => void;
+	go: (section: 'results' | 'books') => void;
 }) {
 	const { loop, history } = view;
 	const last = history.races[0];
@@ -48,7 +51,7 @@ export function Live({
 			<div className="grid gap-4 @2xl:grid-cols-2">
 				<Panel
 					title="last race"
-					description={last ? `race ${last.round} · ${time(last.started)}` : undefined}
+					description={last ? `race ${last.round} · ${timeAgo(last.started)}` : undefined}
 					action={
 						<Button variant="ghost" size="sm" onClick={() => go('results')}>
 							Results
@@ -67,23 +70,12 @@ export function Live({
 					}
 				>
 					<dl className="grid grid-cols-2 gap-4">
-						<div>
-							<dt className="text-foreground/50">net</dt>
-							<dd
-								className={cn(
-									'text-xl font-medium tabular-nums',
-									history.totals.net < 0 && 'text-destructive'
-								)}
-							>
-								{NUMBER.format(history.totals.net)}
-							</dd>
-						</div>
-						<div>
-							<dt className="text-foreground/50">staked</dt>
-							<dd className="text-xl font-medium tabular-nums">
-								{NUMBER.format(history.totals.staked)}
-							</dd>
-						</div>
+						<Figure
+							label="net"
+							value={NUMBER.format(history.totals.net)}
+							tone={history.totals.net < 0 ? 'bad' : undefined}
+						/>
+						<Figure label="staked" value={NUMBER.format(history.totals.staked)} />
 					</dl>
 				</Panel>
 			</div>
@@ -157,11 +149,13 @@ function Status({ loop, clock }: { loop: Loop; clock: number }) {
 	);
 }
 
-function Figure({ label, value }: { label: string; value: string }) {
+function Figure({ label, value, tone }: { label: string; value: string; tone?: 'bad' }) {
 	return (
 		<div>
 			<dt className="text-foreground/50">{label}</dt>
-			<dd className="text-xl font-medium tabular-nums">{value}</dd>
+			<dd className={cn('text-xl font-medium tabular-nums', tone === 'bad' && 'text-destructive')}>
+				{value}
+			</dd>
 		</div>
 	);
 }
@@ -175,10 +169,8 @@ function Grid({ loop }: { loop: Loop }) {
 			>
 				{loop.grid.map((car, slot) => {
 					const changes = CONDITIONS[car.condition];
-					// the stats this race is run on, the condition's nudge included (roster.ts)
-					const raced = changes?.stat
-						? { ...car, [changes.stat]: Math.max(0, Math.min(1, car[changes.stat] + changes.by)) }
-						: car;
+					// the stats this race is run on, the condition's nudge included
+					const raced = inCondition(car, car.condition);
 					return (
 						<tr key={car.car}>
 							<td className={cn(cell, 'text-foreground/50')}>{slot + 1}</td>

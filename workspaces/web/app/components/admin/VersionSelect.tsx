@@ -6,6 +6,7 @@ import {
 	SelectValue
 } from '~/components/ui/select';
 import type { Commit } from '~/lib/admin/types';
+import { commitSubject } from '~/lib/admin/config';
 import { timeAgo } from '~/lib/admin/time';
 
 export const LATEST = 'latest';
@@ -26,8 +27,7 @@ export function VersionSelect({
 }) {
 	// the first is the version on the site now
 	const older = versions.slice(1);
-	const label = (commit: Commit) =>
-		`${timeAgo(commit.date)} · ${commit.message.replace(/^content:\s*/, '')}`;
+	const label = (commit: Commit) => `${timeAgo(commit.date)} · ${commitSubject(commit.message)}`;
 	const items = [
 		{ value: LATEST, label: 'Latest' },
 		...older.map((commit) => ({ value: commit.sha, label: label(commit) }))

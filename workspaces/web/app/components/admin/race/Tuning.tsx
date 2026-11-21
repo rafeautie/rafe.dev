@@ -8,8 +8,10 @@ import { resetRaceSettings, saveRaceSettings } from '~/lib/race/admin';
 import { ROSTER } from '~/lib/race/roster';
 import { DEFAULT_SETTINGS, LIMITS, STATS, type Settings } from '~/lib/race/settings';
 import { cn } from '~/lib/utils';
-import { Car, Panel, Table, Heading } from './parts';
-import { cell, NUMBER, PERCENT, type Act, type View } from './format';
+import { Panel } from '~/components/admin/cards';
+import { Car, Table, Heading } from './parts';
+import { NUMBER, PERCENT } from '~/lib/admin/format';
+import { cell, type Act, type View } from './format';
 
 // The numbers the game runs on, edited here and saved together, from the
 // next race on. They come in three kinds: the cars, which decide who wins;
