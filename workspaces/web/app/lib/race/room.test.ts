@@ -442,8 +442,14 @@ describe('the admin', () => {
 				}
 			]);
 			expect((await room.adminView('somebody else')).players).toEqual([]);
+			// whoever has the game open is listed apart, whatever is searched for, until they go
+			expect((await room.adminView('somebody else')).live).toMatchObject([
+				{ id, name: 'Renamed One' }
+			]);
 			// a player's secret stays in the room
 			expect(JSON.stringify(await room.adminView(''))).not.toContain('secret');
+			punter.socket.close(1000, 'gone');
+			await vi.waitFor(async () => expect((await room.adminView('')).live).toEqual([]));
 		}
 	);
 

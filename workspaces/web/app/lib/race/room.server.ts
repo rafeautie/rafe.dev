@@ -571,6 +571,7 @@ export class RaceRoom extends DurableObject<Env> {
 		return {
 			loop: this.loopView(),
 			players: this.playersView(search),
+			live: this.liveView(),
 			settings: {
 				settings: this.settings,
 				tuned: this.ctx.storage.kv.get('settings') !== undefined
@@ -723,13 +724,28 @@ export class RaceRoom extends DurableObject<Env> {
 	/** Players, most recently seen first. Their secret keys stay here. */
 	private playersView(search: string) {
 		const like = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
+		return this.playerRows("name LIKE ? ESCAPE '\\' ORDER BY seen DESC", like);
+	}
+
+	/** The players with the game open now, banned or not, richest first. */
+	private liveView() {
+		const ids = [...this.connected()];
+		if (ids.length === 0) return [];
+		return this.playerRows(
+			'id IN (SELECT value FROM json_each(?)) ORDER BY balance DESC',
+			JSON.stringify(ids)
+		);
+	}
+
+	/** Up to a hundred players as the admin page lists them: those `where` picks, in its order. */
+	private playerRows(where: string, value: string) {
 		return this.sql
 			.exec<PlayerRow & { seen: number; bets: number }>(
 				`SELECT id, name, balance, bankruptcies, banned, seen, COALESCE(placed.n, 0) AS bets
 				 FROM players LEFT JOIN (SELECT player, COUNT(*) AS n FROM bets GROUP BY player) AS placed
 				 ON placed.player = players.id
-				 WHERE name LIKE ? ESCAPE '\\' ORDER BY seen DESC LIMIT 100`,
-				like
+				 WHERE ${where} LIMIT 100`,
+				value
 			)
 			.toArray()
 			.map((row) => ({ ...row, banned: Boolean(row.banned) }));

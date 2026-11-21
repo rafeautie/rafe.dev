@@ -137,6 +137,7 @@ function RacePage() {
 					content: (
 						<Players
 							players={view.players}
+							live={view.live}
 							watching={loop.players}
 							clock={loop.now}
 							search={search}

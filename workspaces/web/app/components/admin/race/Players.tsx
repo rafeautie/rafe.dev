@@ -20,9 +20,10 @@ import { NUMBER } from '~/lib/admin/format';
 import { timeAgo } from '~/lib/admin/time';
 import { cell, number, type Act, type View } from './format';
 
-// Everyone who has played, most recently seen first, with what can be done to
-// each at the end of their row, which stays in view while a narrow table
-// scrolls sideways. Over it, how many are about and how the chips
+// The players with the game open now, and under them everyone who has played,
+// most recently seen first, each with what can be done to them at the end of
+// their row, which stays in view while a narrow table scrolls sideways. Over
+// them, how many are about and how the chips
 // are spread, which is where trouble (a run of bankruptcies, one player
 // hoarding) shows first. Those figures are of the players listed, so they
 // follow the search.
@@ -36,6 +37,7 @@ const DAY = 24 * 60 * 60 * 1000;
 
 export function Players({
 	players,
+	live,
 	watching,
 	clock,
 	search,
@@ -44,7 +46,9 @@ export function Players({
 	act
 }: {
 	players: Player[];
-	/** Players with the game open now. */
+	/** The players with the game open now, whatever is searched for. */
+	live: Player[];
+	/** How many that is, counting the ones a long list leaves out. */
 	watching: number;
 	/** The room's time at its latest answer: near enough to count today's players. */
 	clock: number;
@@ -62,6 +66,12 @@ export function Players({
 	};
 	const [renaming, setRenaming] = useState<Player | null>(null);
 	const [name, setName] = useState('');
+	const rename = (player: Player) => {
+		setName(player.name);
+		setRenaming(player);
+	};
+	const unban = (player: Player) =>
+		void act(() => banRacePlayer({ data: { id: player.id, banned: false } }));
 	const owing = players.filter((player) => player.balance < 0);
 	const debt = owing.length;
 	const today = players.filter((player) => clock - player.seen < DAY).length;
@@ -100,6 +110,19 @@ export function Players({
 				/>
 			</div>
 			<Panel
+				title="live players"
+				description={`${NUMBER.format(watching)} with the game open now, richest first`}
+				flush
+			>
+				{live.length ? (
+					<Roster players={live} busy={busy} rename={rename} ask={ask} unban={unban} />
+				) : (
+					<div className="px-4">
+						<Empty>Nobody has the game open.</Empty>
+					</div>
+				)}
+			</Panel>
+			<Panel
 				title="everyone who has played"
 				description={search ? `${summary} named like “${search}”` : summary}
 				action={
@@ -115,62 +138,7 @@ export function Players({
 				flush
 			>
 				{players.length ? (
-					<Table head={['name', 'chips', 'bets', 'bankrupt', 'last seen', '']} right={[1, 2, 3]}>
-						{players.map((player) => (
-							<tr key={player.id} className={cn(player.banned && 'text-foreground/50')}>
-								<td className={cell}>
-									{player.name}
-									<span className="ml-1.5 text-foreground/50">#{player.id}</span>
-									{player.banned && (
-										<Badge variant="destructive" className="ml-2">
-											Banned
-										</Badge>
-									)}
-								</td>
-								<td className={cn(number, player.balance < 0 && 'text-destructive')}>
-									{NUMBER.format(player.balance)}
-								</td>
-								<td className={number}>{NUMBER.format(player.bets)}</td>
-								<td className={number}>{player.bankruptcies || '–'}</td>
-								<td className={cn(cell, 'text-foreground/50')} suppressHydrationWarning>
-									{timeAgo(player.seen)}
-								</td>
-								<td className={cn(cell, 'sticky right-0 bg-card py-1 text-right')}>
-									<div className="inline-flex gap-0.5">
-										<Action
-											label={`Rename ${player.name}`}
-											disabled={busy}
-											onClick={() => {
-												setName(player.name);
-												setRenaming(player);
-											}}
-										>
-											<PencilIcon />
-										</Action>
-										<Action
-											label={`Reset ${player.name}’s chips`}
-											disabled={busy}
-											onClick={() => ask('reset', player)}
-										>
-											<RotateCcwIcon />
-										</Action>
-										<Action
-											label={player.banned ? `Unban ${player.name}` : `Ban ${player.name}`}
-											disabled={busy}
-											destructive={!player.banned}
-											onClick={() =>
-												player.banned
-													? act(() => banRacePlayer({ data: { id: player.id, banned: false } }))
-													: ask('ban', player)
-											}
-										>
-											{player.banned ? <UndoIcon /> : <BanIcon />}
-										</Action>
-									</div>
-								</td>
-							</tr>
-						))}
-					</Table>
+					<Roster players={players} busy={busy} rename={rename} ask={ask} unban={unban} />
 				) : (
 					<div className="px-4">
 						<Empty>{search ? 'Nobody by that name.' : 'Nobody has played yet.'}</Empty>
@@ -230,6 +198,74 @@ export function Players({
 				</Dialog>
 			</Panel>
 		</div>
+	);
+}
+
+// A table of players, each with what can be done to them at the end of the
+// row. The live players and everyone who has played are both listed this way.
+function Roster({
+	players,
+	busy,
+	rename,
+	ask,
+	unban
+}: {
+	players: Player[];
+	busy: boolean;
+	rename: (player: Player) => void;
+	ask: (kind: 'reset' | 'ban', player: Player) => void;
+	unban: (player: Player) => void;
+}) {
+	return (
+		<Table head={['name', 'chips', 'bets', 'bankrupt', 'last seen', '']} right={[1, 2, 3]}>
+			{players.map((player) => (
+				<tr key={player.id} className={cn(player.banned && 'text-foreground/50')}>
+					<td className={cell}>
+						{player.name}
+						<span className="ml-1.5 text-foreground/50">#{player.id}</span>
+						{player.banned && (
+							<Badge variant="destructive" className="ml-2">
+								Banned
+							</Badge>
+						)}
+					</td>
+					<td className={cn(number, player.balance < 0 && 'text-destructive')}>
+						{NUMBER.format(player.balance)}
+					</td>
+					<td className={number}>{NUMBER.format(player.bets)}</td>
+					<td className={number}>{player.bankruptcies || '–'}</td>
+					<td className={cn(cell, 'text-foreground/50')} suppressHydrationWarning>
+						{timeAgo(player.seen)}
+					</td>
+					<td className={cn(cell, 'sticky right-0 bg-card py-1 text-right')}>
+						<div className="inline-flex gap-0.5">
+							<Action
+								label={`Rename ${player.name}`}
+								disabled={busy}
+								onClick={() => rename(player)}
+							>
+								<PencilIcon />
+							</Action>
+							<Action
+								label={`Reset ${player.name}’s chips`}
+								disabled={busy}
+								onClick={() => ask('reset', player)}
+							>
+								<RotateCcwIcon />
+							</Action>
+							<Action
+								label={player.banned ? `Unban ${player.name}` : `Ban ${player.name}`}
+								disabled={busy}
+								destructive={!player.banned}
+								onClick={() => (player.banned ? unban(player) : ask('ban', player))}
+							>
+								{player.banned ? <UndoIcon /> : <BanIcon />}
+							</Action>
+						</div>
+					</td>
+				</tr>
+			))}
+		</Table>
 	);
 }
 
