@@ -83,6 +83,8 @@ export type Car = {
 	offset: number;
 	errorAt: number;
 	errorUntil: number;
+	/** How much too fast the driver takes the corner they misjudge, as a share of the right speed. */
+	errorBy: number;
 	stuck: number;
 	reverseUntil: number;
 };
@@ -215,6 +217,7 @@ export function createRace(seed: number, grid: Entry[]) {
 			offset: 0,
 			errorAt: LIGHTS - Math.log(1 - rand()) * errorEvery,
 			errorUntil: 0,
+			errorBy: 1,
 			stuck: 0,
 			reverseUntil: 0
 		};
@@ -259,7 +262,7 @@ export function createRace(seed: number, grid: Entry[]) {
 	function step() {
 		if (race.done) return;
 		race.time += DT;
-		for (const car of cars) if (!car.retired) locate(car);
+		for (const car of cars) locate(car);
 		for (const car of cars) drive(car);
 		world.step(DT, 8, 3);
 		for (const hit of hits) dent(hit);
@@ -279,7 +282,11 @@ export function createRace(seed: number, grid: Entry[]) {
 			race.time > LIGHTS + TIME_CAP;
 	}
 
-	/** Works out where on the track a car is, and counts its laps. */
+	/**
+	 * Works out where on the track a car is, and counts its laps. A wreck is
+	 * still followed as it coasts, so the drivers coming up on it see where
+	 * it is now rather than where it gave up, but it completes no more laps.
+	 */
 	function locate(car: Car) {
 		const at = car.body.getPosition();
 		const sample = nearest(at.x, at.y, car.sample);
@@ -291,7 +298,7 @@ export function createRace(seed: number, grid: Entry[]) {
 		car.progress += moved * spacing;
 
 		const laps = Math.floor(car.progress / length);
-		if (laps <= car.laps) return;
+		if (car.retired || laps <= car.laps) return;
 		car.laps = laps;
 		if (laps > 0) {
 			const lap = race.time - car.lapStart;
@@ -322,7 +329,7 @@ export function createRace(seed: number, grid: Entry[]) {
 			// racing line, or the line this car is taking now, would run into.
 			// A wreck may be lying across the road, so it is given more room.
 			let blocker: Car | undefined;
-			let gap = 8 + car.speed * 0.8;
+			let gap = 8 + car.speed * 1.2;
 			for (const other of cars) {
 				if (other === car) continue;
 				const ahead = (((other.sample - car.sample + n * 1.5) % n) - n / 2) * spacing;
@@ -358,11 +365,14 @@ export function createRace(seed: number, grid: Entry[]) {
 					offset =
 						Math.abs(apart) > 1 ? blocker.across + Math.sign(apart) * room - line : (sides[0] ?? 0);
 				}
-				// And hold back while tucked in behind it. A car most of the way
-				// out to one side goes for the gap: it may rub, but it does not
-				// sit and wait.
+				// And hold back while tucked in behind it, slowing in time to be
+				// no faster than it by the following distance, which matters most
+				// when it is a wreck. A car most of the way out to one side goes
+				// for the gap: it may rub, but it does not sit and wait.
 				if (gap > 0 && Math.abs(apart) < (blocker.retired ? room : 1.5)) {
-					limit = Math.max(3, Math.max(0, blocker.speed) + (gap - car.follow) * 1.5);
+					const slower = Math.max(0, blocker.speed);
+					const stopping = Math.sqrt(slower ** 2 + grip * G * Math.max(0, gap - car.follow));
+					limit = Math.max(3, Math.min(slower + (gap - car.follow) * 1.5, stopping));
 				}
 			}
 			// Leave room for a car alongside rather than turn in on it: the one
@@ -399,27 +409,32 @@ export function createRace(seed: number, grid: Entry[]) {
 			const inside = (car.across - TRACK.line[car.sample]) * TURN[car.sample];
 			const arc = Math.sqrt(clamp(1 - TRACK.bend[car.sample] * inside, 0.5, 1.5));
 			// A mistake: once one is due, the driver misjudges the next braking
-			// point and arrives at the corner too fast. Most are small; a few
-			// are not.
+			// point and arrives at the corner too fast, by a few per cent most
+			// times and by a quarter now and then.
 			let want = car.pace[car.sample] * Math.sqrt(grip / car.grip) * arc;
 			if (race.time >= car.errorAt && car.speed > want + 0.5) {
 				car.errorUntil = race.time + 0.3 + rand() ** 2 * 0.7;
+				car.errorBy = 1.06 + rand() ** 3 * 0.22;
 				car.errorAt = race.time - Math.log(1 - rand()) * car.errorEvery;
 			}
-			if (race.time < car.errorUntil) want = Infinity;
+			if (race.time < car.errorUntil) want *= car.errorBy;
+			const corner = want;
 			want = Math.min(want, limit);
 			// facing the wrong way: turn round slowly
 			if (Math.abs(bearing) > 1.2) want = Math.min(want, 5);
 			if (car.finishTime) want = Math.min(want, 12);
 
-			// what the tyres have left after cornering is all there is to
-			// accelerate or brake with
+			// What the tyres have left after cornering is all there is to
+			// accelerate or brake with. Into a corner too fast, a driver still
+			// brakes a little even with nothing left, giving up some line to
+			// scrub off speed rather than run on into the wall.
 			const cornering = Math.min(1, (car.speed ** 2 * TRACK.bend[car.sample]) / (grip * G));
 			const spare = Math.sqrt(1 - cornering ** 2) * car.nerve;
 			let throttle = 0;
 			let brake = 0;
 			if (car.speed > want + 0.5) {
-				brake = Math.min((car.speed - want) / 4, spare + 0.1, 1);
+				// a car ahead gets the brakes harder and sooner than a corner does
+				brake = Math.min((car.speed - want) / (limit < corner ? 1.5 : 4), spare + 0.25, 1);
 			} else {
 				throttle = clamp((want - car.speed) / 2, 0, 1);
 			}
@@ -494,7 +509,7 @@ export function createRace(seed: number, grid: Entry[]) {
 		}
 		reshape(car);
 		const wrecked = car.retired;
-		if (!wrecked) car.damage = Math.min(1, car.damage + blow / (9 * car.tough));
+		if (!wrecked) car.damage = Math.min(1, car.damage + blow / (5 * car.tough));
 		note(car, { kind: 'hit', x, y, force: blow + SHRUG, damage: car.damage });
 		if (wrecked || car.damage < 1) return;
 		car.retired = true;
