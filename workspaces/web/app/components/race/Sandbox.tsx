@@ -76,7 +76,7 @@ function read(recording: Recording, replay: Replay, time: number, size: number):
 		rows: order.map((car, place) => ({
 			entry: car.entry,
 			grid: replay.cars.indexOf(car) + 1,
-			lap: Math.min(LAPS, Math.max(1, car.laps + 1 - replay.extra)),
+			lap: replay.lap(car),
 			gap:
 				place === 0
 					? ''
@@ -165,10 +165,7 @@ export default function Sandbox() {
 				}
 			}
 			live.current.time = time;
-			renderer.draw(replay.cars, moved, show, {
-				trucks: replay.trucks,
-				caution: replay.flag === 'yellow'
-			});
+			renderer.draw(replay.cars, moved, show, replay);
 			audio.current?.update(replay.cars, moved);
 			if (now - shown > 150) {
 				shown = now;

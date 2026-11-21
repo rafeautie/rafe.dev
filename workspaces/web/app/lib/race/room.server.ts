@@ -21,7 +21,7 @@ import {
 } from './room';
 import { drawConditions, inCondition, ROSTER } from './roster';
 import { checkSettings, DEFAULT_SETTINGS, tuned, type Settings } from './settings';
-import { drawGrid, LIGHTS, random, rank } from './sim';
+import { drawGrid, flown, LIGHTS, random, rank, type Flag, type RaceEvent } from './sim';
 
 // The one room everybody at /race is in. It runs the cycle (betting, the
 // race, the result, and round again) on an alarm, keeps a socket open to
@@ -33,8 +33,8 @@ import { drawGrid, LIGHTS, random, rank } from './sim';
 // Between alarms the room is put to sleep and forgets everything in memory,
 // so all it knows is in storage. The cycle is in four keys: 'state' (a
 // RoomState), and for a race that has started, 'recording' (its bytes),
-// 'result', and 'flags' (when the admin has thrown a caution in it, so it can
-// be run again the same). The money is in the tables made in the constructor. What
+// 'result', 'flags' (when the admin has thrown a caution in it, so it can be
+// run again the same) and 'signals' (when each flag flies in it). The money is in the tables made in the constructor. What
 // /admin/race has set is in 'settings' (settings.ts) and 'paused'.
 
 const IDLE: RoomState = {
@@ -306,6 +306,15 @@ export class RaceRoom extends DurableObject<Env> {
 		this.ctx.storage.kv.put('recording', bytes);
 		this.ctx.storage.kv.put('result', result);
 		this.ctx.storage.kv.put('flags', flags);
+		// What flew a flag and when, kept apart so the admin page can be told the
+		// flag without the whole recording being read. An event flies a flag if
+		// the flag after it is the same whichever was flying before.
+		this.ctx.storage.kv.put(
+			'signals',
+			recording.events
+				.filter(({ kind }) => flown('green', kind) === flown('yellow', kind))
+				.map(({ kind, time }) => ({ kind, time }))
+		);
 		this.sql.exec('DELETE FROM results WHERE round = ?', state.round);
 		state.grid.forEach((car, slot) =>
 			this.sql.exec(
@@ -726,14 +735,13 @@ export class RaceRoom extends DurableObject<Env> {
 
 	/** Whether the race being shown is under caution at this moment. */
 	private caution(state: RoomState) {
-		const bytes = this.ctx.storage.kv.get<Uint8Array>('recording');
-		if (state.phase !== 'racing' || !bytes) return false;
+		if (state.phase !== 'racing') return false;
 		const at = (Date.now() - state.startsAt) / 1000;
-		// the last flag to have been shown, yellow or green
-		const flags = unpack(bytes).events.filter(
-			(event) => (event.kind === 'caution' || event.kind === 'green') && event.time <= at
-		);
-		return flags.at(-1)?.kind === 'caution';
+		const signals = this.ctx.storage.kv.get<Pick<RaceEvent, 'kind' | 'time'>[]>('signals') ?? [];
+		const flag = signals
+			.filter((signal) => signal.time <= at)
+			.reduce<Flag>((flying, signal) => flown(flying, signal.kind), 'green');
+		return flag === 'yellow';
 	}
 
 	private loopView() {
