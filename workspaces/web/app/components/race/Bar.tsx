@@ -5,7 +5,7 @@ import { ThemeToggle } from '~/components/ThemeToggle';
 
 // The page is the window: the site's header on top, and the race filling
 // everything under it, with a little room round the edge.
-export const PAGE = 'flex h-dvh flex-col gap-3 p-4 text-base text-foreground';
+export const PAGE = 'flex h-dvh flex-col gap-2 p-2 text-base text-foreground sm:gap-3 sm:p-4';
 
 /** A 32px icon button, the same for every control in the bar. */
 export const iconButton =

@@ -1,5 +1,5 @@
 import { MAX_BETS, MARKETS, pays, type Market, type Pools } from '~/lib/race/betting';
-import { ADVANCE, clip, hex, measure, wrap, type Painter } from '~/lib/race/pixels';
+import { ADVANCE, clip, enlarge, hex, measure, wrap, type Painter } from '~/lib/race/pixels';
 import type { Replay } from '~/lib/race/recording';
 import { HEIGHT, SCALE, WIDTH, type CarView } from '~/lib/race/render';
 import type { Bet, RoomState, Standing } from '~/lib/race/room';
@@ -28,20 +28,53 @@ export const MIN_H = 400;
 
 /**
  * The frame's size in its own pixels, how many of the screen's pixels each one
- * is shown as, and how many CSS pixels that is.
+ * is shown as, and how many CSS pixels that is. A stacked frame has the rest of
+ * the game under the track (a phone held upright) or beside it (on its side)
+ * rather than round it.
  */
-export type View = { width: number; height: number; zoom: number; scale: number };
+export type View = {
+	width: number;
+	height: number;
+	zoom: number;
+	scale: number;
+	stacked: 'under' | 'beside' | null;
+};
+
+/**
+ * The fewest CSS pixels a frame pixel may be shown as with the columns round
+ * the track. Any smaller and the writing cannot be read, so a narrow space (a
+ * phone) gets the stacked frame: the track in one place, and the rest in a
+ * column under it or beside it, drawn `UNIT` frame pixels to each of the
+ * graphics' own so it stays a readable size.
+ */
+const SMALLEST = 0.9;
+const UNIT = 2;
 
 /** The frame for a space on the page, CSS pixels across and down, on a screen with `ratio` pixels to each. */
 export function fit(width: number, height: number, ratio: number): View {
 	let zoom = Math.min((width * ratio) / MIN_W, (height * ratio) / MIN_H);
+	let stacked: View['stacked'] = null;
+	if (zoom / ratio < SMALLEST) {
+		// Whichever way shows everything biggest: the column under the track
+		// or beside it, each with room for the slip and some of the panels,
+		// and no bigger than one CSS pixel to each of the frame's.
+		const under = Math.min(width / WIDTH, height / (HEIGHT + LEAST * UNIT), 1);
+		const beside = Math.min(
+			width / (WIDTH + SIDE * UNIT),
+			height / Math.max(HEIGHT, LEAST * UNIT),
+			1
+		);
+		stacked = beside > under ? 'beside' : 'under';
+		zoom = Math.max(under, beside) * ratio;
+	}
 	// whole pixels are the sharpest, so when a whole size is nearly as big, take it
 	if (zoom >= 1 && zoom - Math.floor(zoom) < 0.15) zoom = Math.floor(zoom);
 	return {
 		width: Math.floor((width * ratio) / zoom),
 		height: Math.floor((height * ratio) / zoom),
 		zoom,
-		scale: zoom / ratio
+		scale: zoom / ratio,
+		stacked
 	};
 }
 
@@ -61,10 +94,28 @@ const CAR = 14;
 /** How many players the leaderboard shows at once, and how many of everybody's bets. The rest scroll. */
 export const BOARD_ROWS = 6;
 export const TICKS = 5;
-/** How wide the bet slip is, and the settings. */
+/** How big the bet slip is, the settings, and what the stat bars mean. */
 const SLIP = 300;
+const SLIP_H = 218;
 const MENU = 232;
+const KEY_W = 166;
+const KEY_H = 89;
+/** How tall the tower is, the leaderboard and everybody's bets. */
+const TOWER_H = 24 + ROSTER.length * ROW;
+const BOARD_H = 18 + BOARD_ROWS * LINE;
+const TICKER_H = 17 + TICKS * TICK;
 
+/**
+ * Stacked, in the graphics' pixels: how wide the panels are, and each of their
+ * two columns; how wide the column is beside the track; how tall the panels
+ * are all told; and the least height the column may have, which is the slip
+ * and a little of the panels over it.
+ */
+const COLUMN = 312;
+const HALF = (COLUMN - 4) / 2;
+const SIDE = COLUMN + 8;
+const PANELS = 4 + TOWER_H + 4 + BOARD_H + 4 + TICKER_H + 4;
+const LEAST = 60 + SLIP_H + 8;
 /** What the four bars beside each car are, by the letter over them. */
 export const LEGEND = [
 	['Speed', 'Engine power'],
@@ -87,26 +138,73 @@ export const STAKES = [10, 50, 100, 'Max'] as const;
 
 export type Layout = ReturnType<typeof layout>;
 
-/** Where everything goes in a frame. The columns keep to the edges; the track has the middle. */
-export function layout({ width, height }: View) {
+/**
+ * Where everything goes in a frame. The columns keep to the edges; the track
+ * has the middle. Stacked, the track stays where it is, the slip is kept at the
+ * foot of the column while betting is open, and the panels have the rest of
+ * the column, the `pane`, which scrolls: they are placed as if it were not
+ * scrolled, and are `panels` tall all told. The track is placed in the frame's
+ * pixels; everything else is in the graphics' own, `unit` of the frame's each.
+ */
+export function layout({ width, height, stacked }: View, betting = false) {
+	const unit = stacked ? UNIT : 1;
+	// the frame in the graphics' pixels
+	const [fw, fh] = [Math.floor(width / unit), Math.floor(height / unit)];
+	const [tw, th] = [WIDTH / unit, HEIGHT / unit];
 	// The track is in the middle of what the columns leave. At the smallest
 	// frame its box runs a few pixels under each of them, which costs nothing:
 	// the road stops short of the box's edges, and what is under is grass.
-	const track = {
-		x: LEFT - 4 + Math.floor((width - MIN_W) / 2),
-		y: Math.floor((height - HEIGHT) / 2)
-	};
-	const tower = box(4, 4, LEFT, 24 + ROSTER.length * ROW);
-	const board = box(4, tower.y + tower.h + 4, LEFT, 18 + BOARD_ROWS * LINE);
-	const ticker = box(4, board.y + board.h + 4, LEFT, 17 + TICKS * TICK);
-	// the slip covers the middle of the track and leaves the grid, at the bottom, in view
-	const x = track.x + (WIDTH - SLIP) / 2;
-	const y = track.y + 10;
-	const widths = MARKETS.map((market) => measure(SHORT[market]) + 9);
+	// Stacked, the track and the column are side by side or one on the other,
+	// together in the middle.
+	const across = stacked === 'beside' ? (fw - tw - SIDE) >> 1 : 0;
+	const track = !stacked
+		? { x: LEFT - 4 + Math.floor((width - MIN_W) / 2), y: Math.floor((height - HEIGHT) / 2) }
+		: stacked === 'beside'
+			? { x: across * unit, y: Math.floor((height - HEIGHT) / 2) }
+			: { x: Math.floor((width - WIDTH) / 2), y: 0 };
+	const [tx, ty] = [track.x / unit, track.y / unit];
+	let tower: Box, board: Box, ticker: Box, wallet: Box, bets: Box, key: Box, pane: Box;
+	let x: number, y: number;
+	if (!stacked) {
+		pane = box(0, 0, fw, fh);
+		tower = box(4, 4, LEFT, TOWER_H);
+		board = box(4, tower.y + tower.h + 4, LEFT, BOARD_H);
+		ticker = box(4, board.y + board.h + 4, LEFT, TICKER_H);
+		wallet = box(fw - 148, 4, 144, 24);
+		bets = box(fw - 148, 32, 144, 0);
+		// the slip covers the middle of the track and leaves the grid, at the bottom, in view
+		x = tx + (tw - SLIP) / 2;
+		y = ty + 10;
+		// what the stat bars mean goes beside the slip, so it covers none of it
+		key = box(x + SLIP + 4, y + 44, KEY_W, KEY_H);
+	} else {
+		// The column: under the track or beside it, to the frame's edge. The
+		// slip is at its foot, and the panels over it: the tower, the
+		// leaderboard and everybody's bets down the left, your chips and your
+		// bets down the right.
+		const column = stacked === 'beside' ? box(across + tw, 0, SIDE, fh) : box(0, th, fw, fh - th);
+		x = column.x + ((column.w - SLIP) >> 1);
+		y = column.y + column.h - SLIP_H - 4;
+		pane = box(column.x, column.y, column.w, (betting ? y - 4 : column.y + column.h) - column.y);
+		const left = column.x + ((column.w - COLUMN) >> 1);
+		const top = column.y + 4;
+		tower = box(left, top, HALF, TOWER_H);
+		board = box(left, tower.y + tower.h + 4, HALF, BOARD_H);
+		ticker = box(left, board.y + board.h + 4, HALF, TICKER_H);
+		wallet = box(left + HALF + 4, top, HALF, 24);
+		bets = box(wallet.x, top + 28, HALF, 0);
+		// over the panels, above the stat bars it is about
+		key = box(x + SLIP - KEY_W, y - KEY_H - 4, KEY_W, KEY_H);
+	}
 	// the settings open over the middle of everything
-	const mx = (width - MENU) >> 1;
-	const my = (height - 170) >> 1;
+	const mx = (fw - MENU) >> 1;
+	const my = (fh - 170) >> 1;
+	const widths = MARKETS.map((market) => measure(SHORT[market]) + 9);
 	return {
+		unit,
+		key,
+		pane,
+		panels: stacked ? PANELS : fh,
 		menu: {
 			panel: box(mx, my, MENU, 0),
 			close: box(mx + MENU - 15, my, 15, 15),
@@ -121,13 +219,13 @@ export function layout({ width, height }: View) {
 		board,
 		ticker,
 		// the lists inside those two, which scroll
-		boardList: box(4, board.y + 15, LEFT, BOARD_ROWS * LINE),
-		tickerList: box(4, ticker.y + 15, LEFT, TICKS * TICK),
-		wallet: box(width - 148, 4, 144, 24),
-		bets: box(width - 148, 32, 144, 0),
+		boardList: box(board.x, board.y + 15, board.w, BOARD_ROWS * LINE),
+		tickerList: box(ticker.x, ticker.y + 15, ticker.w, TICKS * TICK),
+		wallet,
+		bets,
 		// the middle of the track, like the slip: the race is over, so nothing is hidden by it
-		card: box(track.x + (WIDTH - 160) / 2, track.y + (HEIGHT - 92) / 2, 160, 92),
-		slip: box(x, y, SLIP, 218),
+		card: box(tx + (tw - 160) / 2, ty + (th - 92) / 2, 160, 92),
+		slip: box(x, y, SLIP, SLIP_H),
 		tabs: MARKETS.map((_, index) =>
 			box(
 				x + 6 + widths.slice(0, index).reduce((sum, w) => sum + w + 2, 0),
@@ -192,6 +290,8 @@ export type Scene = {
 	running: Running | null;
 	/** How far down the leaderboard and everybody's bets are scrolled, 0 at the top to 1 at the end. */
 	scroll: { board: number; ticker: number };
+	/** How far the panels are scrolled up their pane, in the graphics' pixels. */
+	pan: number;
 	slip: Slip;
 	menu: Menu | null;
 	/** The cars where they are drawn, and, once there is a race, the replay showing it. */
@@ -489,8 +589,8 @@ export function createHud() {
 		const backed = new Set(scene.bets.flatMap((bet) => bet.outcome.split('>')));
 		for (const car of scene.cars) {
 			if (!backed.has(car.entry.id)) continue;
-			const x = at.track.x + Math.round(car.x * SCALE);
-			const y = at.track.y + Math.round(car.y * SCALE) - 15;
+			const x = Math.round((at.track.x + car.x * SCALE) / at.unit);
+			const y = Math.round((at.track.y + car.y * SCALE) / at.unit) - 15;
 			p.fill(x - 4, y - 1, 9, 3, INK);
 			p.fill(x - 3, y + 2, 7, 1, INK);
 			p.fill(x - 2, y + 3, 5, 1, INK);
@@ -629,12 +729,11 @@ export function createHud() {
 			note ? (note.bad ? BAD : GOOD) : DIM
 		);
 
-		// what the four bars are, beside the slip so it covers none of it
+		// what the four bars are, where the layout leaves room for it
 		if (legend) {
-			const lx = x + w + 4;
-			const ly = y + 44;
-			p.fill(lx - 1, ly - 1, 168, 91, INK, 0.5);
-			p.fill(lx, ly, 166, 89, INK, 0.96);
+			const { x: lx, y: ly, w: lw, h: lh } = at.key;
+			p.fill(lx - 1, ly - 1, lw + 2, lh + 2, INK, 0.5);
+			p.fill(lx, ly, lw, lh, INK, 0.96);
 			LEGEND.forEach(([name, meaning], index) => {
 				p.text(lx + 5, ly + 5 + index * 21, name[0], GOLD);
 				p.text(lx + 17, ly + 5 + index * 21, name, PAPER);
@@ -728,7 +827,8 @@ export function createHud() {
 
 	return {
 		/** Draws everything over the race, `dt` seconds after the last time. */
-		draw(p: Painter, at: Layout, scene: Scene, dt: number) {
+		draw(frame: Painter, at: Layout, scene: Scene, dt: number) {
+			const p = enlarge(frame, at.unit);
 			const { room } = scene;
 			// a new race starts from its own numbers, not from the last one's
 			if (room && room.round !== round) {
@@ -741,11 +841,15 @@ export function createHud() {
 				if (balance !== undefined) shown.set('balance', balance);
 			}
 			markers(p, at, scene);
-			tower(p, at.tower, scene, dt);
-			leaderboard(p, at.board, scene);
-			ticker(p, at.ticker, scene);
-			wallet(p, at.wallet, scene, dt);
-			yours(p, at.bets, scene);
+			// the panels, as far up their pane as it is scrolled, and only inside it
+			const up = (place: Box) => ({ ...place, y: place.y - scene.pan });
+			p.clip(at.pane);
+			tower(p, up(at.tower), scene, dt);
+			leaderboard(p, up(at.board), scene);
+			ticker(p, up(at.ticker), scene);
+			wallet(p, up(at.wallet), scene, dt);
+			yours(p, up(at.bets), scene);
+			p.clip(null);
 			if (room?.phase === 'betting') slip(p, at, scene, dt);
 			else if (room?.phase === 'results') result(p, at.card, scene, dt);
 			else if (room?.phase !== 'racing') {

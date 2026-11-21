@@ -150,14 +150,51 @@ export function wrap(text: string, width: number) {
 
 export type Painter = ReturnType<typeof createPainter>;
 
+/**
+ * The same painter with each of its pixels drawn `k` of the frame's across
+ * and down, for graphics that must stay a readable size on a frame that is
+ * shown small. Everything given to it and handed back is in its own pixels.
+ */
+export function enlarge(p: Painter, k: number): Painter {
+	if (k === 1) return p;
+	const fill = (x: number, y: number, w: number, h: number, colour: number, alpha = 1) =>
+		p.fill(x * k, y * k, w * k, h * k, colour, alpha);
+	const text = (x: number, y: number, string: string, colour: number, size = 1) =>
+		p.text(x * k, y * k, string, colour, size * k) / k;
+	return {
+		width: Math.ceil(p.width / k),
+		height: Math.ceil(p.height / k),
+		fill,
+		text,
+		clip(box: { x: number; y: number; w: number; h: number } | null) {
+			p.clip(box && { x: box.x * k, y: box.y * k, w: box.w * k, h: box.h * k });
+		},
+		right(x: number, y: number, string: string, colour: number, size = 1) {
+			text(x - measure(string, size), y, string, colour, size);
+		},
+		centre(x: number, y: number, string: string, colour: number, size = 1) {
+			text(x - Math.floor(measure(string, size) / 2), y, string, colour, size);
+		},
+		outline(x: number, y: number, w: number, h: number, colour: number) {
+			fill(x, y, w, 1, colour);
+			fill(x, y + h - 1, w, 1, colour);
+			fill(x, y, 1, h, colour);
+			fill(x + w - 1, y, 1, h, colour);
+		}
+	};
+}
+
 /** Draws into a frame `width` pixels by `height`. Everything is cut off at its edges. */
 export function createPainter(frame: Uint32Array, width: number, height: number) {
+	// what may be drawn on: the frame, or the part of it `clip` keeps to
+	let [left, top, right, bottom] = [0, 0, width, height];
+
 	/** A filled box. With `alpha`, the colour is laid over what is there. */
 	function fill(x: number, y: number, w: number, h: number, colour: number, alpha = 1) {
-		const right = Math.min(width, x + w);
-		const bottom = Math.min(height, y + h);
-		for (let py = Math.max(0, y); py < bottom; py++) {
-			for (let k = py * width + Math.max(0, x); k < py * width + right; k++) {
+		const across = Math.min(right, x + w);
+		const down = Math.min(bottom, y + h);
+		for (let py = Math.max(top, y); py < down; py++) {
+			for (let k = py * width + Math.max(left, x); k < py * width + across; k++) {
 				frame[k] = alpha < 1 ? mix(frame[k], colour, alpha) : colour;
 			}
 		}
@@ -184,6 +221,17 @@ export function createPainter(frame: Uint32Array, width: number, height: number)
 		height,
 		fill,
 		text,
+		/** Keeps what is drawn next inside a box, or, given nothing, the frame again. */
+		clip(box: { x: number; y: number; w: number; h: number } | null) {
+			[left, top, right, bottom] = box
+				? [
+						Math.max(0, box.x),
+						Math.max(0, box.y),
+						Math.min(width, box.x + box.w),
+						Math.min(height, box.y + box.h)
+					]
+				: [0, 0, width, height];
+		},
 		/** Text that ends at x. */
 		right(x: number, y: number, string: string, colour: number, size = 1) {
 			text(x - measure(string, size), y, string, colour, size);

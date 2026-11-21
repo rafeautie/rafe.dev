@@ -11,6 +11,7 @@ import {
 	type RefObject
 } from 'react';
 import { Dialog, DialogTrigger } from '~/components/ui/dialog';
+import { cn } from '~/lib/utils';
 import { MARKET_NAMES, MARKETS, pays, type Market, type Pools } from '~/lib/race/betting';
 import type { Painter } from '~/lib/race/pixels';
 import type { Replay } from '~/lib/race/recording';
@@ -189,7 +190,6 @@ export function Game({
 	children
 }: Props) {
 	const [hud] = useState(createHud);
-	const at = useMemo(() => layout(view), [view]);
 	const [market, setMarket] = useState<Market>('win');
 	const [outcome, setOutcome] = useState<string | null>(null);
 	const [stake, setStake] = useState(50);
@@ -197,6 +197,8 @@ export function Game({
 	const [field, selection] = useSelection();
 	const [legend, setLegend] = useState(false);
 	const [scroll, setScroll] = useState({ board: 0, ticker: 0 });
+	// how far the panels are scrolled up their pane, in the graphics' pixels
+	const [pan, setPan] = useState(0);
 	// what was sent and how many bets there were then, so the reply can be told from silence
 	const [sent, setSent] = useState<{
 		count: number;
@@ -214,6 +216,7 @@ export function Game({
 	const [frame, setFrame] = useState<HTMLDivElement | null>(null);
 
 	const betting = room?.phase === 'betting' && pools !== null;
+	const at = useMemo(() => layout(view, betting), [view, betting]);
 	const rules = room?.settings ?? DEFAULT_SETTINGS;
 	const max = you ? you.balance + rules.debtCap : 0;
 	const [first, second] = outcome?.split('>') ?? [];
@@ -294,6 +297,7 @@ export function Game({
 					ticker,
 					running,
 					scroll,
+					pan,
 					slip,
 					menu: menu.current,
 					cars,
@@ -306,10 +310,18 @@ export function Game({
 
 	/** Where a box of the frame is on the page. */
 	const over = ({ x, y, w, h }: Box): CSSProperties => ({
-		left: `${(x / view.width) * 100}%`,
-		top: `${(y / view.height) * 100}%`,
-		width: `${(w / view.width) * 100}%`,
-		height: `${(h / view.height) * 100}%`
+		left: `${((x * at.unit) / view.width) * 100}%`,
+		top: `${((y * at.unit) / view.height) * 100}%`,
+		width: `${((w * at.unit) / view.width) * 100}%`,
+		height: `${((h * at.unit) / view.height) * 100}%`
+	});
+	/** Where a box of the panels is in their pane on the page, as if it were not scrolled. */
+	const css = at.unit * view.scale;
+	const within = ({ x, y, w, h }: Box): CSSProperties => ({
+		left: (x - at.pane.x) * css,
+		top: (y - at.pane.y) * css,
+		width: w * css,
+		height: h * css
 	});
 	const net = netOf(bets);
 
@@ -317,13 +329,89 @@ export function Game({
 		<div className={PAGE}>
 			<Bar sound={<SoundToggle sound={sound} setSound={setSound} />} />
 			{/* the colour of the grass, so a sliver left over at the edge is more grass */}
-			<div ref={stage} className="relative min-h-0 flex-1 overflow-hidden rounded-lg bg-[#3a6b35]">
+			<div
+				ref={stage}
+				className="relative min-h-0 flex-1 touch-manipulation overflow-hidden rounded-lg bg-[#3a6b35]"
+			>
 				<div
 					ref={setFrame}
 					className="absolute top-0 left-0"
 					style={{ width: view.width * view.scale, height: view.height * view.scale }}
 				>
 					{children}
+
+					{/* The panels. Stacked, they scroll in the part of the column the
+					    track and the slip leave them: this box is what scrolls, and
+					    how far it has gone is how far up they are drawn. */}
+					<div
+						className={cn(
+							'absolute',
+							view.stacked
+								? '[scrollbar-width:none] overflow-y-auto overscroll-contain [&::-webkit-scrollbar]:hidden'
+								: 'overflow-hidden'
+						)}
+						style={over(at.pane)}
+						onScroll={({ currentTarget }) => setPan(Math.round(currentTarget.scrollTop / css))}
+					>
+						<div className="relative" style={{ height: at.panels * css }}>
+							<Scroller
+								label="Leaderboard"
+								rows={board.length}
+								visible={BOARD_ROWS}
+								style={within(at.boardList)}
+								onScroll={(by) => setScroll((scroll) => ({ ...scroll, board: by }))}
+							>
+								<ol>
+									{board.map((player) => (
+										<li key={player.id}>
+											{player.name}, {chips(player.balance)} chips
+										</li>
+									))}
+								</ol>
+							</Scroller>
+							<Scroller
+								label="Recent bets"
+								rows={ticker.length}
+								visible={TICKS}
+								style={within(at.tickerList)}
+								onScroll={(by) => setScroll((scroll) => ({ ...scroll, ticker: by }))}
+							>
+								<ul>
+									{ticker.map((tick, index) => (
+										<li key={index}>
+											{tick.name}: {chips(tick.stake)} on {label(tick.market, tick.outcome)},{' '}
+											{MARKET_NAMES[tick.market].toLowerCase()}
+										</li>
+									))}
+								</ul>
+							</Scroller>
+
+							{you && (
+								<Dialog>
+									<DialogTrigger
+										render={
+											<button
+												type="button"
+												aria-label={`Your wallet and settings: ${chips(you.balance)} chips, ${you.name}${you.bankruptcies > 0 ? `, bankrupt ${you.bankruptcies} time${you.bankruptcies === 1 ? '' : 's'}` : ''}`}
+												className={hit}
+												style={within(at.wallet)}
+											/>
+										}
+									/>
+									<Settings
+										you={you}
+										rules={rules}
+										problem={problem}
+										send={send}
+										container={frame}
+										at={at.menu}
+										over={over}
+										show={showMenu}
+									/>
+								</Dialog>
+							)}
+						</div>
+					</div>
 
 					{betting && (
 						<section aria-label="Bet slip">
@@ -348,8 +436,12 @@ export function Game({
 							<button
 								type="button"
 								aria-label={`The four bars: ${LEGEND.map(([name, meaning]) => `${name}, ${meaning.toLowerCase()}`).join('; ')}`}
-								onPointerEnter={() => setLegend(true)}
-								onPointerLeave={() => setLegend(false)}
+								onPointerEnter={(event) => event.pointerType === 'mouse' && setLegend(true)}
+								onPointerLeave={(event) => event.pointerType === 'mouse' && setLegend(false)}
+								// a finger has no hover, and Safari does not focus what is tapped
+								onPointerDown={(event) =>
+									event.pointerType !== 'mouse' && setLegend((shown) => !shown)
+								}
 								onFocus={() => setLegend(true)}
 								onBlur={() => setLegend(false)}
 								className={`${hit} cursor-help`}
@@ -448,63 +540,6 @@ export function Game({
 								style={over(at.place)}
 							/>
 						</section>
-					)}
-
-					<Scroller
-						label="Leaderboard"
-						rows={board.length}
-						visible={BOARD_ROWS}
-						style={over(at.boardList)}
-						onScroll={(by) => setScroll((scroll) => ({ ...scroll, board: by }))}
-					>
-						<ol>
-							{board.map((player) => (
-								<li key={player.id}>
-									{player.name}, {chips(player.balance)} chips
-								</li>
-							))}
-						</ol>
-					</Scroller>
-					<Scroller
-						label="Recent bets"
-						rows={ticker.length}
-						visible={TICKS}
-						style={over(at.tickerList)}
-						onScroll={(by) => setScroll((scroll) => ({ ...scroll, ticker: by }))}
-					>
-						<ul>
-							{ticker.map((tick, index) => (
-								<li key={index}>
-									{tick.name}: {chips(tick.stake)} on {label(tick.market, tick.outcome)},{' '}
-									{MARKET_NAMES[tick.market].toLowerCase()}
-								</li>
-							))}
-						</ul>
-					</Scroller>
-
-					{you && (
-						<Dialog>
-							<DialogTrigger
-								render={
-									<button
-										type="button"
-										aria-label={`Your wallet and settings: ${chips(you.balance)} chips, ${you.name}${you.bankruptcies > 0 ? `, bankrupt ${you.bankruptcies} time${you.bankruptcies === 1 ? '' : 's'}` : ''}`}
-										className={hit}
-										style={over(at.wallet)}
-									/>
-								}
-							/>
-							<Settings
-								you={you}
-								rules={rules}
-								problem={problem}
-								send={send}
-								container={frame}
-								at={at.menu}
-								over={over}
-								show={showMenu}
-							/>
-						</Dialog>
 					)}
 				</div>
 			</div>
