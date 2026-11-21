@@ -1,11 +1,8 @@
 import { PolygonShape, type World } from 'planck';
 import {
 	BAY,
-	BAYS,
 	BAY_IN,
 	BAY_OUT,
-	GATES,
-	HOMES,
 	NEARSIDE,
 	LAYBY,
 	LAYBY_IN,
@@ -13,16 +10,14 @@ import {
 	RING,
 	SLIP,
 	TRUCK,
-	ahead,
 	curve,
-	drive,
-	parked,
-	trace,
+	serviceFor,
 	type Pose,
-	type Route
+	type Route,
+	type Service
 } from './service';
 import type { Car } from './sim';
-import { HALF_CORRIDOR, TRACK, lateral, nearest } from './track';
+import { HALF_CORRIDOR, lateral, nearest, type Track } from './track';
 
 // The tow trucks and the job they do. Called for a wreck, a truck leaves its
 // garage along the service road, which only runs the way the race does, and
@@ -93,16 +88,17 @@ const turn = (angle: number) => Math.atan2(Math.sin(angle), Math.cos(angle));
 export type Truck = ReturnType<typeof createTruck>['truck'];
 
 /** The gate a truck comes out of for a wreck: the one that leaves the least of the track to drive. */
-const gateFor = (wreck: Car) =>
-	GATES.reduce((best, sample) =>
+const gateFor = ({ gates, ahead }: Service, wreck: Car) =>
+	gates.reduce((best, sample) =>
 		ahead(sample + REACH, wreck.sample) < ahead(best + REACH, wreck.sample) ? sample : best
 	);
 
 /** The crews: sends a truck for each wreck, and steps them all. */
-export function createRecovery(world: World, cars: Car[]) {
+export function createRecovery(world: World, cars: Car[], track: Track) {
+	const service = serviceFor(track);
 	/** Bays with a wreck in them. */
 	const taken = new Set<number>();
-	const crews = HOMES.map((home) => createTruck(world, cars, home, taken));
+	const crews = service.homes.map((home) => createTruck(world, cars, track, home, taken));
 	return {
 		trucks: crews.map((crew) => crew.truck),
 		/** Whether the track is clear: no wreck waiting, and none on a hook still on it. */
@@ -129,7 +125,9 @@ export function createRecovery(world: World, cars: Car[]) {
 	};
 }
 
-function createTruck(world: World, cars: Car[], home: number, taken: Set<number>) {
+function createTruck(world: World, cars: Car[], track: Track, home: number, taken: Set<number>) {
+	const service = serviceFor(track);
+	const { gates, bays, ahead, drive, parked, trace } = service;
 	const body = world.createBody({
 		type: 'kinematic',
 		position: parked(home),
@@ -157,7 +155,7 @@ function createTruck(world: World, cars: Car[], home: number, taken: Set<number>
 		busy: false,
 		/** The car on the hook, as an index into the race's cars, or -1. */
 		towing: -1,
-		/** The gate it has had opened to go through, as an index into GATES, or -1. */
+		/** The gate it has had opened to go through, as an index into the gates, or -1. */
 		gate: -1,
 		/** Where on the lap the axle it is steering by is, as a car's place is kept. */
 		sample: home + 2,
@@ -321,7 +319,7 @@ function createTruck(world: World, cars: Car[], home: number, taken: Set<number>
 	function fetch() {
 		wreck = waiting.shift()!;
 		truck.busy = true;
-		head(gateFor(wreck));
+		head(gateFor(service, wreck));
 	}
 
 	/** Makes for a gate along the service road, to hold just short of it. */
@@ -374,7 +372,7 @@ function createTruck(world: World, cars: Car[], home: number, taken: Set<number>
 			false
 		);
 		// the gate is open from the word to go until the truck is through it
-		door = { gate: GATES.indexOf(gate), from: 0, to: reach(gate + SLIP + 3) };
+		door = { gate: gates.indexOf(gate), from: 0, to: reach(gate + SLIP + 3) };
 		stage = 'approach';
 	}
 
@@ -388,7 +386,7 @@ function createTruck(world: World, cars: Car[], home: number, taken: Set<number>
 		const car = wreck!;
 		const { x, y } = car.body.getPosition();
 		const lie = car.body.getAngle();
-		const along = Math.atan2(TRACK.ty[car.sample], TRACK.tx[car.sample]);
+		const along = Math.atan2(track.ty[car.sample], track.tx[car.sample]);
 		tail = Math.cos(lie - along) < 0;
 		const skew = clamp(turn(lie + (tail ? Math.PI : 0) - along), -SKEW, SKEW);
 		const out = NOSE * (tail ? -1 : 1);
@@ -402,11 +400,11 @@ function createTruck(world: World, cars: Car[], home: number, taken: Set<number>
 			let cx = x + Math.cos(lie) * out + dx * (CABLE + TRUCK.hook);
 			let cy = y + Math.sin(lie) * out + dy * (CABLE + TRUCK.hook);
 			// and no nearer the wall than it would drive
-			const sample = nearest(cx, cy, car.sample);
-			const across = lateral(cx, cy, sample);
+			const sample = nearest(track, cx, cy, car.sample);
+			const across = lateral(track, cx, cy, sample);
 			const room = clamp(across, -EDGE, EDGE) - across;
-			cx += TRACK.nx[sample] * room;
-			cy += TRACK.ny[sample] * room;
+			cx += track.nx[sample] * room;
+			cy += track.ny[sample] * room;
 			// the back axle leads, from where it is to where that puts it
 			const to = { x: cx - dx * TRUCK.axle, y: cy - dy * TRUCK.axle, angle: facing + Math.PI };
 			const points = curve({ ...from, angle: from.angle + Math.PI }, to);
@@ -440,10 +438,10 @@ function createTruck(world: World, cars: Car[], home: number, taken: Set<number>
 	/** On down the track, as it is, until the wreck is far enough behind to back up to. */
 	function pass() {
 		const front = axleAt(TRUCK.axle);
-		const from = nearest(front.x, front.y, truck.sample);
-		const n = TRACK.n;
+		const from = nearest(track, front.x, front.y, truck.sample);
+		const n = track.n;
 		const lying = from + ((wreck!.sample - from + n * 1.5) % n) - n / 2;
-		const across = lateral(front.x, front.y, from);
+		const across = lateral(track, front.x, front.y, from);
 		take(
 			drive(front, [
 				[from, across],
@@ -457,13 +455,13 @@ function createTruck(world: World, cars: Car[], home: number, taken: Set<number>
 	/** Off with the wreck: out at the next gate with room before it, and on to the next empty bay. */
 	function tow() {
 		const front = axleAt(TRUCK.axle);
-		const from = nearest(front.x, front.y, truck.sample);
-		const across = lateral(front.x, front.y, from);
+		const from = nearest(track, front.x, front.y, truck.sample);
+		const across = lateral(track, front.x, front.y, from);
 		// far enough to be back at the kerb without swinging the wreck about
 		const run = Math.ceil(Math.max(10, Math.sqrt(42 * Math.abs(across - NEARSIDE))));
-		const out = from + run + SLIP + ahead(from + run + SLIP, next(GATES, from, run + SLIP));
-		const free = BAYS.filter((bay) => !taken.has(bay));
-		const bay = next(free.length ? free : BAYS, out + SLIP, BAY_IN);
+		const out = from + run + SLIP + ahead(from + run + SLIP, next(gates, from, run + SLIP));
+		const free = bays.filter((bay) => !taken.has(bay));
+		const bay = next(free.length ? free : bays, out + SLIP, BAY_IN);
 		taken.add(bay);
 		const stop = out + SLIP + BAY_IN + ahead(out + SLIP + BAY_IN, bay);
 		take(
@@ -486,7 +484,7 @@ function createTruck(world: World, cars: Car[], home: number, taken: Set<number>
 		// the gate is opened as the truck comes up to it, and a truck this far
 		// past it has the wreck behind the wall
 		off = reach(out + SLIP + 3);
-		door = { gate: GATES.indexOf(ahead(0, out)), from: reach(out - SLIP - 12), to: off };
+		door = { gate: gates.indexOf(ahead(0, out)), from: reach(out - SLIP - 12), to: off };
 		stage = 'tow';
 	}
 
@@ -527,7 +525,7 @@ function createTruck(world: World, cars: Car[], home: number, taken: Set<number>
 		away(car: Car) {
 			const jobs = waiting.length + (wreck ? 1 : 0);
 			const on = truck.sample + LAYBY_OUT - 2;
-			return ahead(on, gateFor(car) - SLIP - HOLD) + jobs * 1000;
+			return ahead(on, gateFor(service, car) - SLIP - HOLD) + jobs * 1000;
 		},
 
 		/** Whether this truck leaves the track clear: no wreck waiting, and none on the hook still on it. */
@@ -562,7 +560,7 @@ function createTruck(world: World, cars: Car[], home: number, taken: Set<number>
 				rest(body);
 			} else if (stage === 'out') {
 				// a wreck still rolling when the truck set off may have gone on past a later gate
-				const nearer = gateFor(wreck!);
+				const nearer = gateFor(service, wreck!);
 				if (nearer !== gate && ahead(truck.sample + LAYBY_OUT - 2, nearer - SLIP - HOLD) < 150) {
 					head(nearer);
 				}

@@ -22,6 +22,7 @@ import {
 import { drawConditions, inCondition, ROSTER } from './roster';
 import { checkSettings, DEFAULT_SETTINGS, tuned, type Settings } from './settings';
 import { drawGrid, LIGHTS, random, rank } from './sim';
+import { getTrack } from './track';
 
 // The one room everybody at /race is in. It runs the cycle (betting, the
 // race, the result, and round again) on an alarm, keeps a socket open to
@@ -204,17 +205,24 @@ export class RaceRoom extends DurableObject<Env> {
 
 	private get state(): RoomState {
 		const state = this.ctx.storage.kv.get<RoomState>('state');
-		// a state kept from before races carried their settings takes today's
+		// A state kept from before races carried their settings takes today's;
+		// one from before there was a choice of track was raced on the circuit.
 		return state
-			? { ...state, settings: state.settings ?? this.settings }
+			? {
+					...state,
+					settings: state.settings
+						? { ...state.settings, track: state.settings.track ?? 'circuit' }
+						: this.settings
+				}
 			: { ...IDLE, settings: this.settings };
 	}
 
 	/** The admin's settings, or the code's where there are none. */
 	private get settings(): Settings {
 		const saved = this.ctx.storage.kv.get<Settings>('settings');
+		// saved before a setting existed, it is the code's
 		return saved
-			? { ...saved, cars: { ...DEFAULT_SETTINGS.cars, ...saved.cars } }
+			? { ...DEFAULT_SETTINGS, ...saved, cars: { ...DEFAULT_SETTINGS.cars, ...saved.cars } }
 			: DEFAULT_SETTINGS;
 	}
 
@@ -270,7 +278,10 @@ export class RaceRoom extends DurableObject<Env> {
 		const conditions = drawConditions(rand, field.length);
 		const grid = field.map((entry) => entry.id);
 		const cars = field.map((entry, slot) => inCondition(entry, conditions[slot]));
-		const trials = Array.from({ length: settings.trials }, () => resultOf(record(seed(), cars)));
+		const track = getTrack(settings.track);
+		const trials = Array.from({ length: settings.trials }, () =>
+			resultOf(record(seed(), cars, track))
+		);
 		this.ctx.storage.kv.delete('recording');
 		for (const market of MARKETS) {
 			for (const [outcome, chips] of Object.entries(
@@ -300,7 +311,7 @@ export class RaceRoom extends DurableObject<Env> {
 		const cars = state.grid.map((id, slot) =>
 			inCondition(roster.find((entry) => entry.id === id)!, state.conditions[slot])
 		);
-		const recording = record(raceSeed, cars, flags);
+		const recording = record(raceSeed, cars, getTrack(state.settings.track), flags);
 		const result = resultOf(recording);
 		const bytes = pack(recording);
 		this.ctx.storage.kv.put('recording', bytes);
@@ -752,6 +763,7 @@ export class RaceRoom extends DurableObject<Env> {
 		return {
 			round: state.round,
 			phase: state.phase,
+			track: state.settings.track,
 			// when this phase began, so the page can show how far through it is
 			since: {
 				idle: state.endsAt,

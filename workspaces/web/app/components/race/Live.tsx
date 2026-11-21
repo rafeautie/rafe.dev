@@ -4,12 +4,13 @@ import { Game, type Paint } from './Game';
 import { MIN_H, MIN_W, fit, layout } from './hud';
 import { entry, type Running, type Tick } from './shared';
 import { createReplay, unpack, type Replay } from '~/lib/race/recording';
-import { STANDING_BY, createRenderer, type CarView } from '~/lib/race/render';
+import { createRenderer, type CarView } from '~/lib/race/render';
 import type { Bet, FromRoom, RoomState, Standing, ToRoom } from '~/lib/race/room';
 import { ROSTER } from '~/lib/race/roster';
 import { LAPS, createRace, rank } from '~/lib/race/sim';
 import { createSound, type Sound } from '~/lib/race/sound';
-import { TRACK } from '~/lib/race/track';
+import { DEFAULT_SETTINGS } from '~/lib/race/settings';
+import { getTrack } from '~/lib/race/track';
 
 // The race everybody is watching. The page holds a socket to the race room
 // and shows whatever the room says is happening: the cars waiting on the
@@ -65,7 +66,9 @@ export default function Live() {
 	}, []);
 
 	useEffect(() => {
-		const renderer = createRenderer(canvas.current!);
+		// the track the room's races run on, once it has said which
+		let track = getTrack(DEFAULT_SETTINGS.track);
+		const renderer = createRenderer(canvas.current!, track);
 		let state: RoomState | null = null;
 		let replay: Replay | null = null;
 		// the cars sitting on the grid, shown until there is a race to show
@@ -146,11 +149,13 @@ export default function Live() {
 				}
 				state = message.state;
 				setPools(message.pools);
+				track = getTrack(state.settings.track);
+				renderer.setTrack(track);
 				if (state.phase === 'betting') {
 					replay = null;
 					setRunning(null);
 					renderer.reset();
-					waiting = createRace(0, state.grid.map(entry)).cars;
+					waiting = createRace(0, state.grid.map(entry), track).cars;
 					// the state is repeated during betting; only a new round clears the ticker
 					if (state.round !== ticked) {
 						setTicker([]);
@@ -202,7 +207,7 @@ export default function Live() {
 					lifted = now;
 					const order = rank(replay.cars);
 					// laps ended under caution are run again, so they are not counted
-					const { extra } = replay;
+					const { extra, track: raced } = replay;
 					setRunning({
 						order: order.map((car) => car.entry.id),
 						cars: Object.fromEntries(
@@ -211,7 +216,7 @@ export default function Live() {
 								{
 									fraction: Math.max(
 										0,
-										Math.min(1, car.progress / TRACK.length / LAPS - extra / LAPS)
+										Math.min(1, car.progress / raced.length / LAPS - extra / LAPS)
 									),
 									lap: car.laps - extra,
 									retired: car.retired,
@@ -231,10 +236,10 @@ export default function Live() {
 				cars,
 				moved,
 				{ line: false, hulls: false },
-				showing ? { trucks: showing.trucks, caution: showing.flag === 'yellow' } : STANDING_BY,
+				showing ? { trucks: showing.trucks, caution: showing.flag === 'yellow' } : undefined,
 				(painter) => paint.current?.(painter, cars, showing, dt)
 			);
-			audio.current?.update(replay?.cars ?? [], moved);
+			audio.current?.update(replay?.cars ?? [], track, moved);
 		});
 
 		return () => {

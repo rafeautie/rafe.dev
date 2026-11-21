@@ -1,5 +1,5 @@
 import type { RecordedEvent, ReplayCar } from './recording';
-import { HALF_ROAD, WORLD_W, lateral, nearest } from './track';
+import { HALF_ROAD, WORLD_W, lateral, nearest, type Track } from './track';
 
 // The sound of the race, made up on the spot from what the replay shows:
 // an engine and a set of tyres for every car, and a crunch for each knock.
@@ -112,8 +112,8 @@ export function createSound(cars: number) {
 	});
 
 	return {
-		/** Follows the cars as they are now, `dt` race seconds on from last time; 0 while paused. */
-		update(shown: ReplayCar[], dt: number) {
+		/** Follows the cars as they are now on `track`, `dt` race seconds on from last time; 0 while paused. */
+		update(shown: ReplayCar[], track: Track, dt: number) {
 			const now = context.currentTime;
 			master.gain.setTargetAtTime(dt > 0 ? 1 : 0, now, 0.05);
 			if (dt <= 0) return;
@@ -139,7 +139,8 @@ export function createSound(cars: number) {
 				// own and barely climbs with speed. Loose ground does not
 				// screech; it rumbles under any moving car, more under a
 				// sliding one.
-				const offRoad = Math.abs(lateral(car.x, car.y, nearest(car.x, car.y))) > HALF_ROAD;
+				const offRoad =
+					Math.abs(lateral(track, car.x, car.y, nearest(track, car.x, car.y))) > HALF_ROAD;
 				const past = (from: number, full: number) =>
 					car.retired ? 0 : Math.max(0, Math.min(1, (car.slip - from) / (full - from)));
 				const hard = offRoad ? 0 : past(SCREECH_FROM, SCREECH_FULL);

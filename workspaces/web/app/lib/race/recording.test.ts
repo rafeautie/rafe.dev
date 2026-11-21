@@ -2,15 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { createReplay, pack, record, unpack } from './recording';
 import { ROSTER } from './roster';
 import { createRace, drawGrid, rank } from './sim';
+import { getTrack } from './track';
+
+// on the circuit, where the seeds these pick were picked
+const track = getTrack('circuit');
 
 describe('a recording', () => {
 	it('plays back as the race it was made from', () => {
 		const seed = 2;
 		const grid = drawGrid(seed, ROSTER);
-		const recording = record(seed, grid);
+		const recording = record(seed, grid, track);
 		const replay = createReplay(recording, ROSTER);
 		// the same race again, to hold the replay up against
-		const race = createRace(seed, grid);
+		const race = createRace(seed, grid, track);
 		let hits = 0;
 		for (let frame = 0; frame < recording.frames; frame++) {
 			for (const event of replay.seek(frame / recording.rate)) if (event.kind === 'hit') hits++;
@@ -44,7 +48,7 @@ describe('a recording', () => {
 	});
 
 	it('shows the same thing after seeking backwards', () => {
-		const recording = record(2, drawGrid(2, ROSTER));
+		const recording = record(2, drawGrid(2, ROSTER), track);
 		const straight = createReplay(recording, ROSTER);
 		const wound = createReplay(recording, ROSTER);
 		straight.seek(30);
@@ -54,7 +58,7 @@ describe('a recording', () => {
 	});
 
 	it('gives the gap between two cars by the clock', () => {
-		const replay = createReplay(record(2, drawGrid(2, ROSTER)), ROSTER);
+		const replay = createReplay(record(2, drawGrid(2, ROSTER), track), ROSTER);
 		// on the grid nobody has yet been where the car behind is
 		expect(replay.gap(1, 0)).toBeNull();
 		replay.seek(30);
@@ -71,9 +75,9 @@ describe('a recording', () => {
 	it('plays back the caution and the truck that fetched the wreck', () => {
 		// seed 7 loses a car a quarter of a minute in
 		const grid = drawGrid(7, ROSTER);
-		const recording = record(7, grid);
+		const recording = record(7, grid, track);
 		const replay = createReplay(recording, ROSTER);
-		const race = createRace(7, grid);
+		const race = createRace(7, grid, track);
 		let cautions = 0;
 		let again = 0;
 		let towed = 0;
@@ -113,7 +117,7 @@ describe('a recording', () => {
 	});
 
 	it('still plays a recording made before there were trucks', () => {
-		const { trucks: _, ...recording } = record(2, drawGrid(2, ROSTER));
+		const { trucks: _, ...recording } = record(2, drawGrid(2, ROSTER), track);
 		const cars = ROSTER.length * 10;
 		// the same race with the trucks' bytes taken out of every moment
 		const moment = recording.poses.length / recording.frames;
@@ -122,7 +126,7 @@ describe('a recording', () => {
 			poses.set(recording.poses.subarray(frame * moment, frame * moment + cars), frame * cars);
 		}
 		const old = createReplay({ ...recording, poses }, ROSTER);
-		const now = createReplay(record(2, drawGrid(2, ROSTER)), ROSTER);
+		const now = createReplay(record(2, drawGrid(2, ROSTER), track), ROSTER);
 		old.seek(30);
 		now.seek(30);
 		expect(old.cars).toEqual(now.cars);
@@ -134,9 +138,14 @@ describe('a recording', () => {
 		});
 	});
 
+	it('takes one packed before there was a choice of track to be on the circuit', () => {
+		const { track: _, ...older } = record(1, drawGrid(1, ROSTER), getTrack('oval'));
+		expect(unpack(pack(older as never)).track).toBe('circuit');
+	});
+
 	it('survives being packed into bytes, and stays under 400 KB', () => {
 		for (let seed = 1; seed <= 10; seed++) {
-			const recording = record(seed, drawGrid(seed, ROSTER));
+			const recording = record(seed, drawGrid(seed, ROSTER), track);
 			const bytes = pack(recording);
 			expect(bytes.length).toBeLessThan(400_000);
 			const { poses, ...header } = unpack(bytes);

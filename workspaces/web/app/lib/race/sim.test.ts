@@ -1,26 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { ROSTER } from './roster';
 import {
-	BAYS,
 	BAY_IN,
 	BAY_OUT,
-	GATES,
-	HOMES,
 	LAYBY,
 	LAYBY_IN,
 	LAYBY_OUT,
 	RING,
 	SLIP,
 	TIGHTEST,
-	ahead,
-	place
+	serviceFor
 } from './service';
 import { createRace, DT, drawGrid, LAPS, LIGHTS, rank, TIME_CAP, type RaceEvent } from './sim';
-import { HALF_CORRIDOR, TRACK, lateral, nearest } from './track';
+import {
+	getTrack,
+	HALF_CORRIDOR,
+	lateral,
+	nearest,
+	TRACK_IDS,
+	type Track,
+	type TrackId
+} from './track';
 
-/** Runs a race to its end, with a caution thrown by hand at each of `flags`, and returns it with all that happened. */
-function run(seed: number, flags: number[] = []) {
-	const race = createRace(seed, drawGrid(seed, ROSTER), flags);
+/**
+ * Runs a race on a track to its end, with a caution thrown by hand at each
+ * of `flags`, and returns it with all that happened.
+ */
+function run(seed: number, track: Track, flags: number[] = []) {
+	const race = createRace(seed, drawGrid(seed, ROSTER), track, flags);
 	const events: RaceEvent[] = [];
 	// more steps than the longest race is allowed to last
 	for (let step = 0; step < 60 * 190 && !race.done; step++) {
@@ -35,14 +42,15 @@ function run(seed: number, flags: number[] = []) {
 const running = (race: ReturnType<typeof createRace>) =>
 	rank(race.cars.filter((car) => !car.retired)).map((car) => car.entry.id);
 
-describe('the track', () => {
-	const { n, x, y } = TRACK;
+describe.each(TRACK_IDS)('the %s', (id) => {
+	const track = getTrack(id);
+	const { n, x, y } = track;
 
 	it('keeps its stretches far enough apart that each has its own walls', () => {
 		for (let i = 0; i < n; i++) {
 			for (let j = i + 1; j < n; j++) {
 				// neighbours along the lap are close by nature
-				if (Math.min(j - i, n - j + i) * TRACK.step < 4 * HALF_CORRIDOR) continue;
+				if (Math.min(j - i, n - j + i) * track.step < 4 * HALF_CORRIDOR) continue;
 				expect(Math.hypot(x[i] - x[j], y[i] - y[j])).toBeGreaterThan(2 * HALF_CORRIDOR);
 			}
 		}
@@ -62,9 +70,11 @@ describe('the track', () => {
 	});
 });
 
-describe('a race', () => {
+describe.each(TRACK_IDS)('a race on the %s', (id) => {
+	const track = getTrack(id);
+
 	it('runs the same way from the same seed', () => {
-		const [first, second] = [run(7), run(7)];
+		const [first, second] = [run(7, track), run(7, track)];
 		expect(second.time).toBe(first.time);
 		expect(second.order().map((car) => [car.entry.id, car.finishTime, car.progress])).toEqual(
 			first.order().map((car) => [car.entry.id, car.finishTime, car.progress])
@@ -77,7 +87,7 @@ describe('a race', () => {
 		() => {
 			const wins = new Map<string, number>();
 			for (let seed = 1; seed <= 100; seed++) {
-				const race = run(seed);
+				const race = run(seed, track);
 				expect(race.done).toBe(true);
 				// ended by the cars finishing, not by the clock running out, cautions and all
 				expect(race.time).toBeLessThan(LIGHTS + TIME_CAP - 10);
@@ -90,7 +100,7 @@ describe('a race', () => {
 				for (const car of race.cars) {
 					// nothing blew up, and nothing got through a wall but on a truck's hook
 					expect(Number.isFinite(car.x + car.y + car.angle)).toBe(true);
-					const across = lateral(car.x, car.y, nearest(car.x, car.y));
+					const across = lateral(track, car.x, car.y, nearest(track, car.x, car.y));
 					if (!car.towed) expect(Math.abs(across)).toBeLessThan(HALF_CORRIDOR + 0.5);
 				}
 				wins.set(winner.entry.id, (wins.get(winner.entry.id) ?? 0) + 1);
@@ -100,8 +110,10 @@ describe('a race', () => {
 	);
 });
 
-describe('the service road', () => {
-	const { n, x, y } = TRACK;
+describe.each(TRACK_IDS)('the service road on the %s', (id) => {
+	const track = getTrack(id);
+	const { n, x, y } = track;
+	const { homes, gates, bays, ahead, place } = serviceFor(track);
 	/** How far a point is from the middle of the track. */
 	const clear = ([px, py]: [number, number]) => {
 		let least = Infinity;
@@ -113,12 +125,12 @@ describe('the service road', () => {
 		for (let sample = 0; sample < n; sample++) {
 			expect(clear(place(sample, -RING))).toBeGreaterThan(RING - 0.5);
 		}
-		for (const home of HOMES) {
+		for (const home of homes) {
 			for (let sample = home - LAYBY_IN; sample <= home + LAYBY_OUT; sample++) {
 				expect(clear(place(sample, -RING - LAYBY))).toBeGreaterThan(RING);
 			}
 		}
-		for (const bay of BAYS) expect(clear(place(bay, -RING - 6))).toBeGreaterThan(RING);
+		for (const bay of bays) expect(clear(place(bay, -RING - 6))).toBeGreaterThan(RING);
 	});
 
 	it('bends no tighter than a truck can steer', () => {
@@ -132,14 +144,14 @@ describe('the service road', () => {
 	});
 
 	it('has a gate close after each garage, and no bay in a lay-by', () => {
-		for (const home of HOMES) {
+		for (const home of homes) {
 			// near enough to be the first the truck comes to, far enough to be back on the road first
-			const first = Math.min(...GATES.map((gate) => ahead(home + LAYBY_OUT, gate - SLIP - 2)));
+			const first = Math.min(...gates.map((gate) => ahead(home + LAYBY_OUT, gate - SLIP - 2)));
 			expect(first).toBeLessThan(10);
 			// A truck is off the road for a bay from a little before it to a little
 			// after. The last few metres of that, and of a lay-by, are all but on
 			// the road, and may be the same few metres.
-			for (const bay of BAYS) {
+			for (const bay of bays) {
 				expect(ahead(home - LAYBY_IN - BAY_OUT + 6, bay)).toBeGreaterThan(
 					LAYBY_IN + LAYBY_OUT + BAY_OUT + BAY_IN - 12
 				);
@@ -148,10 +160,22 @@ describe('the service road', () => {
 	});
 });
 
-describe('a caution', () => {
+/**
+ * Seeds that make the races the caution tests need, on each track: one that
+ * loses a single car early on, and a clean one, where nobody is in trouble
+ * when a caution is thrown by hand twenty seconds in.
+ */
+const SEEDS: Record<TrackId, { wreck: number; clean: number }> = {
+	circuit: { wreck: 7, clean: 2 },
+	oval: { wreck: 33, clean: 2 }
+};
+
+describe.each(TRACK_IDS)('a caution on the %s', (id) => {
+	const track = getTrack(id);
+	const { wreck: wrecking, clean } = SEEDS[id];
+
 	it('comes out for a wreck, which a truck takes off the track before the green', () => {
-		// seed 7 loses a car a quarter of a minute in
-		const race = run(7);
+		const race = run(wrecking, track);
 		const flags = race.all.filter((event) => ['retire', 'caution', 'green'].includes(event.kind));
 		expect(flags.map((event) => event.kind)).toEqual(['retire', 'caution', 'green']);
 		const [retired, caution, green] = flags;
@@ -161,15 +185,36 @@ describe('a caution', () => {
 		// the wreck is in the infield, and scored where it stopped, not where it was left
 		const wreck = race.cars[retired.car];
 		expect(wreck.towed).toBe(true);
-		expect(lateral(wreck.x, wreck.y, nearest(wreck.x, wreck.y))).toBeLessThan(-RING);
-		expect(wreck.progress).toBeLessThan(TRACK.length * LAPS);
+		expect(lateral(track, wreck.x, wreck.y, nearest(track, wreck.x, wreck.y))).toBeLessThan(-RING);
+		expect(wreck.progress).toBeLessThan(track.length * LAPS);
 		expect(race.order().at(-1)).toBe(wreck);
 		// and the trucks are home again
 		for (const truck of race.trucks) expect(truck).toMatchObject({ busy: false, towing: -1 });
 	});
 
+	it('leaves every wreck to coast to a stop where it went out, not roll on round the lap', () => {
+		for (let seed = 1; seed <= 40; seed++) {
+			const race = createRace(seed, drawGrid(seed, ROSTER), track);
+			// when each wreck went out, until it has stopped or been hooked
+			const rolling = new Map<number, number>();
+			while (!race.done) {
+				race.step();
+				for (const event of race.events) {
+					if (event.kind === 'retire') rolling.set(event.car, event.time);
+				}
+				race.events.length = 0;
+				for (const [index, out] of rolling) {
+					const wreck = race.cars[index];
+					const { x, y } = wreck.body.getLinearVelocity();
+					if (wreck.towed || Math.hypot(x, y) < 0.1) rolling.delete(index);
+					else expect(race.time - out, `seed ${seed}`).toBeLessThan(8);
+				}
+			}
+		}
+	});
+
 	it('is cleared by a truck that steers like one, and a wreck drawn in on a cable', () => {
-		const race = createRace(7, drawGrid(7, ROSTER));
+		const race = createRace(wrecking, drawGrid(wrecking, ROSTER), track);
 		const turned = (from: number, to: number) =>
 			Math.abs(Math.atan2(Math.sin(to - from), Math.cos(to - from)));
 		let trucks = race.trucks.map((truck) => ({ ...truck }));
@@ -209,7 +254,7 @@ describe('a caution', () => {
 	});
 
 	it('ends as the leader crosses the line, and the laps ended under it are run again', () => {
-		const race = createRace(7, drawGrid(7, ROSTER));
+		const race = createRace(wrecking, drawGrid(wrecking, ROSTER), track);
 		let again = 0;
 		let greens = 0;
 		while (!race.done) {
@@ -225,7 +270,7 @@ describe('a caution', () => {
 					// given in the step the leader came round to the line
 					const leader = rank(race.cars.filter((car) => !car.retired))[0];
 					expect(leader.laps).toBe(before + 1);
-					expect(leader.progress % TRACK.length).toBeLessThan(1);
+					expect(leader.progress % track.length).toBeLessThan(1);
 					greens++;
 				}
 				// and nobody takes the flag under caution
@@ -240,9 +285,8 @@ describe('a caution', () => {
 	});
 
 	it('thrown by hand, slows the field and closes it up in the order it was in', () => {
-		// seed 2 is a clean race: nobody is in trouble when the flag comes out
 		const at = LIGHTS + 20;
-		const race = createRace(2, drawGrid(2, ROSTER), [at]);
+		const race = createRace(clean, drawGrid(clean, ROSTER), track, [at]);
 		let order: string[] = [];
 		let out = 0;
 		let back = 0;
@@ -273,8 +317,8 @@ describe('a caution', () => {
 	it('leaves the race as it was up to the moment it is thrown', () => {
 		const at = LIGHTS + 20;
 		const [plain, flagged] = [
-			createRace(2, drawGrid(2, ROSTER)),
-			createRace(2, drawGrid(2, ROSTER), [at])
+			createRace(clean, drawGrid(clean, ROSTER), track),
+			createRace(clean, drawGrid(clean, ROSTER), track, [at])
 		];
 		while (plain.time < at - 2 * DT) {
 			plain.step();
@@ -284,8 +328,8 @@ describe('a caution', () => {
 			plain.cars.map((car) => [car.x, car.y, car.angle, car.progress])
 		);
 		// and is not thrown at all before the start, or once the race has been won
-		expect(run(2, [1]).all.some((event) => event.kind === 'caution')).toBe(false);
-		const won = run(2).order()[0].finishTime;
-		expect(run(2, [won + 1]).all.some((event) => event.kind === 'caution')).toBe(false);
+		expect(run(clean, track, [1]).all.some((event) => event.kind === 'caution')).toBe(false);
+		const won = run(clean, track).order()[0].finishTime;
+		expect(run(clean, track, [won + 1]).all.some((event) => event.kind === 'caution')).toBe(false);
 	});
 });

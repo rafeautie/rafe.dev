@@ -1,7 +1,7 @@
 import type { Entry } from './roster';
-import { HOMES, parked } from './service';
+import { serviceFor } from './service';
 import { createRace, DT, HULL, LIGHTS, TIME_CAP, type Flag, type RaceEvent } from './sim';
-import { TRACK } from './track';
+import { getTrack, type Track, type TrackId } from './track';
 
 // A whole race, run ahead of time and written down so it can be played back
 // anywhere: where every car and tow truck was thirty times a second, and what
@@ -23,6 +23,8 @@ const DENT = 0.005;
 export type RecordedEvent = RaceEvent & { hull?: number[] };
 
 export type Recording = {
+	/** Which track the race was run on. */
+	track: TrackId;
 	/** Moments recorded per second. */
 	rate: number;
 	/** How many moments, the first at time 0. */
@@ -72,11 +74,12 @@ export type Replay = ReturnType<typeof createReplay>;
 const round = (value: number, places = 0) => Math.round(value * 10 ** places) / 10 ** places + 0;
 
 /**
- * Runs the race for a seed and starting order to its end, and returns it
- * recorded. `flags` are the race times at which a caution is thrown by hand.
+ * Runs the race for a seed and starting order on a track to its end, and
+ * returns it recorded. `flags` are the race times at which a caution is
+ * thrown by hand.
  */
-export function record(seed: number, grid: Entry[], flags: number[] = []): Recording {
-	const race = createRace(seed, grid, flags);
+export function record(seed: number, grid: Entry[], track: Track, flags: number[] = []): Recording {
+	const race = createRace(seed, grid, track, flags);
 	const longest = Math.ceil((LIGHTS + TIME_CAP) / DT / EVERY) + 2;
 	const moment = grid.length * POSE + race.trucks.length * TRUCK;
 	const view = new DataView(new ArrayBuffer(longest * moment));
@@ -131,6 +134,7 @@ export function record(seed: number, grid: Entry[], flags: number[] = []): Recor
 	write();
 
 	return {
+		track: track.id,
 		rate: 1 / (DT * EVERY),
 		frames,
 		grid: grid.map((entry) => entry.id),
@@ -154,7 +158,8 @@ export function pack(recording: Recording): Uint8Array {
 export function unpack(bytes: Uint8Array): Recording {
 	const length = new DataView(bytes.buffer, bytes.byteOffset).getUint32(0, true);
 	const header = JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + length)));
-	return { ...header, poses: bytes.subarray(4 + length) };
+	// recorded before there was a choice of track, when there was only the circuit
+	return { track: 'circuit', ...header, poses: bytes.subarray(4 + length) };
 }
 
 /**
@@ -167,6 +172,7 @@ export function unpack(bytes: Uint8Array): Recording {
  */
 export function createReplay(recording: Recording, roster: Entry[]) {
 	const { rate, frames, grid, events, poses } = recording;
+	const track = getTrack(recording.track);
 	const view = new DataView(poses.buffer, poses.byteOffset, poses.byteLength);
 	const cars = grid.map(
 		(id): ReplayCar => ({
@@ -186,7 +192,8 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		})
 	);
 	// one that was never called out stays parked
-	const trucks = HOMES.map(
+	const { homes, parked } = serviceFor(track);
+	const trucks = homes.map(
 		(home): ReplayTruck => ({ ...parked(home), busy: false, towing: -1, gate: -1 })
 	);
 	const recorded = recording.trucks ?? 0;
@@ -254,7 +261,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			car.y = between(a + 2) / 256;
 			car.angle = facing(a + 4);
 			car.progress = between(a + 6) / 20 - 100;
-			car.laps = Math.floor(car.progress / TRACK.length);
+			car.laps = Math.floor(car.progress / track.length);
 			car.speed = (view.getInt8(a + 8) * (1 - t) + view.getInt8(b + 8) * t) / 2;
 			car.slip = (view.getUint8(a + 9) * (1 - t) + view.getUint8(b + 9) * t) / 10;
 		});
@@ -295,6 +302,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 
 	seek(0);
 	return {
+		track,
 		duration,
 		cars,
 		trucks,

@@ -1,7 +1,7 @@
 import { ChainShape, PolygonShape, World, type Body, type Fixture } from 'planck';
 import { createRecovery, type Truck } from './recovery';
 import type { Entry } from './roster';
-import { HALF_CORRIDOR, HALF_ROAD, MAX_OFFSET, TRACK, lateral, nearest } from './track';
+import { HALF_CORRIDOR, HALF_ROAD, MAX_OFFSET, lateral, nearest, type Track } from './track';
 
 // One race, start to finish. Each car is a rigid body pushed around by its
 // two axles' tyres, which grip up to a limit and slide past it, and steered
@@ -34,6 +34,8 @@ const AXLE = 1.3;
 const MAX_STEER = 0.55;
 /** Grip on the verge, as a share of grip on tarmac. */
 const VERGE_GRIP = 0.6;
+/** How hard a wreck's wheels drag, bent and flat as they are, as a share of the grip it has. */
+const WRECK_DRAG = 0.2;
 /** Sideways room one car leaves another when passing, centre to centre. */
 const CLEAR = 2.5;
 /** Extra room given to a wrecked car, which may be lying across the road. */
@@ -137,12 +139,6 @@ export type Flag = 'green' | 'yellow' | 'checkered';
 
 export type Race = ReturnType<typeof createRace>;
 
-/** Which way the track bends at each sample: 1 to the left, -1 to the right. */
-const TURN = TRACK.tx.map((tx, i) => {
-	const j = (i + 1) % TRACK.n;
-	return Math.sign(tx * TRACK.ty[j] - TRACK.ty[i] * TRACK.tx[j]);
-});
-
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
@@ -179,12 +175,13 @@ export function drawGrid(seed: number, roster: Entry[]): Entry[] {
 }
 
 /**
- * `grid` is the starting order, pole first. `flags` are the race times at
- * which race control throws a caution, whatever is happening on the track.
+ * `grid` is the starting order, pole first, on `track`. `flags` are the race
+ * times at which race control throws a caution, whatever is happening on the
+ * track.
  */
-export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
+export function createRace(seed: number, grid: Entry[], track: Track, flags: number[] = []) {
 	const rand = random(seed);
-	const { n, step: spacing, length } = TRACK;
+	const { n, step: spacing, length } = track;
 	const world = new World({ gravity: { x: 0, y: 0 } });
 
 	// a wall along each side of the track
@@ -193,8 +190,8 @@ export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
 		const loop = [];
 		for (let i = 0; i < n; i += 2) {
 			loop.push({
-				x: TRACK.x[i] + TRACK.nx[i] * HALF_CORRIDOR * side,
-				y: TRACK.y[i] + TRACK.ny[i] * HALF_CORRIDOR * side
+				x: track.x[i] + track.nx[i] * HALF_CORRIDOR * side,
+				y: track.y[i] + track.ny[i] * HALF_CORRIDOR * side
 			});
 		}
 		walls.createFixture({ shape: new ChainShape(loop, true), friction: 0.3, restitution: 0.2 });
@@ -209,9 +206,9 @@ export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
 		const behind = -(6 + 6.5 * slot);
 		const sample = (Math.round(behind / spacing) + n) % n;
 		const across = slot % 2 ? -2 : 2;
-		const x = TRACK.x[sample] + TRACK.nx[sample] * across;
-		const y = TRACK.y[sample] + TRACK.ny[sample] * across;
-		const angle = Math.atan2(TRACK.ty[sample], TRACK.tx[sample]);
+		const x = track.x[sample] + track.nx[sample] * across;
+		const y = track.y[sample] + track.ny[sample] * across;
+		const angle = Math.atan2(track.ty[sample], track.tx[sample]);
 		const body = world.createBody({
 			type: 'dynamic',
 			position: { x, y },
@@ -253,7 +250,7 @@ export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
 			errorEvery,
 			// the most aggressive driver runs right at what the tyres can do,
 			// which is quickest; past it they only slide
-			pace: paceFor(grip * G * lerp(0.73, 0.79, entry.aggression)),
+			pace: paceFor(track, grip * G * lerp(0.73, 0.79, entry.aggression)),
 			offset: 0,
 			errorAt: LIGHTS - Math.log(1 - rand()) * errorEvery,
 			errorUntil: 0,
@@ -285,7 +282,7 @@ export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
 		if (typeof b === 'number') hits.push({ car: cars[b], x, y, dx: nx, dy: ny, blow });
 	});
 
-	const recovery = createRecovery(world, cars);
+	const recovery = createRecovery(world, cars, track);
 	// A truck, and a wreck on its hook, cannot be pushed, so a car they bore
 	// down on would be crushed against the wall. A car that drives into them
 	// hits them; one they are the ones closing on, they pass over, and go on
@@ -416,12 +413,12 @@ export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
 	 */
 	function locate(car: Car) {
 		const at = car.body.getPosition();
-		const sample = nearest(at.x, at.y, car.sample);
+		const sample = nearest(track, at.x, at.y, car.sample);
 		let moved = sample - car.sample;
 		if (moved > n / 2) moved -= n;
 		if (moved < -n / 2) moved += n;
 		car.sample = sample;
-		car.across = lateral(at.x, at.y, sample);
+		car.across = lateral(track, at.x, at.y, sample);
 		// a wreck on the hook is not driving anywhere
 		if (!car.towed) car.progress += moved * spacing;
 
@@ -452,13 +449,22 @@ export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
 		const velocity = body.getLinearVelocity();
 		const heading = body.getWorldVector({ x: 1, y: 0 });
 		car.speed = velocity.x * heading.x + velocity.y * heading.y;
-		// a retired car is left to coast to a stop where it is
-		if (car.retired) return;
+		// a wreck on the hook goes where the truck draws it
+		if (car.towed) return;
 
 		const offRoad = Math.abs(car.across) > HALF_ROAD;
 		const grip = car.grip * (offRoad ? VERGE_GRIP : 1) * (1 - 0.2 * car.damage);
 
-		if (race.time >= LIGHTS + reaction[cars.indexOf(car)]) {
+		if (car.retired) {
+			// Nobody is driving a wreck, but it is still on its wheels: they
+			// grip the road sideways and drag along it, so it coasts to a stop
+			// where it is rather than gliding on round the lap.
+			const most = (grip * G * MASS) / 2;
+			car.slip = Math.max(
+				tyres(body, AXLE, 0, 0, WRECK_DRAG * most, most),
+				tyres(body, -AXLE, 0, 0, WRECK_DRAG * most, most)
+			);
+		} else if (race.time >= LIGHTS + reaction[cars.indexOf(car)]) {
 			// The car in the way: the nearest one ahead or alongside that the
 			// racing line, or the line this car is taking now, would run into.
 			// A wreck may be lying across the road, so it is given more room.
@@ -481,7 +487,7 @@ export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
 				const ahead = (((other.sample - car.sample + n * 1.5) % n) - n / 2) * spacing;
 				if (ahead < -5 || Math.abs(ahead) >= Math.abs(gap)) continue;
 				const room = CLEAR + (other.retired ? WRECK : 0);
-				const line = TRACK.line[other.sample];
+				const line = track.line[other.sample];
 				if (
 					followed(other)
 						? ahead < 0 || (ahead === 0 && cars.indexOf(other as Car) > index)
@@ -501,7 +507,7 @@ export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
 			} else if (blocker) {
 				// go round it on whichever side is nearer the line already held
 				const room = CLEAR + (blocker.retired ? WRECK : 0);
-				const line = TRACK.line[blocker.sample];
+				const line = track.line[blocker.sample];
 				const sides = [blocker.across + room - line, blocker.across - room - line]
 					.filter((o) => Math.abs(line + o) <= MAX_OFFSET)
 					.sort((p, q) => Math.abs(p - car.offset) - Math.abs(q - car.offset));
@@ -538,8 +544,8 @@ export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
 				const room = other.across + Math.sign(apart) * CLEAR;
 				offset =
 					apart > 0
-						? Math.max(offset, room - TRACK.line[car.sample])
-						: Math.min(offset, room - TRACK.line[car.sample]);
+						? Math.max(offset, room - track.line[car.sample])
+						: Math.min(offset, room - track.line[car.sample]);
 				if (Math.abs(room) > MAX_OFFSET + 0.3 && ahead > -1)
 					limit = Math.min(limit, Math.max(0, other.speed) - 1);
 			}
@@ -547,18 +553,18 @@ export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
 
 			// steer for a point on the line a little way ahead
 			const ahead = (car.sample + Math.round((5 + Math.abs(car.speed) * 0.3) / spacing)) % n;
-			const across = clamp(TRACK.line[ahead] + car.offset, -MAX_OFFSET, MAX_OFFSET);
+			const across = clamp(track.line[ahead] + car.offset, -MAX_OFFSET, MAX_OFFSET);
 			const aim = body.getLocalPoint({
-				x: TRACK.x[ahead] + TRACK.nx[ahead] * across,
-				y: TRACK.y[ahead] + TRACK.ny[ahead] * across
+				x: track.x[ahead] + track.nx[ahead] * across,
+				y: track.y[ahead] + track.ny[ahead] * across
 			});
 			const bearing = Math.atan2(aim.y, aim.x);
 			let steer = Math.atan2(4 * AXLE * Math.sin(bearing), Math.hypot(aim.x, aim.y));
 
 			// Off the line, the arc through a bend is tighter on the inside and
 			// wider on the outside, and so is the speed it can be taken at.
-			const inside = (car.across - TRACK.line[car.sample]) * TURN[car.sample];
-			const arc = Math.sqrt(clamp(1 - TRACK.bend[car.sample] * inside, 0.5, 1.5));
+			const inside = (car.across - track.line[car.sample]) * track.turn[car.sample];
+			const arc = Math.sqrt(clamp(1 - track.bend[car.sample] * inside, 0.5, 1.5));
 			// A mistake: once one is due, the driver misjudges the next braking
 			// point and arrives at the corner too fast, by a few per cent most
 			// times and by a quarter now and then.
@@ -586,7 +592,7 @@ export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
 			// accelerate or brake with. Into a corner too fast, a driver still
 			// brakes a little even with nothing left, giving up some line to
 			// scrub off speed rather than run on into the wall.
-			const cornering = Math.min(1, (car.speed ** 2 * TRACK.bend[car.sample]) / (grip * G));
+			const cornering = Math.min(1, (car.speed ** 2 * track.bend[car.sample]) / (grip * G));
 			const spare = Math.sqrt(1 - cornering ** 2) * car.nerve;
 			let throttle = 0;
 			let brake = 0;
@@ -689,8 +695,8 @@ export function createRace(seed: number, grid: Entry[], flags: number[] = []) {
  * The speed to hold at each track sample: as fast as cornering grip `limit`
  * (m/s²) allows round each bend, slowing early enough to make the next one.
  */
-function paceFor(limit: number) {
-	const { n, step, bend } = TRACK;
+function paceFor(track: Track, limit: number) {
+	const { n, step, bend } = track;
 	const pace = new Float32Array(n);
 	for (let i = 0; i < n; i++) pace[i] = Math.min(60, Math.sqrt(limit / Math.max(bend[i], 1e-4)));
 	// backwards round the lap, twice so the limit carries across the line

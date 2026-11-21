@@ -11,9 +11,11 @@ import {
 } from '~/lib/race/recording';
 import { createRenderer } from '~/lib/race/render';
 import { ROSTER, type Entry } from '~/lib/race/roster';
+import { DEFAULT_SETTINGS } from '~/lib/race/settings';
 import { drawGrid, LAPS, LIGHTS, rank, type Flag } from '~/lib/race/sim';
 import { FLAGS } from './shared';
 import { createSound, type Sound } from '~/lib/race/sound';
+import { getTrack, trackName, TRACK_IDS, type TrackId } from '~/lib/race/track';
 
 // The race on its own, with nothing networked: pick a seed, and the whole
 // race is run and recorded at once, then played back here the way everyone
@@ -95,6 +97,7 @@ function read(recording: Recording, replay: Replay, time: number, size: number):
 export default function Sandbox() {
 	const canvas = useRef<HTMLCanvasElement>(null);
 	const [seed, setSeed] = useState(1);
+	const [trackId, setTrackId] = useState<TrackId>(DEFAULT_SETTINGS.track);
 	// the race times at which a caution has been thrown by hand
 	const [flags, setFlags] = useState<number[]>([]);
 	const [paused, setPaused] = useState(false);
@@ -132,8 +135,9 @@ export default function Sandbox() {
 	}, [sound]);
 
 	useEffect(() => {
-		const renderer = createRenderer(canvas.current!);
-		const recording = record(seed, drawGrid(seed, ROSTER), flags);
+		const track = getTrack(trackId);
+		const renderer = createRenderer(canvas.current!, track);
+		const recording = record(seed, drawGrid(seed, ROSTER), track, flags);
 		const replay = createReplay(recording, ROSTER);
 		const size = pack(recording).length;
 		let time = Math.min(live.current.resume, replay.duration);
@@ -169,14 +173,14 @@ export default function Sandbox() {
 				trucks: replay.trucks,
 				caution: replay.flag === 'yellow'
 			});
-			audio.current?.update(replay.cars, moved);
+			audio.current?.update(replay.cars, track, moved);
 			if (now - shown > 150) {
 				shown = now;
 				setView({ ...read(recording, replay, time, size), level: audio.current?.level() });
 			}
 		});
 		return () => cancelAnimationFrame(frame);
-	}, [seed, flags]);
+	}, [seed, trackId, flags]);
 
 	/** Another race altogether, with none of the cautions thrown in this one. */
 	const race = (next: number) => {
@@ -226,6 +230,21 @@ export default function Sandbox() {
 				<Button variant="outline" onClick={() => race(seed + 1)}>
 					Next seed
 				</Button>
+				<div className="flex items-center gap-1">
+					{TRACK_IDS.map((id) => (
+						<Button
+							key={id}
+							variant={id === trackId ? 'default' : 'outline'}
+							onClick={() => {
+								// another race altogether, with none of this one's cautions
+								setFlags([]);
+								setTrackId(id);
+							}}
+						>
+							{trackName(id)}
+						</Button>
+					))}
+				</div>
 				<Button
 					variant="outline"
 					disabled={view?.flag !== 'green'}

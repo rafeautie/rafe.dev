@@ -104,6 +104,7 @@ describe('the race room', () => {
 			const recording = unpack(early.recordings[0]);
 			expect(state).toMatchObject({ round: 1, phase: 'racing', result: null });
 			expect(recording.grid).toEqual(state.grid);
+			expect(recording.track).toBe(state.settings.track);
 			// the phase lasts exactly as long as the recording does
 			expect(state.endsAt - state.startsAt).toBeCloseTo(
 				((recording.frames - 1) / recording.rate) * 1000
@@ -627,6 +628,8 @@ describe('the admin', () => {
 		const room = env.RACE_ROOM.getByName('admin bad settings');
 		const vixen = DEFAULT_SETTINGS.cars.vixen;
 		for (const bad of [
+			{ ...DEFAULT_SETTINGS, track: 'figure-eight' },
+			{ ...DEFAULT_SETTINGS, track: 'toString' },
 			{ ...DEFAULT_SETTINGS, trials: 4 },
 			{ ...DEFAULT_SETTINGS, trials: 61 },
 			{ ...DEFAULT_SETTINGS, start: 10.5 },
@@ -652,6 +655,7 @@ describe('the admin', () => {
 		await vi.waitFor(() => expect(viewer.states()).toHaveLength(1));
 		const tuned = {
 			...DEFAULT_SETTINGS,
+			track: 'circuit' as const,
 			cars: {
 				...DEFAULT_SETTINGS.cars,
 				vixen: { speed: 0.1, grip: 0.2, aggression: 0.3, reliability: 0.4 }
@@ -677,7 +681,7 @@ describe('the admin', () => {
 		await ring(room);
 		await vi.waitFor(() => expect(viewer.states()).toHaveLength(4));
 		const next = viewer.states()[3];
-		// pages are sent the tuned stats and money rules with the race
+		// pages are sent the tuned track, stats and money rules with the race
 		expect(next).toMatchObject({ round: 2, phase: 'betting', settings: tuned });
 		expect(next.endsAt).toBeGreaterThanOrEqual(before + 20_000);
 		expect(next.endsAt).toBeLessThanOrEqual(Date.now() + 20_000);

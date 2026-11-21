@@ -6,7 +6,6 @@ import type { Bet, RoomState, Standing } from '~/lib/race/room';
 import { CONDITIONS, ROSTER, inCondition } from '~/lib/race/roster';
 import { STATS } from '~/lib/race/settings';
 import { LAPS, LIGHTS, rank, type Flag } from '~/lib/race/sim';
-import { TRACK } from '~/lib/race/track';
 import { ASKS, FLAGS, SHORT, chips, entry, holding, label, signed } from './shared';
 import type { Running, Selection, Tick } from './shared';
 
@@ -432,9 +431,10 @@ export function createHud() {
 		// bet, race, result: each as long as it lasts, filled as far as it has got
 		const betting = room?.settings.bettingSeconds ?? 45;
 		const results = room?.settings.resultsSeconds ?? 15;
-		const raced = leader
-			? Math.max(0, Math.min(1, leader.progress / TRACK.length / LAPS - extra / LAPS))
-			: 0;
+		const raced =
+			leader && replay
+				? Math.max(0, Math.min(1, leader.progress / replay.track.length / LAPS - extra / LAPS))
+				: 0;
 		const stretches = [
 			[
 				betting,

@@ -1,7 +1,8 @@
-// The circuit: a closed centre line through the control points, resampled
-// about every metre, and the line the drivers aim for. Distances are metres.
-// The whole track fits a 160 x 90 world so it can be watched from one fixed
-// overhead view, like a slot car layout on a table.
+// The tracks: each a closed centre line through its control points,
+// resampled about every metre, and the line the drivers aim for. Distances
+// are metres. Every track fits the same 160 x 90 world so it can be watched
+// from one fixed overhead view, like a slot car layout on a table. Which one
+// a race runs on is the admin's choice (settings.ts).
 
 export const WORLD_W = 160;
 export const WORLD_H = 90;
@@ -12,9 +13,11 @@ export const HALF_CORRIDOR = 7;
 /** How far from the centre line a driver will place the middle of the car. */
 export const MAX_OFFSET = HALF_ROAD - 1.3;
 
-// Driven in this order. The first point is the start line, on the long bottom
-// straight; the grid forms up behind it.
-const CONTROL: [number, number][] = [
+// Each track is its control points, driven in order. The first point is the
+// start line, on the bottom straight; the grid forms up behind it.
+
+/** The winding circuit /race ran on first. */
+const CIRCUIT: [number, number][] = [
 	[80, 77],
 	[130, 75],
 	[148, 60],
@@ -34,12 +37,89 @@ const CONTROL: [number, number][] = [
 	[44, 76]
 ];
 
-function build() {
+/**
+ * An oval: a bend round each end, (x, radius) of its centre, joined by two
+ * straights, as points about every `spacing` metres. Driven anticlockwise on
+ * screen, so every bend is a left; `start` is how far along the bottom
+ * straight the line is, as a share of it.
+ */
+function oval(left: [number, number], right: [number, number], start: number, spacing = 8) {
+	const cy = WORLD_H / 2;
+	const [lx, lr] = left;
+	const [rx, rr] = right;
+	// where the straights touch each bend, as the angle round its centre
+	const touch = Math.acos((lr - rr) / (rx - lx));
+	const at = (cx: number, r: number, a: number): [number, number] => [
+		cx + r * Math.cos(a),
+		cy + r * Math.sin(a)
+	];
+	const pieces: ((t: number) => [number, number])[] = [];
+	const lengths: number[] = [];
+	const straight = (a: [number, number], b: [number, number]) => {
+		pieces.push((t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+		lengths.push(Math.hypot(b[0] - a[0], b[1] - a[1]));
+	};
+	const bend = (cx: number, r: number, from: number, to: number) => {
+		pieces.push((t) => at(cx, r, from + (to - from) * t));
+		lengths.push(Math.abs(to - from) * r);
+	};
+	const bottomL = at(lx, lr, touch);
+	const bottomR = at(rx, rr, touch);
+	const line: [number, number] = [
+		bottomL[0] + (bottomR[0] - bottomL[0]) * start,
+		bottomL[1] + (bottomR[1] - bottomL[1]) * start
+	];
+	straight(line, bottomR);
+	bend(rx, rr, touch, -touch);
+	straight(at(rx, rr, -touch), at(lx, lr, -touch));
+	bend(lx, lr, -touch, touch - 2 * Math.PI);
+	straight(bottomL, line);
+	const points: [number, number][] = [];
+	pieces.forEach((piece, k) => {
+		const count = Math.max(1, Math.round(lengths[k] / spacing));
+		for (let j = 0; j < count; j++) points.push(piece(j / count));
+	});
+	return points;
+}
+
+// A regular oval filling the world: two matching bends as wide as its
+// height allows, and a straight of about 70 m between them on each side.
+const OVAL = oval([44, 32], [116, 32], 0.5);
+
+/** The tracks there are, by id. */
+const TRACKS = {
+	oval: { name: 'Oval', control: OVAL },
+	circuit: { name: 'Circuit', control: CIRCUIT }
+};
+
+export type TrackId = keyof typeof TRACKS;
+export type Track = ReturnType<typeof build>;
+
+export const TRACK_IDS = Object.keys(TRACKS) as TrackId[];
+
+export const trackName = (id: TrackId) => TRACKS[id].name;
+
+export const isTrackId = (id: unknown): id is TrackId =>
+	typeof id === 'string' && Object.hasOwn(TRACKS, id);
+
+const built = new Map<TrackId, Track>();
+
+/** A track by id, worked out the first time it is asked for. */
+export function getTrack(id: TrackId): Track {
+	let track = built.get(id);
+	if (!track) {
+		track = build(id, TRACKS[id].control);
+		built.set(id, track);
+	}
+	return track;
+}
+
+function build(id: TrackId, control: [number, number][]) {
 	// a Catmull-Rom spline through the control points, as a fine polyline
 	const fine: [number, number][] = [];
-	const count = CONTROL.length;
+	const count = control.length;
 	for (let c = 0; c < count; c++) {
-		const [p0, p1, p2, p3] = [-1, 0, 1, 2].map((d) => CONTROL[(c + d + count) % count]);
+		const [p0, p1, p2, p3] = [-1, 0, 1, 2].map((d) => control[(c + d + count) % count]);
 		for (let k = 0; k < 64; k++) {
 			const t = k / 64;
 			const at = (a: number, b: number, c: number, d: number) =>
@@ -120,7 +200,14 @@ function build() {
 	const bend = new Float32Array(n);
 	for (let i = 0; i < n; i++) bend[i] = Math.abs(curve(at(i - 4), at(i), at(i + 4)));
 
-	return { n, step, length, x, y, tx, ty, nx, ny, line, bend };
+	// which way the track bends at each sample: 1 to the left, -1 to the right
+	const turn = new Int8Array(n);
+	for (let i = 0; i < n; i++) {
+		const j = (i + 1) % n;
+		turn[i] = Math.sign(tx[i] * ty[j] - ty[i] * tx[j]);
+	}
+
+	return { id, n, step, length, x, y, tx, ty, nx, ny, line, bend, turn };
 }
 
 /** How sharply the circle through three points bends, as 1 / radius, signed by which way. */
@@ -134,15 +221,13 @@ function curve(a: [number, number], b: [number, number], c: [number, number]) {
 	);
 }
 
-export const TRACK = build();
-
 /**
  * The centre-line sample nearest a point. With `hint` (the sample the point
  * was last at) only the stretch around it is searched, so a car is never
  * matched to a different part of the track that happens to pass close by.
  */
-export function nearest(px: number, py: number, hint = -1): number {
-	const { n, x, y } = TRACK;
+export function nearest(track: Track, px: number, py: number, hint = -1): number {
+	const { n, x, y } = track;
 	const from = hint < 0 ? 0 : hint - 20;
 	const to = hint < 0 ? n : hint + 20;
 	let best = 0;
@@ -159,6 +244,6 @@ export function nearest(px: number, py: number, hint = -1): number {
 }
 
 /** How far a point sits across the track from the centre line at sample i. */
-export function lateral(px: number, py: number, i: number): number {
-	return (px - TRACK.x[i]) * TRACK.nx[i] + (py - TRACK.y[i]) * TRACK.ny[i];
+export function lateral(track: Track, px: number, py: number, i: number): number {
+	return (px - track.x[i]) * track.nx[i] + (py - track.y[i]) * track.ny[i];
 }

@@ -3,6 +3,7 @@ import { Button } from '~/components/ui/button';
 import { MARKET_NAMES } from '~/lib/race/betting';
 import { CONDITIONS, inCondition } from '~/lib/race/roster';
 import { STATS } from '~/lib/race/settings';
+import { trackName } from '~/lib/race/track';
 import { cn } from '~/lib/utils';
 import { Empty, Panel } from '~/components/admin/cards';
 import { Car, Table, Heading } from './parts';
@@ -94,7 +95,9 @@ function Status({ loop }: { loop: Loop }) {
 	const staked = loop.pools.reduce((sum, pool) => sum + pool.staked, 0);
 	return (
 		<Panel
-			title={loop.round ? `race ${loop.round}` : 'no races yet'}
+			title={
+				loop.round ? `race ${loop.round} · ${trackName(loop.track).toLowerCase()}` : 'no races yet'
+			}
 			description={
 				<span suppressHydrationWarning>
 					{WAITING[loop.phase]}
