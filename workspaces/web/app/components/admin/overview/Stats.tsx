@@ -1,5 +1,5 @@
 import { TrendingDownIcon, TrendingUpIcon } from 'lucide-react';
-import { Ranking } from '~/components/admin/stats/Panel';
+import { Ranking } from '~/components/admin/stats/Cards';
 import { TimeChart } from '~/components/admin/stats/TimeChart';
 import { NUMBER } from '~/components/admin/stats/format';
 import type { getVisitsSummary } from '~/lib/admin/overview';
