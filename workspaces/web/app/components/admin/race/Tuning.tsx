@@ -16,13 +16,17 @@ import { cell, type Act, type View } from './format';
 
 // The numbers the game runs on, edited here and saved together, from the
 // next race on, and the track it is run on. They come in three kinds: the
-// cars, which decide who wins;
+// cars (how many race, and how each goes), which decide who wins;
 // the money, which decides what winning is worth; and the timing of the loop.
 // Each car's record sits beside its stats, since that is what a change to
 // them is meant to move. The room checks everything again and says what is
 // wrong.
 
 type Key = keyof typeof LIMITS;
+
+/** A number as typed, NaN while the box is empty, and back. */
+const read = (value: string) => (value === '' ? NaN : Number(value));
+const shown = (value: number) => (Number.isNaN(value) ? '' : value);
 
 /** A track's centre line, as an SVG path in its world's metres. */
 function outline(id: TrackId) {
@@ -82,8 +86,6 @@ export const Tuning = memo(function Tuning({
 	const [draft, setDraft] = useState(settings);
 	const [resetting, setResetting] = useState(false);
 	const dirty = JSON.stringify(draft) !== JSON.stringify(settings);
-	const read = (value: string) => (value === '' ? NaN : Number(value));
-	const shown = (value: number) => (Number.isNaN(value) ? '' : value);
 	return (
 		<div className="@container flex flex-col gap-4">
 			<Heading>tuning</Heading>
@@ -126,6 +128,20 @@ export const Tuning = memo(function Tuning({
 				</div>
 			</Panel>
 			<Panel title="cars" description="stats from 0 to 1, and how each car has done" flush>
+				<div className="flex flex-wrap items-end gap-x-6 gap-y-2 border-b border-foreground/10 p-4">
+					<Whole
+						name="count"
+						label="cars per race"
+						draft={draft}
+						settings={settings}
+						onChange={setDraft}
+						className="w-40"
+					/>
+					<p className="max-w-sm pb-1 text-foreground/50">
+						Each race draws this many of the {ROSTER.length} cars at random, in a random starting
+						order.
+					</p>
+				</div>
 				<Table head={['car', ...STATS, 'wins']}>
 					{ROSTER.map((car) => {
 						const record = cars.find((row) => row.car === car.id);
@@ -254,3 +270,43 @@ export const Tuning = memo(function Tuning({
 		</div>
 	);
 });
+
+/** A whole number on its own, with what it may be and what it is by default, as in the groups. */
+function Whole({
+	name,
+	label,
+	draft,
+	settings,
+	onChange,
+	className
+}: {
+	name: Key;
+	label: string;
+	draft: Settings;
+	settings: Settings;
+	onChange: (draft: Settings) => void;
+	className?: string;
+}) {
+	const [low, high] = LIMITS[name];
+	return (
+		<label className={cn('flex flex-col gap-1.5', className)}>
+			<span>{label}</span>
+			<Input
+				type="number"
+				min={low}
+				max={high}
+				step={1}
+				value={shown(draft[name])}
+				onChange={(event) => onChange({ ...draft, [name]: read(event.target.value) })}
+				className={cn(draft[name] !== settings[name] && 'border-foreground/50')}
+			/>
+			<span className="text-foreground/50 tabular-nums">
+				{NUMBER.format(low)}–{NUMBER.format(high)},{' '}
+				{/* inked when the number has been moved off it */}
+				<span className={cn(draft[name] !== DEFAULT_SETTINGS[name] && 'text-foreground')}>
+					default {NUMBER.format(DEFAULT_SETTINGS[name])}
+				</span>
+			</span>
+		</label>
+	);
+}

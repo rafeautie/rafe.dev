@@ -180,15 +180,18 @@ export function rank<T extends { finishTime: number; progress: number }>(cars: T
 	});
 }
 
-/** The roster in a starting order drawn from the seed, pole first. */
-export function drawGrid(seed: number, roster: Entry[]): Entry[] {
+/**
+ * A field of `count` cars from the roster, drawn from the seed, in their
+ * starting order, pole first. Unless `count` says otherwise, the whole roster.
+ */
+export function drawGrid(seed: number, roster: Entry[], count = roster.length): Entry[] {
 	const rand = random(seed ^ 0x9e3779b9);
 	const grid = [...roster];
 	for (let i = grid.length - 1; i > 0; i--) {
 		const j = Math.floor(rand() * (i + 1));
 		[grid[i], grid[j]] = [grid[j], grid[i]];
 	}
-	return grid;
+	return grid.slice(0, count);
 }
 
 /**

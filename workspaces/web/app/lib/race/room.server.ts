@@ -206,12 +206,13 @@ export class RaceRoom extends DurableObject<Env> {
 	private get state(): RoomState {
 		const state = this.ctx.storage.kv.get<RoomState>('state');
 		// A state kept from before races carried their settings takes today's;
-		// one from before there was a choice of track was raced on the circuit.
+		// one from before a setting existed has the code's, except that one from
+		// before there was a choice of track was raced on the circuit.
 		return state
 			? {
 					...state,
 					settings: state.settings
-						? { ...state.settings, track: state.settings.track ?? 'circuit' }
+						? { ...DEFAULT_SETTINGS, ...state.settings, track: state.settings.track ?? 'circuit' }
 						: this.settings
 				}
 			: { ...IDLE, settings: this.settings };
@@ -274,7 +275,7 @@ export class RaceRoom extends DurableObject<Env> {
 	private open(round: number) {
 		const settings = this.settings;
 		const rand = random(seed());
-		const field = drawGrid(seed(), tuned(settings));
+		const field = drawGrid(seed(), tuned(settings), settings.count);
 		const conditions = drawConditions(rand, field.length);
 		const grid = field.map((entry) => entry.id);
 		const cars = field.map((entry, slot) => inCondition(entry, conditions[slot]));
@@ -884,10 +885,14 @@ export class RaceRoom extends DurableObject<Env> {
 				firstOuts: number;
 				fastestLaps: number;
 				averagePlace: number;
+				fair: number;
 			}>(
+				// fair: the win rate a car would have if every field it was in were evenly matched
 				`SELECT car, COUNT(*) AS starts, SUM(place = 1) AS wins, SUM(place <= 3) AS podiums,
-					SUM(first_out) AS firstOuts, SUM(fastest) AS fastestLaps, AVG(place) AS averagePlace
-				 FROM results WHERE round != ? GROUP BY car ORDER BY wins DESC, averagePlace`,
+					SUM(first_out) AS firstOuts, SUM(fastest) AS fastestLaps, AVG(place) AS averagePlace,
+					AVG(1.0 / field.size) AS fair
+				 FROM results JOIN (SELECT round, COUNT(*) AS size FROM results GROUP BY round) AS field USING (round)
+				 WHERE round != ? GROUP BY car ORDER BY wins DESC, averagePlace`,
 				hidden
 			)
 			.toArray()
