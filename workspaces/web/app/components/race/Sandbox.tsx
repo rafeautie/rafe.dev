@@ -56,6 +56,7 @@ function describe(event: RecordedEvent, replay: Replay) {
 	if (event.kind === 'caution') {
 		return `${when} caution, ${event.by === 'wreck' ? 'for a wreck' : 'thrown by hand'}`;
 	}
+	if (event.kind === 'restart') return `${when} going green, lining up two by two`;
 	if (event.kind === 'green') return `${when} green flag`;
 	if (event.kind === 'again') return `${when} lap ended under caution, to be run again`;
 	const at = `${when} ${replay.cars[event.car].entry.name}`;

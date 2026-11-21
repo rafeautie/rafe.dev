@@ -595,7 +595,7 @@ describe('the admin', () => {
 				const endsAt = state.endsAt - state.startsAt + startsAt;
 				storage.kv.put('state', { ...state, startsAt, endsAt });
 			});
-			expect((await room.adminView('')).loop.caution).toBe(false);
+			expect((await room.adminView('')).loop.flag).toBe('green');
 			expect(await room.adminCaution()).toBeNull();
 			await vi.waitFor(() => expect(viewer.recordings).toHaveLength(2));
 			const [before, after] = viewer.recordings.map(unpack);

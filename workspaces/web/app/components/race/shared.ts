@@ -28,11 +28,13 @@ export type Running = {
 export const FLAGS: Record<Flag, string> = {
 	green: 'Green',
 	yellow: 'Caution',
+	restart: 'Going green',
 	checkered: 'Finish'
 };
 export const FLAG_MEANS: Record<Flag, string> = {
 	green: 'Green flag: the race is on.',
 	yellow: 'Caution: the field is held in order behind the leader.',
+	restart: 'Going green: the field lines up two by two for the restart at the line.',
 	checkered: 'Checkered flag: the race has been won.'
 };
 
