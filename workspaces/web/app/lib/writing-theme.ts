@@ -49,6 +49,14 @@ export function useWritingTheme(): boolean {
 		};
 	}, []);
 
+	return useIsDark();
+}
+
+// Whether the page is dark, without theming it: for a part of a page that
+// themes itself (the admin's sidebar, under its layout). Taking the class off
+// when such a part leaves would undo the page's own choice, as the sign-in
+// page found when the sidebar went with a lapsed sign-in.
+export function useIsDark(): boolean {
 	return useSyncExternalStore(
 		subscribe,
 		() => document.documentElement.classList.contains('dark'),

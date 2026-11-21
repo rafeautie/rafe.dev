@@ -45,6 +45,13 @@ type SidebarContextProps = {
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
 
+// whether a key pressed in `target` is typing: a text field, a select, or
+// editable content such as the post editor
+function isTyping(target: EventTarget | null) {
+	if (!(target instanceof HTMLElement)) return false;
+	return target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+}
+
 function useSidebar() {
 	const context = React.useContext(SidebarContext);
 	if (!context) {
@@ -102,6 +109,9 @@ function SidebarProvider({
 	// Adds a keyboard shortcut to toggle the sidebar.
 	React.useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
+			// Left to whatever has the key already (the post editor makes ⌘B
+			// bold) or is being typed in: there it means something else.
+			if (event.defaultPrevented || isTyping(event.target)) return;
 			if (event.key === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey)) {
 				event.preventDefault();
 				toggleSidebar();

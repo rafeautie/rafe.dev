@@ -10,6 +10,7 @@ import {
 	SidebarMenuItem
 } from '~/components/ui/sidebar';
 import { sidebarItem, sidebarMenu, sidebarTop } from './sidebar-style';
+import { sectionId } from '~/lib/admin/section';
 
 export type Subsection<K extends string = string> = { key: K; label: string; content: ReactNode };
 
@@ -94,7 +95,12 @@ export function Subsections<K extends string>({
 								<Activity key={section.key} mode={oneAtATime && !shown ? 'hidden' : 'visible'}>
 									{/* lg:hidden too: it hides the rest from the first paint, before
 								    the page knows how wide it is */}
-									<div className={cn('mt-10', !shown && 'lg:hidden')}>{section.content}</div>
+									<div
+										id={sectionId(section.key)}
+										className={cn('mt-10 scroll-mt-24', !shown && 'lg:hidden')}
+									>
+										{section.content}
+									</div>
 								</Activity>
 							);
 						})}

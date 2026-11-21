@@ -173,12 +173,13 @@ function StatsPage() {
 		<Report
 			stats={stats}
 			section={search.section}
-			onSection={(next) =>
+			onSection={(next, keepScroll) =>
 				navigate({
 					search: (prev) => ({
 						...prev,
 						section: next === 'overview' ? undefined : next
-					})
+					}),
+					resetScroll: !keepScroll
 				})
 			}
 			metric={metric}
@@ -227,7 +228,8 @@ function Report({
 	children: ReactNode;
 	stats: Stats;
 	section: Section | undefined;
-	onSection: (section: Section) => void;
+	// keepScroll: the caller scrolls for itself, once the section is there
+	onSection: (section: Section, keepScroll?: boolean) => Promise<void>;
 	metric: Metric;
 	onMetric: (metric: Metric) => void;
 	onFilter: (key: FilterKey, value: string) => void;
@@ -241,9 +243,12 @@ function Report({
 	// overview's place, from its top; on a phone, where every section is on
 	// the one page, it scrolls down to it
 	const open = (key: Section) => () => {
-		onSection(key);
-		if (window.matchMedia('(min-width: 64rem)').matches) window.scrollTo({ top: 0 });
-		else document.getElementById(`stats-${key}`)?.scrollIntoView({ behavior: 'smooth' });
+		// the router's own scroll to the top, at the end of the navigation,
+		// would undo the scroll down to it, so this does the scrolling instead
+		void onSection(key, true).then(() => {
+			if (window.matchMedia('(min-width: 64rem)').matches) window.scrollTo({ top: 0 });
+			else document.getElementById(`stats-${key}`)?.scrollIntoView({ behavior: 'smooth' });
+		});
 	};
 
 	// a ranking that filters by its own dimension

@@ -32,14 +32,20 @@ export const Route = createFileRoute('/admin/writing/$slug')({
 	validateSearch: (search: Record<string, unknown>): { built?: string } =>
 		typeof search.built === 'string' ? { built: search.built } : {},
 	beforeLoad: requireAdmin,
-	loader: async ({ params }) => {
-		// new, or an address no post could have
-		if (!SLUG_PATTERN.test(params.slug)) return { post: null, versions: [] };
-		const [post, versions] = await Promise.all([
-			getPost({ data: { slug: params.slug } }),
-			getPostVersions({ data: { slug: params.slug } })
-		]);
-		return { post, versions };
+	// Never shown from what was loaded before while it reloads: the editor is
+	// keyed by the post's version, so fresh data arriving after it opened
+	// would start it over and lose what was typed meanwhile.
+	loader: {
+		handler: async ({ params }) => {
+			// new, or an address no post could have
+			if (!SLUG_PATTERN.test(params.slug)) return { post: null, versions: [] };
+			const [post, versions] = await Promise.all([
+				getPost({ data: { slug: params.slug } }),
+				getPostVersions({ data: { slug: params.slug } })
+			]);
+			return { post, versions };
+		},
+		staleReloadMode: 'blocking'
 	},
 	component: PostPage
 });

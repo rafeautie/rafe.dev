@@ -10,3 +10,8 @@ export function readSection<K extends string>(
 ): { section?: K } {
 	return { section: keys.includes(search.section as K) ? (search.section as K) : undefined };
 }
+
+// Each section's element, for a link within the page to scroll to where every
+// section is on the one page (narrow screens); Subsections gives it
+// scroll-mt-24 to clear the controls rail.
+export const sectionId = (key: string) => `section-${key}`;

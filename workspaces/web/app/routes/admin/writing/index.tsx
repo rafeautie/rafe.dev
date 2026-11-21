@@ -11,17 +11,20 @@ import { rawUrl, WRITING_DIR } from '~/lib/admin/config';
 import { plural } from '~/lib/admin/format';
 import { requireAdmin } from '~/lib/admin/guard';
 import { postGaps } from '~/lib/admin/post-stats';
-import { shortDate, timeAgo } from '~/lib/admin/time';
+import { shortDate } from '~/lib/admin/time';
 import { readUnsaved } from '~/lib/admin/unsaved';
 import { listPostOverviews, type PostOverview } from '~/lib/admin/writing';
 import { cn } from '~/lib/utils';
+import { TimeAgo } from '~/components/admin/TimeAgo';
 
 // Every post, as work to manage rather than as the site lists it: a line of
 // counts, then drafts to finish, then what is on the site. Each post says what
 // it still lacks and whether this browser holds edits not yet published.
 export const Route = createFileRoute('/admin/writing/')({
 	beforeLoad: requireAdmin,
-	loader: () => listPostOverviews(),
+	// never shown from what was loaded before while it reloads: after a save
+	// or a delete, or an edit elsewhere, it waits for what is there now
+	loader: { handler: () => listPostOverviews(), staleReloadMode: 'blocking' },
 	component: PostList
 });
 
@@ -77,7 +80,7 @@ function PostList() {
 						/>
 						<Stat
 							label="last change"
-							value={latest?.changed ? timeAgo(latest.changed.date) : '–'}
+							value={latest?.changed ? <TimeAgo at={latest.changed.date} /> : '–'}
 							note={latest ? latest.title || latest.slug : 'nothing yet'}
 						/>
 					</CardContent>
@@ -185,7 +188,7 @@ const rowClass =
 // room, and joins the dates when not.
 function PostRow({ post, unsaved }: { post: PostOverview; unsaved: boolean }) {
 	const gaps = postGaps(post, post);
-	const changed = post.changed ? `changed ${timeAgo(post.changed.date)}` : '';
+	const changed = post.changed ? <TimeAgo at={post.changed.date} prefix="changed " /> : null;
 	const facts = [
 		post.draft ? post.date && `dated ${shortDate(post.date)}` : shortDate(post.date) || 'no date',
 		post.updated && `updated ${shortDate(post.updated)}`,

@@ -19,7 +19,7 @@ import {
 	getWritingSummary
 } from '~/lib/admin/overview';
 import { errorMessage } from '~/lib/admin/format';
-import { timeAgo } from '~/lib/admin/time';
+import { TimeAgo } from '~/components/admin/TimeAgo';
 
 // Signed out: the sign-in page. Signed in: the overview, the admin's hub: how
 // each area of the site is doing, each in its own card that leads to its page,
@@ -124,7 +124,7 @@ function Overview({ overview }: { overview: OverviewData }) {
 				status={
 					<>
 						<BuildBadge build={watch.build} />
-						{latest && <span>updated {timeAgo(latest.date)}</span>}
+						{latest && <TimeAgo at={latest.date} prefix="updated " />}
 						{live.ok && live.value.paused && (
 							<Badge
 								variant="outline"

@@ -1,6 +1,7 @@
 import { CheckIcon, ExternalLinkIcon, ImageIcon } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { DatePicker } from '~/components/admin/DatePicker';
+import { TimeAgo } from '~/components/admin/TimeAgo';
 import { LATEST } from '~/components/admin/VersionSelect';
 import { Button } from '~/components/ui/button';
 import {
@@ -25,7 +26,6 @@ import { commitSubject } from '~/lib/admin/config';
 import { plural } from '~/lib/admin/format';
 import type { PostFields } from '~/lib/admin/frontmatter';
 import { postGaps, readingMinutes, type PostStats } from '~/lib/admin/post-stats';
-import { timeAgo } from '~/lib/admin/time';
 import type { Commit } from '~/lib/admin/types';
 import { cn } from '~/lib/utils';
 
@@ -252,6 +252,17 @@ const FEW = 5;
 // now. Picking an older one shows it in the editor; publishing it makes it
 // the newest. The same choice the photos page makes with VersionSelect, laid
 // out as a list because here there is room to say what each one was.
+// True once the page is in the browser's hands; false on the server and while
+// hydrating, so what depends on the reader's clock or time zone is drawn only
+// after, rather than drawn twice differently.
+const noop = () => () => undefined;
+const useHydrated = () =>
+	useSyncExternalStore(
+		noop,
+		() => true,
+		() => false
+	);
+
 export function VersionsCard({
 	versions,
 	value,
@@ -263,6 +274,8 @@ export function VersionsCard({
 	disabled?: boolean;
 	onChange: (value: string) => void;
 }) {
+	// the tooltip's time is the reader's own, so it waits for the browser
+	const hydrated = useHydrated();
 	const [all, setAll] = useState(false);
 	const selectedAt = versions.findIndex((commit) => commit.sha === value);
 	// an older version picked from further down stays in view when folded
@@ -293,7 +306,11 @@ export function VersionsCard({
 									disabled={disabled}
 									aria-pressed={selected}
 									onClick={() => !selected && onChange(key)}
-									title={`${commit.message} · ${new Date(commit.date).toLocaleString()}`}
+									title={
+										hydrated
+											? `${commit.message} · ${new Date(commit.date).toLocaleString()}`
+											: commit.message
+									}
 									className={cn(
 										'flex w-full cursor-pointer items-baseline gap-3 px-3 py-1.5 text-left transition-colors hover:bg-muted/60 disabled:cursor-default disabled:opacity-50',
 										selected && 'bg-muted'
@@ -307,9 +324,7 @@ export function VersionsCard({
 									>
 										{whatChanged(commit.message)}
 									</span>
-									<span className="shrink-0 text-xs text-foreground/50">
-										{timeAgo(commit.date)}
-									</span>
+									<TimeAgo at={commit.date} className="shrink-0 text-xs text-foreground/50" />
 								</button>
 							</li>
 						);

@@ -10,7 +10,7 @@ import { SecondsLeft } from '~/components/admin/race/clock';
 import { Results } from '~/components/admin/race/Results';
 import { Tuning } from '~/components/admin/race/Tuning';
 import { Subsections } from '~/components/admin/Subsections';
-import { readSection } from '~/lib/admin/section';
+import { readSection, sectionId } from '~/lib/admin/section';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { errorMessage } from '~/lib/admin/format';
@@ -102,6 +102,17 @@ function RacePage() {
 	);
 
 	const go = (key: Section) => navigate({ search: { section: key === 'live' ? undefined : key } });
+	// a link from one section to another ("results" on the last race): on a
+	// wide screen the section takes this one's place, from its top; narrower,
+	// where every section is on the one page, it scrolls down to it. The
+	// router's own scroll to the top, at the end of the navigation, would
+	// undo that, so this does the scrolling instead.
+	const open = (key: 'results' | 'books') => {
+		void navigate({ search: { section: key }, resetScroll: false }).then(() => {
+			if (window.matchMedia('(min-width: 64rem)').matches) window.scrollTo({ top: 0 });
+			else document.getElementById(sectionId(key))?.scrollIntoView({ behavior: 'smooth' });
+		});
+	};
 	const { loop } = view;
 	// Each poll brings fresh objects even when nothing changed; these stay the
 	// same object until their contents change, so the memoed sections can tell.
@@ -119,7 +130,7 @@ function RacePage() {
 			value={section}
 			onChange={go}
 			sections={[
-				{ key: 'live', label: 'live', content: <Live view={view} go={go} /> },
+				{ key: 'live', label: 'live', content: <Live view={view} go={open} /> },
 				{
 					key: 'players',
 					label: 'players',

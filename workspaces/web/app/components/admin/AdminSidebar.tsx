@@ -23,7 +23,7 @@ import {
 	SidebarTrigger,
 	useSidebar
 } from '~/components/ui/sidebar';
-import { setWritingTheme, useWritingTheme } from '~/lib/writing-theme';
+import { setWritingTheme, useIsDark } from '~/lib/writing-theme';
 import { cn } from '~/lib/utils';
 import {
 	foldAway,
@@ -49,7 +49,8 @@ const ADMIN_PAGES = [
 // each named on hover. On a phone it slides in from the header's menu button.
 export function AdminSidebar() {
 	const { setOpenMobile } = useSidebar();
-	const dark = useWritingTheme();
+	// read, not applied: the admin's layout themes the page
+	const dark = useIsDark();
 	const pathname = useLocation({ select: (location) => location.pathname.replace(/\/$/, '') });
 	const current = (href: string) =>
 		href === '/admin' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);

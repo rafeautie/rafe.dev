@@ -32,7 +32,9 @@ export function postFiles(files: Map<string, string>) {
 
 export const listPostOverviews = createServerFn({ method: 'GET' }).handler(async () => {
 	const github = gitHub(await requireToken());
-	const head = await github.readHead();
+	// fresh, not shared (readHead): the list is where a save or a delete lands,
+	// and must show it; each post's history is still remembered by commit
+	const head = await github.head();
 	const { files } = await github.contentTree(head);
 
 	async function overview(slug: string, sha: string): Promise<PostOverview> {

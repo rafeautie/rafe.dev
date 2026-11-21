@@ -7,9 +7,9 @@ import { cn } from '~/lib/utils';
 import { Empty, Panel } from '~/components/admin/cards';
 import { Car, Table, Heading } from './parts';
 import { NUMBER } from '~/lib/admin/format';
-import { timeAgo } from '~/lib/admin/time';
 import { cell, condition, number, type View } from './format';
 import { useRoomClock } from './clock';
+import { TimeAgo } from '~/components/admin/TimeAgo';
 
 // What is happening right now, the part of the page that is watched rather
 // than worked: where the loop is and how long is left, who is there, what
@@ -43,7 +43,13 @@ export function Live({ view, go }: { view: View; go: (section: 'results' | 'book
 			<div className="grid gap-4 @2xl:grid-cols-2">
 				<Panel
 					title="last race"
-					description={last ? `race ${last.round} · ${timeAgo(last.started)}` : undefined}
+					description={
+						last ? (
+							<>
+								race {last.round} · <TimeAgo at={last.started} />
+							</>
+						) : undefined
+					}
 					action={
 						<Button variant="ghost" size="sm" onClick={() => go('results')}>
 							Results

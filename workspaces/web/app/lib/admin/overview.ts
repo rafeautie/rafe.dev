@@ -19,8 +19,6 @@ import { postFiles } from './writing';
 // how many drafts and posts the overview lists
 const DRAFTS_SHOWN = 4;
 const POSTS_SHOWN = 3;
-// a draft's last edit costs a call to GitHub each, so only the newest are read
-const DRAFTS_READ = 10;
 
 // Today as a count of days since 1970, in Rafe's own calendar, from where his
 // request comes from (as /admin/stats reckons days).
@@ -51,11 +49,12 @@ export const getWritingSummary = createServerFn({ method: 'GET' }).handler(async
 		.sort((a, b) => b.date.localeCompare(a.date));
 	const dated = published.filter((post) => post.date);
 	const allDrafts = posts.filter((post) => post.draft);
-	const drafts = allDrafts.sort((a, b) => b.date.localeCompare(a.date)).slice(0, DRAFTS_READ);
-	// a draft's own date is often empty, so the one to pick up is the one last
-	// worked on, from the commits to its folder
+	// A draft's own date is often empty, so the one to pick up is the one last
+	// worked on, from the commits to its folder: every draft's, so one edited
+	// today is never left out by its date. Each is remembered by commit, so
+	// GitHub is asked again only after the next one.
 	const edited = await Promise.all(
-		drafts.map(async (draft): Promise<DraftSummary> => {
+		allDrafts.map(async (draft): Promise<DraftSummary> => {
 			const [last] = await github.history(`${WRITING_DIR}/${draft.slug}`, 1, head);
 			return { slug: draft.slug, title: draft.title || draft.slug, edited: last?.date ?? '' };
 		})

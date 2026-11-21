@@ -40,9 +40,15 @@ export const Route = createFileRoute('/admin/photos')({
 	validateSearch: (search: Record<string, unknown>): { built?: string } =>
 		typeof search.built === 'string' ? { built: search.built } : {},
 	beforeLoad: requireAdmin,
-	loader: async (): Promise<Loaded> => {
-		const [photos, versions] = await Promise.all([getPhotos({ data: {} }), getPhotoVersions()]);
-		return { ...photos, versions };
+	// Never shown from what was loaded before while it reloads: the page is
+	// keyed by the gallery's version, so fresh data arriving after it opened
+	// would start it over and lose the edits made meanwhile.
+	loader: {
+		handler: async (): Promise<Loaded> => {
+			const [photos, versions] = await Promise.all([getPhotos({ data: {} }), getPhotoVersions()]);
+			return { ...photos, versions };
+		},
+		staleReloadMode: 'blocking'
 	},
 	component: PhotosPage
 });

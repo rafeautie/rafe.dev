@@ -107,12 +107,13 @@ async function fromCache<T extends Json>(key: string, load: () => Promise<T>): P
 	return value;
 }
 
-// The branch's head as read a moment ago, for pages that only read: the
-// overview, the writing list. Each asks for it, often together, so the same
-// answer is shared for a few seconds per instance. Saving never uses it (a
-// stale parent would put a commit on an old tree); it reads the head fresh,
-// then sets this to the commit it made, so the next page sees it at once.
-const RECENT_HEAD_MS = 10_000;
+// The branch's head as read a moment ago, for the overview, whose cards each
+// ask for it at once: they share one answer. Kept for only a couple of
+// seconds, since another instance's save is not seen here until it lapses.
+// Saving never uses it (a stale parent would put a commit on an old tree); it
+// reads the head fresh, then sets this to the commit it made, so the next page
+// in this instance sees it at once.
+const RECENT_HEAD_MS = 2_000;
 let recentHead: { at: number; sha: Promise<string> } | undefined;
 
 export function gitHub(token: string) {

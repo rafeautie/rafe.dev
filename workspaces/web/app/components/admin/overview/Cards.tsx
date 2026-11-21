@@ -4,10 +4,11 @@ import { commitSubject } from '~/lib/admin/config';
 import { NUMBER, plural } from '~/lib/admin/format';
 import type { getOverview } from '~/lib/admin/api';
 import type { getPhotosSummary, getWritingSummary } from '~/lib/admin/overview';
-import { shortDate, timeAgo } from '~/lib/admin/time';
+import { shortDate } from '~/lib/admin/time';
 import { Empty } from '~/components/admin/cards';
 import { Thumb } from '~/components/admin/photos/Thumb';
 import { Area, Figure, type Loaded, PageLink, Shortlist, ShortlistRow } from './Area';
+import { TimeAgo } from '~/components/admin/TimeAgo';
 
 // The overview's widgets from the content pages: writing and photos, and the
 // feed of what changed in them lately.
@@ -54,7 +55,7 @@ export const WritingCard = memo(function WritingCard({
 							{writing.recentDrafts.map((draft) => (
 								<ShortlistRow
 									key={draft.slug}
-									aside={draft.edited ? `edited ${timeAgo(draft.edited)}` : ''}
+									aside={draft.edited ? <TimeAgo at={draft.edited} prefix="edited " /> : ''}
 								>
 									<PageLink
 										to={`/admin/writing/${draft.slug}`}
@@ -107,7 +108,9 @@ export const PhotosCard = memo(function PhotosCard({
 								value={NUMBER.format(photos.count)}
 								label={
 									photos.changed ? (
-										<>photos · last changed {timeAgo(photos.changed.date)}</>
+										<>
+											photos · last changed <TimeAgo at={photos.changed.date} />
+										</>
 									) : (
 										'photos'
 									)
@@ -180,9 +183,7 @@ export const ActivityCard = memo(function ActivityCard({
 									<span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
 										<ChangeLink link={change.link}>{what}</ChangeLink>
 									</span>
-									<time dateTime={change.date} className="shrink-0 text-foreground/50">
-										{timeAgo(change.date)}
-									</time>
+									<TimeAgo at={change.date} className="shrink-0 text-foreground/50" />
 								</li>
 							);
 						})}
