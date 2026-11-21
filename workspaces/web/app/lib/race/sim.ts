@@ -28,6 +28,8 @@ export const TIME_CAP = 240;
 const AFTER_WINNER = 8;
 
 const G = 9.81;
+/** The tyres' grip, as a share of G, of a car middling for grip. */
+const GRIP = 1.9;
 const MASS = 1000;
 const INERTIA = 1800;
 /** Centre of the car to each axle. */
@@ -52,7 +54,7 @@ const RUN_IN = 16;
 /** How far apart the queue runs, middle to middle. */
 const QUEUE = 8;
 /** Twice the braking (m/s²) a car in a queue counts on: half of what the tyres of an average car can take. */
-const QUEUE_BRAKE = 1.9 * G;
+const QUEUE_BRAKE = GRIP * G;
 /** A caution lasts at least this long, and the field is given no longer than this to close up before it is let go at the line anyway. */
 const CAUTION_MIN = 8;
 const CAUTION_MAX = 25;
@@ -177,7 +179,7 @@ export const flown = (flag: Flag, kind: RaceEvent['kind']): Flag => FLIES[kind] 
 /**
  * Something on the road, as a driver sees it: where it is, how fast it is
  * going, whether it is a wreck, and whether it is on a truck's cable. A truck
- * out on the track is one, and is gone round like a wreck, but for while it
+ * out on the track is one, and is gone round like a wreck, except while it
  * is backing up to one.
  */
 type Obstacle = Pick<Car, 'sample' | 'across' | 'speed' | 'retired' | 'towed'> & {
@@ -269,7 +271,7 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		// The stats spread the cars wide enough apart that a quicker one can
 		// catch and pass a slower one in three laps. The engine is weak enough
 		// that power, not only grip, sets how fast a car leaves each corner.
-		const grip = 1.9 * lerp(0.94, 1.06, entry.grip);
+		const grip = GRIP * lerp(0.94, 1.06, entry.grip);
 		const errorEvery = lerp(30, 14, entry.aggression);
 		const car: Car = {
 			entry,
@@ -392,7 +394,7 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		caution !== null &&
 		(!other.retired ||
 			(Math.abs(other.across) < HALF_CORRIDOR &&
-				(Math.abs(other.speed) > 1 || other.towed || other.backing === true)));
+				(Math.abs(other.speed) > 1 || other.towed || !!other.backing)));
 
 	/**
 	 * How far from the middle of something a car can get going by it on one
@@ -420,14 +422,14 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 	 * something coming back down it: for those it stops. A car level with
 	 * this one is no such thing: stopping for it while it gives way to this
 	 * one would hold the two of them there for good. A truck backing up is,
-	 * even level with it (`halt`): it gives way to nobody, and swings about.
+	 * even level with it: it gives way to nobody, and swings about.
 	 */
-	const queueing = (speed: number, gap: number, keep = QUEUE, halt = false) => {
+	const queueing = ({ speed, backing }: Obstacle, gap: number, keep = QUEUE) => {
 		const slower = Math.max(0, speed);
 		const stopping = caution
 			? Math.sqrt(slower ** 2 + QUEUE_BRAKE * Math.max(0, gap - keep))
 			: Infinity;
-		const crawl = halt || speed < -1 || (gap > 2 && gap < keep - 2) ? 0 : 3;
+		const crawl = backing || speed < -1 || (gap > 2 && gap < keep - 2) ? 0 : 3;
 		return Math.max(crawl, Math.min(slower + (gap - keep) * 1.5, stopping));
 	};
 
@@ -666,7 +668,7 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 				// and lets the gap to the one ahead in it open with the speed, so a
 				// big field is strung out by the time the lines merge.
 				offset = LANE * (place % 2 ? -1 : 1) - track.line[aimed(car)];
-				if (caution && place > 0) limit = queueing(pacer!.speed, trailing(car), slot(place));
+				if (caution && place > 0) limit = queueing(pacer!, trailing(car), slot(place));
 				// It queues behind whatever is ahead of it in its own line, the
 				// cars still moving across into theirs included (but not a wreck
 				// that has been left off the road).
@@ -677,7 +679,7 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 					if (ahead <= 0 || ahead > 40 + car.speed) continue;
 					limit = Math.min(
 						limit,
-						queueing(other.speed, ahead, caution ? QUEUE : QUEUE + car.speed * 0.5)
+						queueing(other, ahead, caution ? QUEUE : QUEUE + car.speed * 0.5)
 					);
 				}
 			} else if (blocker && !followed(blocker)) {
@@ -689,18 +691,17 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 					.sort((p, q) => Math.abs(p - car.offset) - Math.abs(q - car.offset));
 				// Once to one side of it, stay there, even where the road runs out
 				// on that side: crossing back behind it throws the move away, and
-				// a car alongside will be given room. But until close enough to be
-				// held up, keep to its wheel tracks, which are quicker than any
-				// way round it.
-				// A wreck or a truck gives no room, though, so where there is not
-				// enough of it on the side already taken and there is more on the
-				// other, cross over behind it: at a hairpin, where the line runs
-				// along the outside edge, a wreck there leaves no way by outside it.
+				// a car alongside will be given room. A wreck or a truck gives
+				// none, though, so where there is too little on the side taken and
+				// more on the other, cross over behind it: at a hairpin, where the
+				// line runs along the outside edge, a wreck there leaves no way by
+				// outside it. But until close enough to be held up, keep to its
+				// wheel tracks, which are quicker than any way round it.
 				const apart = car.across - blocker.across;
 				let side = Math.sign(apart);
-				if (blocker.retired && Math.abs(apart) > 1 && passing(blocker, side, room) < room) {
-					if (passing(blocker, -side, room) > passing(blocker, side, room) + 0.5) side = -side;
-				}
+				const here = passing(blocker, side, room);
+				if (blocker.retired && here < room && passing(blocker, -side, room) > here + 0.5)
+					side = -side;
 				const closing = Math.max(0, car.speed - Math.max(0, blocker.speed));
 				if (gap < car.follow + 3 + closing * 1.5) {
 					offset = Math.abs(apart) > 1 ? blocker.across + side * room - line : (sides[0] ?? 0);
@@ -716,8 +717,7 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 				}
 			}
 			// and in the queue behind whatever is being followed, if anything is
-			if (place < 0 && queued && queue < reach)
-				limit = Math.min(limit, queueing(queued.speed, queue, QUEUE, queued.backing));
+			if (place < 0 && queued && queue < reach) limit = Math.min(limit, queueing(queued, queue));
 			// Leave room for a car alongside rather than turn in on it: the one
 			// on the inside keeps the inside, and the one being passed has to
 			// give up the line. Where that runs out of road, lift and let it

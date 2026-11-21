@@ -187,7 +187,7 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 	/**
 	 * The way being driven, how fast each point of it may be passed, how far
 	 * along it the leading axle is and how fast it is going. That axle is the
-	 * front one, or the back one of a truck that is `backing`; the other is
+	 * front one, or the back one of a truck that is `reversing`; the other is
 	 * on the way too, behind it.
 	 */
 	let way: Route | null = null;
@@ -195,7 +195,7 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 	let gone = 0;
 	let at = 0;
 	let pace = 0;
-	let backing = false;
+	let reversing = false;
 	/** The way the leading axle faces as the way begins, which is the way to the other one, reversed. */
 	let setOff = 0;
 	/** Seconds in the stage, for the ones that are waits. */
@@ -236,7 +236,7 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 	function take(next: Route, loaded: boolean, reverse = false) {
 		way = next;
 		gone = at = 0;
-		backing = reverse;
+		reversing = reverse;
 		setOff = body.getAngle() + (reverse ? Math.PI : 0);
 		door = null;
 		const { count, x, y, along } = next;
@@ -300,7 +300,7 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 			gone = length;
 			pace = 0;
 		}
-		truck.speed = backing ? -pace : pace;
+		truck.speed = reversing ? -pace : pace;
 		const reached = arrived ? count - 1 : at;
 		truck.sample = way!.sample[reached];
 		truck.across = way!.across[reached];
@@ -308,7 +308,7 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 		// the truck is between them, facing from its back axle to its front
 		const [lx, ly] = point(gone);
 		const [fx, fy] = point(gone - 2 * TRUCK.axle);
-		const facing = backing ? Math.atan2(fy - ly, fx - lx) : Math.atan2(ly - fy, lx - fx);
+		const facing = reversing ? Math.atan2(fy - ly, fx - lx) : Math.atan2(ly - fy, lx - fx);
 		move(body, (lx + fx) / 2, (ly + fy) / 2, facing, dt);
 		return arrived;
 	}
