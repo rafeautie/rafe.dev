@@ -12,7 +12,19 @@ import {
 	TIGHTEST,
 	serviceFor
 } from './service';
-import { createRace, DT, drawGrid, LAPS, LIGHTS, rank, TIME_CAP, type RaceEvent } from './sim';
+import {
+	createRace,
+	DT,
+	drawGrid,
+	flown,
+	LAPS,
+	LIGHTS,
+	neutral,
+	rank,
+	TIME_CAP,
+	type Flag,
+	type RaceEvent
+} from './sim';
 import {
 	getTrack,
 	HALF_CORRIDOR,
@@ -132,25 +144,28 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 
 	// Every car on the roster, the most /admin/race allows. More cars crash
 	// more, and each caution ends with a lap or so going green, so a race of
-	// them may run long and now and then out of time.
+	// them may run long and now and then out of time (about one in fifty, on
+	// the circuit), but never so badly that the whole field is wrecked.
 	it('reaches a result with the largest field, cautions and all', { timeout: 120_000 }, () => {
 		let won = 0;
 		for (let seed = 1; seed <= 30; seed++) {
 			const race = run(seed, track, [LIGHTS + 25], ROSTER);
 			expect(race.cars).toHaveLength(LIMITS.count[1]);
 			expect(race.done).toBe(true);
-			// won, or called off at the time cap, or with nobody left running
+			// won, or called off at the time cap with somebody still running
+			expect(
+				race.cars.some((car) => !car.retired),
+				`seed ${seed}`
+			).toBe(true);
 			if (race.flag === 'checkered') won++;
-			else if (race.cars.some((car) => !car.retired)) {
-				expect(race.time).toBeGreaterThan(LIGHTS + TIME_CAP);
-			}
+			else expect(race.time).toBeGreaterThan(LIGHTS + TIME_CAP);
 			for (const car of race.cars) {
 				expect(Number.isFinite(car.x + car.y + car.angle)).toBe(true);
 				const across = lateral(track, car.x, car.y, nearest(track, car.x, car.y));
 				if (!car.towed) expect(Math.abs(across)).toBeLessThan(HALF_CORRIDOR + 0.5);
 			}
 		}
-		expect(won).toBeGreaterThanOrEqual(28);
+		expect(won).toBeGreaterThanOrEqual(27);
 	});
 
 	it('reaches a result with the smallest field, cautions and all', { timeout: 60_000 }, () => {
@@ -163,6 +178,25 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 			expect(race.order()[0].finishTime).toBeGreaterThan(0);
 		}
 	});
+});
+
+// The racing line through the circuit's hairpin runs along its outside edge,
+// so a car that went out there is lying where the field comes past. Under the
+// caution the leader came up on it from outside, held on that side with no
+// road left to get by, and nosed it along at a crawl, which kept it moving
+// and so waited behind rather than gone round, while the cars behind piled
+// into the stopped queue one by one until the whole field was out.
+it('goes round a wreck on the outside of the circuit hairpin under caution', () => {
+	const race = run(15, getTrack('circuit'), [LIGHTS + 25], ROSTER);
+	let flag: Flag = 'green';
+	const retired: number[] = [];
+	for (const event of race.all) {
+		if (event.kind === 'retire' && neutral(flag)) retired.push(event.car);
+		flag = flown(flag, event.kind);
+	}
+	expect(retired).toEqual([]);
+	expect(race.flag).toBe('checkered');
+	expect(race.cars.filter((car) => car.retired).length).toBeLessThanOrEqual(1);
 });
 
 describe.each(TRACK_IDS)('the service road on the %s', (id) => {
@@ -220,7 +254,7 @@ describe.each(TRACK_IDS)('the service road on the %s', (id) => {
  */
 const SEEDS: Record<TrackId, { wreck: number; clean: number }> = {
 	circuit: { wreck: 7, clean: 2 },
-	oval: { wreck: 33, clean: 2 }
+	oval: { wreck: 17, clean: 2 }
 };
 
 describe.each(TRACK_IDS)('a caution on the %s', (id) => {

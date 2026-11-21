@@ -51,6 +51,8 @@ const CATCH = 17;
 const RUN_IN = 16;
 /** How far apart the queue runs, middle to middle. */
 const QUEUE = 8;
+/** Twice the braking (m/s²) a car in a queue counts on: half of what the tyres of an average car can take. */
+const QUEUE_BRAKE = 1.9 * G;
 /** A caution lasts at least this long, and the field is given no longer than this to close up before it is let go at the line anyway. */
 const CAUTION_MIN = 8;
 const CAUTION_MAX = 25;
@@ -378,12 +380,21 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 	 * Whether something is to be waited behind and not passed. Under caution
 	 * that is a car still running, wherever across the road it is. It is also
 	 * a truck on the move, a wreck that is, and the two of them once the cable
-	 * is on, until they have stopped or are off the track.
+	 * is on, until they have stopped or are off the track. A truck backing up
+	 * to a wreck is on the move too, the wrong way, and is waited for.
 	 */
 	const followed = (other: Obstacle) =>
 		caution !== null &&
 		(!other.retired ||
-			(Math.abs(other.across) < HALF_CORRIDOR && (other.speed > 1 || other.towed)));
+			(Math.abs(other.across) < HALF_CORRIDOR && (Math.abs(other.speed) > 1 || other.towed)));
+
+	/**
+	 * How far from the middle of something a car can get going by it on one
+	 * side (1 the left, -1 the right), wanting `room`, short of the road
+	 * running out.
+	 */
+	const passing = (other: Obstacle, side: number, room: number) =>
+		Math.abs(clamp(other.across + side * room, -MAX_OFFSET, MAX_OFFSET) - other.across);
 
 	/** The track sample a driver steers for: a little way ahead, further the faster it is going. */
 	const aimed = (car: Car) =>
@@ -394,10 +405,24 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 
 	/**
 	 * How fast to go in a queue behind something going at `speed`, `gap`
-	 * metres ahead, to close up to `keep` metres behind it.
+	 * metres ahead, to close up to `keep` metres behind it. Under caution,
+	 * where what is ahead may have all but stopped, no faster than can be
+	 * braked down to its speed in time, braking at half what the tyres can
+	 * take. The queue creeps up at walking pace rather than stall, but not
+	 * right up to something that has stopped, which a car would only nose
+	 * into (a wreck on the winch cannot be pushed out of the way), nor towards
+	 * something coming back down it: for those it stops. A car level with
+	 * this one is no such thing: stopping for it while it gives way to this
+	 * one would hold the two of them there for good.
 	 */
-	const queueing = (speed: number, gap: number, keep = QUEUE) =>
-		Math.max(3, Math.max(0, speed) + (gap - keep) * 1.5);
+	const queueing = (speed: number, gap: number, keep = QUEUE) => {
+		const slower = Math.max(0, speed);
+		const stopping = caution
+			? Math.sqrt(slower ** 2 + QUEUE_BRAKE * Math.max(0, gap - keep))
+			: Infinity;
+		const crawl = speed < -1 || (gap > 2 && gap < keep - 2) ? 0 : 3;
+		return Math.max(crawl, Math.min(slower + (gap - keep) * 1.5, stopping));
+	};
 
 	/**
 	 * Going green, how far behind the leader each place in the lineup is: the
@@ -643,7 +668,10 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 					if (Math.abs(other.across - car.across) >= CLEAR) continue;
 					const ahead = along(car.sample, other.sample);
 					if (ahead <= 0 || ahead > 40 + car.speed) continue;
-					limit = Math.min(limit, queueing(other.speed, ahead, caution ? QUEUE : QUEUE + car.speed * 0.5));
+					limit = Math.min(
+						limit,
+						queueing(other.speed, ahead, caution ? QUEUE : QUEUE + car.speed * 0.5)
+					);
 				}
 			} else if (blocker && !followed(blocker)) {
 				// go round it on whichever side is nearer the line already held
@@ -657,11 +685,18 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 				// a car alongside will be given room. But until close enough to be
 				// held up, keep to its wheel tracks, which are quicker than any
 				// way round it.
+				// A wreck or a truck gives no room, though, so where there is not
+				// enough of it on the side already taken and there is more on the
+				// other, cross over behind it: at a hairpin, where the line runs
+				// along the outside edge, a wreck there leaves no way by outside it.
 				const apart = car.across - blocker.across;
+				let side = Math.sign(apart);
+				if (blocker.retired && Math.abs(apart) > 1 && passing(blocker, side, room) < room) {
+					if (passing(blocker, -side, room) > passing(blocker, side, room) + 0.5) side = -side;
+				}
 				const closing = Math.max(0, car.speed - Math.max(0, blocker.speed));
 				if (gap < car.follow + 3 + closing * 1.5) {
-					offset =
-						Math.abs(apart) > 1 ? blocker.across + Math.sign(apart) * room - line : (sides[0] ?? 0);
+					offset = Math.abs(apart) > 1 ? blocker.across + side * room - line : (sides[0] ?? 0);
 				}
 				// And hold back while tucked in behind it, slowing in time to be
 				// no faster than it by the following distance, which matters most
@@ -747,13 +782,14 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 				throttle = clamp((want - car.speed) / 2, 0, 1);
 			}
 
-			// stopped against something: back away from it
+			// stopped against something: back away from it (but not when
+			// stopped on purpose, waiting in a queue)
 			if (race.time < car.reverseUntil) {
 				throttle = -1;
 				brake = 0;
 				steer = -steer;
 			} else {
-				car.stuck = Math.abs(car.speed) < 1 ? car.stuck + DT : 0;
+				car.stuck = Math.abs(car.speed) < 1 && want > 1 ? car.stuck + DT : 0;
 				if (car.stuck > 1) {
 					car.stuck = 0;
 					car.reverseUntil = race.time + 1.4;
