@@ -5,6 +5,7 @@ import { MARKET_NAMES } from '~/lib/race/betting';
 import { ROSTER } from '~/lib/race/roster';
 import { cn } from '~/lib/utils';
 import { Empty } from '~/components/admin/cards';
+import { SecondsLeft } from '~/components/admin/race/clock';
 import { Area, Figure, type Loaded, Shortlist } from './Area';
 
 // The overview's widgets from /admin/race: the loop as it runs, kept up to
@@ -24,15 +25,7 @@ const car = (id: string) => ROSTER.find((entry) => entry.id === id);
 const signed = (n: number) => `${n > 0 ? '+' : ''}${NUMBER.format(n)}`;
 
 // The loop as it runs: its phase and time left, who is watching, the pools.
-export function LoopCard({
-	loaded,
-	now,
-	className
-}: {
-	loaded: Loaded<Race>;
-	now: number;
-	className?: string;
-}) {
+export function LoopCard({ loaded, className }: { loaded: Loaded<Race>; className?: string }) {
 	return (
 		<Area
 			title="race"
@@ -50,7 +43,6 @@ export function LoopCard({
 		>
 			{(race) => {
 				const live = !race.paused && race.phase !== 'idle';
-				const left = Math.max(0, Math.ceil((race.endsAt - now) / 1000));
 				const pooled = race.pools.reduce((sum, pool) => sum + pool.total, 0);
 				return (
 					<>
@@ -67,7 +59,11 @@ export function LoopCard({
 								aria-hidden
 							/>
 							{race.paused ? 'paused' : PHASES[race.phase]}
-							{live && <span className="text-foreground/50 tabular-nums">· {left}s left</span>}
+							{live && (
+								<span className="text-foreground/50">
+									· <SecondsLeft endsAt={race.endsAt} roomNow={race.now} />s left
+								</span>
+							)}
 						</p>
 						<div className="flex flex-wrap gap-x-6 gap-y-4">
 							<Figure value={NUMBER.format(race.watching)} label="watching" />
@@ -115,7 +111,7 @@ export function ResultsCard({ loaded, className }: { loaded: Loaded<Race>; class
 		<Area
 			title="race results"
 			href="/admin/race"
-			section="races"
+			section="results"
 			loaded={loaded}
 			className={className}
 		>

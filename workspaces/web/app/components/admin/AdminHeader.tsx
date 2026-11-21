@@ -61,7 +61,12 @@ export function AdminHeader({ path, children }: { path: ReactNode[]; children?: 
 // page's controls and its main action on the right.
 export function ControlsRail({ status, children }: { status?: ReactNode; children?: ReactNode }) {
 	return (
-		<div className="sticky top-0 z-20 mt-6 border-b border-foreground/10 bg-background">
+		// Stuck to the top, it spans the page's whole area (the nearest size
+		// container: the admin layout's, or the one beside a sections sidebar),
+		// not just the content's column, so nothing scrolling under it shows at
+		// its sides. The margins reach out to the area's edges and the padding
+		// brings its contents back in line with the column's.
+		<div className="sticky top-0 z-20 mx-[calc((100%_-_100cqw)/2)] mt-6 border-b border-foreground/10 bg-background px-[calc((100cqw_-_100%)/2)]">
 			<div className="flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2.5">
 				<div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-foreground/50">
 					{status}

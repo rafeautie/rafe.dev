@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { CameraIcon, FileTextIcon, GitCommitHorizontalIcon } from 'lucide-react';
 import { commitSubject } from '~/lib/admin/config';
 import { NUMBER, plural } from '~/lib/admin/format';
@@ -17,7 +18,7 @@ export type Changes = Awaited<ReturnType<typeof getOverview>>;
 
 // ---------------------------------------------------------------- writing
 
-export function WritingCard({
+export const WritingCard = memo(function WritingCard({
 	loaded,
 	className
 }: {
@@ -85,11 +86,17 @@ export function WritingCard({
 			)}
 		</Area>
 	);
-}
+});
 
 // ---------------------------------------------------------------- photos
 
-export function PhotosCard({ loaded, className }: { loaded: Loaded<Photos>; className?: string }) {
+export const PhotosCard = memo(function PhotosCard({
+	loaded,
+	className
+}: {
+	loaded: Loaded<Photos>;
+	className?: string;
+}) {
 	return (
 		<Area title="photos" href="/admin/photos" loaded={loaded} className={className}>
 			{(photos) =>
@@ -141,11 +148,11 @@ export function PhotosCard({ loaded, className }: { loaded: Loaded<Photos>; clas
 			}
 		</Area>
 	);
-}
+});
 
 // ---------------------------------------------------------------- activity
 
-export function ActivityCard({
+export const ActivityCard = memo(function ActivityCard({
 	loaded,
 	className
 }: {
@@ -186,7 +193,7 @@ export function ActivityCard({
 			}
 		</Area>
 	);
-}
+});
 
 // Where a change is edited, if anywhere: a post's editor or the photos page.
 function ChangeLink({ link, children }: { link: string | null; children: string }) {

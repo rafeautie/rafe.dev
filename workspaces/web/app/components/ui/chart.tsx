@@ -66,7 +66,9 @@ function ChartContainer({
 				{...props}
 			>
 				<ChartStyle id={chartId} config={config} />
-				<RechartsPrimitive.ResponsiveContainer initialDimension={initialDimension}>
+				{/* debounced: a resize that runs for a while (the admin sidebar folding)
+				    redraws the chart once it settles, not on every frame */}
+				<RechartsPrimitive.ResponsiveContainer initialDimension={initialDimension} debounce={50}>
 					{children}
 				</RechartsPrimitive.ResponsiveContainer>
 			</div>

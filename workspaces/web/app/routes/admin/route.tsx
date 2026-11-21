@@ -38,14 +38,17 @@ export const Route = createFileRoute('/admin')({
 // Signed in, the admin sidebar sits beside every page, open or folded to its
 // icons as it was left (on a phone it slides in from the header); the sign-in
 // page stands alone. A page with its own sidebar (Subsections) sets its own
-// padding.
+// padding. The page's area, padding and all, is a size container, so the
+// controls rail (AdminHeader) can stretch across the whole of it.
 
 function AdminLayout() {
 	useWritingTheme();
 	const { admin, sidebarOpen } = Route.useRouteContext();
 	const page = (
-		<div className="flex-1 px-6 py-8 sm:px-8 lg:px-12 lg:has-[[data-subsections]]:p-0">
-			<Outlet />
+		<div className="@container min-w-0 flex-1">
+			<div className="px-6 py-8 sm:px-8 lg:px-12 lg:has-[[data-subsections]]:p-0">
+				<Outlet />
+			</div>
 		</div>
 	);
 	if (!admin) {

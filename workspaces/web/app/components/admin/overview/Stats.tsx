@@ -1,6 +1,7 @@
+import { lazy, memo, Suspense } from 'react';
 import { TrendingDownIcon, TrendingUpIcon } from 'lucide-react';
 import { Ranking } from '~/components/admin/stats/Cards';
-import { TimeChart } from '~/components/admin/stats/TimeChart';
+import type { TimeChart as TimeChartProps } from '~/components/admin/stats/TimeChart';
 import { NUMBER, PERCENT } from '~/lib/admin/format';
 import type { getVisitsSummary } from '~/lib/admin/overview';
 import { cn } from '~/lib/utils';
@@ -11,9 +12,23 @@ import { Area, Figure, type Loaded, SubLead } from './Area';
 
 type Visits = Awaited<ReturnType<typeof getVisitsSummary>>;
 
+// The chart brings recharts, the heaviest thing on the overview, so it loads
+// on its own: the rest of the page answers without waiting for it, and its
+// space is held meanwhile so nothing moves when it arrives. lazy() loses the
+// chart's generic props; the type-only import brings them back.
+const TimeChart = lazy(() =>
+	import('~/components/admin/stats/TimeChart').then((module) => ({ default: module.TimeChart }))
+) as unknown as typeof TimeChartProps;
+
 const count = (value: number | null) => (value === null ? '–' : NUMBER.format(value));
 
-export function TrafficCard({ loaded, className }: { loaded: Loaded<Visits>; className?: string }) {
+export const TrafficCard = memo(function TrafficCard({
+	loaded,
+	className
+}: {
+	loaded: Loaded<Visits>;
+	className?: string;
+}) {
 	return (
 		<Area
 			title="traffic"
@@ -31,20 +46,22 @@ export function TrafficCard({ loaded, className }: { loaded: Loaded<Visits>; cla
 					</div>
 					{/* the chart takes whatever height its row leaves the card */}
 					<div className="flex min-h-56 flex-1 flex-col">
-						<TimeChart
-							data={visits.days}
-							dataKey="visitors"
-							label="Visitors"
-							format={count}
-							className="aspect-auto min-h-0 w-full flex-1"
-						/>
+						<Suspense fallback={<div className="min-h-0 flex-1" aria-hidden />}>
+							<TimeChart
+								data={visits.days}
+								dataKey="visitors"
+								label="Visitors"
+								format={count}
+								className="aspect-auto min-h-0 w-full flex-1"
+							/>
+						</Suspense>
 						<p className="mt-1 text-xs text-foreground/40">visitors a day, last 30 days</p>
 					</div>
 				</>
 			)}
 		</Area>
 	);
-}
+});
 
 function HereNow({ count }: { count: number }) {
 	return (
@@ -76,7 +93,13 @@ function Trend({ now, before }: { now: number; before: number }) {
 }
 
 // The top pages and sources of the week, as /admin/stats ranks them.
-export function ReadersCard({ loaded, className }: { loaded: Loaded<Visits>; className?: string }) {
+export const ReadersCard = memo(function ReadersCard({
+	loaded,
+	className
+}: {
+	loaded: Loaded<Visits>;
+	className?: string;
+}) {
 	return (
 		<Area title="readers" href="/admin/stats" section="pages" loaded={loaded} className={className}>
 			{(visits) => (
@@ -93,7 +116,7 @@ export function ReadersCard({ loaded, className }: { loaded: Loaded<Visits>; cla
 			)}
 		</Area>
 	);
-}
+});
 
 function RankingHeading({ section, children }: { section: string; children: string }) {
 	return (

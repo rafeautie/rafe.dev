@@ -36,37 +36,39 @@ export type DraftSummary = { slug: string; title: string; edited: string };
 
 export const getWritingSummary = createServerFn({ method: 'GET' }).handler(async () => {
 	const github = gitHub(await requireToken());
-	const { files } = await github.contentTree(await github.head());
+	const head = await github.readHead();
+	const { files } = await github.contentTree(head);
 	const posts = await Promise.all(
 		postFiles(files).map(async ({ slug, sha }) => ({
 			slug,
 			...readFields(splitPost(await github.blobText(sha)).yaml)
 		}))
 	);
+	// a post is a draft or published by its draft flag alone; one published
+	// without a date still counts as published, it just sorts last
 	const published = posts
-		.filter((post) => !post.draft && post.date)
+		.filter((post) => !post.draft)
 		.sort((a, b) => b.date.localeCompare(a.date));
-	const drafts = posts
-		.filter((post) => post.draft)
-		.sort((a, b) => b.date.localeCompare(a.date))
-		.slice(0, DRAFTS_READ);
+	const dated = published.filter((post) => post.date);
+	const allDrafts = posts.filter((post) => post.draft);
+	const drafts = allDrafts.sort((a, b) => b.date.localeCompare(a.date)).slice(0, DRAFTS_READ);
 	// a draft's own date is often empty, so the one to pick up is the one last
 	// worked on, from the commits to its folder
 	const edited = await Promise.all(
 		drafts.map(async (draft): Promise<DraftSummary> => {
-			const [last] = await github.history(`${WRITING_DIR}/${draft.slug}`, 1);
+			const [last] = await github.history(`${WRITING_DIR}/${draft.slug}`, 1, head);
 			return { slug: draft.slug, title: draft.title || draft.slug, edited: last?.date ?? '' };
 		})
 	);
-	const latest = published[0];
+	const latest = dated[0];
 	return {
 		published: published.length,
-		drafts: posts.length - published.length,
+		drafts: allDrafts.length,
 		// how long the site has gone without something new
 		daysSincePost: latest
 			? Math.max(0, today().day - Math.floor(Date.parse(latest.date) / DAY))
 			: null,
-		recentPosts: published
+		recentPosts: dated
 			.slice(0, POSTS_SHOWN)
 			.map((post) => ({ slug: post.slug, title: post.title || post.slug, date: post.date })),
 		recentDrafts: edited.sort((a, b) => b.edited.localeCompare(a.edited)).slice(0, DRAFTS_SHOWN)
@@ -81,10 +83,10 @@ const PHOTOS_SHOWN = 8;
 
 export const getPhotosSummary = createServerFn({ method: 'GET' }).handler(async () => {
 	const github = gitHub(await requireToken());
-	// the folder's history needs no head, so it is asked for alongside the tree
-	const [{ head, files }, [last]] = await Promise.all([
-		github.head().then(async (head) => ({ head, files: (await github.contentTree(head)).files })),
-		github.history(PHOTOS_DIR, 1)
+	const head = await github.readHead();
+	const [{ files }, [last]] = await Promise.all([
+		github.contentTree(head),
+		github.history(PHOTOS_DIR, 1, head)
 	]);
 	const sha = files.get(PHOTOS_MANIFEST);
 	// edited by hand too, so read loosely: a photo here only needs its file
@@ -120,38 +122,44 @@ export const getVisitsSummary = createServerFn({ method: 'GET' }).handler(async 
 	const chart = (current - CHART_DAYS + 1) * DAY - offset;
 	const visitor = VISITOR;
 	const source = DIMENSIONS.source.key;
+	// Every range is bounded on both ends, up to now: with only a lower bound
+	// SQLite reaches for the session or path index and reads the whole table;
+	// with both it searches the time index for just the rows in range.
+	const until = now + 1;
 
 	const [totals, previous, days, pages, sources, here] = await db.batch([
 		db
 			.prepare(
-				`SELECT count(DISTINCT ${visitor}) AS visitors, count(*) AS views FROM views WHERE at >= ?`
+				`SELECT count(DISTINCT ${visitor}) AS visitors, count(*) AS views
+				FROM views WHERE at >= ? AND at < ?`
 			)
-			.bind(week),
+			.bind(week, until),
 		db
 			.prepare(`SELECT count(DISTINCT ${visitor}) AS visitors FROM views WHERE at >= ? AND at < ?`)
 			.bind(before, week),
 		db
 			.prepare(
 				`SELECT CAST((at + ?) / ? AS INTEGER) AS day, count(DISTINCT ${visitor}) AS visitors
-				FROM views WHERE at >= ? GROUP BY day`
+				FROM views WHERE at >= ? AND at < ? GROUP BY day`
 			)
-			.bind(offset, DAY, chart),
+			.bind(offset, DAY, chart, until),
 		db
 			.prepare(
 				`SELECT path AS key, path AS label, count(DISTINCT ${visitor}) AS visitors,
 					count(*) AS views
-				FROM views WHERE at >= ? GROUP BY path ORDER BY visitors DESC, views DESC LIMIT ${RANKED}`
+				FROM views WHERE at >= ? AND at < ? GROUP BY path
+				ORDER BY visitors DESC, views DESC LIMIT ${RANKED}`
 			)
-			.bind(week),
+			.bind(week, until),
 		// where visits came from is on their first page view, as /admin/stats counts it
 		db
 			.prepare(
 				`SELECT ${source} AS key, ${source} AS label, count(DISTINCT ${visitor}) AS visitors,
 					count(*) AS views
-				FROM views WHERE at >= ? AND landing = 1
+				FROM views WHERE at >= ? AND at < ? AND landing = 1
 				GROUP BY key ORDER BY visitors DESC, views DESC LIMIT ${RANKED}`
 			)
-			.bind(week),
+			.bind(week, until),
 		// anyone whose page was still open and reporting in the last five minutes
 		db
 			.prepare(`SELECT count(DISTINCT ${visitor}) AS visitors FROM views WHERE seen >= ?`)

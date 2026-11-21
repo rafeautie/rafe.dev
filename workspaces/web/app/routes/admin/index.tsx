@@ -25,8 +25,13 @@ import { timeAgo } from '~/lib/admin/time';
 // each area of the site is doing, each in its own card that leads to its page,
 // what to pick up next, and what changed lately.
 export const Route = createFileRoute('/admin/')({
-	validateSearch: (search: Record<string, unknown>): { signin?: string } =>
-		typeof search.signin === 'string' ? { signin: search.signin } : {},
+	// Only the reasons there is a message for: anything else (a crafted
+	// ?signin=__proto__ found Object.prototype) is dropped here. Dropped means
+	// set to undefined: the router lays what this returns over the URL's own
+	// parameters, so leaving the key out would let the raw one through.
+	validateSearch: (search: Record<string, unknown>): { signin?: SignInError } => ({
+		signin: isSignInError(search.signin) ? search.signin : undefined
+	}),
 	loader: ({ context }) => (context.admin ? loadOverview() : null),
 	component: AdminHome
 });
@@ -66,10 +71,14 @@ function AdminHome() {
 	return overview ? <Overview overview={overview} /> : <SignIn />;
 }
 
-const SIGN_IN_ERRORS: Record<string, string> = {
+const SIGN_IN_ERRORS = {
 	denied: 'That GitHub account cannot edit this site.',
 	failed: 'Signing in did not finish. Try again.'
 };
+type SignInError = keyof typeof SIGN_IN_ERRORS;
+function isSignInError(value: unknown): value is SignInError {
+	return value === 'denied' || value === 'failed';
+}
 
 function SignIn() {
 	const { signin } = Route.useSearch();
@@ -83,7 +92,7 @@ function SignIn() {
 				<GitHubIcon className="size-4" />
 				Sign in with GitHub
 			</Button>
-			{signin && SIGN_IN_ERRORS[signin] && (
+			{signin && Object.hasOwn(SIGN_IN_ERRORS, signin) && (
 				<p className="text-sm text-foreground/50">{SIGN_IN_ERRORS[signin]}</p>
 			)}
 		</div>
@@ -93,7 +102,8 @@ function SignIn() {
 function Overview({ overview }: { overview: OverviewData }) {
 	const { changes, writing, photos, visits, race } = overview;
 	const latest = changes.ok ? changes.value.changes[0] : undefined;
-	// the race widgets and the rail's paused badge follow the room as it runs
+	// the race widgets and the rail's paused badge follow the room as it runs;
+	// the other cards are memoed, so a poll redraws only these
 	const live = useLiveRace(race);
 	// keeps checking while the latest commit is still building
 	const watch = useBuildWatch(
@@ -115,7 +125,7 @@ function Overview({ overview }: { overview: OverviewData }) {
 					<>
 						<BuildBadge build={watch.build} />
 						{latest && <span>updated {timeAgo(latest.date)}</span>}
-						{live.race.ok && live.race.value.paused && (
+						{live.ok && live.value.paused && (
 							<Badge
 								variant="outline"
 								className="text-foreground/70"
@@ -136,9 +146,9 @@ function Overview({ overview }: { overview: OverviewData }) {
 				<div className="grid gap-4 @2xl:grid-cols-2 @4xl:grid-cols-6">
 					{/* what is happening now, then how the week went, then the content */}
 					<TrafficCard loaded={visits} className="@2xl:col-span-2 @4xl:col-span-4" />
-					<LoopCard loaded={live.race} now={live.now} className="@4xl:col-span-2" />
+					<LoopCard loaded={live} className="@4xl:col-span-2" />
 					<ReadersCard loaded={visits} className="@4xl:col-span-2" />
-					<ResultsCard loaded={live.race} className="@2xl:col-span-2 @4xl:col-span-4" />
+					<ResultsCard loaded={live} className="@2xl:col-span-2 @4xl:col-span-4" />
 					<WritingCard loaded={writing} className="@4xl:col-span-2" />
 					<ActivityCard loaded={changes} className="@4xl:col-span-4" />
 					<PhotosCard loaded={photos} className="@2xl:col-span-2 @4xl:col-span-6" />

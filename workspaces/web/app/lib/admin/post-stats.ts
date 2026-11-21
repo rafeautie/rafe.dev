@@ -1,4 +1,5 @@
-import { FENCED_CODE, type PostFields } from './frontmatter';
+import type { PostFields } from './frontmatter';
+import { FENCED_CODE } from './markdown';
 
 // What the writing list and the editor say about a post at a glance: how long
 // it is, and what it still lacks before it reads well on the site and when

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { ConfirmDialog } from '~/components/admin/ConfirmDialog';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
@@ -49,7 +49,8 @@ const GROUPS: { title: string; description: string; fields: [Key, string][] }[] 
 	}
 ];
 
-export function Tuning({
+// memo: the page polls every few seconds; its settings and cars rarely move
+export const Tuning = memo(function Tuning({
 	settings,
 	tuned,
 	cars,
@@ -199,4 +200,4 @@ export function Tuning({
 			/>
 		</div>
 	);
-}
+});

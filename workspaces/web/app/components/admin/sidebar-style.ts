@@ -47,11 +47,11 @@ export const sidebarFooter = cn(
 	moving
 );
 
-// Every row in both sidebars, its icon included: muted at rest, and full
-// strength under the pointer or when it is the current one (shadcn's own hover
-// and data-active colors, which outrank this). Rounded as the site's buttons
-// are (rounded-xl, the fold button's too), rather than shadcn's tighter rows.
-export const sidebarItem = 'rounded-xl text-sidebar-foreground/70';
+// Every row in both sidebars, its icon included: full strength, as the header
+// beside them is; the current one is told by its background (shadcn's
+// data-active). Rounded as the site's buttons are (rounded-xl, the fold
+// button's too), rather than shadcn's tighter rows.
+export const sidebarItem = 'rounded-xl text-sidebar-foreground';
 
 // Words that give way when the sidebar folds: they fade, and shrink to nothing
 // so what sits beside them ends up centered in the rail.

@@ -60,7 +60,7 @@ export const VISITOR = 'coalesce(visitor, session)';
 const IS_VISITOR = '(visitor = ?1 OR (visitor IS NULL AND session = ?1))';
 
 // The WHERE clause for a time range and filters, and its parameters. The
-// range runs to now, or to `until` for an earlier one to compare with.
+// range runs from `since` up to (not including) `until`.
 function where(since: number, filters: Filters, until?: number) {
 	const clauses = until === undefined ? ['at >= ?'] : ['at >= ?', 'at < ?'];
 	const params: (string | number)[] = until === undefined ? [since] : [since, until];
@@ -222,8 +222,12 @@ export const getStats = createServerFn({ method: 'GET' })
 		const since = Number.isFinite(span)
 			? (lastBucket - Math.round(span / bucket) + 1) * bucket - offset
 			: 0;
-		const filter = where(since, data.filters);
-		const visitFilter = wholeVisits(since, filter);
+		// bounded on both ends, up to now: with only a lower bound SQLite reaches
+		// for the session index and reads the whole table; with both it searches
+		// the time index for just the rows in range
+		const until = now + 1;
+		const filter = where(since, data.filters, until);
+		const visitFilter = wholeVisits(since, filter, until);
 		const run = (sql: string, before: (string | number)[] = [], scope = filter) =>
 			db.prepare(sql).bind(...before, ...scope.params);
 

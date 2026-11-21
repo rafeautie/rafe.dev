@@ -1,4 +1,5 @@
 import { Document, parseDocument } from 'yaml';
+import { FENCED_CODE } from './markdown';
 
 // A post's index.md, split into its frontmatter and body. Editing goes through
 // the parsed YAML document so keys the admin does not know about survive a save.
@@ -72,6 +73,4 @@ function collapse(text: string) {
 	return text.replace(/\n{3,}(?=[^\n])(?! {4}|\t)/g, '\n\n');
 }
 
-// A fenced code block: closed by the same fence it opened with, which may be
-// indented (inside a list item).
-export const FENCED_CODE = /^[ \t]*(`{3,}|~{3,})[\s\S]*?^[ \t]*\1/gm;
+export { FENCED_CODE };

@@ -159,7 +159,8 @@ function changeLink(files: string[]) {
 
 export const getOverview = createServerFn({ method: 'GET' }).handler(async () => {
 	const github = gitHub(await requireToken());
-	const [head, commits] = await Promise.all([github.head(), github.history(CONTENT_ROOT, 8)]);
+	const head = await github.readHead();
+	const commits = await github.history(CONTENT_ROOT, 8, head);
 	const [build, links] = await Promise.all([
 		github.build(head),
 		Promise.all(commits.map(async (commit) => changeLink(await github.changedFiles(commit.sha))))

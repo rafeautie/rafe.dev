@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
 import { cn } from '~/lib/utils';
 import { Empty, Panel, StatCard } from '~/components/admin/cards';
@@ -11,7 +12,8 @@ import { type View } from './format';
 
 type History = View['history'];
 
-export function Books({ history }: { history: History }) {
+// memo: the page polls every few seconds, and the history rarely moves
+export const Books = memo(function Books({ history }: { history: History }) {
 	const { totals } = history;
 	return (
 		<div className="@container flex flex-col gap-4">
@@ -41,7 +43,7 @@ export function Books({ history }: { history: History }) {
 			</Panel>
 		</div>
 	);
-}
+});
 
 // One bar per race, up for what the house kept and down for what it paid
 // beyond the stakes, on one scale so the two sides compare.

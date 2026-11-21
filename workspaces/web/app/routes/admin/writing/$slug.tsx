@@ -371,9 +371,7 @@ function PostForm({
 	}
 
 	return (
-		// a container, so the cards move beside the post by the room the page
-		// has, whether the admin sidebar is open or folded
-		<div className="@container mx-auto max-w-6xl">
+		<div className="mx-auto max-w-6xl">
 			<Path slug={slug} title={fields.title} />
 			<ControlsRail
 				status={
@@ -398,120 +396,125 @@ function PostForm({
 				</Button>
 			</ControlsRail>
 
-			<div className="mt-8 grid gap-8 sm:mt-10 @4xl:grid-cols-[minmax(0,1fr)_17rem] @4xl:gap-10 @5xl:grid-cols-[minmax(0,1fr)_19rem]">
-				<article className="min-w-0">
-					<div>
-						<Input
-							aria-label="Title"
-							placeholder="Title"
-							value={fields.title}
-							onChange={(event) => setField('title', event.target.value)}
-							className="h-auto rounded-none border-0 px-0 py-0 text-4xl font-semibold tracking-tight shadow-none focus-visible:ring-0 sm:text-5xl md:text-4xl md:sm:text-5xl dark:bg-transparent"
-						/>
-						<Input
-							aria-label="Description"
-							placeholder="A line about the post"
-							value={fields.description}
-							onChange={(event) => setField('description', event.target.value)}
-							className="mt-3 h-auto rounded-none border-0 px-0 py-0 text-lg text-foreground/60 shadow-none focus-visible:ring-0 md:text-lg dark:bg-transparent"
-						/>
-					</div>
-					{/* the formatting bar rides along under the rail while the post scrolls */}
-					<div className="z-10 mt-8 bg-background py-2 lg:sticky lg:top-[57px]">
-						<EditorToolbar
-							editor={markdownMode ? null : editor}
-							onImages={insertImages}
-							end={
-								<Toggle
-									size="sm"
-									pressed={markdownMode}
-									title={
-										lossless
-											? 'Edit the Markdown directly'
-											: 'This post uses Markdown the visual editor would lose'
-									}
-									onPressedChange={switchMode}
-								>
-									<FileCodeIcon />
-									Markdown
-								</Toggle>
+			{/* a container, so the cards move beside the post by the room the page
+			    has, whether the admin sidebar is open or folded; it starts under the
+			    controls rail, which spans the page's whole area instead */}
+			<div className="@container">
+				<div className="mt-8 grid gap-8 sm:mt-10 @4xl:grid-cols-[minmax(0,1fr)_17rem] @4xl:gap-10 @5xl:grid-cols-[minmax(0,1fr)_19rem]">
+					<article className="min-w-0">
+						<div>
+							<Input
+								aria-label="Title"
+								placeholder="Title"
+								value={fields.title}
+								onChange={(event) => setField('title', event.target.value)}
+								className="h-auto rounded-none border-0 px-0 py-0 text-4xl font-semibold tracking-tight shadow-none focus-visible:ring-0 sm:text-5xl md:text-4xl md:sm:text-5xl dark:bg-transparent"
+							/>
+							<Input
+								aria-label="Description"
+								placeholder="A line about the post"
+								value={fields.description}
+								onChange={(event) => setField('description', event.target.value)}
+								className="mt-3 h-auto rounded-none border-0 px-0 py-0 text-lg text-foreground/60 shadow-none focus-visible:ring-0 md:text-lg dark:bg-transparent"
+							/>
+						</div>
+						{/* the formatting bar rides along under the rail while the post scrolls */}
+						<div className="z-10 mt-8 bg-background py-2 lg:sticky lg:top-[57px]">
+							<EditorToolbar
+								editor={markdownMode ? null : editor}
+								onImages={insertImages}
+								end={
+									<Toggle
+										size="sm"
+										pressed={markdownMode}
+										title={
+											lossless
+												? 'Edit the Markdown directly'
+												: 'This post uses Markdown the visual editor would lose'
+										}
+										onPressedChange={switchMode}
+									>
+										<FileCodeIcon />
+										Markdown
+									</Toggle>
+								}
+							/>
+						</div>
+						<div className="mt-6 pb-16 @4xl:pb-24">
+							{markdownMode ? (
+								<>
+									{!lossless && (
+										<p className="mb-4 text-sm text-foreground/50">
+											This post uses Markdown the visual editor would lose (a table or inline HTML,
+											say), so it opens as Markdown.
+										</p>
+									)}
+									<Textarea
+										key={body}
+										aria-label="Post body in Markdown"
+										defaultValue={body}
+										onChange={(event) => {
+											current.current = event.target.value;
+											recount();
+											changed();
+										}}
+										className="min-h-96 font-mono text-sm"
+									/>
+								</>
+							) : (
+								<PostBody editor={editor} />
+							)}
+						</div>
+					</article>
+					{/* under the post on narrow screens, two abreast where they fit */}
+					<aside className="grid content-start items-start gap-4 @xl:grid-cols-2 @4xl:grid-cols-1">
+						<StatusCard
+							fields={fields}
+							setField={setField}
+							slug={isNew ? null : slug}
+							stats={stats}
+							busy={saving}
+							onDelete={isNew ? undefined : () => setConfirm('delete')}
+							address={
+								isNew && (
+									<div className="flex flex-col gap-1.5 py-1">
+										<span className="text-foreground/50">address</span>
+										<div className="flex min-w-0 items-center gap-1 text-foreground/50">
+											<span className="shrink-0">/writing/</span>
+											<Input
+												aria-label="Post address"
+												value={newSlug}
+												onChange={(event) => {
+													setSlugTouched(true);
+													setNewSlug(event.target.value);
+													changed({ slug: event.target.value });
+												}}
+												className="h-8 min-w-0"
+											/>
+										</div>
+									</div>
+								)
 							}
 						/>
-					</div>
-					<div className="mt-6 pb-16 @4xl:pb-24">
-						{markdownMode ? (
-							<>
-								{!lossless && (
-									<p className="mb-4 text-sm text-foreground/50">
-										This post uses Markdown the visual editor would lose (a table or inline HTML,
-										say), so it opens as Markdown.
-									</p>
-								)}
-								<Textarea
-									key={body}
-									aria-label="Post body in Markdown"
-									defaultValue={body}
-									onChange={(event) => {
-										current.current = event.target.value;
-										recount();
-										changed();
-									}}
-									className="min-h-96 font-mono text-sm"
-								/>
-							</>
-						) : (
-							<PostBody editor={editor} />
-						)}
-					</div>
-				</article>
-				{/* under the post on narrow screens, two abreast where they fit */}
-				<aside className="grid content-start items-start gap-4 @xl:grid-cols-2 @4xl:grid-cols-1">
-					<StatusCard
-						fields={fields}
-						setField={setField}
-						slug={isNew ? null : slug}
-						stats={stats}
-						busy={saving}
-						onDelete={isNew ? undefined : () => setConfirm('delete')}
-						address={
-							isNew && (
-								<div className="flex flex-col gap-1.5 py-1">
-									<span className="text-foreground/50">address</span>
-									<div className="flex min-w-0 items-center gap-1 text-foreground/50">
-										<span className="shrink-0">/writing/</span>
-										<Input
-											aria-label="Post address"
-											value={newSlug}
-											onChange={(event) => {
-												setSlugTouched(true);
-												setNewSlug(event.target.value);
-												changed({ slug: event.target.value });
-											}}
-											className="h-8 min-w-0"
-										/>
-									</div>
-								</div>
-							)
-						}
-					/>
-					<PreviewCard
-						fields={fields}
-						setField={setField}
-						images={images}
-						imageSrc={
-							uploads.get(fields.image)?.url ??
-							rawUrl(`${folder}/${fields.image}`, viewRef || undefined)
-						}
-					/>
-					{!isNew && versions.length > 0 && (
-						<VersionsCard
-							versions={versions}
-							value={version}
-							disabled={saving}
-							onChange={(next) => (edited ? setConfirm({ version: next }) : showVersion(next))}
+						<PreviewCard
+							fields={fields}
+							setField={setField}
+							images={images}
+							imageSrc={
+								uploads.get(fields.image)?.url ??
+								rawUrl(`${folder}/${fields.image}`, viewRef || undefined)
+							}
 						/>
-					)}
-				</aside>
+						{!isNew && versions.length > 0 && (
+							<VersionsCard
+								versions={versions}
+								value={version}
+								disabled={saving}
+								onChange={(next) => (edited ? setConfirm({ version: next }) : showVersion(next))}
+							/>
+						)}
+					</aside>
+				</div>
 			</div>
 
 			<ConfirmDialog

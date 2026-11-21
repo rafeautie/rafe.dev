@@ -46,6 +46,7 @@ export function Players({
 	players: Player[];
 	/** Players with the game open now. */
 	watching: number;
+	/** The room's time at its latest answer: near enough to count today's players. */
 	clock: number;
 	search: string;
 	setSearch: (search: string) => void;

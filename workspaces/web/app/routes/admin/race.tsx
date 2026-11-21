@@ -1,14 +1,16 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useEffect, useState } from 'react';
+import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from '~/components/Link';
 import { AdminHeader, ControlsRail, ProblemBadge } from '~/components/admin/AdminHeader';
 import { ConfirmDialog } from '~/components/admin/ConfirmDialog';
 import { Books } from '~/components/admin/race/Books';
 import { Live } from '~/components/admin/race/Live';
 import { Players } from '~/components/admin/race/Players';
+import { SecondsLeft } from '~/components/admin/race/clock';
 import { Results } from '~/components/admin/race/Results';
 import { Tuning } from '~/components/admin/race/Tuning';
-import { readSection, Subsections } from '~/components/admin/Subsections';
+import { Subsections } from '~/components/admin/Subsections';
+import { readSection } from '~/lib/admin/section';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { errorMessage } from '~/lib/admin/format';
@@ -29,9 +31,9 @@ export const Route = createFileRoute('/admin/race')({
 	// which section shows on a wide screen
 	validateSearch: (search: Record<string, unknown>) => readSection(SECTIONS, search),
 	beforeLoad: requireAdmin,
+	// the page polls for itself after this; switching sections is a change of
+	// search the loader does not depend on, so it asks nothing new
 	loader: () => getRaceAdmin({ data: { search: '' } }),
-	// the page polls for itself, so switching sections asks nothing new
-	shouldReload: ({ cause }) => cause !== 'stay',
 	component: RacePage
 });
 
@@ -40,10 +42,8 @@ const POLL_MS = 3000;
 function RacePage() {
 	const { section } = Route.useSearch();
 	const navigate = useNavigate({ from: Route.fullPath });
+	const router = useRouter();
 	const [view, setView] = useState<RaceAdminView>(Route.useLoaderData());
-	// how far the room's clock is ahead of this one, for the time left
-	const [skew, setSkew] = useState(0);
-	const [now, setNow] = useState(() => Date.now());
 	const [search, setSearch] = useState('');
 	const [problem, setProblem] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -51,50 +51,67 @@ function RacePage() {
 
 	const refresh = useCallback(async () => {
 		try {
-			const next = await getRaceAdmin({ data: { search } });
-			setView(next);
-			setSkew(next.loop.now - Date.now());
+			setView(await getRaceAdmin({ data: { search } }));
 		} catch (error) {
-			setProblem(errorMessage(error));
+			// a lapsed sign-in: reloading the page's data fails the same way,
+			// which puts up the admin's own error page and its sign-in button
+			if (errorMessage(error) === 'Not signed in') void router.invalidate();
+			else setProblem(errorMessage(error));
 		}
-	}, [search]);
+	}, [search, router]);
 
-	// soon after the search changes, then every few seconds
+	// Soon after the search changes, then every few seconds while the tab is
+	// shown: a hidden tab asks nothing, so it doesn't keep the room busy, and
+	// catches up the moment it is shown again.
 	useEffect(() => {
 		let gone = false;
 		let timer = setTimeout(function tick() {
-			void refresh().finally(() => {
+			const again = () => {
 				if (!gone) timer = setTimeout(tick, POLL_MS);
-			});
+			};
+			if (document.hidden) again();
+			else void refresh().finally(again);
 		}, 250);
+		const shown = () => {
+			if (!document.hidden) void refresh();
+		};
+		document.addEventListener('visibilitychange', shown);
 		return () => {
 			gone = true;
 			clearTimeout(timer);
+			document.removeEventListener('visibilitychange', shown);
 		};
 	}, [refresh]);
 
-	useEffect(() => {
-		const timer = setInterval(() => setNow(Date.now()), 1000);
-		return () => clearInterval(timer);
-	}, []);
-
-	async function act(run: () => Promise<unknown>) {
-		setProblem(null);
-		setBusy(true);
-		try {
-			await run();
-			await refresh();
-		} catch (error) {
-			setProblem(errorMessage(error));
-		} finally {
-			setBusy(false);
-		}
-	}
+	// kept the same across polls, so the sections that take it (memo) skip
+	// redrawing while nothing in it moves
+	const act = useCallback(
+		async (run: () => Promise<unknown>) => {
+			setProblem(null);
+			setBusy(true);
+			try {
+				await run();
+				await refresh();
+			} catch (error) {
+				setProblem(errorMessage(error));
+			} finally {
+				setBusy(false);
+			}
+		},
+		[refresh]
+	);
 
 	const go = (key: Section) => navigate({ search: { section: key === 'live' ? undefined : key } });
 	const { loop } = view;
-	const clock = now + skew;
-	const left = Math.max(0, Math.ceil((loop.endsAt - clock) / 1000));
+	// Each poll brings fresh objects even when nothing changed; these stay the
+	// same object until their contents change, so the memoed sections can tell.
+	const historyJson = JSON.stringify(view.history);
+	const history = useMemo<RaceAdminView['history']>(() => JSON.parse(historyJson), [historyJson]);
+	const settingsJson = JSON.stringify(view.settings);
+	const settings = useMemo<RaceAdminView['settings']>(
+		() => JSON.parse(settingsJson),
+		[settingsJson]
+	);
 
 	return (
 		<Subsections
@@ -102,7 +119,7 @@ function RacePage() {
 			value={section}
 			onChange={go}
 			sections={[
-				{ key: 'live', label: 'live', content: <Live view={view} clock={clock} go={go} /> },
+				{ key: 'live', label: 'live', content: <Live view={view} go={go} /> },
 				{
 					key: 'players',
 					label: 'players',
@@ -110,7 +127,7 @@ function RacePage() {
 						<Players
 							players={view.players}
 							watching={loop.players}
-							clock={clock}
+							clock={loop.now}
 							search={search}
 							setSearch={setSearch}
 							busy={busy}
@@ -118,19 +135,13 @@ function RacePage() {
 						/>
 					)
 				},
-				{ key: 'results', label: 'results', content: <Results history={view.history} /> },
-				{ key: 'books', label: 'books', content: <Books history={view.history} /> },
+				{ key: 'results', label: 'results', content: <Results history={history} /> },
+				{ key: 'books', label: 'books', content: <Books history={history} /> },
 				{
 					key: 'tuning',
 					label: 'tuning',
 					content: (
-						<Tuning
-							key={JSON.stringify(view.settings)}
-							{...view.settings}
-							cars={view.history.cars}
-							busy={busy}
-							act={act}
-						/>
+						<Tuning key={settingsJson} {...settings} cars={history.cars} busy={busy} act={act} />
 					)
 				}
 			]}
@@ -144,7 +155,12 @@ function RacePage() {
 					<>
 						<span>
 							{loop.round ? `race ${loop.round}` : 'no races yet'} · {loop.phase}
-							{loop.phase !== 'idle' && <span suppressHydrationWarning> · {left}s left</span>}
+							{loop.phase !== 'idle' && (
+								<>
+									{' · '}
+									<SecondsLeft endsAt={loop.endsAt} roomNow={loop.now} />s left
+								</>
+							)}
 						</span>
 						{loop.paused && <Badge variant="secondary">Paused</Badge>}
 						<ProblemBadge text={problem} onDismiss={() => setProblem(null)} />

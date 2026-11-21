@@ -83,8 +83,13 @@ function SidebarProvider({
 				_setOpen(openState);
 			}
 
-			// This sets the cookie to keep the sidebar state.
-			document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+			// This sets the cookie to keep the sidebar state. Scoped to /admin, the
+			// only place with a sidebar, so the public pages' requests don't carry
+			// it; Secure where the page is (http://localhost in development is not).
+			const secure = location.protocol === 'https:' ? '; Secure' : '';
+			document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/admin; max-age=${SIDEBAR_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
+			// the one an earlier version left at the root, which would shadow it
+			document.cookie = `${SIDEBAR_COOKIE_NAME}=; path=/; max-age=0`;
 		},
 		[setOpenProp, open]
 	);

@@ -9,6 +9,7 @@ import { Car, Table, Heading } from './parts';
 import { NUMBER } from '~/lib/admin/format';
 import { timeAgo } from '~/lib/admin/time';
 import { cell, condition, number, type View } from './format';
+import { useRoomClock } from './clock';
 
 // What is happening right now, the part of the page that is watched rather
 // than worked: where the loop is and how long is left, who is there, what
@@ -26,22 +27,13 @@ const WAITING = {
 	results: 'showing the result'
 };
 
-export function Live({
-	view,
-	clock,
-	go
-}: {
-	view: View;
-	/** The room's time now, as near as this page knows it. */
-	clock: number;
-	go: (section: 'results' | 'books') => void;
-}) {
+export function Live({ view, go }: { view: View; go: (section: 'results' | 'books') => void }) {
 	const { loop, history } = view;
 	const last = history.races[0];
 	return (
 		<div className="@container flex flex-col gap-4">
 			<Heading>live</Heading>
-			<Status loop={loop} clock={clock} />
+			<Status loop={loop} />
 			{loop.grid.length > 0 && (
 				<div className="grid gap-4 @3xl:grid-cols-2">
 					<Grid loop={loop} />
@@ -83,7 +75,9 @@ export function Live({
 	);
 }
 
-function Status({ loop, clock }: { loop: Loop; clock: number }) {
+// The only part of the page that ticks, so it keeps the clock itself.
+function Status({ loop }: { loop: Loop }) {
+	const clock = useRoomClock(loop.now, loop.phase !== 'idle');
 	const left = Math.max(0, Math.ceil((loop.endsAt - clock) / 1000));
 	const through =
 		loop.endsAt > loop.since

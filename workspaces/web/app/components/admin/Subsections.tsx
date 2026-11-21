@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { Activity, createContext, useContext, useSyncExternalStore, type ReactNode } from 'react';
 import { cn } from '~/lib/utils';
 import {
 	Sidebar,
@@ -25,7 +25,10 @@ export const useCurrentSection = () => useContext(CurrentSection);
 // page's name (title) and listing the sections, and only
 // the chosen one shows to the right of both, under the page's header (the
 // children). On a phone the sections stack, one under the next. Every section
-// stays mounted, so switching keeps what was typed or picked in each.
+// stays mounted, so switching keeps what was typed or picked in each; where
+// only one shows, the rest are kept as React Activity in hidden mode, so they
+// hold their state but run no effects (the stats globe starts only once its
+// section is opened) and redraw only when the browser is otherwise idle.
 //
 // It takes the place of the page's usual centered column, and the admin
 // layout drops its own padding around it on wide screens (data-subsections).
@@ -43,6 +46,7 @@ export function Subsections<K extends string>({
 	children: ReactNode;
 }) {
 	const current = sections.find((section) => section.key === value) ?? sections[0];
+	const oneAtATime = useWide();
 	return (
 		<div data-subsections className="lg:flex">
 			{/* shadcn's Sidebar, standing still: it lives with the page, not the app */}
@@ -77,27 +81,42 @@ export function Subsections<K extends string>({
 					</SidebarGroup>
 				</SidebarContent>
 			</Sidebar>
-			<div className="min-w-0 flex-1 lg:px-12 lg:py-8">
-				<div className="mx-auto max-w-4xl">
-					<CurrentSection.Provider value={current.label}>{children}</CurrentSection.Provider>
-					{sections.map((section) => (
-						<div
-							key={section.key}
-							className={cn('mt-10', section.key !== current.key && 'lg:hidden')}
-						>
-							{section.content}
-						</div>
-					))}
+			{/* beside this sidebar, the page's area starts here: a size container,
+			    so the controls rail (AdminHeader) stretches across this, not
+			    under the sidebar too */}
+			<div className="min-w-0 flex-1 lg:@container">
+				<div className="lg:px-12 lg:py-8">
+					<div className="mx-auto max-w-4xl">
+						<CurrentSection.Provider value={current.label}>{children}</CurrentSection.Provider>
+						{sections.map((section) => {
+							const shown = section.key === current.key;
+							return (
+								<Activity key={section.key} mode={oneAtATime && !shown ? 'hidden' : 'visible'}>
+									{/* lg:hidden too: it hides the rest from the first paint, before
+								    the page knows how wide it is */}
+									<div className={cn('mt-10', !shown && 'lg:hidden')}>{section.content}</div>
+								</Activity>
+							);
+						})}
+					</div>
 				</div>
 			</div>
 		</div>
 	);
 }
 
-// The `section` search param, kept only when it names one of the page's sections.
-export function readSection<K extends string>(
-	keys: readonly K[],
-	search: Record<string, unknown>
-): { section?: K } {
-	return keys.includes(search.section as K) ? { section: search.section as K } : {};
+// Whether the page is as wide as Tailwind's lg, where this sidebar shows and
+// one section at a time. False on the server and while hydrating, so the
+// first render matches the server's, where every section is visible.
+const WIDE = '(min-width: 64rem)';
+function useWide() {
+	return useSyncExternalStore(
+		(onChange) => {
+			const query = window.matchMedia(WIDE);
+			query.addEventListener('change', onChange);
+			return () => query.removeEventListener('change', onChange);
+		},
+		() => window.matchMedia(WIDE).matches,
+		() => false
+	);
 }

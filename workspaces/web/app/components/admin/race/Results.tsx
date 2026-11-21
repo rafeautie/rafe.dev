@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Badge } from '~/components/ui/badge';
 import { ROSTER } from '~/lib/race/roster';
 import { cn } from '~/lib/utils';
@@ -15,7 +16,8 @@ type History = View['history'];
 
 const FAIR = 1 / ROSTER.length;
 
-export function Results({ history }: { history: History }) {
+// memo: the page polls every few seconds, and the history rarely moves
+export const Results = memo(function Results({ history }: { history: History }) {
 	return (
 		<div className="flex flex-col gap-4">
 			<Heading>results</Heading>
@@ -23,7 +25,7 @@ export function Results({ history }: { history: History }) {
 			<Races races={history.races} />
 		</div>
 	);
-}
+});
 
 function Cars({ cars }: { cars: History['cars'] }) {
 	// every car, even one yet to start, so the table is always the whole field

@@ -32,13 +32,14 @@ export function postFiles(files: Map<string, string>) {
 
 export const listPostOverviews = createServerFn({ method: 'GET' }).handler(async () => {
 	const github = gitHub(await requireToken());
-	const { files } = await github.contentTree(await github.head());
+	const head = await github.readHead();
+	const { files } = await github.contentTree(head);
 
 	async function overview(slug: string, sha: string): Promise<PostOverview> {
 		const [source, history] = await Promise.all([
 			github.blobText(sha),
 			// one commit is enough; a post with no readable history still lists
-			github.history(`${WRITING_DIR}/${slug}`, 1).catch(() => [])
+			github.history(`${WRITING_DIR}/${slug}`, 1, head).catch(() => [])
 		]);
 		const { yaml, body } = splitPost(source);
 		return { slug, sha, ...readFields(yaml), ...postStats(body), changed: history[0] ?? null };

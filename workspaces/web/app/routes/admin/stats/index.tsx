@@ -2,7 +2,8 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { XIcon } from 'lucide-react';
 import { lazy, Suspense, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
-import { readSection, Subsections } from '~/components/admin/Subsections';
+import { Subsections } from '~/components/admin/Subsections';
+import { readSection } from '~/lib/admin/section';
 import { NUMBER } from '~/lib/admin/format';
 import { busiest, country, duration, formatMetric, place } from '~/components/admin/stats/format';
 import { FilterMenu } from '~/components/admin/stats/FilterMenu';
@@ -61,9 +62,12 @@ export const Route = createFileRoute('/admin/stats/')({
 		range: search.range ?? '7d',
 		filters: readFilters(search as Record<string, unknown>)
 	}),
+	// Switching sections or the chart's number asks nothing new: neither is a
+	// loader dep. A new range or filter is. Stats a minute old are still news,
+	// so coming back to the page (or a range) within one reuses them, and a
+	// hover's preload is not fetched again on the click.
 	loader: ({ deps }) => getStats({ data: deps }),
-	// switching sections or the chart's number asks nothing new; a new range or filter does
-	shouldReload: ({ cause }) => cause !== 'stay',
+	staleTime: 60_000,
 	component: StatsPage
 });
 
