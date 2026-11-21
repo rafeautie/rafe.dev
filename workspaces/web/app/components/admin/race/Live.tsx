@@ -20,6 +20,11 @@ type Loop = View['loop'];
 
 const PHASES = ['betting', 'racing', 'results'] as const;
 
+// Two narrow gaps cut through the phase bar at its thirds, so the one bar
+// reads as three sections.
+const NOTCHES =
+	'linear-gradient(to right, #000 calc(100% / 3 - 1.5px), transparent 0 calc(100% / 3 + 1.5px), #000 0 calc(200% / 3 - 1.5px), transparent 0 calc(200% / 3 + 1.5px), #000 0)';
+
 const WAITING = {
 	idle: 'waiting for somebody to open the game',
 	betting: 'betting open',
@@ -112,29 +117,35 @@ function Status({ loop }: { loop: Loop }) {
 			}
 		>
 			<div className="flex flex-col gap-5">
-				{/* the three phases every race goes through, and how far into this one */}
-				<ol className="grid grid-cols-3 gap-1.5" aria-label="Phase">
-					{PHASES.map((phase, i) => (
-						<li key={phase} className="flex flex-col gap-1.5">
-							<span
-								className="block h-1.5 overflow-hidden rounded-full bg-foreground/10"
-								aria-hidden
-							>
-								<span
-									suppressHydrationWarning
-									className="block h-full rounded-full bg-foreground transition-[width] duration-1000 ease-linear"
-									style={{ width: `${(i < at ? 1 : i === at ? through : 0) * 100}%` }}
-								/>
-							</span>
-							<span
+				{/* the three phases every race goes through, as one bar cut into
+				    thirds, filled as far as the race has got */}
+				<div className="flex flex-col gap-1.5">
+					<span
+						className="block h-1.5 overflow-hidden rounded-full bg-foreground/10"
+						style={{ maskImage: NOTCHES, WebkitMaskImage: NOTCHES }}
+						aria-hidden
+					>
+						{/* keyed by race, so a new race starts the fill again from
+						    nothing at once rather than running it back */}
+						<span
+							key={loop.round}
+							suppressHydrationWarning
+							className="block h-full bg-foreground transition-[width] duration-1000 ease-linear"
+							style={{ width: `${(at < 0 ? 0 : (at + through) / PHASES.length) * 100}%` }}
+						/>
+					</span>
+					<ol className="grid grid-cols-3" aria-label="Phase">
+						{PHASES.map((phase, i) => (
+							<li
+								key={phase}
 								aria-current={i === at ? 'step' : undefined}
 								className={cn('text-foreground/50', i === at && 'text-foreground')}
 							>
 								{phase}
-							</span>
-						</li>
-					))}
-				</ol>
+							</li>
+						))}
+					</ol>
+				</div>
 				<dl className="grid grid-cols-2 gap-4 @xl:grid-cols-4">
 					<Figure label="pages open" value={NUMBER.format(loop.viewers)} />
 					<Figure label="players watching" value={NUMBER.format(loop.players)} />
