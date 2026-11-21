@@ -35,6 +35,7 @@ import {
 } from './hud';
 import { Settings } from './Settings';
 import {
+	FLAG_MEANS,
 	chips,
 	entry,
 	ghost,
@@ -559,6 +560,7 @@ export function Game({
 				)}
 				{room?.phase === 'racing' && running && (
 					<section aria-label="Running order">
+						<p aria-live="polite">{FLAG_MEANS[running.flag]}</p>
 						<ol>
 							{running.order.map((id) => (
 								<li key={id}>

@@ -15,7 +15,13 @@ import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { errorMessage } from '~/lib/admin/format';
 import { requireAdmin } from '~/lib/admin/guard';
-import { getRaceAdmin, pauseRace, voidRace, type RaceAdminView } from '~/lib/race/admin';
+import {
+	cautionRace,
+	getRaceAdmin,
+	pauseRace,
+	voidRace,
+	type RaceAdminView
+} from '~/lib/race/admin';
 
 // The race game's back office (lib/race), laid out the way a live betting
 // game is run: what is on now, watched (live); the people playing it, acted
@@ -174,6 +180,7 @@ function RacePage() {
 								</>
 							)}
 						</span>
+						{loop.caution && <Badge variant="secondary">Caution</Badge>}
 						{loop.paused && <Badge variant="secondary">Paused</Badge>}
 						<ProblemBadge text={problem} onDismiss={() => setProblem(null)} />
 					</>
@@ -185,6 +192,14 @@ function RacePage() {
 					onClick={() => act(() => pauseRace({ data: { paused: !loop.paused } }))}
 				>
 					{loop.paused ? 'Resume' : 'Pause'}
+				</Button>
+				{/* the field slows and closes up behind the leader, then races on; the room says why not if it cannot */}
+				<Button
+					variant="outline"
+					disabled={busy || loop.phase !== 'racing' || loop.caution}
+					onClick={() => act(() => cautionRace())}
+				>
+					Throw caution
 				</Button>
 				<Button
 					variant="destructive"

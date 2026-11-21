@@ -1,4 +1,21 @@
 import { createPainter, hex, mix, type Painter } from './pixels';
+import type { ReplayTruck } from './recording';
+import {
+	GARAGE,
+	GATES,
+	HALF_GATE,
+	HALF_LANE,
+	HOMES,
+	NEARSIDE,
+	RING,
+	SLIP,
+	TRUCK,
+	layby,
+	parked,
+	place,
+	route,
+	type Route
+} from './service';
 import type { Car, RaceEvent } from './sim';
 import { HULL } from './sim';
 import { HALF_CORRIDOR, HALF_ROAD, TRACK, WORLD_H, WORLD_W, lateral, nearest } from './track';
@@ -28,6 +45,18 @@ export type CarView = Pick<
 	Car,
 	'entry' | 'x' | 'y' | 'angle' | 'speed' | 'slip' | 'hull' | 'retired'
 >;
+
+/** The recovery crews as they are: the trucks, and whether the caution is out. */
+export type Service = { trucks: ReplayTruck[]; caution: boolean };
+
+/** Nothing happening: every truck in its garage, no caution. */
+export const STANDING_BY: Service = {
+	trucks: HOMES.map((home) => ({ ...parked(home), busy: false, towing: -1, gate: -1 })),
+	caution: false
+};
+
+/** A pixel of the track's own picture, and the colour something drawn over the ground has there. */
+type Dab = { x: number; y: number; colour: number };
 
 type Particle = {
 	x: number;
@@ -63,6 +92,18 @@ const SMOKE = hex('#c9c9cf');
 const DUST = hex('#d6c493');
 const SOOT = hex('#3a3a3f');
 const SPARK = hex('#ffd866');
+// the service road is concrete, paler than the track
+const CONCRETE = [hex('#85867f'), hex('#8e8f88')];
+const BARRIER = [hex('#f0a020'), hex('#f2efe6')];
+const ROOF = hex('#586472');
+const RIDGE = hex('#7c8896');
+const EAVES = hex('#3a434d');
+const AMBER = hex('#f2b320');
+const AMBER_SHADE = hex('#a8760c');
+const STEEL = hex('#4a4e57');
+const BOOM = hex('#878d97');
+const LAMP = hex('#ffc21a');
+const LAMP_OUT = hex('#4d3f1c');
 const DEBUG_LINE = hex('#40e0ff');
 const DEBUG_HULL = hex('#ff40c0');
 
@@ -77,7 +118,11 @@ function grass(px: number, py: number) {
 	return GRASS[((px + py) >> 5) & 1][grain(px, py)];
 }
 
-/** The track from above, painted once. */
+/**
+ * The track from above, painted once, and what is drawn over it each frame:
+ * the barrier across each gate while it is shut, the caution lamp beside each
+ * gate, and the garages' roofs, which the trucks park under.
+ */
 function paintTrack() {
 	const { n, step, x, y, tx, ty, bend, length } = TRACK;
 	// the nearest centre-line sample to every pixel near the track
@@ -100,6 +145,9 @@ function paintTrack() {
 	}
 
 	const ground = new Uint32Array(WIDTH * HEIGHT);
+	// what each pixel is, for laying the service road over it: grass, wall, verge or tarmac
+	const [GRASS_, WALL_, VERGE_, TARMAC_] = [0, 1, 2, 3];
+	const surface = new Uint8Array(WIDTH * HEIGHT);
 	for (let py = 0; py < HEIGHT; py++) {
 		for (let px = 0; px < WIDTH; px++) {
 			const k = py * WIDTH + px;
@@ -108,6 +156,7 @@ function paintTrack() {
 			const wx = (px + 0.5) / SCALE;
 			const wy = (py + 0.5) / SCALE;
 			const across = near[k] === Infinity ? Infinity : Math.abs(lateral(wx, wy, i));
+			surface[k] = across > HALF_CORRIDOR + 0.8 ? GRASS_ : across > HALF_CORRIDOR ? WALL_ : VERGE_;
 			if (across > HALF_CORRIDOR + 0.8) {
 				ground[k] = grass(px, py);
 			} else if (across > HALF_CORRIDOR + 0.5) {
@@ -117,6 +166,7 @@ function paintTrack() {
 			} else if (across > HALF_ROAD) {
 				ground[k] = VERGE[speck];
 			} else {
+				surface[k] = TARMAC_;
 				// metres round the lap, for the start line and the kerb stripes
 				const along = i * step + (wx - x[i]) * tx[i] + (wy - y[i]) * ty[i];
 				const fromLine = Math.min(Math.abs(along), Math.abs(along - length));
@@ -135,7 +185,108 @@ function paintTrack() {
 			}
 		}
 	}
-	return ground;
+
+	/**
+	 * Lays concrete `half` wide along a way, over grass, and with `through`
+	 * over the wall and the verge too. Returns the wall it took out.
+	 */
+	function pave(way: Route, half: number, through = false) {
+		const gap: Dab[] = [];
+		const reach = Math.ceil(half * SCALE);
+		for (let d = 0; d <= way.length; d += 0.25) {
+			let at = 0;
+			while (at + 2 < way.count && way.along[at + 1] <= d) at++;
+			const t = (d - way.along[at]) / (way.along[at + 1] - way.along[at]);
+			const cx = (way.x[at] + (way.x[at + 1] - way.x[at]) * t) * SCALE;
+			const cy = (way.y[at] + (way.y[at + 1] - way.y[at]) * t) * SCALE;
+			for (let py = Math.floor(cy - reach); py <= cy + reach; py++) {
+				for (let px = Math.floor(cx - reach); px <= cx + reach; px++) {
+					if (px < 0 || py < 0 || px >= WIDTH || py >= HEIGHT) continue;
+					if ((px + 0.5 - cx) ** 2 + (py + 0.5 - cy) ** 2 > (half * SCALE) ** 2) continue;
+					const k = py * WIDTH + px;
+					if (surface[k] === TARMAC_ || (surface[k] !== GRASS_ && !through)) continue;
+					if (surface[k] === WALL_) {
+						gap.push({ x: px, y: py, colour: BARRIER[((px + py) >> 2) & 1] });
+						surface[k] = TARMAC_;
+					}
+					ground[k] = CONCRETE[grain(px, py)];
+				}
+			}
+		}
+		return gap;
+	}
+
+	// the service road all the way round, and the lay-by through each garage
+	pave(
+		route([
+			[0, -RING],
+			[n, -RING]
+		]),
+		HALF_LANE
+	);
+	for (const home of HOMES) pave(layby(home), HALF_LANE);
+	// each gate: the way out onto the track and the way back off it, through the wall
+	const barriers = GATES.map((gate) => [
+		...pave(
+			route([
+				[gate - SLIP, -RING],
+				[gate + SLIP, NEARSIDE]
+			]),
+			HALF_LANE,
+			true
+		),
+		...pave(
+			route([
+				[gate - SLIP, NEARSIDE],
+				[gate + SLIP, -RING]
+			]),
+			HALF_LANE,
+			true
+		)
+	]);
+	// a lamp on the wall before each gate
+	const lamps = GATES.map((gate) => {
+		const [lx, ly] = place(gate - HALF_GATE - 2, -HALF_CORRIDOR - 0.3);
+		return { x: Math.floor(lx * SCALE), y: Math.floor(ly * SCALE) };
+	});
+
+	// The garages: a roof over the lay-by, lit from the top left like the
+	// cars, with its shadow on the ground beside it.
+	const roofs: Dab[] = [];
+	for (const home of HOMES) {
+		const { x: gx, y: gy, angle } = parked(home);
+		const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
+		const reach = Math.ceil(Math.hypot(GARAGE.length, GARAGE.width) * 0.5 * SCALE) + 2;
+		for (let py = Math.floor(gy * SCALE) - reach; py <= gy * SCALE + reach; py++) {
+			for (let px = Math.floor(gx * SCALE) - reach; px <= gx * SCALE + reach; px++) {
+				if (px < 0 || py < 0 || px >= WIDTH || py >= HEIGHT) continue;
+				/** Whether a point is under the roof, and if so how far along and across it. */
+				const under = (wx: number, wy: number) => {
+					const along = (wx - gx) * cos + (wy - gy) * sin;
+					const side = (wy - gy) * cos - (wx - gx) * sin;
+					const inside = Math.abs(along) <= GARAGE.length / 2 && Math.abs(side) <= GARAGE.width / 2;
+					return inside ? { along, side } : null;
+				};
+				const k = py * WIDTH + px;
+				const roof = under((px + 0.5) / SCALE, (py + 0.5) / SCALE);
+				if (!roof) {
+					// the shadow falls down and to the right
+					if (under((px - 2.5) / SCALE, (py - 2.5) / SCALE)) ground[k] = mix(ground[k], BLACK, 0.4);
+					continue;
+				}
+				const edge = Math.min(
+					GARAGE.length / 2 - Math.abs(roof.along),
+					GARAGE.width / 2 - Math.abs(roof.side)
+				);
+				// corrugated: a rib every half metre, a ridge down the middle
+				const rib = Math.floor(roof.along * 2) & 1;
+				const colour =
+					edge < 0.3 ? EAVES : Math.abs(roof.side) < 0.3 ? RIDGE : mix(ROOF, BLACK, rib * 0.12);
+				roofs.push({ x: px, y: py, colour });
+			}
+		}
+	}
+	return { ground, barriers, lamps, roofs };
 }
 
 /** Whether a point (in the car's own metres) is inside its outline. */
@@ -169,7 +320,7 @@ function edge(hull: Float32Array, x: number, y: number) {
 
 export function createRenderer(canvas: HTMLCanvasElement) {
 	const context = canvas.getContext('2d')!;
-	const track = paintTrack();
+	const { ground: track, barriers, lamps, roofs } = paintTrack();
 	// the frame's size, and where in it the track's corner is
 	let width = 0;
 	let height = 0;
@@ -311,6 +462,75 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 		}
 	}
 
+	/** Puts a pixel of the track's own picture on the frame, wherever the track is in it. */
+	function dab({ x, y, colour }: Dab) {
+		const px = x + ox;
+		const py = y + oy;
+		if (px >= 0 && py >= 0 && px < width && py < height) frame[py * width + px] = colour;
+	}
+
+	/** Plots one truck, or with `shadow` just darkens the ground beside it. */
+	function haul(truck: ReplayTruck, shadow: boolean) {
+		const cos = Math.cos(truck.angle);
+		const sin = Math.sin(truck.angle);
+		const cx = Math.floor(truck.x * SCALE) + ox;
+		const cy = Math.floor(truck.y * SCALE) + oy;
+		// its two lamps flash turn about while it is out
+		const flash = truck.busy ? 1 + (Math.floor(performance.now() / 180) & 1) : 0;
+		for (let py = Math.max(0, cy - 15); py < Math.min(height, cy + 16); py++) {
+			for (let px = Math.max(0, cx - 15); px < Math.min(width, cx + 16); px++) {
+				const wx = (px - ox + (shadow ? -0.5 : 0.5)) / SCALE - truck.x;
+				const wy = (py - oy + (shadow ? -0.5 : 0.5)) / SCALE - truck.y;
+				const x = wx * cos + wy * sin;
+				const y = wy * cos - wx * sin;
+				const k = py * width + px;
+				const [fore, side] = [Math.abs(x), Math.abs(y)];
+				if (fore > TRUCK.long || side > TRUCK.wide) {
+					const wheel = Math.abs(side - TRUCK.wide) < 0.22 && Math.abs(fore - 1.9) < 0.55;
+					if (wheel) frame[k] = shadow ? mix(frame[k], BLACK, 0.4) : TYRE;
+					continue;
+				}
+				if (shadow) {
+					frame[k] = mix(frame[k], BLACK, 0.4);
+					continue;
+				}
+				let colour = AMBER;
+				if (x > 1) {
+					// the cab: a windscreen, and the lamp bar on its roof
+					if (x > 2.85 || side > 1) colour = AMBER_SHADE;
+					else if (x > 2 && x < 2.6) colour = y > 0.4 ? GLINT : GLASS;
+					else if (x > 1.25 && x < 1.7 && side < 0.9) {
+						colour = flash === (y > 0 ? 1 : 2) ? LAMP : flash ? AMBER_SHADE : LAMP_OUT;
+					}
+				} else if (x < -2.55) {
+					// the tail board, striped
+					colour = Math.floor((y + 3) * 2) & 1 ? AMBER : BLACK;
+				} else if (side > 0.95) {
+					colour = AMBER_SHADE;
+				} else {
+					// the bed, with the boom lying down the middle of it
+					colour = side < 0.25 && x < 0.3 ? BOOM : STEEL;
+				}
+				frame[k] = colour;
+			}
+		}
+	}
+
+	/** The cable from a truck's hook to the end of the car on it, whichever end that is. */
+	function cable(truck: ReplayTruck, car: CarView) {
+		const hx = truck.x - Math.cos(truck.angle) * TRUCK.hook;
+		const hy = truck.y - Math.sin(truck.angle) * TRUCK.hook;
+		// the bodywork ends about two metres out from the car's middle
+		const [ex, ey] = [-1, 1]
+			.map((end) => [car.x + Math.cos(car.angle) * 2 * end, car.y + Math.sin(car.angle) * 2 * end])
+			.sort((a, b) => Math.hypot(a[0] - hx, a[1] - hy) - Math.hypot(b[0] - hx, b[1] - hy))[0];
+		const run = Math.hypot(ex - hx, ey - hy) || 1;
+		for (let d = 0; d <= run; d += 0.2) {
+			const k = pixel(hx + ((ex - hx) * d) / run, hy + ((ey - hy) * d) / run);
+			if (k >= 0) frame[k] = BLACK;
+		}
+	}
+
 	return {
 		/**
 		 * Makes the frame `w` by `h` pixels with the track's corner at x, y, each
@@ -336,13 +556,15 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 		},
 
 		/**
-		 * Draws one frame, `dt` seconds after the last. `over` is handed the
-		 * frame once the race is on it, to draw what goes on top.
+		 * Draws one frame, `dt` seconds after the last, with the recovery crews
+		 * as `service` has them. `over` is handed the frame once the race is on
+		 * it, to draw what goes on top.
 		 */
 		draw(
 			cars: CarView[],
 			dt: number,
 			show: { line: boolean; hulls: boolean },
+			service: Service = STANDING_BY,
 			over?: (painter: Painter) => void
 		) {
 			// nothing new is thrown up while the race is paused
@@ -380,8 +602,29 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 			}
 
 			frame.set(ground);
+			// A gate is shut, its barrier across it, unless it has been opened
+			// for a truck to go through. Under caution the lamps flash.
+			const { trucks, caution } = service;
+			barriers.forEach((barrier, index) => {
+				if (!trucks.some((truck) => truck.gate === index)) barrier.forEach(dab);
+			});
+			const lit = caution && Math.floor(performance.now() / 300) & 1;
+			for (const { x, y } of lamps) {
+				for (const [dx, dy] of [
+					[0, 0],
+					[1, 0],
+					[0, 1],
+					[1, 1]
+				]) {
+					dab({ x: x + dx, y: y + dy, colour: lit ? LAMP : LAMP_OUT });
+				}
+			}
+			for (const truck of trucks) haul(truck, true);
 			for (const car of cars) plot(car, true);
+			for (const truck of trucks) haul(truck, false);
 			for (const car of cars) plot(car, false);
+			for (const truck of trucks) if (cars[truck.towing]) cable(truck, cars[truck.towing]);
+			roofs.forEach(dab);
 
 			for (const p of particles) {
 				p.life -= dt;
