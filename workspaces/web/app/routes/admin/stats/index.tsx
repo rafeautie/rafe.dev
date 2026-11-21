@@ -1,13 +1,21 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { XIcon } from 'lucide-react';
-import { lazy, Suspense, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { lazy, Suspense, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { Link } from '~/components/Link';
 import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
 import { readSection, Subsections } from '~/components/admin/Subsections';
-import { country, duration, formatMetric, NUMBER, place } from '~/components/admin/stats/format';
+import {
+	busiest,
+	country,
+	duration,
+	formatMetric,
+	NUMBER,
+	place
+} from '~/components/admin/stats/format';
 import { FilterMenu } from '~/components/admin/stats/FilterMenu';
 import { Heatmap } from '~/components/admin/stats/Heatmap';
-import { Panel, Ranking, type View } from '~/components/admin/stats/Panel';
+import { MetricCards } from '~/components/admin/stats/Metrics';
+import { Ranking, Shares, StatsCard } from '~/components/admin/stats/Cards';
 import { TimeChart } from '~/components/admin/stats/TimeChart';
 import { VisitList } from '~/components/admin/stats/Visits';
 import { Badge } from '~/components/ui/badge';
@@ -30,13 +38,21 @@ import {
 	readFilters
 } from '~/lib/stats/dimensions';
 import { getStats, type PageRow, type Row } from '~/lib/stats/report';
+import { arrivals } from '~/lib/stats/sources';
 import { cn } from '~/lib/utils';
 
 // Who visits the site and what they do there, from lib/stats. The range, the
-// number on the chart and any filters are in the URL, so a view can be
-// bookmarked; which tab each section shows is remembered in this browser.
-const SECTIONS = ['traffic', 'pages', 'places', 'sources', 'devices', 'times', 'visits'] as const;
+// number on the chart, any filters and the section showing are in the URL, so
+// a view can be bookmarked.
+//
+// The overview answers "how is the site doing": the headline numbers against
+// the time before, their shape over the range, and the top few of what was
+// read, where from and on what. Each of those has a section of its own with
+// the whole lists.
+const SECTIONS = ['overview', 'pages', 'sources', 'places', 'devices', 'visits'] as const;
 type Section = (typeof SECTIONS)[number];
+// sections that were folded into others, so old links still land somewhere
+const MOVED: Record<string, Section> = { traffic: 'overview', times: 'visits' };
 type Search = { range?: Range; metric?: Metric; section?: Section } & Filters;
 
 export const Route = createFileRoute('/admin/stats/')({
@@ -44,7 +60,9 @@ export const Route = createFileRoute('/admin/stats/')({
 		...(isRange(search.range) && { range: search.range }),
 		...(isMetric(search.metric) && { metric: search.metric }),
 		...readFilters(search),
-		...readSection(SECTIONS, search)
+		...readSection(SECTIONS, {
+			section: MOVED[search.section as string] ?? search.section
+		})
 	}),
 	beforeLoad: requireAdmin,
 	loaderDeps: ({ search }) => ({
@@ -75,47 +93,7 @@ const useHydrated = () =>
 	);
 
 function GlobeSpace() {
-	return (
-		<div aria-hidden>
-			<div className="h-9" />
-			<div className="mx-auto aspect-square max-w-80" />
-		</div>
-	);
-}
-
-// A section's chosen tab, remembered in this browser. The server, which has no
-// storage, renders the default, and the browser switches once hydrated.
-const choiceListeners = new Set<() => void>();
-
-function readChoice(key: string) {
-	try {
-		return localStorage.getItem(`rafe-admin:stats:${key}`);
-	} catch {
-		return null;
-	}
-}
-
-function useChoice(key: string, initial: string) {
-	const saved = useSyncExternalStore(
-		(listener) => {
-			choiceListeners.add(listener);
-			return () => choiceListeners.delete(listener);
-		},
-		() => readChoice(key),
-		() => null
-	);
-	const [value, setValue] = useState<string | null>(null);
-	return [
-		value ?? saved ?? initial,
-		(next: string) => {
-			setValue(next);
-			try {
-				localStorage.setItem(`rafe-admin:stats:${key}`, next);
-			} catch {
-				// storage blocked: remembered until the page closes
-			}
-		}
-	] as const;
+	return <div aria-hidden className="mx-auto aspect-square max-w-80" />;
 }
 
 function filterLabel(key: FilterKey, value: string) {
@@ -123,7 +101,7 @@ function filterLabel(key: FilterKey, value: string) {
 		key as string
 	];
 	const shown = key === 'country' ? country(value) : value;
-	return `${name ?? DIMENSIONS[key].title.toLowerCase().replace(/s$/, '')} ${shown}`;
+	return `${name ?? DIMENSIONS[key].title.replace(/s$/, '')} ${shown}`;
 }
 
 function StatsPage() {
@@ -166,7 +144,7 @@ function StatsPage() {
 								{filterLabel(key, value)}
 								<button
 									type="button"
-									aria-label={`Stop filtering by ${DIMENSIONS[key].title.toLowerCase()}`}
+									aria-label={`Stop filtering by ${DIMENSIONS[key].title}`}
 									onClick={() => setFilter(key, undefined)}
 									className="cursor-pointer rounded-full p-0.5 hover:bg-foreground/10"
 								>
@@ -217,7 +195,7 @@ function StatsPage() {
 						navigate({
 							search: (prev) => ({
 								...prev,
-								section: next === 'traffic' ? undefined : (next as Section)
+								section: next === 'overview' ? undefined : (next as Section)
 							})
 						})
 					}
@@ -245,6 +223,18 @@ function StatsPage() {
 	);
 }
 
+// Each section's cards, in one column on a phone or a narrow column and side
+// by side when there is room. The widths are the column's own (a container
+// query), since beside two sidebars a wide window can still leave it narrow.
+function SectionBody({ id, children }: { id: Section; children: ReactNode }) {
+	return (
+		// clear of the sticky controls rail when scrolled to
+		<div id={`stats-${id}`} className="@container flex scroll-mt-24 flex-col gap-4">
+			{children}
+		</div>
+	);
+}
+
 function Report({
 	children,
 	stats,
@@ -262,33 +252,45 @@ function Report({
 	onMetric: (metric: Metric) => void;
 	onFilter: (key: FilterKey, value: string) => void;
 }) {
-	const [pagesTab, setPagesTab] = useChoice('pages', 'page');
-	const [sourcesTab, setSourcesTab] = useChoice('sources', 'source');
-	const [placesTab, setPlacesTab] = useChoice('places', 'country');
-	const [moreTab, setMoreTab] = useChoice('more', 'device');
-	const [visitsTab, setVisitsTab] = useChoice('visits', 'latest');
 	const hydrated = useHydrated();
 	const hourly = stats.bucket < 24 * 60 * 60 * 1000;
-	const { breakdowns: b, filters } = stats;
+	const { breakdowns: b, filters, totals } = stats;
+	const before = `the ${RANGES[stats.range].label.toLowerCase()} before`;
+
+	// "all pages" and the like: on a wide screen the section takes the
+	// overview's place, from its top; on a phone, where every section is on
+	// the one page, it scrolls down to it
+	const open = (key: Section) => () => {
+		onSection(key);
+		if (window.matchMedia('(min-width: 64rem)').matches) window.scrollTo({ top: 0 });
+		else document.getElementById(`stats-${key}`)?.scrollIntoView({ behavior: 'smooth' });
+	};
 
 	// a ranking that filters by its own dimension
-	const ranking = (key: FilterKey, rows: Row[], format?: (row: Row) => string) => (
+	const ranking = (
+		key: FilterKey,
+		rows: Row[],
+		options: { format?: (row: Row) => string; limit?: number; empty?: string; height?: string } = {}
+	) => (
 		<Ranking
 			rows={rows}
 			active={filters[key]}
 			onPick={(row) => onFilter(key, row.key)}
-			format={format}
+			{...options}
 		/>
 	);
+	const shares = (key: FilterKey, rows: Row[]) => (
+		<Shares rows={rows} active={filters[key]} onPick={(row) => onFilter(key, row.key)} />
+	);
 
-	const more: View[] = (
-		['device', 'browser', 'os', 'screen', 'language', 'network', 'theme'] as const
-	).map((key) => ({
-		key,
-		title: DIMENSIONS[key].title,
-		unit: 'visitors',
-		content: ranking(key, b[key])
-	}));
+	// visitors with no place: Cloudflare could not tell, or (on this machine)
+	// there is no Cloudflare to ask
+	const placed = b.country.reduce((sum, row) => sum + row.visitors, 0);
+	const unplaced = Math.max(0, (totals.visitors ?? 0) - placed);
+	const noPlaces = 'No places known. They come from Cloudflare, so visits here have none.';
+	const countryName = (row: Row) => country(row.key);
+
+	const when = busiest(stats.heatmap);
 
 	return (
 		<Subsections
@@ -297,37 +299,27 @@ function Report({
 			onChange={onSection}
 			sections={[
 				{
-					key: 'traffic',
-					label: 'traffic',
+					key: 'overview',
+					label: 'overview',
 					content: (
-						<>
-							{/* the headline numbers; choosing one charts it over time */}
-							<div
-								role="tablist"
-								aria-label="Chart"
-								className="grid grid-cols-2 gap-1 sm:grid-cols-3 xl:grid-cols-6"
-							>
-								{(Object.keys(METRICS) as Metric[]).map((key) => (
-									<button
-										key={key}
-										type="button"
-										role="tab"
-										aria-selected={metric === key}
-										onClick={() => onMetric(key)}
-										className={cn(
-											'flex cursor-pointer flex-col gap-1 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-foreground/[0.03]',
-											metric === key && 'bg-foreground/[0.05] hover:bg-foreground/[0.05]'
-										)}
-									>
-										<span className="text-sm text-foreground/50">{METRICS[key].label}</span>
-										<span className="text-2xl font-medium tracking-tight tabular-nums">
-											{formatMetric(key, stats.totals[key])}
-										</span>
-									</button>
-								))}
-							</div>
+						<SectionBody id="overview">
+							<MetricCards
+								totals={totals}
+								previous={stats.previous}
+								series={stats.series}
+								compared={before}
+								value={metric}
+								onChange={onMetric}
+							/>
 
-							<section className="mt-6">
+							<StatsCard
+								title={`${METRICS[metric].label} ${hourly ? 'by hour' : 'by day'}`}
+								description={
+									stats.previous
+										? `the last ${RANGES[stats.range].label.toLowerCase()}; the arrows compare with ${before}`
+										: 'since the first visit'
+								}
+							>
 								<TimeChart
 									key={metric}
 									data={stats.series}
@@ -335,183 +327,231 @@ function Report({
 									label={METRICS[metric].label}
 									hourly={hourly}
 									format={(value) => formatMetric(metric, value)}
+									className="-ml-2 aspect-auto h-56 w-[calc(100%+0.5rem)]"
 								/>
-							</section>
-						</>
+							</StatsCard>
+
+							<div className="grid gap-4 @xl:grid-cols-2">
+								<StatsCard
+									title="top pages"
+									unit="visitors"
+									more={{ label: `all ${stats.pages.length} pages`, onClick: open('pages') }}
+								>
+									<Ranking
+										rows={stats.pages}
+										limit={5}
+										active={filters.page}
+										onPick={(row) => onFilter('page', row.key)}
+									/>
+								</StatsCard>
+								<StatsCard
+									title="top sources"
+									unit="visitors"
+									more={{ label: 'all sources and campaigns', onClick: open('sources') }}
+								>
+									{ranking('source', b.source, { limit: 5 })}
+								</StatsCard>
+								<StatsCard
+									title="where from"
+									unit="visitors"
+									more={{ label: `all ${b.country.length} countries`, onClick: open('places') }}
+								>
+									{ranking('country', b.country, {
+										limit: 5,
+										format: countryName,
+										empty: noPlaces
+									})}
+								</StatsCard>
+								<StatsCard
+									title="devices"
+									unit="visitors"
+									more={{ label: 'browsers, systems, screens', onClick: open('devices') }}
+								>
+									{shares('device', b.device)}
+								</StatsCard>
+							</div>
+
+							<StatsCard
+								title="latest visits"
+								more={{
+									label: `all ${stats.recent.length} latest visits`,
+									onClick: open('visits')
+								}}
+							>
+								<div className="-mx-2 -my-3">
+									<VisitList visits={stats.recent.slice(0, 3)} />
+								</div>
+							</StatsCard>
+						</SectionBody>
 					)
 				},
 				{
 					key: 'pages',
 					label: 'pages',
 					content: (
-						<Panel
-							value={pagesTab}
-							onChange={setPagesTab}
-							views={[
-								{
-									key: 'page',
-									title: 'Pages',
-									unit: (
-										<>
-											visitors
-											<span className="max-sm:hidden"> · read for · scrolled</span>
-										</>
-									),
-									content: (
-										<PageTable
-											rows={stats.pages}
-											active={filters.page}
-											onPick={(row) => onFilter('page', row.key)}
-										/>
-									)
-								},
-								{
-									key: 'entry',
-									title: 'Entry pages',
-									unit: 'visitors',
-									content: ranking('page', b.entry)
-								},
-								{
-									key: 'clicks',
-									title: 'Links followed',
-									unit: 'clicks',
-									content: (
-										<Ranking
-											rows={stats.clicks}
-											by="views"
-											format={(row) => row.label.replace(/^https?:\/\//, '').replace(/\/$/, '')}
-											empty="No links followed off the site."
-										/>
-									)
-								}
-							]}
-						/>
-					)
-				},
-				{
-					key: 'places',
-					label: 'places',
-					content: (
-						<div className="grid items-start gap-x-12 gap-y-6 sm:grid-cols-2">
-							<section>
-								{Globe && hydrated ? (
-									<Suspense fallback={<GlobeSpace />}>
-										<Globe
-											countries={b.country}
-											cities={stats.places.cities}
-											active={filters}
-											onPick={onFilter}
-										/>
-									</Suspense>
-								) : (
-									<GlobeSpace />
-								)}
-							</section>
-							<Panel
-								value={placesTab}
-								onChange={setPlacesTab}
-								views={[
-									{
-										key: 'country',
-										title: 'Countries',
-										unit: 'visitors',
-										content: ranking('country', b.country, (row) => country(row.key))
-									},
-									{
-										key: 'region',
-										title: 'Regions',
-										unit: 'visitors',
-										content: ranking('region', b.region)
-									},
-									{
-										key: 'city',
-										title: 'Cities',
-										unit: 'visitors',
-										content: ranking('city', b.city)
-									}
-								]}
-							/>
-						</div>
+						<SectionBody id="pages">
+							<StatsCard title="pages" description="what was read, for how long, and how far down">
+								<PageTable
+									rows={stats.pages}
+									active={filters.page}
+									onPick={(row) => onFilter('page', row.key)}
+								/>
+							</StatsCard>
+							<div className="grid gap-4 @xl:grid-cols-2">
+								<StatsCard title="entry pages" description="where visits start" unit="visitors">
+									{ranking('page', b.entry)}
+								</StatsCard>
+								<StatsCard title="links followed" description="where visits leave to" unit="clicks">
+									<Ranking
+										rows={stats.clicks}
+										by="views"
+										format={(row) => row.label.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+										empty="No links followed off the site."
+									/>
+								</StatsCard>
+							</div>
+						</SectionBody>
 					)
 				},
 				{
 					key: 'sources',
 					label: 'sources',
 					content: (
-						<Panel
-							value={sourcesTab}
-							onChange={setSourcesTab}
-							views={[
-								{
-									key: 'source',
-									title: 'Sources',
-									unit: 'visitors',
-									content: ranking('source', b.source)
-								},
-								{
-									key: 'campaign',
-									title: 'Campaigns',
-									unit: 'visitors',
-									content: (
-										<Ranking
-											rows={b.campaign}
-											empty="No campaign links used. Add ?ref=name to a link you share."
-										/>
-									)
+						<SectionBody id="sources">
+							<StatsCard
+								title="how people arrive"
+								description="typed in or bookmarked, searched for, shared on social sites, or linked from others"
+								unit="visitors"
+							>
+								<Shares rows={arrivals(b.source)} />
+							</StatsCard>
+							<div className="grid items-start gap-4 @xl:grid-cols-2">
+								<StatsCard
+									title="sources"
+									description="the site each visit came from"
+									unit="visitors"
+								>
+									{ranking('source', b.source)}
+								</StatsCard>
+								<StatsCard
+									title="campaigns"
+									description="links shared with ?ref= or utm tags"
+									unit="visitors"
+								>
+									<Ranking
+										rows={b.campaign}
+										empty="No campaign links used. Add ?ref=name to a link you share."
+									/>
+								</StatsCard>
+							</div>
+						</SectionBody>
+					)
+				},
+				{
+					key: 'places',
+					label: 'places',
+					content: (
+						<SectionBody id="places">
+							<StatsCard
+								title="countries"
+								description={
+									unplaced > 0 && placed > 0
+										? `and ${NUMBER.format(unplaced)} ${unplaced === 1 ? 'visitor' : 'visitors'} from places unknown`
+										: undefined
 								}
-							]}
-						/>
+								unit="visitors"
+							>
+								<div className="grid items-start gap-6 @2xl:grid-cols-2">
+									{/* the sea is drawn in the page's colour; here the page is the card */}
+									<div style={{ '--background': 'var(--card)' } as CSSProperties}>
+										{Globe && hydrated ? (
+											<Suspense fallback={<GlobeSpace />}>
+												<Globe
+													countries={b.country}
+													cities={stats.places.cities}
+													active={filters}
+													onPick={onFilter}
+												/>
+											</Suspense>
+										) : (
+											<GlobeSpace />
+										)}
+									</div>
+									{ranking('country', b.country, {
+										format: countryName,
+										empty: noPlaces,
+										height: 'max-h-80'
+									})}
+								</div>
+							</StatsCard>
+							<div className="grid items-start gap-4 @xl:grid-cols-2">
+								<StatsCard title="regions" unit="visitors">
+									{ranking('region', b.region, { limit: 10, empty: noPlaces })}
+								</StatsCard>
+								<StatsCard title="cities" unit="visitors">
+									{ranking('city', b.city, { limit: 10, empty: noPlaces })}
+								</StatsCard>
+							</div>
+						</SectionBody>
 					)
 				},
 				{
 					key: 'devices',
 					label: 'devices',
-					content: <Panel menu value={moreTab} onChange={setMoreTab} views={more} />
-				},
-				{
-					key: 'times',
-					label: 'times',
 					content: (
-						<section>
-							<h2 className="flex min-h-10 items-center border-b border-foreground/10 pb-2 text-sm text-foreground/50">
-								When people visit
-							</h2>
-							<div className="pt-4">
-								<Heatmap cells={stats.heatmap} />
+						<SectionBody id="devices">
+							<div className="grid items-start gap-4 @xl:grid-cols-2">
+								<StatsCard title="devices" unit="visitors">
+									{shares('device', b.device)}
+								</StatsCard>
+								<StatsCard title="light or dark" unit="visitors">
+									{shares('theme', b.theme)}
+								</StatsCard>
+								{(['browser', 'os', 'screen', 'language'] as const).map((key) => (
+									<StatsCard key={key} title={DIMENSIONS[key].title} unit="visitors">
+										{ranking(key, b[key], { limit: 8 })}
+									</StatsCard>
+								))}
+								<StatsCard
+									title="networks"
+									description="who runs the connection: a home provider, a phone network, a company"
+									unit="visitors"
+									className="@xl:col-span-2"
+								>
+									{ranking('network', b.network, {
+										limit: 10,
+										empty: 'No networks known. They come from Cloudflare, so visits here have none.'
+									})}
+								</StatsCard>
 							</div>
-						</section>
+						</SectionBody>
 					)
 				},
 				{
 					key: 'visits',
 					label: 'visits',
 					content: (
-						<Panel
-							value={visitsTab}
-							onChange={setVisitsTab}
-							views={[
-								{
-									key: 'latest',
-									title: 'Latest visits',
-									unit: `${stats.recent.length} shown`,
-									content: (
-										<ScrollArea fade viewportClassName="max-h-[32rem]">
-											<VisitList visits={stats.recent} />
-										</ScrollArea>
-									)
-								},
-								{
-									key: 'visitors',
-									title: 'Visitors',
-									unit: 'visits',
-									content: (
-										<ScrollArea fade viewportClassName="max-h-[32rem]">
-											<VisitorList visitors={stats.visitors} />
-										</ScrollArea>
-									)
-								}
-							]}
-						/>
+						<SectionBody id="visits">
+							<StatsCard
+								title="when people visit"
+								description={when ? `busiest on ${when}, in your time` : undefined}
+								unit="visitors"
+							>
+								<Heatmap cells={stats.heatmap} />
+							</StatsCard>
+							<div className="grid items-start gap-4 @3xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+								<StatsCard title="latest visits" unit={`${stats.recent.length} shown`}>
+									<ScrollArea fade className="-mx-2 -my-3" viewportClassName="max-h-[36rem]">
+										<VisitList visits={stats.recent} />
+									</ScrollArea>
+								</StatsCard>
+								<StatsCard title="regulars" description="who comes back most" unit="visits">
+									<ScrollArea fade className="-mx-2 -my-3" viewportClassName="max-h-[36rem]">
+										<VisitorList visitors={stats.visitors} />
+									</ScrollArea>
+								</StatsCard>
+							</div>
+						</SectionBody>
 					)
 				}
 			]}
@@ -521,6 +561,8 @@ function Report({
 	);
 }
 
+// Pages with how long they were read and how far down, under a heading row
+// that names the columns.
 function PageTable({
 	rows,
 	active,
@@ -530,46 +572,59 @@ function PageTable({
 	active?: string;
 	onPick: (row: PageRow) => void;
 }) {
-	if (!rows.length) return <p className="py-3 text-foreground/50">Nothing yet.</p>;
+	if (!rows.length) return <p className="py-2 text-foreground/50">Nothing yet.</p>;
 	const max = Math.max(1, ...rows.map((row) => row.visitors));
+	const columns =
+		'grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-6 @lg:grid-cols-[minmax(0,1fr)_4rem_4.5rem_4rem]';
 	return (
-		<ScrollArea fade viewportClassName="max-h-[22.5rem]">
-			<ol className="py-1 pr-3">
-				{rows.map((row) => (
-					<li key={row.key}>
-						<button
-							type="button"
-							onClick={() => onPick(row)}
-							title={`Show only ${row.label}`}
-							className={cn(
-								'group/row relative grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-6 py-2 text-left tabular-nums sm:grid-cols-[minmax(0,1fr)_3.5rem_4rem_3.5rem]',
-								active === row.key && 'font-medium'
-							)}
-						>
-							<span
-								aria-hidden
-								className="absolute inset-y-1 left-0 rounded-[4px] bg-foreground/[0.05] transition-colors group-hover/row:bg-foreground/[0.09]"
-								style={{ width: `${Math.max((row.visitors / max) * 100, 0.5)}%` }}
-							/>
-							<span className="relative truncate pl-2">{row.label}</span>
-							<span className="relative text-right max-sm:pr-2">{NUMBER.format(row.visitors)}</span>
-							<span className="relative hidden text-right text-foreground/60 sm:block">
-								{duration(row.engaged)}
-							</span>
-							<span className="relative hidden pr-2 text-right text-foreground/60 sm:block">
-								{row.scroll === null ? '–' : `${Math.round(row.scroll)}%`}
-							</span>
-						</button>
-					</li>
-				))}
-			</ol>
-		</ScrollArea>
+		<div>
+			<div className={cn(columns, 'pb-2 text-xs text-foreground/50')} aria-hidden>
+				<span className="pl-2">page</span>
+				<span className="text-right @max-lg:pr-2">visitors</span>
+				<span className="hidden text-right @lg:block">read for</span>
+				<span className="hidden pr-2 text-right @lg:block">scrolled</span>
+			</div>
+			<ScrollArea fade viewportClassName="max-h-[30rem]">
+				<ol className="pr-3">
+					{rows.map((row) => (
+						<li key={row.key}>
+							<button
+								type="button"
+								onClick={() => onPick(row)}
+								title={`Show only ${row.label}`}
+								className={cn(
+									columns,
+									'group/row relative w-full cursor-pointer py-1.5 text-left tabular-nums',
+									active === row.key && 'font-medium'
+								)}
+							>
+								<span
+									aria-hidden
+									className="absolute inset-y-1 left-0 rounded-[4px] bg-foreground/[0.05] transition-colors group-hover/row:bg-foreground/[0.09]"
+									style={{ width: `${Math.max((row.visitors / max) * 100, 0.5)}%` }}
+								/>
+								<span className="relative truncate pl-2">{row.label}</span>
+								<span className="relative text-right @max-lg:pr-2">
+									{NUMBER.format(row.visitors)}
+								</span>
+								<span className="relative hidden text-right text-foreground/60 @lg:block">
+									{duration(row.engaged)}
+								</span>
+								<span className="relative hidden pr-2 text-right text-foreground/60 @lg:block">
+									{row.scroll === null ? '–' : `${Math.round(row.scroll)}%`}
+								</span>
+							</button>
+						</li>
+					))}
+				</ol>
+			</ScrollArea>
+		</div>
 	);
 }
 
 // The people who come most often, each opening their own page.
 function VisitorList({ visitors }: { visitors: Stats['visitors'] }) {
-	if (!visitors.length) return <p className="py-3 text-foreground/50">No visitors yet.</p>;
+	if (!visitors.length) return <p className="px-2 py-3 text-foreground/50">No visitors yet.</p>;
 	return (
 		<ol className="divide-y divide-foreground/5">
 			{visitors.map((visitor) => (
@@ -579,7 +634,7 @@ function VisitorList({ visitors }: { visitors: Stats['visitors'] }) {
 						className="flex items-baseline justify-between gap-4 rounded-md px-2 py-3 transition-colors hover:bg-foreground/[0.03]"
 					>
 						<span className="flex min-w-0 flex-col gap-1">
-							<span>
+							<span className="truncate">
 								{place(visitor) || 'Somewhere'}
 								<span className="text-foreground/50">
 									{' '}

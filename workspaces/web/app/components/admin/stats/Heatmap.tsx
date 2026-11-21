@@ -1,16 +1,9 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
-import { NUMBER } from './format';
+import { DAYS, hourLabel, NUMBER } from './format';
 
 // When people visit: visitors in each hour of each day of the week, darker
 // for more, so the busy times stand out.
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
-
-function hourLabel(hour: number) {
-	if (hour === 0) return '12am';
-	if (hour === 12) return '12pm';
-	return hour < 12 ? `${hour}am` : `${hour - 12}pm`;
-}
 
 export function Heatmap({ cells }: { cells: { day: number; hour: number; visitors: number }[] }) {
 	// SQLite counts days from Sunday (0); rows here start on Monday
