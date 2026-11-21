@@ -468,6 +468,8 @@ describe('the admin', () => {
 			viewers: 1,
 			players: 1
 		});
+		// betting began one betting phase before it ends, for the page's progress bar
+		expect(loop.endsAt - loop.since).toBe(DEFAULT_SETTINGS.bettingSeconds * 1000);
 		expect(loop.grid.map((car) => car.car)).toEqual(viewer.states()[0].grid);
 		expect(loop.grid[0]).toMatchObject({
 			condition: viewer.states()[0].conditions[0],

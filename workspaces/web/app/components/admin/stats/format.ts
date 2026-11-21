@@ -1,9 +1,9 @@
+import { NUMBER, PERCENT } from '~/lib/admin/format';
 import type { Metric } from '~/lib/stats/dimensions';
 
-// How /admin/stats writes numbers, times and places.
+// How /admin/stats writes its metrics, times and places. Counts and shares
+// are lib/admin/format's, as on every admin page.
 
-export const NUMBER = new Intl.NumberFormat('en-US');
-const PERCENT = new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 0 });
 // bucket times are wall-clock times read as UTC (lib/stats/report.ts)
 export const DAY = new Intl.DateTimeFormat('en-US', {
 	month: 'short',
@@ -51,4 +51,24 @@ export function formatMetric(metric: Metric, value: number | null) {
 	if (metric === 'duration') return duration(value);
 	if (metric === 'bounce' || metric === 'returning') return PERCENT.format(value);
 	return NUMBER.format(value);
+}
+
+// weekdays from Monday, as the heatmap's rows run
+export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+export function hourLabel(hour: number) {
+	if (hour === 0) return '12am';
+	if (hour === 12) return '12pm';
+	return hour < 12 ? `${hour}am` : `${hour - 12}pm`;
+}
+
+// The busiest hour of the week, in words: "Tuesdays around 2pm". SQLite
+// counts days from Sunday (0).
+export function busiest(cells: { day: number; hour: number; visitors: number }[]) {
+	const top = cells.reduce<(typeof cells)[number] | null>(
+		(best, cell) => (!best || cell.visitors > best.visitors ? cell : best),
+		null
+	);
+	if (!top) return null;
+	return `${DAYS[(top.day + 6) % 7]}s around ${hourLabel(top.hour)}`;
 }

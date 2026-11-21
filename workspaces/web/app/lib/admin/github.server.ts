@@ -107,6 +107,15 @@ async function fromCache<T extends Json>(key: string, load: () => Promise<T>): P
 	return value;
 }
 
+// The branch's head as read a moment ago, for the overview, whose cards each
+// ask for it at once: they share one answer. Kept for only a couple of
+// seconds, since another instance's save is not seen here until it lapses.
+// Saving never uses it (a stale parent would put a commit on an old tree); it
+// reads the head fresh, then sets this to the commit it made, so the next page
+// in this instance sees it at once.
+const RECENT_HEAD_MS = 2_000;
+let recentHead: { at: number; sha: Promise<string> } | undefined;
+
 export function gitHub(token: string) {
 	async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 		const response = await fetch(`${API}${path}`, {
@@ -134,6 +143,19 @@ export function gitHub(token: string) {
 	async function head() {
 		const ref = await repo<{ object: { sha: string } }>(`/git/ref/heads/${BRANCH}`);
 		return ref.object.sha;
+	}
+
+	// head(), shared for a few seconds: for reading only (see recentHead)
+	function readHead() {
+		if (!recentHead || Date.now() - recentHead.at > RECENT_HEAD_MS) {
+			const sha = head();
+			const entry = { at: Date.now(), sha };
+			sha.catch(() => {
+				if (recentHead === entry) recentHead = undefined;
+			});
+			recentHead = entry;
+		}
+		return recentHead.sha;
 	}
 
 	// Every file under content/ at a commit, by path. One call for the lot: the
@@ -172,12 +194,18 @@ export function gitHub(token: string) {
 		};
 	}
 
-	// Newest first: the commits that touched a path (a file or a folder).
-	async function history(path: string, count = 30) {
-		const items = await repo<Parameters<typeof toCommit>[0][]>(
-			`/commits?sha=${BRANCH}&path=${encodeURIComponent(path)}&per_page=${count}`
-		);
-		return items.map(toCommit);
+	// Newest first: the commits that touched a path (a file or a folder), up to
+	// the branch as it is now, or up to a given commit. Asked from a commit, the
+	// answer can never change, so it is remembered: a page that asks with the
+	// head it read costs GitHub nothing until the next commit.
+	async function history(path: string, count = 30, at?: string) {
+		const load = async () => {
+			const items = await repo<Parameters<typeof toCommit>[0][]>(
+				`/commits?sha=${at ?? BRANCH}&path=${encodeURIComponent(path)}&per_page=${count}`
+			);
+			return items.map(toCommit);
+		};
+		return at ? remember(`history:${at}:${count}:${path}`, load) : load();
 	}
 
 	function changedFiles(sha: string) {
@@ -259,10 +287,11 @@ export function gitHub(token: string) {
 			}
 			throw error;
 		}
+		recentHead = { at: Date.now(), sha: Promise.resolve(created.sha) };
 		return created.sha;
 	}
 
-	return { head, contentTree, blobText, history, changedFiles, build, commit };
+	return { head, readHead, contentTree, blobText, history, changedFiles, build, commit };
 }
 
 export type GitHub = ReturnType<typeof gitHub>;

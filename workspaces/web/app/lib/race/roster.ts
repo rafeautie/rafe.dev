@@ -115,8 +115,13 @@ export function drawConditions(rand: () => number, count: number): string[] {
 	);
 }
 
-/** A car as it is for one race, in the condition it drew. */
-export function inCondition(entry: Entry, condition: string): Entry {
-	const { stat, by } = CONDITIONS[condition];
-	return stat ? { ...entry, [stat]: Math.max(0, Math.min(1, entry[stat] + by)) } : entry;
+/** A car (or anything with its stats) as it is for one race, in the condition it drew. */
+export function inCondition<T extends Record<NonNullable<Condition['stat']>, number>>(
+	entry: T,
+	condition: string
+): T {
+	const change = CONDITIONS[condition];
+	return change?.stat
+		? { ...entry, [change.stat]: Math.max(0, Math.min(1, entry[change.stat] + change.by)) }
+		: entry;
 }

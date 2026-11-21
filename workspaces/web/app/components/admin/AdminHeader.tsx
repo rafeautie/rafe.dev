@@ -1,15 +1,56 @@
 import { XIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { Badge } from '~/components/ui/badge';
+import { SidebarTrigger } from '~/components/ui/sidebar';
+import { cn } from '~/lib/utils';
+import { useCurrentSection } from './Subsections';
 
 // Every admin page's header: the slash path on the left, each segment a link
 // one level up, and links to other pages on the right. Pages that change
-// something add the controls rail under it.
+// something add the controls rail under it. Beside the sidebar, which already
+// says rafe / admin, the path starts after it; on a phone the sidebar is put
+// away behind the menu button at its start. `path` is the page's place below
+// the admin (['writing', title]), empty for the overview.
 export function AdminHeader({ path, children }: { path: ReactNode[]; children?: ReactNode }) {
+	const full = [
+		<Link key="rafe" href="/">
+			rafe
+		</Link>,
+		path.length ? (
+			<Link key="admin" href="/admin">
+				admin
+			</Link>
+		) : (
+			'admin'
+		),
+		...path
+	];
+	// beside a page's sections sidebar (wide screens), which names the page
+	const section = useCurrentSection();
 	return (
 		<div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-			<SlashNav className="min-w-0 text-xl font-medium [overflow-wrap:anywhere]">{path}</SlashNav>
+			<div className="flex min-w-0 items-center gap-2">
+				{/* -ml-1.5 sets its icon on the content's edge */}
+				<SidebarTrigger aria-label="Admin pages" className="-ml-1.5 md:hidden" />
+				<SlashNav className="min-w-0 text-xl font-medium [overflow-wrap:anywhere] md:hidden">
+					{full}
+				</SlashNav>
+				<SlashNav
+					className={cn(
+						'hidden min-w-0 text-xl font-medium [overflow-wrap:anywhere] md:block',
+						section && 'lg:hidden'
+					)}
+				>
+					{path.length ? path : 'overview'}
+				</SlashNav>
+				{section && (
+					<p className="hidden min-w-0 text-xl font-medium [overflow-wrap:anywhere] lg:block">
+						{section}
+					</p>
+				)}
+			</div>
 			{children && <div className="flex flex-wrap items-center gap-3">{children}</div>}
 		</div>
 	);
@@ -20,7 +61,12 @@ export function AdminHeader({ path, children }: { path: ReactNode[]; children?: 
 // page's controls and its main action on the right.
 export function ControlsRail({ status, children }: { status?: ReactNode; children?: ReactNode }) {
 	return (
-		<div className="sticky top-0 z-20 mt-6 border-b border-foreground/10 bg-background">
+		// Stuck to the top, it spans the page's whole area (the nearest size
+		// container: the admin layout's, or the one beside a sections sidebar),
+		// not just the content's column, so nothing scrolling under it shows at
+		// its sides. The margins reach out to the area's edges and the padding
+		// brings its contents back in line with the column's.
+		<div className="sticky top-0 z-20 mx-[calc((100%_-_100cqw)/2)] mt-6 border-b border-foreground/10 bg-background px-[calc((100cqw_-_100%)/2)]">
 			<div className="flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2.5">
 				<div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-foreground/50">
 					{status}

@@ -24,46 +24,45 @@ export function ThemeToggle({ className }: { className?: string }) {
 				className
 			)}
 		>
-			<svg
-				viewBox="0 0 24 24"
-				aria-hidden="true"
-				className="size-[18px] origin-center transition-[rotate,color] duration-[750ms,700ms] ease-[cubic-bezier(0.34,1.3,0.64,1),cubic-bezier(0.65,0,0.35,1)] motion-reduce:transition-none dark:rotate-40"
-			>
-				<mask
-					id="theme-toggle-eclipse"
-					maskUnits="userSpaceOnUse"
-					x="0"
-					y="0"
-					width="24"
-					height="24"
-				>
-					<rect width="24" height="24" fill="#fff" />
-					<circle
-						cx="24"
-						cy="4"
-						r="8"
-						className={cn(part, 'dark:translate-x-[-7px] dark:translate-y-[3px]')}
-					/>
-				</mask>
-				{/* the mask sits on an untransformed group, so it does not grow with the sun */}
-				<g mask="url(#theme-toggle-eclipse)">
-					<circle
-						cx="12"
-						cy="12"
-						r="5"
-						fill="currentColor"
-						className={cn(part, 'dark:scale-180')}
-					/>
-				</g>
-				<g
-					stroke="currentColor"
-					strokeWidth="2"
-					strokeLinecap="round"
-					className={cn(part, 'dark:scale-30 dark:-rotate-90 dark:opacity-0')}
-				>
-					<path d="M12 4V2M17.66 6.34l1.41-1.41M20 12h2M17.66 17.66l1.41 1.41M12 20v2M6.34 17.66l-1.41 1.41M4 12H2M6.34 6.34 4.93 4.93" />
-				</g>
-			</svg>
+			<ThemeIcon />
 		</button>
+	);
+}
+
+// The switch's sun and moon on its own, for a switch drawn another way (the
+// admin sidebar's menu). Wherever it is, its button carries the theme-toggle
+// class, so the page's crossfade leaves it out.
+export function ThemeIcon({ className = 'size-[18px]' }: { className?: string }) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			aria-hidden="true"
+			className={cn(
+				'origin-center transition-[rotate,color] duration-[750ms,700ms] ease-[cubic-bezier(0.34,1.3,0.64,1),cubic-bezier(0.65,0,0.35,1)] motion-reduce:transition-none dark:rotate-40',
+				className
+			)}
+		>
+			<mask id="theme-toggle-eclipse" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+				<rect width="24" height="24" fill="#fff" />
+				<circle
+					cx="24"
+					cy="4"
+					r="8"
+					className={cn(part, 'dark:translate-x-[-7px] dark:translate-y-[3px]')}
+				/>
+			</mask>
+			{/* the mask sits on an untransformed group, so it does not grow with the sun */}
+			<g mask="url(#theme-toggle-eclipse)">
+				<circle cx="12" cy="12" r="5" fill="currentColor" className={cn(part, 'dark:scale-180')} />
+			</g>
+			<g
+				stroke="currentColor"
+				strokeWidth="2"
+				strokeLinecap="round"
+				className={cn(part, 'dark:scale-30 dark:-rotate-90 dark:opacity-0')}
+			>
+				<path d="M12 4V2M17.66 6.34l1.41-1.41M20 12h2M17.66 17.66l1.41 1.41M12 20v2M6.34 17.66l-1.41 1.41M4 12H2M6.34 6.34 4.93 4.93" />
+			</g>
+		</svg>
 	);
 }

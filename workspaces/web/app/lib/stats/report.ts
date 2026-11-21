@@ -53,16 +53,18 @@ export type Visit = {
 
 export type Point = { at: number } & Record<Metric, number | null>;
 
-const DAY = 24 * 60 * 60 * 1000;
-const VISITOR = 'coalesce(visitor, session)';
+export const DAY = 24 * 60 * 60 * 1000;
+export const VISITOR = 'coalesce(visitor, session)';
 // the same match as `${VISITOR} = ?1`, in a form the indexes on visitor and
 // session can serve
 const IS_VISITOR = '(visitor = ?1 OR (visitor IS NULL AND session = ?1))';
 
-// The WHERE clause for a time range and filters, and its parameters.
-function where(since: number, filters: Filters) {
-	const clauses = ['at >= ?'];
-	const params: (string | number)[] = [since];
+// The WHERE clause for a time range and filters, and its parameters. The
+// range runs from `since` up to (not including) `until`.
+function where(since: number, filters: Filters, until?: number) {
+	const clauses = until === undefined ? ['at >= ?'] : ['at >= ?', 'at < ?'];
+	const params: (string | number)[] = until === undefined ? [since] : [since, until];
+	const range = params.length;
 	for (const key of FILTER_KEYS) {
 		const value = filters[key];
 		if (value === undefined) continue;
@@ -76,17 +78,19 @@ function where(since: number, filters: Filters) {
 		);
 		params.push(value);
 	}
-	return { sql: clauses.join(' AND '), params };
+	return { sql: clauses.join(' AND '), params, filtered: params.length > range };
 }
 
 // The same, widened to whole visits: every page view in the range of a visit
 // with any matching page view, so a visit's length or page count is the
 // whole visit's, not only its matching pages'.
-function wholeVisits(since: number, filter: ReturnType<typeof where>) {
-	if (filter.params.length === 1) return filter;
+function wholeVisits(since: number, filter: ReturnType<typeof where>, until?: number) {
+	if (!filter.filtered) return filter;
 	return {
-		sql: `at >= ? AND session IN (SELECT session FROM views WHERE ${filter.sql})`,
-		params: [since, ...filter.params]
+		sql: `at >= ? ${until === undefined ? '' : 'AND at < ?'}
+			AND session IN (SELECT session FROM views WHERE ${filter.sql})`,
+		params: until === undefined ? [since, ...filter.params] : [since, until, ...filter.params],
+		filtered: true
 	};
 }
 
@@ -175,8 +179,29 @@ function timeZoneOffset(now: number) {
 
 const BREAKDOWNS = Object.keys(DIMENSIONS).filter((key) => key !== 'page') as Dimension[];
 
-// where the globe's queries go in the batch, after the breakdowns
+// where the globe's queries go in the batch, after the breakdowns, and the
+// headline numbers for the time before the range, after those
 const MAP = 11 + BREAKDOWNS.length;
+const BEFORE = MAP + 1;
+
+type Headline = { views: number; visitors: number };
+type VisitHeadline = {
+	visits: number;
+	bounce: number | null;
+	duration: number | null;
+	returned: number | null;
+};
+
+function totalsOf(views: Headline, visits: VisitHeadline): Record<Metric, number | null> {
+	return {
+		visitors: views.visitors,
+		visits: visits.visits,
+		views: views.views,
+		duration: visits.duration,
+		bounce: visits.bounce,
+		returning: visits.returned
+	};
+}
 
 export const getStats = createServerFn({ method: 'GET' })
 	.inputValidator((input: unknown) => {
@@ -197,32 +222,43 @@ export const getStats = createServerFn({ method: 'GET' })
 		const since = Number.isFinite(span)
 			? (lastBucket - Math.round(span / bucket) + 1) * bucket - offset
 			: 0;
-		const filter = where(since, data.filters);
-		const visitFilter = wholeVisits(since, filter);
+		// bounded on both ends, up to now: with only a lower bound SQLite reaches
+		// for the session index and reads the whole table; with both it searches
+		// the time index for just the rows in range
+		const until = now + 1;
+		const filter = where(since, data.filters, until);
+		const visitFilter = wholeVisits(since, filter, until);
 		const run = (sql: string, before: (string | number)[] = [], scope = filter) =>
 			db.prepare(sql).bind(...before, ...scope.params);
 
-		const SESSIONS = `SELECT session, min(at) AS start, count(*) AS n, sum(engaged_ms) AS duration,
+		const sessionsIn = (scope: typeof visitFilter) =>
+			`SELECT session, min(at) AS start, count(*) AS n, sum(engaged_ms) AS duration,
 				max(landing = 1 AND visitor IS NOT NULL AND new_visitor = 0) AS returned,
 				max(visitor IS NOT NULL) AS known
-			FROM views WHERE ${visitFilter.sql} GROUP BY session`;
+			FROM views WHERE ${scope.sql} GROUP BY session`;
+		const SESSIONS = sessionsIn(visitFilter);
 		const RECENT = `SELECT session FROM views WHERE ${filter.sql}
 			GROUP BY session ORDER BY max(seen) DESC LIMIT 50`;
-
-		const statements = [
-			// 0: headline numbers from page views
+		// the headline numbers, from page views and then from whole visits
+		const headline = (scope: typeof filter, visitScope: typeof visitFilter) => [
 			run(
 				`SELECT count(*) AS views, count(DISTINCT ${VISITOR}) AS visitors
-				FROM views WHERE ${filter.sql}`
+				FROM views WHERE ${scope.sql}`,
+				[],
+				scope
 			),
-			// 1: headline numbers from visits
 			run(
 				`SELECT count(*) AS visits, avg(n = 1) AS bounce, avg(duration) AS duration,
 					sum(returned) * 1.0 / nullif(sum(known), 0) AS returned
-				FROM (${SESSIONS})`,
+				FROM (${sessionsIn(visitScope)})`,
 				[],
-				visitFilter
-			),
+				visitScope
+			)
+		];
+
+		const statements = [
+			// 0 and 1: headline numbers
+			...headline(filter, visitFilter),
 			// 2: page views over time
 			run(
 				`SELECT CAST((at + ?) / ? AS INTEGER) AS bucket, count(*) AS views,
@@ -294,16 +330,20 @@ export const getStats = createServerFn({ method: 'GET' })
 				GROUP BY key ORDER BY visitors DESC LIMIT 1000`
 			)
 		);
+		// BEFORE: the same numbers for as long again just before the range,
+		// to say whether things are going up or down. The range so far is set
+		// against the same length of time, so a day half over is not compared
+		// with a whole one. All time has nothing before it.
+		const before = since ? Math.max(0, 2 * since - now) : null;
+		if (before !== null) {
+			const earlier = where(before, data.filters, since);
+			statements.push(...headline(earlier, wholeVisits(before, earlier, since)));
+		}
 		const results = await db.batch(statements);
 		const rows = <T>(index: number) => results[index].results as T[];
 
-		const totals = rows<{ views: number; visitors: number }>(0)[0];
-		const sessions = rows<{
-			visits: number;
-			bounce: number | null;
-			duration: number | null;
-			returned: number | null;
-		}>(1)[0];
+		const totals = rows<Headline>(0)[0];
+		const sessions = rows<VisitHeadline>(1)[0];
 		const when = rows<{ last: number | null; first: number | null }>(10)[0];
 
 		// every bucket in the range, empty ones included
@@ -351,14 +391,12 @@ export const getStats = createServerFn({ method: 'GET' })
 			filters: data.filters,
 			bucket,
 			last: when.last,
-			totals: {
-				visitors: totals.visitors,
-				visits: sessions.visits,
-				views: totals.views,
-				duration: sessions.duration,
-				bounce: sessions.bounce,
-				returning: sessions.returned
-			} satisfies Record<Metric, number | null>,
+			totals: totalsOf(totals, sessions),
+			// the headline numbers for the time before, or null for all time
+			previous:
+				before === null
+					? null
+					: totalsOf(rows<Headline>(BEFORE)[0], rows<VisitHeadline>(BEFORE + 1)[0]),
 			series,
 			heatmap: rows<{ day: number; hour: number; visitors: number; views: number }>(6),
 			pages: rows<PageRow>(4),

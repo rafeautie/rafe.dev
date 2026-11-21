@@ -1,0 +1,130 @@
+import { lazy, memo, Suspense } from 'react';
+import { TrendingDownIcon, TrendingUpIcon } from 'lucide-react';
+import { Ranking } from '~/components/admin/stats/Cards';
+import type { TimeChart as TimeChartProps } from '~/components/admin/stats/TimeChart';
+import { NUMBER, PERCENT } from '~/lib/admin/format';
+import type { getVisitsSummary } from '~/lib/admin/overview';
+import { cn } from '~/lib/utils';
+import { Area, Figure, type Loaded, SubLead } from './Area';
+
+// The overview's widgets from /admin/stats: the week's traffic over a month's
+// chart, and what was read and where readers came from.
+
+type Visits = Awaited<ReturnType<typeof getVisitsSummary>>;
+
+// The chart brings recharts, the heaviest thing on the overview, so it loads
+// on its own: the rest of the page answers without waiting for it, and its
+// space is held meanwhile so nothing moves when it arrives. lazy() loses the
+// chart's generic props; the type-only import brings them back.
+const TimeChart = lazy(() =>
+	import('~/components/admin/stats/TimeChart').then((module) => ({ default: module.TimeChart }))
+) as unknown as typeof TimeChartProps;
+
+const count = (value: number | null) => (value === null ? '–' : NUMBER.format(value));
+
+export const TrafficCard = memo(function TrafficCard({
+	loaded,
+	className
+}: {
+	loaded: Loaded<Visits>;
+	className?: string;
+}) {
+	return (
+		<Area
+			title="traffic"
+			href="/admin/stats"
+			loaded={loaded}
+			className={className}
+			action={loaded.ok && loaded.value.here > 0 && <HereNow count={loaded.value.here} />}
+		>
+			{(visits) => (
+				<>
+					<div className="flex flex-wrap items-end gap-x-8 gap-y-4">
+						<Figure value={NUMBER.format(visits.visitors)} label="visitors, last 7 days" />
+						<Figure value={NUMBER.format(visits.views)} label="page views" />
+						<Trend now={visits.visitors} before={visits.previous} />
+					</div>
+					{/* the chart takes whatever height its row leaves the card */}
+					<div className="flex min-h-56 flex-1 flex-col">
+						<Suspense fallback={<div className="min-h-0 flex-1" aria-hidden />}>
+							<TimeChart
+								data={visits.days}
+								dataKey="visitors"
+								label="Visitors"
+								format={count}
+								className="aspect-auto min-h-0 w-full flex-1"
+							/>
+						</Suspense>
+						<p className="mt-1 text-xs text-foreground/40">visitors a day, last 30 days</p>
+					</div>
+				</>
+			)}
+		</Area>
+	);
+});
+
+function HereNow({ count }: { count: number }) {
+	return (
+		<span className="flex items-center gap-1.5 text-foreground/60">
+			<span className="size-1.5 animate-pulse rounded-full bg-emerald-500" aria-hidden />
+			{NUMBER.format(count)} here now
+		</span>
+	);
+}
+
+// This week against the week before.
+function Trend({ now, before }: { now: number; before: number }) {
+	if (!before) return null;
+	const change = (now - before) / before;
+	const Icon = change > 0 ? TrendingUpIcon : change < 0 ? TrendingDownIcon : null;
+	return (
+		<p className="flex items-center gap-1.5 pb-5 text-sm text-foreground/50">
+			{Icon && (
+				<Icon
+					className={cn('size-4', change > 0 && 'text-emerald-600 dark:text-emerald-500')}
+					aria-hidden
+				/>
+			)}
+			{change === 0
+				? 'the same as the week before'
+				: `${PERCENT.format(Math.abs(change))} ${change > 0 ? 'up' : 'down'} on the week before`}
+		</p>
+	);
+}
+
+// The top pages and sources of the week, as /admin/stats ranks them.
+export const ReadersCard = memo(function ReadersCard({
+	loaded,
+	className
+}: {
+	loaded: Loaded<Visits>;
+	className?: string;
+}) {
+	return (
+		<Area title="readers" href="/admin/stats" section="pages" loaded={loaded} className={className}>
+			{(visits) => (
+				<>
+					<div>
+						<RankingHeading section="pages">most read</RankingHeading>
+						<Ranking rows={visits.pages} empty="No pages read this week." />
+					</div>
+					<div>
+						<RankingHeading section="sources">came from</RankingHeading>
+						<Ranking rows={visits.sources} empty="No visits this week." />
+					</div>
+				</>
+			)}
+		</Area>
+	);
+});
+
+function RankingHeading({ section, children }: { section: string; children: string }) {
+	return (
+		<h3 className="flex justify-between border-b border-foreground/10 pb-1.5 text-xs text-foreground/50">
+			<SubLead to="/admin/stats" section={section}>
+				{children}
+			</SubLead>
+			<span>visitors, 7 days</span>
+		</h3>
+	);
+}

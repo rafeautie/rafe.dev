@@ -664,6 +664,13 @@ export class RaceRoom extends DurableObject<Env> {
 		return {
 			round: state.round,
 			phase: state.phase,
+			// when this phase began, so the page can show how far through it is
+			since: {
+				idle: state.endsAt,
+				betting: state.endsAt - state.settings.bettingSeconds * 1000,
+				racing: state.startsAt - LEAD_MS,
+				results: state.endsAt - state.settings.resultsSeconds * 1000
+			}[state.phase],
 			endsAt: state.endsAt,
 			now: Date.now(),
 			paused: this.paused,

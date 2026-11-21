@@ -21,26 +21,26 @@ export function isRange(value: unknown): value is Range {
 // `landing` counts only the page a visit started on, which is the one that
 // knows where the visitor came from.
 export const DIMENSIONS = {
-	page: { title: 'Pages', key: 'path' },
-	entry: { title: 'Entry pages', key: 'path', landing: true },
-	source: { title: 'Sources', key: `coalesce(referrer, 'Direct')`, landing: true },
+	page: { title: 'pages', key: 'path' },
+	entry: { title: 'entry pages', key: 'path', landing: true },
+	source: { title: 'sources', key: `coalesce(referrer, 'Direct')`, landing: true },
 	campaign: {
-		title: 'Campaigns',
+		title: 'campaigns',
 		key: `CASE WHEN utm_source IS NULL AND utm_campaign IS NULL THEN NULL
 			ELSE coalesce(utm_source, '') || coalesce(' · ' || utm_campaign, '') END`,
 		landing: true
 	},
-	country: { title: 'Countries', key: 'country' },
+	country: { title: 'countries', key: 'country' },
 	// with their country, so places of the same name stay apart
-	region: { title: 'Regions', key: `region || ', ' || country` },
-	city: { title: 'Cities', key: `city || ', ' || coalesce(region || ', ', '') || country` },
-	device: { title: 'Devices', key: 'device' },
-	browser: { title: 'Browsers', key: 'browser' },
-	os: { title: 'Systems', key: 'os' },
-	screen: { title: 'Screens', key: 'screen' },
-	language: { title: 'Languages', key: 'language' },
-	network: { title: 'Networks', key: 'org' },
-	theme: { title: 'Theme', key: `CASE dark WHEN 1 THEN 'Dark' WHEN 0 THEN 'Light' END` }
+	region: { title: 'regions', key: `region || ', ' || country` },
+	city: { title: 'cities', key: `city || ', ' || coalesce(region || ', ', '') || country` },
+	device: { title: 'devices', key: 'device' },
+	browser: { title: 'browsers', key: 'browser' },
+	os: { title: 'systems', key: 'os' },
+	screen: { title: 'screens', key: 'screen' },
+	language: { title: 'languages', key: 'language' },
+	network: { title: 'networks', key: 'org' },
+	theme: { title: 'theme', key: `CASE dark WHEN 1 THEN 'Dark' WHEN 0 THEN 'Light' END` }
 } as const satisfies Record<string, { title: string; key: string; landing?: boolean }>;
 
 export type Dimension = keyof typeof DIMENSIONS;
@@ -62,14 +62,15 @@ export function readFilters(search: Record<string, unknown>): Filters {
 	return filters;
 }
 
-// The headline numbers, each of which the chart can show over time.
+// The headline numbers, each of which the chart can show over time. Labels
+// and titles are lowercase, as everywhere in the admin.
 export const METRICS = {
-	visitors: { label: 'Visitors' },
-	visits: { label: 'Visits' },
-	views: { label: 'Page views' },
-	duration: { label: 'Visit length' },
-	bounce: { label: 'Left after 1 page' },
-	returning: { label: 'Returning' }
+	visitors: { label: 'visitors' },
+	visits: { label: 'visits' },
+	views: { label: 'page views' },
+	duration: { label: 'visit length' },
+	bounce: { label: 'left after 1 page' },
+	returning: { label: 'returning' }
 } as const;
 
 export type Metric = keyof typeof METRICS;

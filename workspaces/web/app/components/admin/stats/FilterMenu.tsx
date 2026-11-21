@@ -7,7 +7,8 @@ import { ScrollArea } from '~/components/ui/scroll-area';
 import { DIMENSIONS, type FilterKey, type Filters } from '~/lib/stats/dimensions';
 import type { Row } from '~/lib/stats/report';
 import { cn } from '~/lib/utils';
-import { country, NUMBER } from './format';
+import { NUMBER } from '~/lib/admin/format';
+import { country } from './format';
 
 // Filter by anything the page breaks visits down by: first what to filter
 // by, then one of its values in the current view, searchable.
