@@ -1,5 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { ArrowRightIcon, ArrowUpRightIcon, ChessKnightIcon } from 'lucide-react';
+import {
+	ArrowRightIcon,
+	ArrowUpRightIcon,
+	CarIcon,
+	ChessKnightIcon,
+	type LucideIcon
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
@@ -9,6 +15,8 @@ import { Logo } from '~/components/shmoney/Logo';
 import { Screenshot, type ScreenName } from '~/components/shmoney/Screenshot';
 import chessPreviewSet from '~/assets/chess/preview.png?w=640;960;1280;1920&format=webp&as=srcset';
 import chessPreview from '~/assets/chess/preview.png?w=1280&format=webp';
+import racePreviewSet from '~/assets/race/preview.png?w=640;960;1280;1920&format=webp&as=srcset';
+import racePreview from '~/assets/race/preview.png?w=1280&format=webp';
 
 const GITHUB_PROFILE_URL = 'https://github.com/rafeautie';
 
@@ -62,11 +70,25 @@ const projects: Project[] = [
 		url: '/chess',
 		language: 'TypeScript',
 		topics: ['local-llm', 'webgpu', 'chess', 'transformers-js'],
-		icon: <ChessIcon />,
+		icon: <IconTile icon={ChessKnightIcon} />,
 		preview: {
 			src: chessPreview,
 			srcSet: chessPreviewSet,
 			alt: 'A game of chess in progress against Gemma 4 E2B, with its thinking beside the board and the move list on the right'
+		}
+	},
+	{
+		name: 'race',
+		description:
+			'a pixel-art car race everyone watches together - bet play-money chips on how it ends',
+		url: '/race',
+		language: 'TypeScript',
+		topics: ['multiplayer', 'durable-objects', 'physics', 'pixel-art'],
+		icon: <IconTile icon={CarIcon} />,
+		preview: {
+			src: racePreview,
+			srcSet: racePreviewSet,
+			alt: 'Six pixel-art cars mid-race on a top-down track, with the lap count and running order in the corner'
 		}
 	}
 ];
@@ -168,11 +190,11 @@ function ProjectCard({ project }: { project: Project }) {
 	);
 }
 
-// A knight in a rounded tile, the same size as shmoney's logo beside it
-function ChessIcon() {
+// An icon in a rounded tile, the same size as shmoney's logo beside it
+function IconTile({ icon: Icon }: { icon: LucideIcon }) {
 	return (
 		<span className="flex size-10 items-center justify-center rounded-xl border border-black/10 bg-white text-black">
-			<ChessKnightIcon className="size-5" strokeWidth={1.75} />
+			<Icon className="size-5" strokeWidth={1.75} />
 		</span>
 	);
 }
