@@ -2,8 +2,8 @@ import { useId, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import { DialogContent, DialogHeader, DialogTitle } from '~/components/ui/dialog';
 import { Input } from '~/components/ui/input';
-import { DEBT_CAP, START } from '~/lib/race/betting';
 import type { Standing, ToRoom } from '~/lib/race/room';
+import type { Settings as Rules } from '~/lib/race/settings';
 import { chips } from './shared';
 
 // Your name, where you stand, and the way out of debt. It lives in a dialog
@@ -16,10 +16,13 @@ type Asked = { kind: 'name'; from: string } | { kind: 'bankrupt' };
 
 export function Settings({
 	you,
+	rules,
 	problem,
 	send
 }: {
 	you: Standing;
+	/** The money rules of the race on now. */
+	rules: Rules;
 	problem: string | null;
 	send: (message: ToRoom) => boolean;
 }) {
@@ -84,7 +87,7 @@ export function Settings({
 				{debt && (
 					<>
 						<dt className="text-muted-foreground">Credit left</dt>
-						<dd className="text-right">{chips(you.balance + DEBT_CAP)}</dd>
+						<dd className="text-right">{chips(you.balance + rules.debtCap)}</dd>
 					</>
 				)}
 				<dt className="text-muted-foreground">Bankruptcies</dt>
@@ -93,7 +96,7 @@ export function Settings({
 			{debt && (
 				<div className="flex flex-col gap-2">
 					<p className="text-muted-foreground">
-						Wipes your debt and puts you back to {chips(START)} chips. It is counted on the
+						Wipes your debt and puts you back to {chips(rules.start)} chips. It is counted on the
 						leaderboard.
 					</p>
 					{sure ? (

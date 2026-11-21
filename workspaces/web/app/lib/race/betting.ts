@@ -93,16 +93,21 @@ export function pays(
 }
 
 /**
- * The house's seed for a market: SEED chips spread over its outcomes by how
- * often each came up in `trials` practice runs of the race. Every outcome
- * gets something, however unlikely, so none is ever without odds.
+ * The house's seed for a market: `chips` (SEED unless tuned) spread over its
+ * outcomes by how often each came up in `trials` practice runs of the race.
+ * Every outcome gets something, however unlikely, so none is ever without odds.
  */
-export function seed(market: Market, cars: string[], trials: Result[]): Record<string, number> {
+export function seed(
+	market: Market,
+	cars: string[],
+	trials: Result[],
+	chips = SEED
+): Record<string, number> {
 	const all = outcomes(market, cars);
 	const counts = Object.fromEntries(all.map((outcome) => [outcome, 0.5]));
 	for (const trial of trials) for (const won of winners(market, trial) ?? []) counts[won]++;
 	const sum = all.reduce((total, outcome) => total + counts[outcome], 0);
-	return Object.fromEntries(all.map((outcome) => [outcome, (SEED * counts[outcome]) / sum]));
+	return Object.fromEntries(all.map((outcome) => [outcome, (chips * counts[outcome]) / sum]));
 }
 
 /** A name a player may go by, tidied up, or null if it will not do. */

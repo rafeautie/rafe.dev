@@ -4,12 +4,20 @@ import { DEBT_CAP, pays, SEED, START, type Pools } from './betting';
 import { unpack } from './recording';
 import { BETTING_MS, type FromRoom, type RoomState, type ToRoom } from './room';
 import { ROSTER } from './roster';
+import { DEFAULT_SETTINGS } from './settings';
 
 type Stub = ReturnType<typeof env.RACE_ROOM.getByName>;
 type Sent<T extends FromRoom['type']> = Extract<FromRoom, { type: T }>;
 
-// opening a race runs it thirty times over to seed the pools
+// opening a race runs it over a few times to seed the pools
 const SLOW = { timeout: 60_000 };
+
+/** A room that opens its races quickly: five practice runs to seed the pools, not thirty. */
+async function quick(name: string) {
+	const room = env.RACE_ROOM.getByName(name);
+	await room.adminSaveSettings({ ...DEFAULT_SETTINGS, trials: 5 });
+	return room;
+}
 
 /** Connects to a room as a page would, and collects what it is sent. */
 async function watch(room: Stub, key?: string) {
@@ -60,7 +68,7 @@ async function ring(room: Stub) {
 
 describe('the race room', () => {
 	it('opens betting for the first to arrive, and tells the next the same', SLOW, async () => {
-		const room = env.RACE_ROOM.getByName('arriving');
+		const room = await quick('arriving');
 		const before = Date.now();
 		const first = await watch(room);
 		await vi.waitFor(() => expect(first.states()).toHaveLength(1));
@@ -88,7 +96,7 @@ describe('the race room', () => {
 		'runs the race when betting closes, for those watching and those who come late',
 		SLOW,
 		async () => {
-			const room = env.RACE_ROOM.getByName('racing');
+			const room = await quick('racing');
 			const early = await watch(room);
 			await ring(room);
 			await vi.waitFor(() => expect(early.recordings).toHaveLength(1));
@@ -109,7 +117,7 @@ describe('the race room', () => {
 	);
 
 	it('ignores an alarm that comes before the phase is over', SLOW, async () => {
-		const room = env.RACE_ROOM.getByName('early alarm');
+		const room = await quick('early alarm');
 		const viewer = await watch(room);
 		await vi.waitFor(() => expect(viewer.states()).toHaveLength(1));
 		expect(await runDurableObjectAlarm(room)).toBe(true);
@@ -121,7 +129,7 @@ describe('the race room', () => {
 	});
 
 	it('puts up the result, then goes round again while someone is watching', SLOW, async () => {
-		const room = env.RACE_ROOM.getByName('cycle');
+		const room = await quick('cycle');
 		const viewer = await watch(room);
 		await ring(room);
 		await ring(room);
@@ -148,7 +156,7 @@ describe('the race room', () => {
 		'stops after the result when nobody is left, and starts again for the next to arrive',
 		SLOW,
 		async () => {
-			const room = env.RACE_ROOM.getByName('emptying');
+			const room = await quick('emptying');
 			const viewer = await watch(room);
 			await ring(room);
 			viewer.socket.close(1000, 'gone');
@@ -169,7 +177,7 @@ describe('the race room', () => {
 	);
 
 	it('tells a page the time, and ignores anything else it is sent', SLOW, async () => {
-		const room = env.RACE_ROOM.getByName('time');
+		const room = await quick('time');
 		const viewer = await watch(room);
 		viewer.socket.send('not json');
 		viewer.socket.send(JSON.stringify({ type: 'sync' }));
@@ -184,7 +192,7 @@ describe('the race room', () => {
 
 describe('the betting', () => {
 	it('knows a player by their cookie, and lets them choose a name', SLOW, async () => {
-		const room = env.RACE_ROOM.getByName('players');
+		const room = await quick('players');
 		const first = await watch(room, 'secret-of-the-first');
 		await vi.waitFor(() => expect(first.all('you')).toHaveLength(1));
 		const { you } = first.last('you');
@@ -208,7 +216,7 @@ describe('the betting', () => {
 	});
 
 	it('takes a bet, moves the odds, and tells everyone', SLOW, async () => {
-		const room = env.RACE_ROOM.getByName('placing');
+		const room = await quick('placing');
 		const punter = await watch(room, 'secret-of-the-punter');
 		const onlooker = await watch(room);
 		await vi.waitFor(() => expect(punter.all('state')).toHaveLength(1));
@@ -246,7 +254,7 @@ describe('the betting', () => {
 	});
 
 	it('refuses a bet once betting has closed', SLOW, async () => {
-		const room = env.RACE_ROOM.getByName('closing');
+		const room = await quick('closing');
 		const punter = await watch(room, 'secret-of-the-latecomer');
 		await vi.waitFor(() => expect(punter.all('state')).toHaveLength(1));
 		const car = punter.last('state').state.grid[0];
@@ -263,7 +271,7 @@ describe('the betting', () => {
 	});
 
 	it('lets a player run into debt, but only so far', SLOW, async () => {
-		const room = env.RACE_ROOM.getByName('debt');
+		const room = await quick('debt');
 		const punter = await watch(room, 'secret-of-the-borrower');
 		await vi.waitFor(() => expect(punter.all('state')).toHaveLength(1));
 		const car = punter.last('state').state.grid[0];
@@ -281,7 +289,7 @@ describe('the betting', () => {
 	});
 
 	it('pays the winners out of the pool when the race is over', SLOW, async () => {
-		const room = env.RACE_ROOM.getByName('paying');
+		const room = await quick('paying');
 		const punter = await watch(room, 'secret-of-the-backer');
 		await vi.waitFor(() => expect(punter.all('state')).toHaveLength(1));
 		const { grid } = punter.last('state').state;
@@ -322,7 +330,7 @@ describe('the betting', () => {
 	});
 
 	it('hands every bet back when a race is called off', SLOW, async () => {
-		const room = env.RACE_ROOM.getByName('calling off');
+		const room = await quick('calling off');
 		const punter = await watch(room, 'secret-of-the-unlucky');
 		await vi.waitFor(() => expect(punter.all('state')).toHaveLength(1));
 		const car = punter.last('state').state.grid[0];
@@ -340,7 +348,7 @@ describe('the betting', () => {
 	});
 
 	it('lets a player in debt go bankrupt, on the record', SLOW, async () => {
-		const room = env.RACE_ROOM.getByName('bankruptcy');
+		const room = await quick('bankruptcy');
 		const punter = await watch(room, 'secret-of-the-broke');
 		await vi.waitFor(() => expect(punter.all('state')).toHaveLength(1));
 		const { id } = punter.last('you').you;
@@ -367,4 +375,322 @@ describe('the betting', () => {
 			expect(punter.last('board').board[0]).toMatchObject({ id, bankruptcies: 1 })
 		);
 	});
+});
+
+describe('the admin', () => {
+	it(
+		'renames a player and resets their chips on the record, and tells their pages',
+		SLOW,
+		async () => {
+			const room = await quick('admin players');
+			const punter = await watch(room, 'secret-of-the-renamed');
+			await vi.waitFor(() => expect(punter.all('you')).toHaveLength(1));
+			const { id } = punter.last('you').you;
+			const car = punter.last('state').state.grid[0];
+			await punter.ask({ type: 'bet', market: 'win', outcome: car, stake: 300 });
+
+			expect(await room.adminRename(id, 'x')).toMatch(/^Names are/);
+			expect(await room.adminRename(id + 100, 'Nobody')).toBe('No such player');
+			expect(await room.adminRename(id, ' Renamed   One ')).toBeNull();
+			await vi.waitFor(() => expect(punter.last('you').you.name).toBe('Renamed One'));
+			expect(punter.last('board').board[0].name).toBe('Renamed One');
+
+			expect(await room.adminReset(id)).toBeNull();
+			await vi.waitFor(() => expect(punter.last('you').you.balance).toBe(START));
+			const written = await runInDurableObject(room, (_, { storage }) =>
+				storage.sql.exec('SELECT player, kind, amount FROM adjustments').toArray()
+			);
+			expect(written).toEqual([{ player: id, kind: 'admin_reset', amount: 300 }]);
+
+			expect((await room.adminView('renamed')).players).toEqual([
+				{
+					id,
+					name: 'Renamed One',
+					balance: START,
+					bankruptcies: 0,
+					banned: false,
+					seen: expect.any(Number),
+					bets: 1
+				}
+			]);
+			expect((await room.adminView('somebody else')).players).toEqual([]);
+			// a player's secret stays in the room
+			expect(JSON.stringify(await room.adminView(''))).not.toContain('secret');
+		}
+	);
+
+	it(
+		'bans a player: their riding bets come back out of the pool, and they cannot bet',
+		SLOW,
+		async () => {
+			const room = await quick('admin ban');
+			const punter = await watch(room, 'secret-of-the-banned');
+			const other = await watch(room, 'secret-of-the-other');
+			await vi.waitFor(() => expect(punter.all('you')).toHaveLength(1));
+			await vi.waitFor(() => expect(other.all('you')).toHaveLength(1));
+			const { id } = punter.last('you').you;
+			const { state, pools } = punter.last('state');
+			const car = state.grid[0];
+			const bet = (stake: number): ToRoom => ({ type: 'bet', market: 'win', outcome: car, stake });
+			await punter.ask(bet(200));
+			await other.ask(bet(50));
+
+			expect(await room.adminBan(id, true)).toBeNull();
+			await vi.waitFor(() =>
+				expect(punter.last('you')).toMatchObject({ you: { balance: START }, bets: [] })
+			);
+			// everyone is told the pool without the bet, and the board without them
+			await vi.waitFor(() =>
+				expect(other.last('state').pools.win[car]).toBeCloseTo(pools.win[car] + 50)
+			);
+			expect(other.last('board').board.map((player) => player.id)).not.toContain(id);
+			expect((await room.adminView('')).players.find((player) => player.id === id)).toMatchObject({
+				banned: true,
+				bets: 0
+			});
+			expect(await punter.ask(bet(10))).toEqual({ type: 'no', reason: 'This player cannot bet' });
+
+			expect(await room.adminBan(id, false)).toBeNull();
+			expect(await punter.ask(bet(10))).toMatchObject({ you: { balance: START - 10 } });
+		}
+	);
+
+	it('pauses once the race under way has its result, and goes on when resumed', SLOW, async () => {
+		const room = await quick('admin pause');
+		const viewer = await watch(room, 'secret-of-the-patient');
+		await vi.waitFor(() => expect(viewer.states()).toHaveLength(1));
+		expect(await room.adminPause(true)).toBeNull();
+		const { loop } = await room.adminView('');
+		expect(loop).toMatchObject({
+			round: 1,
+			phase: 'betting',
+			paused: true,
+			viewers: 1,
+			players: 1
+		});
+		expect(loop.grid.map((car) => car.car)).toEqual(viewer.states()[0].grid);
+		expect(loop.grid[0]).toMatchObject({
+			condition: viewer.states()[0].conditions[0],
+			speed: expect.any(Number)
+		});
+		expect(loop.pools.find((pool) => pool.market === 'win')).toMatchObject({ staked: 0 });
+		expect(loop.pools.find((pool) => pool.market === 'win')!.total).toBeCloseTo(SEED);
+
+		await ring(room);
+		await ring(room);
+		expect(await stored(room)).toMatchObject({ round: 1, phase: 'results' });
+		await ring(room);
+		await vi.waitFor(() => expect(viewer.states()).toHaveLength(4));
+		expect(viewer.states()[3]).toMatchObject({ round: 1, phase: 'idle' });
+		expect(await runDurableObjectAlarm(room)).toBe(false);
+		// someone arriving finds it waiting, with no race to see
+		const late = await watch(room);
+		await vi.waitFor(() => expect(late.states()).toHaveLength(1));
+		expect(late.states()[0]).toMatchObject({ round: 1, phase: 'idle' });
+		expect(late.recordings).toHaveLength(0);
+
+		expect(await room.adminPause(false)).toBeNull();
+		await vi.waitFor(() => expect(viewer.states()).toHaveLength(5));
+		expect(viewer.states()[4]).toMatchObject({ round: 2, phase: 'betting' });
+		expect((await room.adminView('')).loop.paused).toBe(false);
+	});
+
+	it('voids the race on, hands its bets back, and moves on', SLOW, async () => {
+		const room = await quick('admin void');
+		const punter = await watch(room, 'secret-of-the-refunded');
+		await vi.waitFor(() => expect(punter.all('you')).toHaveLength(1));
+		const bet = (): ToRoom => ({
+			type: 'bet',
+			market: 'win',
+			outcome: punter.last('state').state.grid[0],
+			stake: 100
+		});
+		// while it is being bet on
+		await punter.ask(bet());
+		expect(await room.adminVoid()).toBeNull();
+		await vi.waitFor(() =>
+			expect(punter.states().at(-1)).toMatchObject({ round: 2, phase: 'betting' })
+		);
+		await vi.waitFor(() => expect(punter.last('you').you.balance).toBe(START));
+		// and while it is being run
+		await punter.ask(bet());
+		await ring(room);
+		expect(await room.adminVoid()).toBeNull();
+		await vi.waitFor(() =>
+			expect(punter.states().at(-1)).toMatchObject({ round: 3, phase: 'betting' })
+		);
+		await vi.waitFor(() => expect(punter.last('you').you.balance).toBe(START));
+
+		const { races } = (await room.adminView('')).history;
+		expect(races.map(({ round, voided, staked, paid }) => [round, voided, staked, paid])).toEqual([
+			[2, true, 100, 100],
+			[1, true, 100, 100]
+		]);
+		// the one that was run has its result; the other never had one
+		expect(races[0].order).toHaveLength(ROSTER.length);
+		expect(races[1].grid).toEqual([]);
+
+		await ring(room);
+		await ring(room);
+		expect(await room.adminVoid()).toBe('This race is over and paid out');
+	});
+
+	it('refuses settings that will not do', async () => {
+		const room = env.RACE_ROOM.getByName('admin bad settings');
+		const vixen = DEFAULT_SETTINGS.cars.vixen;
+		for (const bad of [
+			{ ...DEFAULT_SETTINGS, trials: 4 },
+			{ ...DEFAULT_SETTINGS, trials: 61 },
+			{ ...DEFAULT_SETTINGS, start: 10.5 },
+			{ ...DEFAULT_SETTINGS, bettingSeconds: '45' },
+			{ ...DEFAULT_SETTINGS, debtCap: -1 },
+			{ ...DEFAULT_SETTINGS, cars: { ...DEFAULT_SETTINGS.cars, vixen: { ...vixen, speed: 1.2 } } },
+			{ ...DEFAULT_SETTINGS, cars: { ...DEFAULT_SETTINGS.cars, vixen: { ...vixen, grip: NaN } } },
+			{ ...DEFAULT_SETTINGS, cars: { vixen } },
+			null,
+			'fast'
+		]) {
+			expect(await room.adminSaveSettings(bad)).toEqual(expect.any(String));
+		}
+		expect((await room.adminView('')).settings).toEqual({
+			settings: DEFAULT_SETTINGS,
+			tuned: false
+		});
+	});
+
+	it('applies new settings from the next race, and goes back to the defaults', SLOW, async () => {
+		const room = await quick('admin tuning');
+		const viewer = await watch(room, 'secret-of-the-early');
+		await vi.waitFor(() => expect(viewer.states()).toHaveLength(1));
+		const tuned = {
+			...DEFAULT_SETTINGS,
+			cars: {
+				...DEFAULT_SETTINGS.cars,
+				vixen: { speed: 0.1, grip: 0.2, aggression: 0.3, reliability: 0.4 }
+			},
+			seed: 600,
+			start: 400,
+			debtCap: 50,
+			bettingSeconds: 20,
+			trials: 5
+		};
+		expect(await room.adminSaveSettings(tuned)).toBeNull();
+		expect((await room.adminView('')).settings).toEqual({ settings: tuned, tuned: true });
+
+		// the race on keeps its rules: somebody new now gets the old stake
+		const during = await watch(room, 'secret-of-the-meanwhile');
+		await vi.waitFor(() => expect(during.all('you')).toHaveLength(1));
+		expect(during.last('you').you.balance).toBe(START);
+		expect(viewer.states()[0].settings).toEqual({ ...DEFAULT_SETTINGS, trials: 5 });
+
+		await ring(room);
+		await ring(room);
+		const before = Date.now();
+		await ring(room);
+		await vi.waitFor(() => expect(viewer.states()).toHaveLength(4));
+		const next = viewer.states()[3];
+		// pages are sent the tuned stats and money rules with the race
+		expect(next).toMatchObject({ round: 2, phase: 'betting', settings: tuned });
+		expect(next.endsAt).toBeGreaterThanOrEqual(before + 20_000);
+		expect(next.endsAt).toBeLessThanOrEqual(Date.now() + 20_000);
+		for (const pool of Object.values(viewer.last('state').pools)) {
+			expect(Object.values(pool).reduce((sum, chips) => sum + chips, 0)).toBeCloseTo(600);
+		}
+		expect((await room.adminView('')).loop.grid.find((car) => car.car === 'vixen')).toMatchObject(
+			tuned.cars.vixen
+		);
+
+		const late = await watch(room, 'secret-of-the-newcomer');
+		await vi.waitFor(() => expect(late.all('you')).toHaveLength(1));
+		expect(late.last('you').you.balance).toBe(400);
+		const stake = (chips: number): ToRoom => ({
+			type: 'bet',
+			market: 'win',
+			outcome: next.grid[0],
+			stake: chips
+		});
+		expect(await late.ask(stake(451))).toEqual({
+			type: 'no',
+			reason: 'Your credit runs out at -50'
+		});
+		expect(await late.ask(stake(450))).toMatchObject({ you: { balance: -50 } });
+
+		expect(await room.adminResetSettings()).toBeNull();
+		expect((await room.adminView('')).settings).toEqual({
+			settings: DEFAULT_SETTINGS,
+			tuned: false
+		});
+		// until the next race opens, this one's stand
+		expect((await stored(room))!.settings).toEqual(tuned);
+	});
+
+	it(
+		'keeps the books: stakes less payouts is the house net, and every race run has one winner',
+		SLOW,
+		async () => {
+			const room = await quick('admin books');
+			const punter = await watch(room, 'secret-of-the-bookish');
+			await vi.waitFor(() => expect(punter.all('you')).toHaveLength(1));
+			const { id } = punter.last('you').you;
+			const { grid } = punter.last('state').state;
+			for (const car of grid) {
+				await punter.ask({ type: 'bet', market: 'win', outcome: car, stake: 10 });
+			}
+			await punter.ask({ type: 'bet', market: 'clean', outcome: 'yes', stake: 20 });
+			await ring(room);
+			// a race being shown is kept off the page until it has been
+			expect((await room.adminView('')).history).toMatchObject({ races: [], cars: [] });
+			await ring(room);
+			await vi.waitFor(() => expect(punter.states().at(-1)!.phase).toBe('results'));
+			const first = punter.states().at(-1)!.result!;
+			await vi.waitFor(() =>
+				expect(punter.last('you').bets.every((bet) => bet.payout !== null)).toBe(true)
+			);
+			const won = punter.last('you').bets.reduce((sum, bet) => sum + bet.payout!, 0);
+			expect(await room.adminReset(id)).toBeNull();
+			const reset = START - (START - 80 + won);
+			// round 2 is called off with a bet on it, round 3 runs with none
+			await ring(room);
+			await vi.waitFor(() => expect(punter.states().at(-1)!.round).toBe(2));
+			await punter.ask({ type: 'bet', market: 'win', outcome: grid[0], stake: 30 });
+			expect(await room.adminVoid()).toBeNull();
+			await ring(room);
+			await ring(room);
+			expect(await stored(room)).toMatchObject({ round: 3, phase: 'results' });
+
+			const { races, totals, cars } = (await room.adminView('')).history;
+			expect(races.map((race) => [race.round, race.voided, race.staked, race.paid])).toEqual([
+				[3, false, 0, 0],
+				[2, true, 30, 30],
+				[1, false, 80, won]
+			]);
+			expect(races[2]).toMatchObject({
+				order: first.order,
+				firstOut: first.firstOut,
+				fastest: first.fastest,
+				net: 80 - won
+			});
+			expect(races[2].grid.map((car) => car.car)).toEqual(grid);
+			expect(totals).toEqual({
+				run: 2,
+				staked: 110,
+				paid: 30 + won,
+				net: 80 - won,
+				bankruptcies: 0,
+				resets: reset
+			});
+			expect(races.reduce((sum, race) => sum + race.net, 0)).toBe(totals.net);
+			expect(cars).toHaveLength(ROSTER.length);
+			const sum = (key: 'wins' | 'podiums' | 'starts') =>
+				cars.reduce((total, car) => total + car[key], 0);
+			expect(sum('wins')).toBe(totals.run);
+			expect(sum('podiums')).toBe(3 * totals.run);
+			expect(sum('starts')).toBe(ROSTER.length * totals.run);
+			for (const car of cars) {
+				expect(car.winRate).toBeCloseTo(car.wins / car.starts);
+				expect(car.averagePlace).toBeGreaterThanOrEqual(1);
+			}
+			expect(cars.find((car) => car.car === first.order[0])!.wins).toBeGreaterThanOrEqual(1);
+		}
+	);
 });

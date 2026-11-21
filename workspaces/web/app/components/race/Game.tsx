@@ -142,7 +142,7 @@ export function Game({
 					) : room.phase === 'results' ? (
 						<Results room={room} you={you} bets={bets} />
 					) : (
-						<Empty icon={FlagIcon} title="The next race starts when someone is watching." />
+						<Empty icon={FlagIcon} title="The next race starts soon." />
 					)}
 				</aside>
 			</div>

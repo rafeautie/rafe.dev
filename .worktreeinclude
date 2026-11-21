@@ -1,0 +1,3 @@
+# Git-ignored files that Claude copies into each new worktree it makes
+# (code.claude.com/docs/en/worktrees). Only files git already ignores are copied.
+workspaces/web/.dev.vars

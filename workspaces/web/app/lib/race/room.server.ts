@@ -1,22 +1,18 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
 	cleanName,
-	DEBT_CAP,
 	MARKETS,
 	MAX_BETS,
 	outcomes,
 	pays,
 	seed as seedPool,
-	START,
 	type Market,
 	type Pools,
 	type Result
 } from './betting';
 import { createReplay, pack, record, type Recording } from './recording';
 import {
-	BETTING_MS,
 	LEAD_MS,
-	RESULTS_MS,
 	type Bet,
 	type FromRoom,
 	type RoomState,
@@ -24,6 +20,7 @@ import {
 	type ToRoom
 } from './room';
 import { drawConditions, inCondition, ROSTER } from './roster';
+import { checkSettings, DEFAULT_SETTINGS, tuned, type Settings } from './settings';
 import { drawGrid, random, rank } from './sim';
 
 // The one room everybody at /race is in. It runs the cycle (betting, the
@@ -36,7 +33,8 @@ import { drawGrid, random, rank } from './sim';
 // Between alarms the room is put to sleep and forgets everything in memory,
 // so all it knows is in storage. The cycle is in three keys: 'state' (a
 // RoomState), and for a race that has started, 'recording' (its bytes) and
-// 'result'. The money is in the tables made in the constructor.
+// 'result'. The money is in the tables made in the constructor. What
+// /admin/race has set is in 'settings' (settings.ts) and 'paused'.
 
 const IDLE: RoomState = {
 	round: 0,
@@ -45,11 +43,9 @@ const IDLE: RoomState = {
 	grid: [],
 	conditions: [],
 	startsAt: 0,
-	result: null
+	result: null,
+	settings: DEFAULT_SETTINGS
 };
-
-/** Practice runs of each race, to judge how likely every outcome is before seeding the pools. */
-const TRIALS = 30;
 
 const seed = () => crypto.getRandomValues(new Uint32Array(1))[0];
 
@@ -119,7 +115,7 @@ export class RaceRoom extends DurableObject<Env> {
 		// who is on the other end, kept through the room's sleeps
 		server.serializeAttachment(player);
 		const state = this.state;
-		if (state.phase === 'idle') {
+		if (state.phase === 'idle' && !this.paused) {
 			// the first one in starts the next race, and is told with everyone else
 			await this.open(state.round + 1);
 		} else {
@@ -176,25 +172,37 @@ export class RaceRoom extends DurableObject<Env> {
 		try {
 			if (state.phase === 'betting') await this.start(state);
 			else if (state.phase === 'racing') await this.finish(state);
-			else if (state.phase === 'results') {
-				// the races only run while somebody is here to watch them
-				if (this.ctx.getWebSockets().length) await this.open(state.round + 1);
-				else this.ctx.storage.kv.put('state', { ...IDLE, round: state.round });
-			}
+			else if (state.phase === 'results') await this.next(state.round);
 		} catch (error) {
 			// A phase that fails would be retried a few times and then leave
 			// the room stuck for good. Call the race off, hand its bets back,
 			// and start the next.
 			console.error({ message: 'race room phase failed', phase: state.phase, error });
 			this.void(state.round);
-			await this.open(state.round + 1);
+			await this.next(state.round);
 		}
 	}
 
 	// The cycle
 
-	private get state() {
-		return this.ctx.storage.kv.get<RoomState>('state') ?? IDLE;
+	private get state(): RoomState {
+		const state = this.ctx.storage.kv.get<RoomState>('state');
+		// a state kept from before races carried their settings takes today's
+		return state
+			? { ...state, settings: state.settings ?? this.settings }
+			: { ...IDLE, settings: this.settings };
+	}
+
+	/** The admin's settings, or the code's where there are none. */
+	private get settings(): Settings {
+		const saved = this.ctx.storage.kv.get<Settings>('settings');
+		return saved
+			? { ...saved, cars: { ...DEFAULT_SETTINGS.cars, ...saved.cars } }
+			: DEFAULT_SETTINGS;
+	}
+
+	private get paused() {
+		return this.ctx.storage.kv.get<boolean>('paused') ?? false;
 	}
 
 	private report(state: RoomState): FromRoom {
@@ -221,20 +229,36 @@ export class RaceRoom extends DurableObject<Env> {
 	}
 
 	/**
+	 * After a race: the next one, or, if nobody is watching or the admin has
+	 * paused the races, waiting, which pages show until it opens.
+	 */
+	private async next(round: number) {
+		if (this.ctx.getWebSockets().length && !this.paused) return this.open(round + 1);
+		const state: RoomState = { ...IDLE, round, settings: this.settings };
+		this.ctx.storage.kv.put('state', state);
+		this.ctx.storage.kv.delete('recording');
+		await this.ctx.storage.deleteAlarm();
+		this.tell(this.report(state));
+	}
+
+	/**
 	 * Opens betting on a new race: draws the starting order and the cars'
 	 * conditions, and seeds every pool by running the race a few times over
-	 * to see how it tends to go.
+	 * to see how it tends to go. The race keeps the settings as they are now.
 	 */
 	private open(round: number) {
+		const settings = this.settings;
 		const rand = random(seed());
-		const field = drawGrid(seed(), ROSTER);
+		const field = drawGrid(seed(), tuned(settings));
 		const conditions = drawConditions(rand, field.length);
 		const grid = field.map((entry) => entry.id);
 		const cars = field.map((entry, slot) => inCondition(entry, conditions[slot]));
-		const trials = Array.from({ length: TRIALS }, () => resultOf(record(seed(), cars)));
+		const trials = Array.from({ length: settings.trials }, () => resultOf(record(seed(), cars)));
 		this.ctx.storage.kv.delete('recording');
 		for (const market of MARKETS) {
-			for (const [outcome, chips] of Object.entries(seedPool(market, grid, trials))) {
+			for (const [outcome, chips] of Object.entries(
+				seedPool(market, grid, trials, settings.seed)
+			)) {
 				this.sql.exec('INSERT INTO pool_seeds VALUES (?, ?, ?, ?)', round, market, outcome, chips);
 			}
 		}
@@ -242,9 +266,10 @@ export class RaceRoom extends DurableObject<Env> {
 			...IDLE,
 			round,
 			phase: 'betting',
-			endsAt: Date.now() + BETTING_MS,
+			endsAt: Date.now() + settings.bettingSeconds * 1000,
 			grid,
-			conditions
+			conditions,
+			settings
 		});
 	}
 
@@ -253,8 +278,9 @@ export class RaceRoom extends DurableObject<Env> {
 	 * here and never leaves the room, so nobody could have run it first.
 	 */
 	private async start(state: RoomState) {
+		const roster = tuned(state.settings);
 		const cars = state.grid.map((id, slot) =>
-			inCondition(ROSTER.find((entry) => entry.id === id)!, state.conditions[slot])
+			inCondition(roster.find((entry) => entry.id === id)!, state.conditions[slot])
 		);
 		const raceSeed = seed();
 		const recording = record(raceSeed, cars);
@@ -321,11 +347,19 @@ export class RaceRoom extends DurableObject<Env> {
 				this.sql.exec('UPDATE players SET balance = balance + ? WHERE id = ?', payout, bet.player);
 			}
 		});
-		await this.move({ ...state, phase: 'results', endsAt: Date.now() + RESULTS_MS, result });
+		await this.move({
+			...state,
+			phase: 'results',
+			endsAt: Date.now() + state.settings.resultsSeconds * 1000,
+			result
+		});
 		this.settled();
 	}
 
-	/** Calls a race off: every bet on it not yet paid is handed back. */
+	/**
+	 * Calls a race off: every bet on it not yet paid is handed back. One
+	 * called off before it ran is put on the record too, with no seed.
+	 */
 	private void(round: number) {
 		this.ctx.storage.transactionSync(() => {
 			this.sql.exec(
@@ -335,7 +369,12 @@ export class RaceRoom extends DurableObject<Env> {
 				round
 			);
 			this.sql.exec('UPDATE bets SET payout = stake WHERE round = ? AND payout IS NULL', round);
-			this.sql.exec('UPDATE races SET voided = 1 WHERE round = ?', round);
+			this.sql.exec(
+				`INSERT INTO races (round, started, seed, voided) VALUES (?, ?, 0, 1)
+				 ON CONFLICT (round) DO UPDATE SET voided = 1`,
+				round,
+				Date.now()
+			);
 		});
 		this.settled();
 	}
@@ -381,7 +420,7 @@ export class RaceRoom extends DurableObject<Env> {
 			}>(
 				"INSERT INTO players (key, name, balance, seen) VALUES (?, '', ?, ?) RETURNING id",
 				key,
-				START,
+				this.state.settings.start,
 				now
 			)
 			.one();
@@ -438,8 +477,8 @@ export class RaceRoom extends DurableObject<Env> {
 		if (!Number.isInteger(stake) || (stake as number) < 1) return 'Stake a whole number of chips';
 		const player = this.player(id);
 		if (player.banned) return 'This player cannot bet';
-		if (player.balance - (stake as number) < -DEBT_CAP)
-			return `Your credit runs out at ${-DEBT_CAP}`;
+		const { debtCap } = state.settings;
+		if (player.balance - (stake as number) < -debtCap) return `Your credit runs out at ${-debtCap}`;
 		const placed = this.sql
 			.exec<{
 				n: number;
@@ -470,6 +509,7 @@ export class RaceRoom extends DurableObject<Env> {
 
 	/** Wipes a debt and starts the player again on the opening stake, on the record. */
 	private bankrupt(id: number) {
+		const { start } = this.state.settings;
 		const { balance } = this.player(id);
 		if (balance >= 0) return 'Only a player in debt can go bankrupt';
 		const waiting = this.sql
@@ -479,16 +519,276 @@ export class RaceRoom extends DurableObject<Env> {
 		this.ctx.storage.transactionSync(() => {
 			this.sql.exec(
 				'UPDATE players SET balance = ?, bankruptcies = bankruptcies + 1 WHERE id = ?',
-				START,
+				start,
 				id
 			);
 			this.sql.exec(
 				"INSERT INTO adjustments (player, at, kind, amount) VALUES (?, ?, 'bankruptcy', ?)",
 				id,
 				Date.now(),
-				START - balance
+				start - balance
 			);
 		});
 		this.tell(this.board());
+	}
+
+	// What /admin/race asks of the room. These are called over the Worker's
+	// binding (lib/race/admin.ts, which checks the admin is signed in first);
+	// no socket message reaches them. Each action returns why not, or null.
+
+	/** Everything the admin page shows, with players whose names contain `search`. */
+	adminView(search: string) {
+		return {
+			loop: this.loopView(),
+			players: this.playersView(search),
+			settings: {
+				settings: this.settings,
+				tuned: this.ctx.storage.kv.get('settings') !== undefined
+			},
+			history: this.historyView()
+		};
+	}
+
+	adminRename(id: number, name: string) {
+		const refused = this.missing(id) ?? this.rename(id, name);
+		if (refused) return refused;
+		this.changed(id);
+		return null;
+	}
+
+	/** Puts a player back on the starting chips, on the record with the chips it moved. */
+	adminReset(id: number) {
+		const missing = this.missing(id);
+		if (missing) return missing;
+		const { start } = this.state.settings;
+		this.ctx.storage.transactionSync(() => {
+			const { balance } = this.player(id);
+			this.sql.exec('UPDATE players SET balance = ? WHERE id = ?', start, id);
+			this.sql.exec(
+				"INSERT INTO adjustments (player, at, kind, amount) VALUES (?, ?, 'admin_reset', ?)",
+				id,
+				Date.now(),
+				start - balance
+			);
+		});
+		this.changed(id);
+		return null;
+	}
+
+	/**
+	 * Bans a player, or lets them back. A banned player's bets not yet settled
+	 * are withdrawn, their stakes handed back and the bets taken out of the
+	 * pools, so the race pays out as if they had never bet.
+	 */
+	adminBan(id: number, banned: boolean) {
+		const missing = this.missing(id);
+		if (missing) return missing;
+		this.ctx.storage.transactionSync(() => {
+			this.sql.exec('UPDATE players SET banned = ? WHERE id = ?', Number(banned), id);
+			if (!banned) return;
+			this.sql.exec(
+				`UPDATE players SET balance = balance +
+					(SELECT COALESCE(SUM(stake), 0) FROM bets WHERE player = ?1 AND payout IS NULL)
+				 WHERE id = ?1`,
+				id
+			);
+			this.sql.exec('DELETE FROM bets WHERE player = ? AND payout IS NULL', id);
+		});
+		this.changed(id);
+		// the pools are smaller now
+		const state = this.state;
+		if (banned && state.phase !== 'idle') this.tell(this.report(state));
+		return null;
+	}
+
+	/**
+	 * Paused, the race under way runs to its result and then the room waits;
+	 * unpaused, the next race opens if anybody is watching.
+	 */
+	async adminPause(paused: boolean) {
+		if (paused) this.ctx.storage.kv.put('paused', true);
+		else this.ctx.storage.kv.delete('paused');
+		const state = this.state;
+		if (!paused && state.phase === 'idle') await this.next(state.round);
+		return null;
+	}
+
+	/** Calls off the race being bet on or run, and moves on. */
+	async adminVoid() {
+		const state = this.state;
+		if (state.phase === 'idle') return 'No race is on';
+		if (state.phase === 'results') return 'This race is over and paid out';
+		this.void(state.round);
+		await this.next(state.round);
+		return null;
+	}
+
+	adminSaveSettings(input: unknown) {
+		const settings = checkSettings(input);
+		if (typeof settings === 'string') return settings;
+		this.ctx.storage.kv.put('settings', settings);
+		return null;
+	}
+
+	adminResetSettings() {
+		this.ctx.storage.kv.delete('settings');
+		return null;
+	}
+
+	private missing(id: number) {
+		const found = this.sql.exec('SELECT 1 FROM players WHERE id = ?', id).toArray();
+		return found.length ? null : 'No such player';
+	}
+
+	/** After the admin has changed a player: tells their pages where they stand, and everyone the board. */
+	private changed(id: number) {
+		for (const socket of this.ctx.getWebSockets()) {
+			if (socket.deserializeAttachment() === id) this.send(socket, this.you(id));
+		}
+		this.tell(this.board());
+	}
+
+	private loopView() {
+		const state = this.state;
+		const sockets = this.ctx.getWebSockets();
+		const pools = this.pools(state);
+		const staked = Object.fromEntries(
+			this.sql
+				.exec<{ market: Market; chips: number }>(
+					'SELECT market, SUM(stake) AS chips FROM bets WHERE round = ? GROUP BY market',
+					state.round
+				)
+				.toArray()
+				.map(({ market, chips }) => [market, chips])
+		);
+		return {
+			round: state.round,
+			phase: state.phase,
+			endsAt: state.endsAt,
+			now: Date.now(),
+			paused: this.paused,
+			viewers: sockets.length,
+			players: new Set(sockets.map((socket) => socket.deserializeAttachment()).filter(Boolean))
+				.size,
+			grid: state.grid.map((car, slot) => ({
+				car,
+				condition: state.conditions[slot],
+				...state.settings.cars[car]
+			})),
+			pools: MARKETS.map((market) => ({
+				market,
+				total: Object.values(pools[market]).reduce((sum, chips) => sum + chips, 0),
+				staked: staked[market] ?? 0
+			}))
+		};
+	}
+
+	/** Players, most recently seen first. Their secret keys stay here. */
+	private playersView(search: string) {
+		const like = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
+		return this.sql
+			.exec<PlayerRow & { seen: number; bets: number }>(
+				`SELECT id, name, balance, bankruptcies, banned, seen, COALESCE(placed.n, 0) AS bets
+				 FROM players LEFT JOIN (SELECT player, COUNT(*) AS n FROM bets GROUP BY player) AS placed
+				 ON placed.player = players.id
+				 WHERE name LIKE ? ESCAPE '\\' ORDER BY seen DESC LIMIT 100`,
+				like
+			)
+			.toArray()
+			.map((row) => ({ ...row, banned: Boolean(row.banned) }));
+	}
+
+	/**
+	 * The last 50 races and the house's books, from the bets as they were
+	 * settled; a race still being run counts once it is paid. Its result is
+	 * left out until it has been shown, so this page is no way to know first.
+	 */
+	private historyView() {
+		const state = this.state;
+		const hidden = state.phase === 'racing' ? state.round : -1;
+		const races = this.sql
+			.exec<{ round: number; started: number; voided: number; staked: number; paid: number }>(
+				`SELECT round, started, voided,
+					(SELECT COALESCE(SUM(stake), 0) FROM bets WHERE bets.round = races.round AND payout IS NOT NULL) AS staked,
+					(SELECT COALESCE(SUM(payout), 0) FROM bets WHERE bets.round = races.round AND payout IS NOT NULL) AS paid
+				 FROM races WHERE round != ? ORDER BY round DESC LIMIT 50`,
+				hidden
+			)
+			.toArray();
+		const rows = this.sql
+			.exec<{
+				round: number;
+				car: string;
+				condition: string;
+				place: number;
+				first_out: number;
+				fastest: number;
+			}>(
+				'SELECT round, car, condition, place, first_out, fastest FROM results WHERE round >= ? AND round != ? ORDER BY grid',
+				races.at(-1)?.round ?? 0,
+				hidden
+			)
+			.toArray();
+		const totals = this.sql
+			.exec<{
+				staked: number;
+				paid: number;
+			}>(
+				'SELECT COALESCE(SUM(stake), 0) AS staked, COALESCE(SUM(payout), 0) AS paid FROM bets WHERE payout IS NOT NULL'
+			)
+			.one();
+		const adjusted = this.sql
+			.exec<{ bankruptcies: number; resets: number }>(
+				`SELECT COALESCE(SUM(CASE WHEN kind = 'bankruptcy' THEN amount END), 0) AS bankruptcies,
+					COALESCE(SUM(CASE WHEN kind = 'admin_reset' THEN amount END), 0) AS resets
+				 FROM adjustments`
+			)
+			.one();
+		const cars = this.sql
+			.exec<{
+				car: string;
+				starts: number;
+				wins: number;
+				podiums: number;
+				firstOuts: number;
+				fastestLaps: number;
+				averagePlace: number;
+			}>(
+				`SELECT car, COUNT(*) AS starts, SUM(place = 1) AS wins, SUM(place <= 3) AS podiums,
+					SUM(first_out) AS firstOuts, SUM(fastest) AS fastestLaps, AVG(place) AS averagePlace
+				 FROM results WHERE round != ? GROUP BY car ORDER BY wins DESC, averagePlace`,
+				hidden
+			)
+			.toArray()
+			.map((car) => ({ ...car, winRate: car.wins / car.starts }));
+		return {
+			races: races.map((race) => {
+				const run = rows.filter((row) => row.round === race.round);
+				return {
+					round: race.round,
+					started: race.started,
+					voided: Boolean(race.voided),
+					grid: run.map(({ car, condition }) => ({ car, condition })),
+					order: [...run].sort((a, b) => a.place - b.place).map((row) => row.car),
+					firstOut: run.find((row) => row.first_out)?.car ?? null,
+					fastest: run.find((row) => row.fastest)?.car ?? null,
+					staked: race.staked,
+					paid: race.paid,
+					net: race.staked - race.paid
+				};
+			}),
+			totals: {
+				run: this.sql
+					.exec<{
+						n: number;
+					}>('SELECT COUNT(DISTINCT round) AS n FROM results WHERE round != ?', hidden)
+					.one().n,
+				staked: totals.staked,
+				paid: totals.paid,
+				net: totals.staked - totals.paid,
+				...adjusted
+			},
+			cars
+		};
 	}
 }

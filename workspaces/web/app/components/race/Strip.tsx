@@ -1,9 +1,8 @@
 import { Volume2Icon, VolumeXIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Dialog, DialogTrigger } from '~/components/ui/dialog';
-import { DEBT_CAP } from '~/lib/race/betting';
-import { BETTING_MS, RESULTS_MS, type RoomState } from '~/lib/race/room';
-import type { Standing, ToRoom } from '~/lib/race/room';
+import type { RoomState, Standing, ToRoom } from '~/lib/race/room';
+import { DEFAULT_SETTINGS } from '~/lib/race/settings';
 import { LAPS } from '~/lib/race/sim';
 import { Bar, ClockFace, iconButton, type Segment } from './Bar';
 import { Settings } from './Settings';
@@ -11,10 +10,7 @@ import { chips, signed, useTween, type Running } from './shared';
 
 // What the header row holds: how long is left, what you have, and the sound. It never changes shape between phases; only its words do.
 
-// The timeline's lengths in seconds: betting and results are the room's own,
-// the race is about a minute.
-const BET = BETTING_MS / 1000;
-const RESULT = RESULTS_MS / 1000;
+// The race is about a minute; betting and results last as long as the room says.
 const RACE = 65;
 
 function Clock({
@@ -27,6 +23,7 @@ function Clock({
 	running: Running | null;
 }) {
 	const phase = room.phase;
+	const { bettingSeconds: bet, resultsSeconds: results } = room.settings;
 	const timed = phase === 'betting' || phase === 'results';
 	// the last ten seconds of betting: the colour changes, nothing flashes
 	const urgent = phase === 'betting' && left <= 10;
@@ -36,12 +33,12 @@ function Clock({
 	const segments: Segment[] = [
 		{
 			name: 'Bet',
-			weight: BET,
-			fill: phase === 'betting' ? 1 - left / BET : phase === 'idle' ? 0 : 1,
+			weight: bet,
+			fill: phase === 'betting' ? 1 - left / bet : phase === 'idle' ? 0 : 1,
 			urgent
 		},
 		{ name: 'Race', weight: RACE, fill: raced },
-		{ name: 'Result', weight: RESULT, fill: phase === 'results' ? 1 - left / RESULT : 0 }
+		{ name: 'Result', weight: results, fill: phase === 'results' ? 1 - left / results : 0 }
 	];
 	return (
 		<ClockFace
@@ -105,6 +102,7 @@ function Wallet({
 	const balance = useTween(you.balance);
 	const moving = Math.round(balance) !== you.balance;
 	const debt = you.balance < 0;
+	const rules = room?.settings ?? DEFAULT_SETTINGS;
 	// what you had when this round began, and the change already announced for it;
 	// kept in state so they are settled while rendering
 	const round = room?.round ?? -1;
@@ -154,7 +152,7 @@ function Wallet({
 						<span
 							className={`block truncate text-xs leading-3 tabular-nums ${debt ? 'text-destructive' : 'text-muted-foreground'}`}
 						>
-							{debt ? `${chips(you.balance + DEBT_CAP)} credit left` : you.name}
+							{debt ? `${chips(you.balance + rules.debtCap)} credit left` : you.name}
 							{you.bankruptcies > 0 && (
 								<span
 									title={`Bankrupt ${you.bankruptcies} time${you.bankruptcies === 1 ? '' : 's'}`}
@@ -166,7 +164,7 @@ function Wallet({
 						</span>
 					</span>
 				</DialogTrigger>
-				<Settings you={you} problem={problem} send={send} />
+				<Settings you={you} rules={rules} problem={problem} send={send} />
 			</Dialog>
 		</div>
 	);

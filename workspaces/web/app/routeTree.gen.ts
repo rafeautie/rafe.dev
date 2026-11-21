@@ -23,6 +23,7 @@ import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as WritingFeedDotxmlRouteImport } from './routes/writing/feed[.]xml'
 import { Route as WritingSlugRouteImport } from './routes/writing/$slug'
 import { Route as RaceSandboxRouteImport } from './routes/race/sandbox'
+import { Route as AdminRaceRouteImport } from './routes/admin/race'
 import { Route as AdminPhotosRouteImport } from './routes/admin/photos'
 import { Route as AdminLogoutRouteImport } from './routes/admin/logout'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
@@ -102,6 +103,11 @@ const RaceSandboxRoute = RaceSandboxRouteImport.update({
   path: '/race/sandbox',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRaceRoute = AdminRaceRouteImport.update({
+  id: '/race',
+  path: '/race',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const AdminPhotosRoute = AdminPhotosRouteImport.update({
   id: '/photos',
   path: '/photos',
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
+  '/admin/race': typeof AdminRaceRoute
   '/race/sandbox': typeof RaceSandboxRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
@@ -179,6 +186,7 @@ export interface FileRoutesByTo {
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
+  '/admin/race': typeof AdminRaceRoute
   '/race/sandbox': typeof RaceSandboxRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
@@ -204,6 +212,7 @@ export interface FileRoutesById {
   '/admin/login': typeof AdminLoginRoute
   '/admin/logout': typeof AdminLogoutRoute
   '/admin/photos': typeof AdminPhotosRoute
+  '/admin/race': typeof AdminRaceRoute
   '/race/sandbox': typeof RaceSandboxRoute
   '/writing/$slug': typeof WritingSlugRoute
   '/writing/feed.xml': typeof WritingFeedDotxmlRoute
@@ -230,6 +239,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
+    | '/admin/race'
     | '/race/sandbox'
     | '/writing/$slug'
     | '/writing/feed.xml'
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
+    | '/admin/race'
     | '/race/sandbox'
     | '/writing/$slug'
     | '/writing/feed.xml'
@@ -277,6 +288,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/logout'
     | '/admin/photos'
+    | '/admin/race'
     | '/race/sandbox'
     | '/writing/$slug'
     | '/writing/feed.xml'
@@ -405,6 +417,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RaceSandboxRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/race': {
+      id: '/admin/race'
+      path: '/race'
+      fullPath: '/admin/race'
+      preLoaderRoute: typeof AdminRaceRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/admin/photos': {
       id: '/admin/photos'
       path: '/photos'
@@ -469,6 +488,7 @@ interface AdminRouteRouteChildren {
   AdminLoginRoute: typeof AdminLoginRoute
   AdminLogoutRoute: typeof AdminLogoutRoute
   AdminPhotosRoute: typeof AdminPhotosRoute
+  AdminRaceRoute: typeof AdminRaceRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminWritingSlugRoute: typeof AdminWritingSlugRoute
   AdminStatsIndexRoute: typeof AdminStatsIndexRoute
@@ -481,6 +501,7 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminLoginRoute: AdminLoginRoute,
   AdminLogoutRoute: AdminLogoutRoute,
   AdminPhotosRoute: AdminPhotosRoute,
+  AdminRaceRoute: AdminRaceRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminWritingSlugRoute: AdminWritingSlugRoute,
   AdminStatsIndexRoute: AdminStatsIndexRoute,

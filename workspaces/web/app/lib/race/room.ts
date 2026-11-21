@@ -1,12 +1,13 @@
 import type { Market, Pools, Result } from './betting';
+import type { Settings } from './settings';
 
 // What the race room and the pages watching it say to each other. The room
 // (room.server.ts) runs one race after another for everyone at once; a page
 // only ever shows what the room tells it.
 
-/** How long betting stays open before each race. */
+/** How long betting stays open before each race, unless /admin/race says otherwise. */
 export const BETTING_MS = 45_000;
-/** How long the result stays up after one. */
+/** How long the result stays up after one, likewise. */
 export const RESULTS_MS = 15_000;
 /** From betting closing to the recording's first moment, so it can arrive before it is needed. */
 export const LEAD_MS = 1_500;
@@ -25,6 +26,11 @@ export type RoomState = {
 	startsAt: number;
 	/** How the race came out, once it is over. */
 	result: Result | null;
+	/**
+	 * The rules this race runs by, copied from the admin's settings when it
+	 * opened (settings.ts): the cars' stats, the money, the timings.
+	 */
+	settings: Settings;
 };
 
 /** A bet as its owner sees it. `payout` is null until the race is settled. */

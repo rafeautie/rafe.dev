@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
-import { DEBT_CAP, MAX_BETS, MARKETS, pays, type Market, type Pools } from '~/lib/race/betting';
+import { MAX_BETS, MARKETS, pays, type Market, type Pools } from '~/lib/race/betting';
 import type { Bet, RoomState, Standing, ToRoom } from '~/lib/race/room';
 import { ASKS, Label, Returns, SHORT, Tile, chips, entry, label } from './shared';
 
@@ -84,7 +84,7 @@ export function Slip({
 		outcome: string;
 	} | null>(null);
 	const [offline, setOffline] = useState(false);
-	const max = you ? you.balance + DEBT_CAP : 0;
+	const max = you ? you.balance + room.settings.debtCap : 0;
 	const [first, second] = outcome?.split('>') ?? [];
 	const complete = market === 'exacta' ? second !== undefined : outcome !== null;
 	const odds = complete && outcome ? pays(pools[market], market, outcome) : 0;

@@ -1,7 +1,7 @@
 import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react';
 import { MARKET_NAMES, pays, type Market, type Pools } from '~/lib/race/betting';
 import type { RoomState } from '~/lib/race/room';
-import { CONDITIONS, ROSTER, inCondition, type Entry } from '~/lib/race/roster';
+import { CONDITIONS, inCondition, type Entry } from '~/lib/race/roster';
 import { Tile, entry, useTween } from './shared';
 
 // One row per car, in grid order: who it is, how it turned up today, what it
@@ -85,7 +85,8 @@ export function Board({
 			</div>
 			<ul className="flex flex-col">
 				{room.grid.map((id, place) => {
-					const car = entry(id);
+					// the stats are the room's, which /admin/race can tune
+					const car = { ...entry(id), ...room.settings.cars[id] };
 					const condition = CONDITIONS[room.conditions[place]];
 					const today = inCondition(car, room.conditions[place]);
 					const selected = single && outcome === id;
@@ -121,11 +122,7 @@ export function Board({
 									)}
 								</span>
 							</span>
-							<Stats
-								base={ROSTER.find((r) => r.id === id)!}
-								today={today}
-								touched={condition.stat}
-							/>
+							<Stats base={car} today={today} touched={condition.stat} />
 							<Odds value={pays(pools[oddsOf], oddsOf, id)} />
 						</>
 					);
