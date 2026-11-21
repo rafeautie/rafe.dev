@@ -16,61 +16,17 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useId, useRef } from 'react';
-import { PhotoPicture } from '~/components/PhotoPicture';
 import { COLUMN_CLASS, COLUMNS_CLASS, toColumns } from '~/components/photo-grid';
 import type { PhotoEntry } from '~/lib/admin/api';
-import { PHOTOS_DIR, rawUrl } from '~/lib/admin/config';
+import { shortDate } from '~/lib/admin/time';
 import { cn } from '~/lib/utils';
-import { BUILT, type Source, shortDate } from './photo-source';
+import type { Source } from './photo-source';
+import { Thumb } from './Thumb';
 
 // The photos page's grid: the gallery's order as what it is, a list, on equal
 // squares that hold still while dragging, each with what it says about itself
 // underneath. The real gallery deals that list into 1, 2 or 3 columns of
 // uneven heights, which Preview shows without letting it be dragged.
-
-// A photo as the browser can show it: the build's own sizes when the site has
-// it, the file just picked when it is new, and the file on GitHub otherwise.
-export function Thumb({
-	source,
-	sizes,
-	className
-}: {
-	source: Source;
-	sizes: string;
-	className?: string;
-}) {
-	const built = BUILT.get(source.file);
-	if (source.upload) {
-		return (
-			<img
-				src={source.upload.url}
-				width={source.upload.width}
-				height={source.upload.height}
-				alt=""
-				className={className}
-			/>
-		);
-	}
-	if (built) {
-		return (
-			<PhotoPicture
-				picture={built.picture}
-				sizes={sizes}
-				alt=""
-				loading="lazy"
-				className={className}
-			/>
-		);
-	}
-	return (
-		<img
-			src={rawUrl(`${PHOTOS_DIR}/${source.file}`, source.ref)}
-			alt=""
-			loading="lazy"
-			className={className}
-		/>
-	);
-}
 
 export type TileState = 'new' | 'edited' | null;
 

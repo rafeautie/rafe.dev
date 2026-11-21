@@ -14,8 +14,11 @@ import { Input } from '~/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
 import { banRacePlayer, renameRacePlayer, resetRacePlayer } from '~/lib/race/admin';
 import { cn } from '~/lib/utils';
-import { Empty, Panel, Stat, Table, Heading } from './parts';
-import { cell, number, NUMBER, time, type Act, type View } from './format';
+import { Empty, Panel, StatCard } from '~/components/admin/cards';
+import { Table, Heading } from './parts';
+import { NUMBER } from '~/lib/admin/format';
+import { timeAgo } from '~/lib/admin/time';
+import { cell, number, type Act, type View } from './format';
 
 // Everyone who has played, most recently seen first, with what can be done to
 // each at the end of their row, which stays in view while a narrow table
@@ -78,14 +81,14 @@ export function Players({
 		<div className="@container flex flex-col gap-4">
 			<Heading>players</Heading>
 			<div className="grid grid-cols-2 gap-4 @2xl:grid-cols-4">
-				<Stat label="watching now" value={NUMBER.format(watching)} />
-				<Stat label="seen today" value={NUMBER.format(today)} />
-				<Stat
+				<StatCard label="watching now" value={NUMBER.format(watching)} />
+				<StatCard label="seen today" value={NUMBER.format(today)} />
+				<StatCard
 					label="chips held"
 					value={NUMBER.format(held)}
 					hint={richest ? `most: ${richest.name}` : undefined}
 				/>
-				<Stat
+				<StatCard
 					label="in debt"
 					value={NUMBER.format(debt)}
 					hint={
@@ -129,7 +132,7 @@ export function Players({
 								<td className={number}>{NUMBER.format(player.bets)}</td>
 								<td className={number}>{player.bankruptcies || '–'}</td>
 								<td className={cn(cell, 'text-foreground/50')} suppressHydrationWarning>
-									{time(player.seen)}
+									{timeAgo(player.seen)}
 								</td>
 								<td className={cn(cell, 'sticky right-0 bg-card py-1 text-right')}>
 									<div className="inline-flex gap-0.5">

@@ -19,10 +19,20 @@ export type PostOverview = PostFields &
 		changed: Commit | null;
 	};
 
+const POST_FILE = new RegExp(`^${WRITING_DIR}/([^/]+)/index\\.md$`);
+
+// Every post in a tree of the repo (contentTree's files): its folder's name,
+// which is its slug, and its file's blob.
+export function postFiles(files: Map<string, string>) {
+	return [...files].flatMap(([path, sha]) => {
+		const match = path.match(POST_FILE);
+		return match ? [{ slug: match[1], sha }] : [];
+	});
+}
+
 export const listPostOverviews = createServerFn({ method: 'GET' }).handler(async () => {
 	const github = gitHub(await requireToken());
 	const { files } = await github.contentTree(await github.head());
-	const pattern = new RegExp(`^${WRITING_DIR}/([^/]+)/index\\.md$`);
 
 	async function overview(slug: string, sha: string): Promise<PostOverview> {
 		const [source, history] = await Promise.all([
@@ -34,10 +44,5 @@ export const listPostOverviews = createServerFn({ method: 'GET' }).handler(async
 		return { slug, sha, ...readFields(yaml), ...postStats(body), changed: history[0] ?? null };
 	}
 
-	return Promise.all(
-		[...files].flatMap(([path, sha]) => {
-			const match = path.match(pattern);
-			return match ? [overview(match[1], sha)] : [];
-		})
-	);
+	return Promise.all(postFiles(files).map(({ slug, sha }) => overview(slug, sha)));
 });

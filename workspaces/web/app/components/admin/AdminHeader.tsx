@@ -1,5 +1,6 @@
 import { XIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { Badge } from '~/components/ui/badge';
 import { SidebarTrigger } from '~/components/ui/sidebar';
@@ -10,9 +11,22 @@ import { useCurrentSection } from './Subsections';
 // one level up, and links to other pages on the right. Pages that change
 // something add the controls rail under it. Beside the sidebar, which already
 // says rafe / admin, the path starts after it; on a phone the sidebar is put
-// away behind the menu button at its start.
+// away behind the menu button at its start. `path` is the page's place below
+// the admin (['writing', title]), empty for the overview.
 export function AdminHeader({ path, children }: { path: ReactNode[]; children?: ReactNode }) {
-	const below = path.slice(2);
+	const full = [
+		<Link key="rafe" href="/">
+			rafe
+		</Link>,
+		path.length ? (
+			<Link key="admin" href="/admin">
+				admin
+			</Link>
+		) : (
+			'admin'
+		),
+		...path
+	];
 	// beside a page's sections sidebar (wide screens), which names the page
 	const section = useCurrentSection();
 	return (
@@ -21,7 +35,7 @@ export function AdminHeader({ path, children }: { path: ReactNode[]; children?: 
 				{/* -ml-1.5 sets its icon on the content's edge */}
 				<SidebarTrigger aria-label="Admin pages" className="-ml-1.5 md:hidden" />
 				<SlashNav className="min-w-0 text-xl font-medium [overflow-wrap:anywhere] md:hidden">
-					{path}
+					{full}
 				</SlashNav>
 				<SlashNav
 					className={cn(
@@ -29,7 +43,7 @@ export function AdminHeader({ path, children }: { path: ReactNode[]; children?: 
 						section && 'lg:hidden'
 					)}
 				>
-					{below.length ? below : 'overview'}
+					{path.length ? path : 'overview'}
 				</SlashNav>
 				{section && (
 					<p className="hidden min-w-0 text-xl font-medium [overflow-wrap:anywhere] lg:block">

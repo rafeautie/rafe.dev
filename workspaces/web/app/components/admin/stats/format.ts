@@ -1,9 +1,9 @@
+import { NUMBER, PERCENT } from '~/lib/admin/format';
 import type { Metric } from '~/lib/stats/dimensions';
 
-// How /admin/stats writes numbers, times and places.
+// How /admin/stats writes its metrics, times and places. Counts and shares
+// are lib/admin/format's, as on every admin page.
 
-export const NUMBER = new Intl.NumberFormat('en-US');
-const PERCENT = new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 0 });
 // bucket times are wall-clock times read as UTC (lib/stats/report.ts)
 export const DAY = new Intl.DateTimeFormat('en-US', {
 	month: 'short',

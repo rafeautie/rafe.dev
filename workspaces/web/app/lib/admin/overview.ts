@@ -2,20 +2,20 @@ import { createServerFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 import { env } from 'cloudflare:workers';
 import { DIMENSIONS } from '~/lib/stats/dimensions';
-import type { Row } from '~/lib/stats/report';
+import { DAY, type Row, VISITOR } from '~/lib/stats/report';
 import { stats } from '~/lib/stats/store.server';
 import { zoneOffset } from '~/lib/stats/zone';
 import { PHOTOS_DIR, PHOTOS_MANIFEST, WRITING_DIR } from './config';
 import { readFields, splitPost } from './frontmatter';
 import { gitHub } from './github.server';
 import { requireToken } from './session.server';
+import { postFiles } from './writing';
 
 // What /admin's overview shows of each area: the few numbers and short lists
 // that say how it is doing, never the whole of its page. Each area is its own
 // server function, so the page asks for them side by side and one that fails
 // leaves the others shown.
 
-const DAY = 24 * 60 * 60 * 1000;
 // how many drafts and posts the overview lists
 const DRAFTS_SHOWN = 4;
 const POSTS_SHOWN = 3;
@@ -37,18 +37,11 @@ export type DraftSummary = { slug: string; title: string; edited: string };
 export const getWritingSummary = createServerFn({ method: 'GET' }).handler(async () => {
 	const github = gitHub(await requireToken());
 	const { files } = await github.contentTree(await github.head());
-	const pattern = new RegExp(`^${WRITING_DIR}/([^/]+)/index\\.md$`);
 	const posts = await Promise.all(
-		[...files].flatMap(([path, sha]) => {
-			const match = path.match(pattern);
-			if (!match) return [];
-			return [
-				github.blobText(sha).then((source) => ({
-					slug: match[1],
-					...readFields(splitPost(source).yaml)
-				}))
-			];
-		})
+		postFiles(files).map(async ({ slug, sha }) => ({
+			slug,
+			...readFields(splitPost(await github.blobText(sha)).yaml)
+		}))
 	);
 	const published = posts
 		.filter((post) => !post.draft && post.date)
@@ -88,9 +81,9 @@ const PHOTOS_SHOWN = 8;
 
 export const getPhotosSummary = createServerFn({ method: 'GET' }).handler(async () => {
 	const github = gitHub(await requireToken());
-	const head = await github.head();
-	const [{ files }, [last]] = await Promise.all([
-		github.contentTree(head),
+	// the folder's history needs no head, so it is asked for alongside the tree
+	const [{ head, files }, [last]] = await Promise.all([
+		github.head().then(async (head) => ({ head, files: (await github.contentTree(head)).files })),
 		github.history(PHOTOS_DIR, 1)
 	]);
 	const sha = files.get(PHOTOS_MANIFEST);
@@ -125,7 +118,7 @@ export const getVisitsSummary = createServerFn({ method: 'GET' }).handler(async 
 	const week = (current - 6) * DAY - offset;
 	const before = (current - 13) * DAY - offset;
 	const chart = (current - CHART_DAYS + 1) * DAY - offset;
-	const visitor = 'coalesce(visitor, session)';
+	const visitor = VISITOR;
 	const source = DIMENSIONS.source.key;
 
 	const [totals, previous, days, pages, sources, here] = await db.batch([

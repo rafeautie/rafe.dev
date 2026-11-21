@@ -18,6 +18,7 @@ import {
 	getVisitsSummary,
 	getWritingSummary
 } from '~/lib/admin/overview';
+import { errorMessage } from '~/lib/admin/format';
 import { timeAgo } from '~/lib/admin/time';
 
 // Signed out: the sign-in page. Signed in: the overview, the admin's hub: how
@@ -55,7 +56,7 @@ function settle<T>(promise: Promise<T>): Promise<Loaded<T>> {
 		(value) => ({ ok: true, value }),
 		(error: unknown) => ({
 			ok: false,
-			error: error instanceof Error ? error.message : 'Something went wrong'
+			error: errorMessage(error)
 		})
 	);
 }
@@ -107,14 +108,7 @@ function Overview({ overview }: { overview: OverviewData }) {
 	// wider than the other pages' column: a dashboard needs room for its grid
 	return (
 		<div className="mx-auto max-w-6xl">
-			<AdminHeader
-				path={[
-					<Link key="rafe" href="/">
-						rafe
-					</Link>,
-					'admin'
-				]}
-			/>
+			<AdminHeader path={[]} />
 
 			<ControlsRail
 				status={

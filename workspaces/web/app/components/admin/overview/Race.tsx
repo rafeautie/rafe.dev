@@ -1,10 +1,11 @@
-import { NUMBER } from '~/components/admin/stats/format';
+import { NUMBER } from '~/lib/admin/format';
 import type { getRaceSummary } from '~/lib/admin/overview';
 import { timeAgo } from '~/lib/admin/time';
 import { MARKET_NAMES } from '~/lib/race/betting';
 import { ROSTER } from '~/lib/race/roster';
 import { cn } from '~/lib/utils';
-import { Area, Empty, Figure, type Loaded, Shortlist } from './Area';
+import { Empty } from '~/components/admin/cards';
+import { Area, Figure, type Loaded, Shortlist } from './Area';
 
 // The overview's widgets from /admin/race: the loop as it runs, kept up to
 // date while the page is open (useLiveRace), and the races it has run with
@@ -156,7 +157,7 @@ export function ResultsCard({ loaded, className }: { loaded: Loaded<Race>; class
 											dateTime={new Date(result.started).toISOString()}
 											suppressHydrationWarning
 										>
-											{timeAgo(new Date(result.started).toISOString())}
+											{timeAgo(result.started)}
 										</time>
 									</span>
 								</li>

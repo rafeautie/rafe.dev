@@ -66,7 +66,7 @@ function VisitRow({ visit }: { visit: Visit }) {
 					dateTime={new Date(visit.start).toISOString()}
 					className="shrink-0 text-sm text-foreground/50"
 				>
-					{timeAgo(new Date(visit.start).toISOString())}
+					{timeAgo(visit.start)}
 				</time>
 			</div>
 			<p className="text-sm text-foreground/50">{details.join(' · ')}</p>

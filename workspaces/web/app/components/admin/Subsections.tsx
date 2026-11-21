@@ -11,7 +11,7 @@ import {
 } from '~/components/ui/sidebar';
 import { sidebarItem, sidebarMenu, sidebarTop } from './sidebar-style';
 
-export type Subsection = { key: string; label: string; content: ReactNode };
+export type Subsection<K extends string = string> = { key: K; label: string; content: ReactNode };
 
 // The section showing, for the page's header (AdminHeader): where this sidebar
 // shows, headed with the page's name, the header names the section instead,
@@ -29,7 +29,7 @@ export const useCurrentSection = () => useContext(CurrentSection);
 //
 // It takes the place of the page's usual centered column, and the admin
 // layout drops its own padding around it on wide screens (data-subsections).
-export function Subsections({
+export function Subsections<K extends string>({
 	title,
 	sections,
 	value,
@@ -37,9 +37,9 @@ export function Subsections({
 	children
 }: {
 	title: string;
-	sections: Subsection[];
-	value: string | undefined;
-	onChange: (key: string) => void;
+	sections: Subsection<K>[];
+	value: K | undefined;
+	onChange: (key: K) => void;
 	children: ReactNode;
 }) {
 	const current = sections.find((section) => section.key === value) ?? sections[0];

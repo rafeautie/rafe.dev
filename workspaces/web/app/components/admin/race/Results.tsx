@@ -1,8 +1,11 @@
 import { Badge } from '~/components/ui/badge';
 import { ROSTER } from '~/lib/race/roster';
 import { cn } from '~/lib/utils';
-import { Car, Empty, Panel, Table, Heading } from './parts';
-import { carName, cell, condition, number, NUMBER, PERCENT, time, type View } from './format';
+import { Empty, Panel } from '~/components/admin/cards';
+import { Car, Table, Heading } from './parts';
+import { NUMBER, PERCENT } from '~/lib/admin/format';
+import { timeAgo } from '~/lib/admin/time';
+import { carName, cell, condition, number, type View } from './format';
 
 // How the races have come out: each car's record side by side, to see whether
 // the field is balanced (with six cars, a fair one wins about a sixth of the
@@ -14,7 +17,7 @@ const FAIR = 1 / ROSTER.length;
 
 export function Results({ history }: { history: History }) {
 	return (
-		<div className="@container flex flex-col gap-4">
+		<div className="flex flex-col gap-4">
 			<Heading>results</Heading>
 			<Cars cars={history.cars} />
 			<Races races={history.races} />
@@ -109,7 +112,7 @@ function Races({ races }: { races: History['races'] }) {
 								)}
 							</td>
 							<td className={cn(cell, 'text-foreground/50')} suppressHydrationWarning>
-								{time(race.started)}
+								{timeAgo(race.started)}
 							</td>
 							<td className={cell}>
 								<Finish race={race} />

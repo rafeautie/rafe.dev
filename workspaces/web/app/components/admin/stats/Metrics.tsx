@@ -94,16 +94,6 @@ export function MetricCards({
 	);
 }
 
-// A plain headline number in a card, for a page with no chart to choose for.
-export function NumberCard({ label, value }: { label: string; value: string }) {
-	return (
-		<Card size="sm" className="gap-1">
-			<span className="truncate px-3 text-sm text-foreground/50">{label}</span>
-			<span className="px-3 text-2xl font-medium tracking-tight tabular-nums">{value}</span>
-		</Card>
-	);
-}
-
 // A number's shape over the range, too small for an axis. Gaps (no visits
 // that hour) are skipped over rather than drawn as zero.
 export function Sparkline({

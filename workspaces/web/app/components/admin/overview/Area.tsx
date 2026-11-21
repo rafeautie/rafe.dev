@@ -1,24 +1,23 @@
 import { Link as RouterLink, useRouter } from '@tanstack/react-router';
 import { ArrowRightIcon } from 'lucide-react';
 import type { ComponentProps, ReactNode } from 'react';
+import { PAGE_TRANSITION } from '~/components/admin/sidebar-style';
+import { Panel } from '~/components/admin/cards';
 import { Button } from '~/components/ui/button';
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { cn } from '~/lib/utils';
 
 // One widget of the overview, in its own card: its name links to the admin
 // page (and section) it comes from, and what it holds is a small view of that
 // page: its headline numbers, a chart, a short list.
 
-// The same view transition as the sidebar's (AdminSidebar), so leaving the
-// overview from a card looks like leaving it from the sidebar.
-const PAGE_TRANSITION = { types: ['admin-page'] };
-
 // What a server function came back with, or why it did not.
 export type Loaded<T> = { ok: true; value: T } | { ok: false; error: string };
 
-// A link to an admin page, moving there in the page. `to` is a plain path,
-// such as a post's editor, which the router matches like any other; `section`
-// opens one of a long page's sections (Subsections' ?section=).
+// A link to an admin page, moving there in the page with the sidebar's view
+// transition, so leaving the overview from a card looks like leaving it from
+// the sidebar. `to` is a plain path, such as a post's editor, which the router
+// matches like any other; `section` opens one of a long page's sections
+// (Subsections' ?section=).
 export function PageLink({
 	to,
 	section,
@@ -72,23 +71,22 @@ export function Area<T>({
 	children: (value: T) => ReactNode;
 }) {
 	return (
-		<Card className={className}>
-			<CardHeader>
-				<CardTitle>
-					{href ? (
-						<Lead to={href} section={section}>
-							{title}
-						</Lead>
-					) : (
-						title
-					)}
-				</CardTitle>
-				{action && loaded.ok && <CardAction>{action}</CardAction>}
-			</CardHeader>
-			<CardContent className="flex flex-1 flex-col gap-5">
-				{loaded.ok ? children(loaded.value) : <AreaError message={loaded.error} />}
-			</CardContent>
-		</Card>
+		<Panel
+			title={
+				href ? (
+					<Lead to={href} section={section}>
+						{title}
+					</Lead>
+				) : (
+					title
+				)
+			}
+			action={loaded.ok && action}
+			className={className}
+			contentClassName="flex flex-1 flex-col gap-5"
+		>
+			{loaded.ok ? children(loaded.value) : <AreaError message={loaded.error} />}
+		</Panel>
 	);
 }
 
@@ -161,9 +159,4 @@ export function ShortlistRow({ children, aside }: { children: ReactNode; aside: 
 			<span className="shrink-0 text-foreground/50 tabular-nums">{aside}</span>
 		</li>
 	);
-}
-
-// What an area has nothing of yet, said plainly.
-export function Empty({ children }: { children: ReactNode }) {
-	return <p className="text-foreground/50">{children}</p>;
 }

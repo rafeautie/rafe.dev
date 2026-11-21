@@ -1,17 +1,10 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { XIcon } from 'lucide-react';
 import { lazy, Suspense, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
-import { Link } from '~/components/Link';
 import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
 import { readSection, Subsections } from '~/components/admin/Subsections';
-import {
-	busiest,
-	country,
-	duration,
-	formatMetric,
-	NUMBER,
-	place
-} from '~/components/admin/stats/format';
+import { NUMBER } from '~/lib/admin/format';
+import { busiest, country, duration, formatMetric, place } from '~/components/admin/stats/format';
 import { FilterMenu } from '~/components/admin/stats/FilterMenu';
 import { Heatmap } from '~/components/admin/stats/Heatmap';
 import { MetricCards } from '~/components/admin/stats/Metrics';
@@ -21,7 +14,6 @@ import { VisitList } from '~/components/admin/stats/Visits';
 import { Badge } from '~/components/ui/badge';
 import { ScrollArea } from '~/components/ui/scroll-area';
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group';
-import { TooltipProvider } from '~/components/ui/tooltip';
 import { requireAdmin } from '~/lib/admin/guard';
 import { timeAgo } from '~/lib/admin/time';
 import {
@@ -119,25 +111,13 @@ function StatsPage() {
 
 	const header = (
 		<>
-			<AdminHeader
-				path={[
-					<Link key="rafe" href="/">
-						rafe
-					</Link>,
-					<Link key="admin" href="/admin">
-						admin
-					</Link>,
-					'stats'
-				]}
-			/>
+			<AdminHeader path={['stats']} />
 
 			<ControlsRail
 				status={
 					<>
 						<span suppressHydrationWarning>
-							{stats.last
-								? `last visit ${timeAgo(new Date(stats.last).toISOString())}`
-								: 'no visits yet'}
+							{stats.last ? `last visit ${timeAgo(stats.last)}` : 'no visits yet'}
 						</span>
 						{filters.map(([key, value]) => (
 							<Badge key={key} variant="secondary" className="h-auto py-1 pr-1 font-normal">
@@ -185,41 +165,37 @@ function StatsPage() {
 		</>
 	);
 
-	return (
-		<TooltipProvider>
-			{stats.totals.views ? (
-				<Report
-					stats={stats}
-					section={search.section}
-					onSection={(next) =>
-						navigate({
-							search: (prev) => ({
-								...prev,
-								section: next === 'overview' ? undefined : (next as Section)
-							})
-						})
-					}
-					metric={metric}
-					onMetric={(next) =>
-						navigate({
-							search: (prev) => ({ ...prev, metric: next === 'visitors' ? undefined : next })
-						})
-					}
-					onFilter={setFilter}
-				>
-					{header}
-				</Report>
-			) : (
-				<div className="mx-auto max-w-4xl">
-					{header}
-					<p className="mt-10 text-foreground/50">
-						{filters.length
-							? 'No visits match these filters in this range.'
-							: 'Nobody has visited in this range. Visits count from when this page went live, and yours are left out while you are signed in.'}
-					</p>
-				</div>
-			)}
-		</TooltipProvider>
+	return stats.totals.views ? (
+		<Report
+			stats={stats}
+			section={search.section}
+			onSection={(next) =>
+				navigate({
+					search: (prev) => ({
+						...prev,
+						section: next === 'overview' ? undefined : next
+					})
+				})
+			}
+			metric={metric}
+			onMetric={(next) =>
+				navigate({
+					search: (prev) => ({ ...prev, metric: next === 'visitors' ? undefined : next })
+				})
+			}
+			onFilter={setFilter}
+		>
+			{header}
+		</Report>
+	) : (
+		<div className="mx-auto max-w-4xl">
+			{header}
+			<p className="mt-10 text-foreground/50">
+				{filters.length
+					? 'No visits match these filters in this range.'
+					: 'Nobody has visited in this range. Visits count from when this page went live, and yours are left out while you are signed in.'}
+			</p>
+		</div>
 	);
 }
 
@@ -247,7 +223,7 @@ function Report({
 	children: ReactNode;
 	stats: Stats;
 	section: Section | undefined;
-	onSection: (section: string) => void;
+	onSection: (section: Section) => void;
 	metric: Metric;
 	onMetric: (metric: Metric) => void;
 	onFilter: (key: FilterKey, value: string) => void;
@@ -645,7 +621,7 @@ function VisitorList({ visitors }: { visitors: Stats['visitors'] }) {
 								{[
 									`${NUMBER.format(visitor.views)} ${visitor.views === 1 ? 'page' : 'pages'}`,
 									duration(visitor.engaged),
-									`last seen ${timeAgo(new Date(visitor.last).toISOString())}`,
+									`last seen ${timeAgo(visitor.last)}`,
 									visitor.anonymous ? 'not tracked' : null
 								]
 									.filter(Boolean)

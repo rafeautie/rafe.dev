@@ -11,6 +11,7 @@ import { Tuning } from '~/components/admin/race/Tuning';
 import { readSection, Subsections } from '~/components/admin/Subsections';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
+import { errorMessage } from '~/lib/admin/format';
 import { requireAdmin } from '~/lib/admin/guard';
 import { getRaceAdmin, pauseRace, voidRace, type RaceAdminView } from '~/lib/race/admin';
 
@@ -22,6 +23,7 @@ import { getRaceAdmin, pauseRace, voidRace, type RaceAdminView } from '~/lib/rac
 // while the page is open. The section components are in components/admin/race.
 
 const SECTIONS = ['live', 'players', 'results', 'books', 'tuning'] as const;
+type Section = (typeof SECTIONS)[number];
 
 export const Route = createFileRoute('/admin/race')({
 	// which section shows on a wide screen
@@ -34,10 +36,6 @@ export const Route = createFileRoute('/admin/race')({
 });
 
 const POLL_MS = 3000;
-
-function message(error: unknown) {
-	return error instanceof Error ? error.message : 'Something went wrong';
-}
 
 function RacePage() {
 	const { section } = Route.useSearch();
@@ -57,7 +55,7 @@ function RacePage() {
 			setView(next);
 			setSkew(next.loop.now - Date.now());
 		} catch (error) {
-			setProblem(message(error));
+			setProblem(errorMessage(error));
 		}
 	}, [search]);
 
@@ -87,14 +85,13 @@ function RacePage() {
 			await run();
 			await refresh();
 		} catch (error) {
-			setProblem(message(error));
+			setProblem(errorMessage(error));
 		} finally {
 			setBusy(false);
 		}
 	}
 
-	const go = (key: string) =>
-		navigate({ search: { section: key === 'live' ? undefined : (key as typeof section) } });
+	const go = (key: Section) => navigate({ search: { section: key === 'live' ? undefined : key } });
 	const { loop } = view;
 	const clock = now + skew;
 	const left = Math.max(0, Math.ceil((loop.endsAt - clock) / 1000));
@@ -138,17 +135,7 @@ function RacePage() {
 				}
 			]}
 		>
-			<AdminHeader
-				path={[
-					<Link key="rafe" href="/">
-						rafe
-					</Link>,
-					<Link key="admin" href="/admin">
-						admin
-					</Link>,
-					'race'
-				]}
-			>
+			<AdminHeader path={['race']}>
 				<Link href="/race">game</Link>
 			</AdminHeader>
 

@@ -1,21 +1,14 @@
 import { ArrowRightIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import {
-	Card,
-	CardAction,
-	CardContent,
-	CardDescription,
-	CardFooter,
-	CardHeader,
-	CardTitle
-} from '~/components/ui/card';
+import { Panel } from '~/components/admin/cards';
+import { CardFooter } from '~/components/ui/card';
 import { ScrollArea } from '~/components/ui/scroll-area';
 import type { Row } from '~/lib/stats/report';
 import { cn } from '~/lib/utils';
-import { NUMBER } from './format';
+import { NUMBER } from '~/lib/admin/format';
 
-// The surfaces /admin/stats is built from: shadcn's Card with a title, what
-// its numbers count, and what it holds, and the lists that go in them.
+// The surfaces /admin/stats is built from: the admin's card with a title,
+// what its numbers count, and what it holds, and the lists that go in them.
 
 export function StatsCard({
 	title,
@@ -34,19 +27,16 @@ export function StatsCard({
 	children: ReactNode;
 }) {
 	return (
-		<Card className={className}>
-			<CardHeader>
-				<CardTitle>{title}</CardTitle>
-				{description && <CardDescription>{description}</CardDescription>}
-				{unit && (
-					<CardAction className="text-sm text-foreground/50">
-						<span>{unit}</span>
-					</CardAction>
-				)}
-			</CardHeader>
-			<CardContent className="flex-1">{children}</CardContent>
-			{more && <More {...more} />}
-		</Card>
+		<Panel
+			title={title}
+			description={description}
+			action={unit && <span className="text-sm text-foreground/50">{unit}</span>}
+			className={className}
+			contentClassName="flex-1"
+			footer={more && <More {...more} />}
+		>
+			{children}
+		</Panel>
 	);
 }
 

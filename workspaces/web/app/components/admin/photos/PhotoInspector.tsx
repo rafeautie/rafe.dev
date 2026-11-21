@@ -24,7 +24,7 @@ import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
 import { Textarea } from '~/components/ui/textarea';
 import type { PhotoEntry } from '~/lib/admin/api';
-import { Thumb } from './PhotoGrid';
+import { Thumb } from './Thumb';
 import { dimensions, type Source } from './photo-source';
 
 // Where one photo is edited. Beside the grid when the page is wide enough, so

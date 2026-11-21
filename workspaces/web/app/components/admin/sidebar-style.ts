@@ -57,3 +57,10 @@ export const sidebarItem = 'rounded-xl text-sidebar-foreground/70';
 // so what sits beside them ends up centered in the rail.
 export const foldAway =
 	'min-w-0 flex-1 overflow-hidden whitespace-nowrap transition-opacity duration-200 motion-reduce:transition-none group-data-[collapsible=icon]:opacity-0';
+
+// Moving between the admin's pages stays in the page (the sidebar, and whether
+// it is folded, carry over) and plays as a view transition of this type, which
+// styles/app.css times: the page crossfades while the sidebar holds still, and
+// a page's own sidebar (Subsections) slides out from under it or back. The
+// overview's cards (PageLink) leave the same way.
+export const PAGE_TRANSITION = { types: ['admin-page'] };

@@ -1,12 +1,12 @@
 import { CameraIcon, FileTextIcon, GitCommitHorizontalIcon } from 'lucide-react';
-import { PhotoPicture } from '~/components/PhotoPicture';
-import { NUMBER } from '~/components/admin/stats/format';
+import { commitSubject } from '~/lib/admin/config';
+import { NUMBER, plural } from '~/lib/admin/format';
 import type { getOverview } from '~/lib/admin/api';
-import { PHOTOS_DIR, rawUrl } from '~/lib/admin/config';
 import type { getPhotosSummary, getWritingSummary } from '~/lib/admin/overview';
-import { timeAgo } from '~/lib/admin/time';
-import { PHOTOS } from '~/photos';
-import { Area, Empty, Figure, type Loaded, PageLink, Shortlist, ShortlistRow } from './Area';
+import { shortDate, timeAgo } from '~/lib/admin/time';
+import { Empty } from '~/components/admin/cards';
+import { Thumb } from '~/components/admin/photos/Thumb';
+import { Area, Figure, type Loaded, PageLink, Shortlist, ShortlistRow } from './Area';
 
 // The overview's widgets from the content pages: writing and photos, and the
 // feed of what changed in them lately.
@@ -14,17 +14,6 @@ import { Area, Empty, Figure, type Loaded, PageLink, Shortlist, ShortlistRow } f
 type Writing = Awaited<ReturnType<typeof getWritingSummary>>;
 type Photos = Awaited<ReturnType<typeof getPhotosSummary>>;
 export type Changes = Awaited<ReturnType<typeof getOverview>>;
-
-// a post's date is a day, not a moment, so it is read as UTC as /writing does
-const POST_DATE = new Intl.DateTimeFormat('en-US', {
-	month: 'short',
-	day: 'numeric',
-	year: 'numeric',
-	timeZone: 'UTC'
-});
-
-const plural = (n: number, one: string, many = `${one}s`) =>
-	`${NUMBER.format(n)} ${n === 1 ? one : many}`;
 
 // ---------------------------------------------------------------- writing
 
@@ -81,7 +70,7 @@ export function WritingCard({
 							{writing.recentPosts.map((post) => (
 								<ShortlistRow
 									key={post.slug}
-									aside={<time dateTime={post.date}>{POST_DATE.format(new Date(post.date))}</time>}
+									aside={<time dateTime={post.date}>{shortDate(post.date)}</time>}
 								>
 									<PageLink to={`/admin/writing/${post.slug}`} className="hover:text-foreground/70">
 										{post.title}
@@ -133,7 +122,14 @@ export function PhotosCard({ loaded, className }: { loaded: Loaded<Photos>; clas
 							<ul className="mt-2 grid grid-cols-4 gap-2 @4xl:grid-cols-8">
 								{photos.latest.map((photo) => (
 									<li key={photo.file}>
-										<Thumbnail file={photo.file} alt={photo.alt} commit={photos.ref} />
+										{/* the build's small sizes when the site has the photo, else the file on GitHub */}
+										<Thumb
+											source={{ file: photo.file, ref: photos.ref }}
+											sizes="10rem"
+											alt={photo.alt}
+											decoding="async"
+											className="aspect-square w-full rounded-md bg-muted object-cover"
+										/>
 									</li>
 								))}
 							</ul>
@@ -144,34 +140,6 @@ export function PhotosCard({ loaded, className }: { loaded: Loaded<Photos>; clas
 				)
 			}
 		</Area>
-	);
-}
-
-// A photo the live site already has comes from the build's small sizes; one
-// added since comes from the repo, at full size, as /admin/photos shows it.
-function Thumbnail({ file, alt, commit }: { file: string; alt: string; commit: string }) {
-	const className = 'aspect-square w-full rounded-md bg-muted object-cover';
-	const built = PHOTOS.find((photo) => photo.file === file);
-	if (built) {
-		return (
-			<PhotoPicture
-				picture={built.picture}
-				sizes="10rem"
-				alt={alt}
-				loading="lazy"
-				decoding="async"
-				className={className}
-			/>
-		);
-	}
-	return (
-		<img
-			src={rawUrl(`${PHOTOS_DIR}/${file}`, commit)}
-			alt={alt}
-			loading="lazy"
-			decoding="async"
-			className={className}
-		/>
 	);
 }
 
@@ -190,7 +158,7 @@ export function ActivityCard({
 				changes.length ? (
 					<ol className="-my-2 divide-y divide-foreground/5">
 						{changes.map((change) => {
-							const what = change.message.replace(/^content:\s*/, '');
+							const what = commitSubject(change.message);
 							const Icon = change.link?.startsWith('/admin/photos')
 								? CameraIcon
 								: change.link

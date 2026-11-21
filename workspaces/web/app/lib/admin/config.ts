@@ -25,6 +25,13 @@ export const BUILD_CHECK = 'Workers Builds: rafe-dev';
 // of the content folder) separates content changes from code.
 export const COMMIT_PREFIX = 'content:';
 
+// A commit's message as the admin lists it, without the prefix.
+export function commitSubject(message: string) {
+	return message.startsWith(COMMIT_PREFIX)
+		? message.slice(COMMIT_PREFIX.length).trimStart()
+		: message;
+}
+
 // A post's folder name is its URL. "new" is /admin/writing/new, so no post can
 // take it.
 export const SLUG_PATTERN = /^(?!new$)[a-z0-9]+(?:-[a-z0-9]+)*$/;

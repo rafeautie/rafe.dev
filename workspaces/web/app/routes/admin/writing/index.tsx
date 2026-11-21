@@ -5,18 +5,13 @@ import { Link } from '~/components/Link';
 import { AdminHeader } from '~/components/admin/AdminHeader';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import {
-	Card,
-	CardAction,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle
-} from '~/components/ui/card';
+import { Panel } from '~/components/admin/cards';
+import { Card, CardContent } from '~/components/ui/card';
 import { rawUrl, WRITING_DIR } from '~/lib/admin/config';
+import { plural } from '~/lib/admin/format';
 import { requireAdmin } from '~/lib/admin/guard';
 import { postGaps } from '~/lib/admin/post-stats';
-import { timeAgo } from '~/lib/admin/time';
+import { shortDate, timeAgo } from '~/lib/admin/time';
 import { readUnsaved } from '~/lib/admin/unsaved';
 import { listPostOverviews, type PostOverview } from '~/lib/admin/writing';
 import { cn } from '~/lib/utils';
@@ -29,10 +24,6 @@ export const Route = createFileRoute('/admin/writing/')({
 	loader: () => listPostOverviews(),
 	component: PostList
 });
-
-const SHORT = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' });
-// a post date (yyyy-mm-dd) as Sep 27, 2026: the list has less room than /writing
-const shortDate = (date: string) => (date ? SHORT.format(new Date(date)) : '');
 
 const changedAt = (post: PostOverview) => post.changed?.date ?? '';
 
@@ -48,11 +39,10 @@ function PostList() {
 		.filter((post) => !post.draft)
 		.sort((a, b) => b.date.localeCompare(a.date));
 	const needingWork = posts.filter((post) => postGaps(post, post).length).length;
-	const draftsUnsaved =
-		drafts.filter((post) => unsaved.slugs.has(post.slug)).length +
-		(unsaved.inProgress === null ? 0 : 1);
 	// a new post begun here counts as a draft, though only this browser has it
-	const draftCount = drafts.length + (unsaved.inProgress === null ? 0 : 1);
+	const begun = unsaved.inProgress === null ? 0 : 1;
+	const draftsUnsaved = drafts.filter((post) => unsaved.slugs.has(post.slug)).length + begun;
+	const draftCount = drafts.length + begun;
 	const latest = posts.reduce<PostOverview | null>(
 		(newest, post) => (!newest || changedAt(post) > changedAt(newest) ? post : newest),
 		null
@@ -60,17 +50,7 @@ function PostList() {
 
 	return (
 		<div className="@container mx-auto max-w-4xl">
-			<AdminHeader
-				path={[
-					<Link key="rafe" href="/">
-						rafe
-					</Link>,
-					<Link key="admin" href="/admin">
-						admin
-					</Link>,
-					'writing'
-				]}
-			>
+			<AdminHeader path={['writing']}>
 				<Button size="sm" className="px-3" render={<Link plain href="/admin/writing/new" />}>
 					<PlusIcon />
 					New post
@@ -103,58 +83,52 @@ function PostList() {
 					</CardContent>
 				</Card>
 
-				<Card className="pb-0">
-					<CardHeader>
-						<CardTitle>drafts</CardTitle>
-						<CardDescription>Saved to GitHub, off the site until published.</CardDescription>
-						<CardAction>
-							<Count n={draftCount} />
-						</CardAction>
-					</CardHeader>
-					<CardContent className="px-0">
-						{drafts.length || unsaved.inProgress ? (
-							<ul className="divide-y divide-foreground/10 border-t border-foreground/10">
-								{unsaved.inProgress !== null && (
-									<li>
-										<NewPostRow title={unsaved.inProgress} />
-									</li>
-								)}
-								{drafts.map((post) => (
-									<li key={post.slug}>
-										<PostRow post={post} unsaved={unsaved.slugs.has(post.slug)} />
-									</li>
-								))}
-							</ul>
-						) : (
-							<Empty>
-								No drafts. <Link href="/admin/writing/new">Start one</Link>.
-							</Empty>
-						)}
-					</CardContent>
-				</Card>
+				<Panel
+					title="drafts"
+					description="Saved to GitHub, off the site until published."
+					action={<Count n={draftCount} />}
+					flush
+					className="pb-0"
+				>
+					{drafts.length || unsaved.inProgress ? (
+						<ul className="divide-y divide-foreground/10 border-t border-foreground/10">
+							{unsaved.inProgress !== null && (
+								<li>
+									<NewPostRow title={unsaved.inProgress} />
+								</li>
+							)}
+							{drafts.map((post) => (
+								<li key={post.slug}>
+									<PostRow post={post} unsaved={unsaved.slugs.has(post.slug)} />
+								</li>
+							))}
+						</ul>
+					) : (
+						<Empty>
+							No drafts. <Link href="/admin/writing/new">Start one</Link>.
+						</Empty>
+					)}
+				</Panel>
 
-				<Card className="pb-0">
-					<CardHeader>
-						<CardTitle>published</CardTitle>
-						<CardDescription>On rafe.dev/writing, newest first.</CardDescription>
-						<CardAction>
-							<Count n={published.length} />
-						</CardAction>
-					</CardHeader>
-					<CardContent className="px-0">
-						{published.length ? (
-							<ul className="divide-y divide-foreground/10 border-t border-foreground/10">
-								{published.map((post) => (
-									<li key={post.slug}>
-										<PostRow post={post} unsaved={unsaved.slugs.has(post.slug)} />
-									</li>
-								))}
-							</ul>
-						) : (
-							<Empty>Nothing published yet.</Empty>
-						)}
-					</CardContent>
-				</Card>
+				<Panel
+					title="published"
+					description="On rafe.dev/writing, newest first."
+					action={<Count n={published.length} />}
+					flush
+					className="pb-0"
+				>
+					{published.length ? (
+						<ul className="divide-y divide-foreground/10 border-t border-foreground/10">
+							{published.map((post) => (
+								<li key={post.slug}>
+									<PostRow post={post} unsaved={unsaved.slugs.has(post.slug)} />
+								</li>
+							))}
+						</ul>
+					) : (
+						<Empty>Nothing published yet.</Empty>
+					)}
+				</Panel>
 			</div>
 		</div>
 	);
@@ -215,7 +189,7 @@ function PostRow({ post, unsaved }: { post: PostOverview; unsaved: boolean }) {
 	const facts = [
 		post.draft ? post.date && `dated ${shortDate(post.date)}` : shortDate(post.date) || 'no date',
 		post.updated && `updated ${shortDate(post.updated)}`,
-		`${post.words.toLocaleString('en-US')} ${post.words === 1 ? 'word' : 'words'}`
+		plural(post.words, 'word')
 	].filter(Boolean);
 
 	return (
