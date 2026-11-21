@@ -177,9 +177,12 @@ export const flown = (flag: Flag, kind: RaceEvent['kind']): Flag => FLIES[kind] 
 /**
  * Something on the road, as a driver sees it: where it is, how fast it is
  * going, whether it is a wreck, and whether it is on a truck's cable. A truck
- * out on the track is one, and is gone round like a wreck.
+ * out on the track is one, and is gone round like a wreck, but for while it
+ * is backing up to one.
  */
-type Obstacle = Pick<Car, 'sample' | 'across' | 'speed' | 'retired' | 'towed'>;
+type Obstacle = Pick<Car, 'sample' | 'across' | 'speed' | 'retired' | 'towed'> & {
+	backing?: boolean;
+};
 
 export type Race = ReturnType<typeof createRace>;
 
@@ -381,12 +384,15 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 	 * that is a car still running, wherever across the road it is. It is also
 	 * a truck on the move, a wreck that is, and the two of them once the cable
 	 * is on, until they have stopped or are off the track. A truck backing up
-	 * to a wreck is on the move too, the wrong way, and is waited for.
+	 * to a wreck is waited for from the moment it stops to find reverse until
+	 * it is at the wreck, however slowly it is going, since it swings its front
+	 * across the road as it backs.
 	 */
 	const followed = (other: Obstacle) =>
 		caution !== null &&
 		(!other.retired ||
-			(Math.abs(other.across) < HALF_CORRIDOR && (Math.abs(other.speed) > 1 || other.towed)));
+			(Math.abs(other.across) < HALF_CORRIDOR &&
+				(Math.abs(other.speed) > 1 || other.towed || other.backing === true)));
 
 	/**
 	 * How far from the middle of something a car can get going by it on one
@@ -413,14 +419,15 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 	 * into (a wreck on the winch cannot be pushed out of the way), nor towards
 	 * something coming back down it: for those it stops. A car level with
 	 * this one is no such thing: stopping for it while it gives way to this
-	 * one would hold the two of them there for good.
+	 * one would hold the two of them there for good. A truck backing up is,
+	 * even level with it (`halt`): it gives way to nobody, and swings about.
 	 */
-	const queueing = (speed: number, gap: number, keep = QUEUE) => {
+	const queueing = (speed: number, gap: number, keep = QUEUE, halt = false) => {
 		const slower = Math.max(0, speed);
 		const stopping = caution
 			? Math.sqrt(slower ** 2 + QUEUE_BRAKE * Math.max(0, gap - keep))
 			: Infinity;
-		const crawl = speed < -1 || (gap > 2 && gap < keep - 2) ? 0 : 3;
+		const crawl = halt || speed < -1 || (gap > 2 && gap < keep - 2) ? 0 : 3;
 		return Math.max(crawl, Math.min(slower + (gap - keep) * 1.5, stopping));
 	};
 
@@ -710,7 +717,7 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 			}
 			// and in the queue behind whatever is being followed, if anything is
 			if (place < 0 && queued && queue < reach)
-				limit = Math.min(limit, queueing(queued.speed, queue));
+				limit = Math.min(limit, queueing(queued.speed, queue, QUEUE, queued.backing));
 			// Leave room for a car alongside rather than turn in on it: the one
 			// on the inside keeps the inside, and the one being passed has to
 			// give up the line. Where that runs out of road, lift and let it

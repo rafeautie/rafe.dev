@@ -168,6 +168,10 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 		retired: true as const,
 		get towed(): boolean {
 			return this.towing >= 0;
+		},
+		/** Backing up to a wreck, a stop for the cable included: it may swing back across the road at any moment. */
+		get backing(): boolean {
+			return stage === 'back';
 		}
 	};
 

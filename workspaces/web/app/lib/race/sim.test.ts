@@ -144,11 +144,12 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 
 	// Every car on the roster, the most /admin/race allows. More cars crash
 	// more, and each caution ends with a lap or so going green, so a race of
-	// them may run long and now and then out of time (about one in fifty, on
-	// the circuit), but never so badly that the whole field is wrecked.
-	it('reaches a result with the largest field, cautions and all', { timeout: 120_000 }, () => {
+	// them may run long and now and then out of time (a few in a hundred, on
+	// the circuit, and some runs of seeds more than that, so it takes sixty to
+	// tell), but never so badly that the whole field is wrecked.
+	it('reaches a result with the largest field, cautions and all', { timeout: 240_000 }, () => {
 		let won = 0;
-		for (let seed = 1; seed <= 30; seed++) {
+		for (let seed = 1; seed <= 60; seed++) {
 			const race = run(seed, track, [LIGHTS + 25], ROSTER);
 			expect(race.cars).toHaveLength(LIMITS.count[1]);
 			expect(race.done).toBe(true);
@@ -165,7 +166,7 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 				if (!car.towed) expect(Math.abs(across)).toBeLessThan(HALF_CORRIDOR + 0.5);
 			}
 		}
-		expect(won).toBeGreaterThanOrEqual(27);
+		expect(won).toBeGreaterThanOrEqual(54);
 	});
 
 	it('reaches a result with the smallest field, cautions and all', { timeout: 60_000 }, () => {
