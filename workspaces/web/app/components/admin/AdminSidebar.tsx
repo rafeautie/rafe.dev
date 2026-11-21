@@ -59,7 +59,13 @@ export function AdminSidebar() {
 			<SidebarHeader className={sidebarTop}>
 				<SlashNav className={foldAway}>
 					<Link href="/">rafe</Link>
-					<Link href="/admin">admin</Link>
+					{/* on the overview itself it is where you are, not a way there, as in
+					    the page's header */}
+					{pathname === '/admin' ? (
+						<span aria-current="page">admin</span>
+					) : (
+						<Link href="/admin">admin</Link>
+					)}
 				</SlashNav>
 				<SidebarTrigger
 					aria-label="Toggle the sidebar"
