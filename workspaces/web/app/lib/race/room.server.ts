@@ -206,12 +206,17 @@ export class RaceRoom extends DurableObject<Env> {
 	private get state(): RoomState {
 		const state = this.ctx.storage.kv.get<RoomState>('state');
 		// A state kept from before races carried their settings takes today's;
-		// one from before there was a choice of track was raced on the circuit.
+		// one from before there was a choice of track was raced on the circuit,
+		// and one from before the field could change size raced the cars it has.
 		return state
 			? {
 					...state,
 					settings: state.settings
-						? { ...state.settings, track: state.settings.track ?? 'circuit' }
+						? {
+								...state.settings,
+								track: state.settings.track ?? 'circuit',
+								count: state.settings.count ?? state.grid.length
+							}
 						: this.settings
 				}
 			: { ...IDLE, settings: this.settings };
@@ -274,7 +279,8 @@ export class RaceRoom extends DurableObject<Env> {
 	private open(round: number) {
 		const settings = this.settings;
 		const rand = random(seed());
-		const field = drawGrid(seed(), tuned(settings));
+		// as many cars as the settings ask for, drawn from the roster in a starting order
+		const field = drawGrid(seed(), tuned(settings)).slice(0, settings.count);
 		const conditions = drawConditions(rand, field.length);
 		const grid = field.map((entry) => entry.id);
 		const cars = field.map((entry, slot) => inCondition(entry, conditions[slot]));
@@ -884,9 +890,12 @@ export class RaceRoom extends DurableObject<Env> {
 				firstOuts: number;
 				fastestLaps: number;
 				averagePlace: number;
+				fair: number;
 			}>(
+				// fair: the win rate a car would have if every field it was in were evenly matched
 				`SELECT car, COUNT(*) AS starts, SUM(place = 1) AS wins, SUM(place <= 3) AS podiums,
-					SUM(first_out) AS firstOuts, SUM(fastest) AS fastestLaps, AVG(place) AS averagePlace
+					SUM(first_out) AS firstOuts, SUM(fastest) AS fastestLaps, AVG(place) AS averagePlace,
+					AVG(1.0 / (SELECT COUNT(*) FROM results AS field WHERE field.round = results.round)) AS fair
 				 FROM results WHERE round != ? GROUP BY car ORDER BY wins DESC, averagePlace`,
 				hidden
 			)

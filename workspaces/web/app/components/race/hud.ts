@@ -4,7 +4,7 @@ import type { Replay } from '~/lib/race/recording';
 import { HEIGHT, SCALE, WIDTH, type CarView } from '~/lib/race/render';
 import type { Bet, RoomState, Standing } from '~/lib/race/room';
 import { CONDITIONS, ROSTER, inCondition } from '~/lib/race/roster';
-import { STATS } from '~/lib/race/settings';
+import { DEFAULT_SETTINGS, STATS } from '~/lib/race/settings';
 import { LAPS, LIGHTS, rank, type Flag } from '~/lib/race/sim';
 import { ASKS, FLAGS, SHORT, chips, entry, holding, label, signed } from './shared';
 import type { Running, Selection, Tick } from './shared';
@@ -79,6 +79,8 @@ export function fit(width: number, height: number, ratio: number): View {
 
 export type Box = { x: number; y: number; w: number; h: number };
 const box = (x: number, y: number, w: number, h: number): Box => ({ x, y, w, h });
+const rows = (count: number, row: (index: number) => Box) =>
+	Array.from({ length: count }, (_, index) => row(index));
 
 /** How wide the column down the left is. */
 const LEFT = 144;
@@ -95,12 +97,16 @@ export const BOARD_ROWS = 6;
 export const TICKS = 5;
 /** How big the bet slip is, the settings, and what the stat bars mean. */
 const SLIP = 300;
-const SLIP_H = 218;
 const MENU = 232;
 const KEY_W = 166;
 const KEY_H = 89;
-/** How tall the tower is, the leaderboard and everybody's bets. */
-const TOWER_H = 35 + ROSTER.length * ROW;
+/**
+ * How tall the bet slip is for a field of `count` cars: the markets over the
+ * cars, a row each, and the stake and the button under them.
+ */
+const slipHeight = (count: number) => 58 + count * CAR + 76;
+/** How tall the tower is for a field of `count` cars, the leaderboard and everybody's bets. */
+const towerHeight = (count: number) => 35 + count * ROW;
 const BOARD_H = 18 + BOARD_ROWS * LINE;
 const TICKER_H = 17 + TICKS * TICK;
 
@@ -113,8 +119,9 @@ const TICKER_H = 17 + TICKS * TICK;
 const COLUMN = 312;
 const HALF = (COLUMN - 4) / 2;
 const SIDE = COLUMN + 8;
-const PANELS = 4 + TOWER_H + 4 + BOARD_H + 4 + TICKER_H + 4;
-const LEAST = 60 + SLIP_H + 8;
+const panelsHeight = (count: number) => 4 + towerHeight(count) + 4 + BOARD_H + 4 + TICKER_H + 4;
+// the frame is chosen before the field is known, so it leaves room for the biggest
+const LEAST = 60 + slipHeight(ROSTER.length) + 8;
 /** What the four bars beside each car are, by the letter over them. */
 export const LEGEND = [
 	['Speed', 'Engine power'],
@@ -144,9 +151,15 @@ export type Layout = ReturnType<typeof layout>;
  * the column, the `pane`, which scrolls: they are placed as if it were not
  * scrolled, and are `panels` tall all told. The track is placed in the frame's
  * pixels; everything else is in the graphics' own, `unit` of the frame's each.
+ * The tower and the slip have a row for each of the `count` cars racing.
  */
-export function layout({ width, height, stacked }: View, betting = false) {
+export function layout(
+	{ width, height, stacked }: View,
+	betting = false,
+	count = DEFAULT_SETTINGS.count
+) {
 	const unit = stacked ? UNIT : 1;
+	const [towerH, slipH] = [towerHeight(count), slipHeight(count)];
 	// the frame in the graphics' pixels
 	const [fw, fh] = [Math.floor(width / unit), Math.floor(height / unit)];
 	const [tw, th] = [WIDTH / unit, HEIGHT / unit];
@@ -166,14 +179,14 @@ export function layout({ width, height, stacked }: View, betting = false) {
 	let x: number, y: number;
 	if (!stacked) {
 		pane = box(0, 0, fw, fh);
-		tower = box(4, 4, LEFT, TOWER_H);
+		tower = box(4, 4, LEFT, towerH);
 		board = box(4, tower.y + tower.h + 4, LEFT, BOARD_H);
 		ticker = box(4, board.y + board.h + 4, LEFT, TICKER_H);
 		wallet = box(fw - 148, 4, 144, 24);
 		bets = box(fw - 148, 32, 144, 0);
 		// the slip is in the middle of the track, both ways
 		x = tx + (tw - SLIP) / 2;
-		y = ty + (th - SLIP_H) / 2;
+		y = ty + (th - slipH) / 2;
 		// what the stat bars mean goes beside the slip, so it covers none of it
 		key = box(x + SLIP + 4, y + 44, KEY_W, KEY_H);
 	} else {
@@ -183,11 +196,11 @@ export function layout({ width, height, stacked }: View, betting = false) {
 		// bets down the right.
 		const column = stacked === 'beside' ? box(across + tw, 0, SIDE, fh) : box(0, th, fw, fh - th);
 		x = column.x + ((column.w - SLIP) >> 1);
-		y = column.y + column.h - SLIP_H - 4;
+		y = column.y + column.h - slipH - 4;
 		pane = box(column.x, column.y, column.w, (betting ? y - 4 : column.y + column.h) - column.y);
 		const left = column.x + ((column.w - COLUMN) >> 1);
 		const top = column.y + 4;
-		tower = box(left, top, HALF, TOWER_H);
+		tower = box(left, top, HALF, towerH);
 		board = box(left, tower.y + tower.h + 4, HALF, BOARD_H);
 		ticker = box(left, board.y + board.h + 4, HALF, TICKER_H);
 		wallet = box(left + HALF + 4, top, HALF, 24);
@@ -199,11 +212,13 @@ export function layout({ width, height, stacked }: View, betting = false) {
 	const mx = (fw - MENU) >> 1;
 	const my = (fh - 170) >> 1;
 	const widths = MARKETS.map((market) => measure(SHORT[market]) + 9);
+	// where the slip's rows of cars end, and what is picked, the stake and the button begin
+	const foot = y + 58 + count * CAR;
 	return {
 		unit,
 		key,
 		pane,
-		panels: stacked ? PANELS : fh,
+		panels: stacked ? panelsHeight(count) : fh,
 		menu: {
 			panel: box(mx, my, MENU, 0),
 			close: box(mx + MENU - 15, my, 15, 15),
@@ -224,7 +239,8 @@ export function layout({ width, height, stacked }: View, betting = false) {
 		bets,
 		// the middle of the track, like the slip: the race is over, so nothing is hidden by it
 		card: box(tx + (tw - 160) / 2, ty + (th - 92) / 2, 160, 92),
-		slip: box(x, y, SLIP, SLIP_H),
+		slip: box(x, y, SLIP, slipH),
+		foot,
 		tabs: MARKETS.map((_, index) =>
 			box(
 				x + 6 + widths.slice(0, index).reduce((sum, w) => sum + w + 2, 0),
@@ -233,14 +249,14 @@ export function layout({ width, height, stacked }: View, betting = false) {
 				13
 			)
 		),
-		cars: ROSTER.map((_, row) => box(x + 3, y + 58 + row * CAR, SLIP - 6, CAR - 1)),
-		firsts: ROSTER.map((_, row) => box(x + 243, y + 59 + row * CAR, 25, 11)),
-		seconds: ROSTER.map((_, row) => box(x + 269, y + 59 + row * CAR, 25, 11)),
+		cars: rows(count, (row) => box(x + 3, y + 58 + row * CAR, SLIP - 6, CAR - 1)),
+		firsts: rows(count, (row) => box(x + 243, y + 59 + row * CAR, 25, 11)),
+		seconds: rows(count, (row) => box(x + 269, y + 59 + row * CAR, 25, 11)),
 		legend: box(x + 210, y + 45, 29, 12),
-		clean: [box(x + 6, y + 146, 76, 15), box(x + 84, y + 146, 100, 15)],
-		stakes: STAKES.map((_, index) => box(x + 6 + index * 48, y + 165, 46, 15)),
-		input: box(x + 198, y + 165, 96, 15),
-		place: box(x + 6, y + 184, SLIP - 12, 17)
+		clean: [box(x + 6, foot + 4, 76, 15), box(x + 84, foot + 4, 100, 15)],
+		stakes: STAKES.map((_, index) => box(x + 6 + index * 48, foot + 23, 46, 15)),
+		input: box(x + 198, foot + 23, 96, 15),
+		place: box(x + 6, foot + 42, SLIP - 12, 17)
 	};
 }
 
@@ -674,6 +690,7 @@ export function createHud() {
 		const { market, outcome: picked, stake, max, typing, legend, ready, action, note } = scene.slip;
 		const figures = Number.isNaN(stake) ? '' : String(stake);
 		const { x, y, w, h } = at.slip;
+		const { foot } = at;
 		const urgent = left <= 10;
 		p.fill(x - 1, y - 1, w + 2, h + 2, INK, 0.5);
 		p.fill(x, y, w, h, INK, 0.94);
@@ -734,21 +751,21 @@ export function createHud() {
 				button(p, at.clean[index], `${label('clean', answer)} ${times(odds)}`, picked === answer);
 			});
 		} else if (complete && picked) {
-			const after = outcome(p, x + 6, y + 149, market, picked);
-			const named = p.text(after + 2, y + 150, label(market, picked), PAPER);
+			const after = outcome(p, x + 6, foot + 7, market, picked);
+			const named = p.text(after + 2, foot + 8, label(market, picked), PAPER);
 			// a pair has no row to show what it pays, so it is said here
 			if (market === 'exacta') {
 				const odds = glide(`exacta ${picked}`, pays(pools.exacta, 'exacta', picked), dt);
-				p.text(named + 5, y + 150, times(odds), DIM);
+				p.text(named + 5, foot + 8, times(odds), DIM);
 			}
 		} else {
-			p.text(x + 6, y + 150, market === 'exacta' ? 'Pick 1st, then 2nd' : 'Pick a car', DIM);
+			p.text(x + 6, foot + 8, market === 'exacta' ? 'Pick 1st, then 2nd' : 'Pick a car', DIM);
 		}
 		const returns =
 			complete && picked
 				? chips(Math.floor((stake || 0) * pays(pools[market], market, picked)))
 				: '-';
-		p.right(x + w - 6, y + 150, `${chips(stake || 0)}→${returns}`, PAPER);
+		p.right(x + w - 6, foot + 8, `${chips(stake || 0)}→${returns}`, PAPER);
 
 		STAKES.forEach((value, index) =>
 			button(p, at.stakes[index], String(value), stake === (value === 'Max' ? max : value))
@@ -764,7 +781,7 @@ export function createHud() {
 		p.centre(place.x + (place.w >> 1), place.y + 5, action, ready ? INK : DIM);
 		p.text(
 			x + 6,
-			y + 205,
+			foot + 63,
 			clip(
 				note?.text ?? `${bets.length} of ${MAX_BETS} bets · returns at the current odds`,
 				w - 12

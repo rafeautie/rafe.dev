@@ -12,7 +12,7 @@ import {
 } from 'react';
 import { Dialog, DialogTrigger } from '~/components/ui/dialog';
 import { cn } from '~/lib/utils';
-import { MARKET_NAMES, MARKETS, pays, type Market, type Pools } from '~/lib/race/betting';
+import { MARKET_NAMES, MARKETS, outcomes, pays, type Market, type Pools } from '~/lib/race/betting';
 import type { Painter } from '~/lib/race/pixels';
 import type { Replay } from '~/lib/race/recording';
 import type { CarView } from '~/lib/race/render';
@@ -216,8 +216,19 @@ export function Game({
 	// where the dialog is put, so it lies over the race like the other controls
 	const [frame, setFrame] = useState<HTMLDivElement | null>(null);
 
+	// A new race: the bet sent on the last is no longer waiting for an answer,
+	// and a pick stays only if the new field has it, since each race draws its own.
+	const [round, setRound] = useState(room?.round);
+	if (room && room.round !== round) {
+		setRound(room.round);
+		setSent(null);
+		if (outcome !== null && !outcomes(market, room.grid).includes(outcome)) setOutcome(null);
+	}
+
 	const betting = room?.phase === 'betting' && pools !== null;
-	const at = useMemo(() => layout(view, betting), [view, betting]);
+	// a row in the tower and on the slip for each car in the race, or that the next will have
+	const count = room?.grid.length || room?.settings.count;
+	const at = useMemo(() => layout(view, betting, count), [view, betting, count]);
 	const rules = room?.settings ?? DEFAULT_SETTINGS;
 	const max = you ? you.balance + rules.debtCap : 0;
 	const [first, second] = outcome?.split('>') ?? [];

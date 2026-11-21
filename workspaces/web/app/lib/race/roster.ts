@@ -1,4 +1,5 @@
-// The six cars that race every time. Each stat runs from 0 to 1 and none is
+// The cars that can race: each race draws as many of them as /admin/race
+// asks for (settings.ts), so a field may be smaller than this. Each stat runs from 0 to 1 and none is
 // simply better: speed is engine power, grip is cornering, aggression is how
 // near the limit the driver runs (quicker, with more mistakes), and
 // reliability is how much of a beating the car takes before it retires.
@@ -82,6 +83,28 @@ export const ROSTER: Entry[] = [
 		grip: 0.75,
 		aggression: 0.15,
 		reliability: 0.8
+	},
+	{
+		id: 'jinx',
+		name: 'Jinx',
+		number: 13,
+		color: '#a855f7',
+		shade: '#5b2591',
+		speed: 0.75,
+		grip: 0.4,
+		aggression: 0.6,
+		reliability: 0.65
+	},
+	{
+		id: 'frost',
+		name: 'Frost',
+		number: 88,
+		color: '#22c3d6',
+		shade: '#126b77',
+		speed: 0.55,
+		grip: 0.75,
+		aggression: 0.25,
+		reliability: 0.45
 	}
 ];
 

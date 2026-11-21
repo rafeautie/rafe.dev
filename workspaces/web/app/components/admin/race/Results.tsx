@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Badge } from '~/components/ui/badge';
 import { ROSTER } from '~/lib/race/roster';
+import { DEFAULT_SETTINGS } from '~/lib/race/settings';
 import { cn } from '~/lib/utils';
 import { Empty, Panel } from '~/components/admin/cards';
 import { Car, Table, Heading } from './parts';
@@ -9,12 +10,14 @@ import { timeAgo } from '~/lib/admin/time';
 import { carName, cell, condition, number, type View } from './format';
 
 // How the races have come out: each car's record side by side, to see whether
-// the field is balanced (with six cars, a fair one wins about a sixth of the
-// time), then the races themselves, newest first.
+// the field is balanced (a fair car wins one race in however many cars were in
+// it: a sixth of the time in fields of six), then the races themselves, newest
+// first.
 
 type History = View['history'];
 
-const FAIR = 1 / ROSTER.length;
+/** The fair share for a car yet to start, as if it ran in fields of the default size. */
+const FAIR = 1 / DEFAULT_SETTINGS.count;
 
 // memo: the page polls every few seconds, and the history rarely moves
 export const Results = memo(function Results({ history }: { history: History }) {
@@ -39,14 +42,15 @@ function Cars({ cars }: { cars: History['cars'] }) {
 			podiums: 0,
 			firstOuts: 0,
 			fastestLaps: 0,
-			averagePlace: 0
+			averagePlace: 0,
+			fair: FAIR
 		}))
 	];
-	const most = Math.max(FAIR * 2, ...rows.map((car) => car.winRate));
+	const most = Math.max(...rows.map((car) => Math.max(car.fair * 2, car.winRate)));
 	return (
 		<Panel
 			title="cars"
-			description={`win rate against a fair ${PERCENT.format(FAIR)}, the line`}
+			description="win rate against a fair share of the fields each car ran in, the line"
 			flush
 		>
 			<Table
@@ -68,7 +72,8 @@ function Cars({ cars }: { cars: History['cars'] }) {
 									{/* the fair share, a tick across the bar */}
 									<span
 										className="absolute -inset-y-1 w-px bg-foreground/50"
-										style={{ left: `${(FAIR / most) * 100}%` }}
+										style={{ left: `${(car.fair / most) * 100}%` }}
+										title={`fair: ${PERCENT.format(car.fair)}`}
 									/>
 								</span>
 								<span className="w-9 text-right">

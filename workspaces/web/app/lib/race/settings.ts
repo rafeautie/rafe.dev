@@ -14,6 +14,8 @@ export type CarStats = Pick<Entry, (typeof STATS)[number]>;
 export type Settings = {
 	/** The track the races run on. */
 	track: TrackId;
+	/** How many cars race, drawn at random from the roster for each race. */
+	count: number;
 	/** Each car's stats by id, 0 to 1. */
 	cars: Record<string, CarStats>;
 	/** Chips the house spreads over each market's outcomes. */
@@ -30,6 +32,7 @@ export type Settings = {
 
 export const DEFAULT_SETTINGS: Settings = {
 	track: 'oval',
+	count: 6,
 	cars: Object.fromEntries(
 		ROSTER.map(({ id, speed, grip, aggression, reliability }) => [
 			id,
@@ -46,6 +49,8 @@ export const DEFAULT_SETTINGS: Settings = {
 
 /** The whole numbers, and what each may be. */
 export const LIMITS = {
+	// three at least, for the top three market; at most the whole roster
+	count: [3, ROSTER.length],
 	seed: [100, 100_000],
 	start: [1, 1_000_000],
 	debtCap: [0, 1_000_000],
@@ -55,6 +60,7 @@ export const LIMITS = {
 } as const satisfies Partial<Record<keyof Settings, readonly [number, number]>>;
 
 const NAMES: Record<keyof typeof LIMITS, string> = {
+	count: 'Cars per race',
 	seed: 'Pool seed',
 	start: 'Starting chips',
 	debtCap: 'Debt cap',
