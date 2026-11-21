@@ -208,11 +208,72 @@
 /* The /writing and /chess dark mode crossfade (lib/writing-theme.ts): a view transition
    that fades a picture of the old page into the live new one. Inside it,
    nothing runs a transition of its own, so the whole page moves as one; the
-   toggle's icon is the exception and plays its own motion. */
-::view-transition-old(root),
-::view-transition-new(root) {
+   toggle's icon is the exception and plays its own motion. Parts of a page
+   lifted out of the picture (the admin's sidebars, below) fade with it. */
+::view-transition-old(*),
+::view-transition-new(*) {
 	animation-duration: 700ms;
 	animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+/* Moving between the admin's pages (AdminSidebar's links, a view transition
+   of type admin-page): a quick crossfade, with the admin's sidebar lifted out
+   so it holds still, above everything. A page's own sidebar (Subsections)
+   slides out from under it when the next page has none, and back out when
+   arriving on one that does; :only-child picks out exactly those cases, so
+   between two pages that both have one, or while the theme switches, it simply
+   crossfades with the rest. Leaving is quicker than arriving. */
+:root:active-view-transition-type(admin-page)::view-transition-old(*),
+:root:active-view-transition-type(admin-page)::view-transition-new(*) {
+	animation-duration: 180ms;
+	animation-timing-function: ease;
+}
+
+/* the page itself fades through: the old one gets out of the way quickly,
+   so the two are never both plainly readable at once */
+:root:active-view-transition-type(admin-page)::view-transition-old(root) {
+	animation-duration: 90ms;
+	animation-timing-function: ease-in;
+}
+
+:root:active-view-transition-type(admin-page)::view-transition-new(root) {
+	animation-duration: 220ms;
+	animation-timing-function: ease-out;
+}
+
+::view-transition-group(admin-sidebar) {
+	z-index: 1;
+}
+
+:root:active-view-transition-type(admin-page)::view-transition-new(admin-sections):only-child {
+	animation: admin-sections-in 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+:root:active-view-transition-type(admin-page)::view-transition-old(admin-sections):only-child {
+	animation: admin-sections-out 200ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes admin-sections-in {
+	from {
+		translate: -100% 0;
+	}
+}
+
+@keyframes admin-sections-out {
+	to {
+		translate: -100% 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	:root:active-view-transition-type(admin-page)::view-transition-old(*),
+	:root:active-view-transition-type(admin-page)::view-transition-new(*),
+	:root:active-view-transition-type(admin-page)::view-transition-old(root),
+	:root:active-view-transition-type(admin-page)::view-transition-new(root),
+	:root:active-view-transition-type(admin-page)::view-transition-old(admin-sections):only-child,
+	:root:active-view-transition-type(admin-page)::view-transition-new(admin-sections):only-child {
+		animation: none;
+	}
 }
 
 /* The toggle's icon is lifted out of that picture: with no old copy fading

@@ -2,7 +2,6 @@ import { createFileRoute } from '@tanstack/react-router';
 import { GitHubIcon } from '~/components/GitHubIcon';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
-import { ThemeToggle } from '~/components/ThemeToggle';
 import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
 import { BuildBadge, useBuildWatch } from '~/components/admin/BuildStatus';
 import { Button } from '~/components/ui/button';
@@ -64,21 +63,7 @@ function Overview({ overview }: { overview: Awaited<ReturnType<typeof getOvervie
 					</Link>,
 					'admin'
 				]}
-			>
-				<Link href="/admin/writing">writing</Link>
-				<Link href="/admin/photos">photos</Link>
-				<Link href="/admin/stats">stats</Link>
-				<Link href="/admin/race">race</Link>
-				<form method="post" action="/admin/logout">
-					<button
-						type="submit"
-						className="cursor-pointer text-foreground/50 transition-colors hover:text-foreground"
-					>
-						sign out
-					</button>
-				</form>
-				<ThemeToggle />
-			</AdminHeader>
+			/>
 
 			<ControlsRail
 				status={

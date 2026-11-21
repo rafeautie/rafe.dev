@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { XIcon } from 'lucide-react';
-import { lazy, Suspense, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Link } from '~/components/Link';
 import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
+import { readSection, Subsections } from '~/components/admin/Subsections';
 import { country, duration, formatMetric, NUMBER, place } from '~/components/admin/stats/format';
 import { FilterMenu } from '~/components/admin/stats/FilterMenu';
 import { Heatmap } from '~/components/admin/stats/Heatmap';
@@ -34,13 +35,16 @@ import { cn } from '~/lib/utils';
 // Who visits the site and what they do there, from lib/stats. The range, the
 // number on the chart and any filters are in the URL, so a view can be
 // bookmarked; which tab each section shows is remembered in this browser.
-type Search = { range?: Range; metric?: Metric } & Filters;
+const SECTIONS = ['traffic', 'pages', 'places', 'sources', 'devices', 'times', 'visits'] as const;
+type Section = (typeof SECTIONS)[number];
+type Search = { range?: Range; metric?: Metric; section?: Section } & Filters;
 
 export const Route = createFileRoute('/admin/stats/')({
 	validateSearch: (search: Record<string, unknown>): Search => ({
 		...(isRange(search.range) && { range: search.range }),
 		...(isMetric(search.metric) && { metric: search.metric }),
-		...readFilters(search)
+		...readFilters(search),
+		...readSection(SECTIONS, search)
 	}),
 	beforeLoad: requireAdmin,
 	loaderDeps: ({ search }) => ({
@@ -48,6 +52,8 @@ export const Route = createFileRoute('/admin/stats/')({
 		filters: readFilters(search as Record<string, unknown>)
 	}),
 	loader: ({ deps }) => getStats({ data: deps }),
+	// switching sections or the chart's number asks nothing new; a new range or filter does
+	shouldReload: ({ cause }) => cause !== 'stay',
 	component: StatsPage
 });
 
@@ -133,103 +139,125 @@ function StatsPage() {
 		FILTER_KEYS.map((key) => [key, key === 'page' ? stats.pages : stats.breakdowns[key]])
 	) as Record<FilterKey, Row[]>;
 
+	const header = (
+		<>
+			<AdminHeader
+				path={[
+					<Link key="rafe" href="/">
+						rafe
+					</Link>,
+					<Link key="admin" href="/admin">
+						admin
+					</Link>,
+					'stats'
+				]}
+			/>
+
+			<ControlsRail
+				status={
+					<>
+						<span suppressHydrationWarning>
+							{stats.last
+								? `last visit ${timeAgo(new Date(stats.last).toISOString())}`
+								: 'no visits yet'}
+						</span>
+						{filters.map(([key, value]) => (
+							<Badge key={key} variant="secondary" className="h-auto py-1 pr-1 font-normal">
+								{filterLabel(key, value)}
+								<button
+									type="button"
+									aria-label={`Stop filtering by ${DIMENSIONS[key].title.toLowerCase()}`}
+									onClick={() => setFilter(key, undefined)}
+									className="cursor-pointer rounded-full p-0.5 hover:bg-foreground/10"
+								>
+									<XIcon className="size-3" />
+								</button>
+							</Badge>
+						))}
+					</>
+				}
+			>
+				<FilterMenu values={values} filters={stats.filters} onFilter={setFilter} />
+				<ToggleGroup
+					variant="outline"
+					spacing={0}
+					aria-label="Time range"
+					value={[stats.range]}
+					onValueChange={(value) => {
+						const range = value[0];
+						if (isRange(range)) {
+							navigate({
+								search: (prev) => ({ ...prev, range: range === '7d' ? undefined : range })
+							});
+						}
+					}}
+				>
+					{(Object.keys(RANGES) as Range[]).map((range) => (
+						<ToggleGroupItem
+							key={range}
+							value={range}
+							title={RANGES[range].label}
+							className="px-2.5 font-normal"
+						>
+							{range}
+						</ToggleGroupItem>
+					))}
+				</ToggleGroup>
+			</ControlsRail>
+		</>
+	);
+
 	return (
 		<TooltipProvider>
-			<div className="mx-auto max-w-4xl">
-				<AdminHeader
-					path={[
-						<Link key="rafe" href="/">
-							rafe
-						</Link>,
-						<Link key="admin" href="/admin">
-							admin
-						</Link>,
-						'stats'
-					]}
-				/>
-
-				<ControlsRail
-					status={
-						<>
-							<span suppressHydrationWarning>
-								{stats.last
-									? `last visit ${timeAgo(new Date(stats.last).toISOString())}`
-									: 'no visits yet'}
-							</span>
-							{filters.map(([key, value]) => (
-								<Badge key={key} variant="secondary" className="h-auto py-1 pr-1 font-normal">
-									{filterLabel(key, value)}
-									<button
-										type="button"
-										aria-label={`Stop filtering by ${DIMENSIONS[key].title.toLowerCase()}`}
-										onClick={() => setFilter(key, undefined)}
-										className="cursor-pointer rounded-full p-0.5 hover:bg-foreground/10"
-									>
-										<XIcon className="size-3" />
-									</button>
-								</Badge>
-							))}
-						</>
-					}
-				>
-					<FilterMenu values={values} filters={stats.filters} onFilter={setFilter} />
-					<ToggleGroup
-						variant="outline"
-						spacing={0}
-						aria-label="Time range"
-						value={[stats.range]}
-						onValueChange={(value) => {
-							const range = value[0];
-							if (isRange(range)) {
-								navigate({
-									search: (prev) => ({ ...prev, range: range === '7d' ? undefined : range })
-								});
-							}
-						}}
-					>
-						{(Object.keys(RANGES) as Range[]).map((range) => (
-							<ToggleGroupItem
-								key={range}
-								value={range}
-								title={RANGES[range].label}
-								className="px-2.5 font-normal"
-							>
-								{range}
-							</ToggleGroupItem>
-						))}
-					</ToggleGroup>
-				</ControlsRail>
-
-				{stats.totals.views ? (
-					<Report
-						stats={stats}
-						metric={metric}
-						onMetric={(next) =>
-							navigate({
-								search: (prev) => ({ ...prev, metric: next === 'visitors' ? undefined : next })
+			{stats.totals.views ? (
+				<Report
+					stats={stats}
+					section={search.section}
+					onSection={(next) =>
+						navigate({
+							search: (prev) => ({
+								...prev,
+								section: next === 'traffic' ? undefined : (next as Section)
 							})
-						}
-						onFilter={setFilter}
-					/>
-				) : (
+						})
+					}
+					metric={metric}
+					onMetric={(next) =>
+						navigate({
+							search: (prev) => ({ ...prev, metric: next === 'visitors' ? undefined : next })
+						})
+					}
+					onFilter={setFilter}
+				>
+					{header}
+				</Report>
+			) : (
+				<div className="mx-auto max-w-4xl">
+					{header}
 					<p className="mt-10 text-foreground/50">
 						{filters.length
 							? 'No visits match these filters in this range.'
 							: 'Nobody has visited in this range. Visits count from when this page went live, and yours are left out while you are signed in.'}
 					</p>
-				)}
-			</div>
+				</div>
+			)}
 		</TooltipProvider>
 	);
 }
 
 function Report({
+	children,
 	stats,
+	section,
+	onSection,
 	metric,
 	onMetric,
 	onFilter
 }: {
+	children: ReactNode;
 	stats: Stats;
+	section: Section | undefined;
+	onSection: (section: string) => void;
 	metric: Metric;
 	onMetric: (metric: Metric) => void;
 	onFilter: (key: FilterKey, value: string) => void;
@@ -263,185 +291,233 @@ function Report({
 	}));
 
 	return (
-		<>
-			{/* the headline numbers; choosing one charts it over time */}
-			<div
-				role="tablist"
-				aria-label="Chart"
-				className="mt-8 grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-6"
-			>
-				{(Object.keys(METRICS) as Metric[]).map((key) => (
-					<button
-						key={key}
-						type="button"
-						role="tab"
-						aria-selected={metric === key}
-						onClick={() => onMetric(key)}
-						className={cn(
-							'flex cursor-pointer flex-col gap-1 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-foreground/[0.03]',
-							metric === key && 'bg-foreground/[0.05] hover:bg-foreground/[0.05]'
-						)}
-					>
-						<span className="text-sm text-foreground/50">{METRICS[key].label}</span>
-						<span className="text-2xl font-medium tracking-tight tabular-nums">
-							{formatMetric(key, stats.totals[key])}
-						</span>
-					</button>
-				))}
-			</div>
+		<Subsections
+			title="stats"
+			value={section}
+			onChange={onSection}
+			sections={[
+				{
+					key: 'traffic',
+					label: 'traffic',
+					content: (
+						<>
+							{/* the headline numbers; choosing one charts it over time */}
+							<div
+								role="tablist"
+								aria-label="Chart"
+								className="grid grid-cols-2 gap-1 sm:grid-cols-3 xl:grid-cols-6"
+							>
+								{(Object.keys(METRICS) as Metric[]).map((key) => (
+									<button
+										key={key}
+										type="button"
+										role="tab"
+										aria-selected={metric === key}
+										onClick={() => onMetric(key)}
+										className={cn(
+											'flex cursor-pointer flex-col gap-1 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-foreground/[0.03]',
+											metric === key && 'bg-foreground/[0.05] hover:bg-foreground/[0.05]'
+										)}
+									>
+										<span className="text-sm text-foreground/50">{METRICS[key].label}</span>
+										<span className="text-2xl font-medium tracking-tight tabular-nums">
+											{formatMetric(key, stats.totals[key])}
+										</span>
+									</button>
+								))}
+							</div>
 
-			<section className="mt-6">
-				<TimeChart
-					key={metric}
-					data={stats.series}
-					dataKey={metric}
-					label={METRICS[metric].label}
-					hourly={hourly}
-					format={(value) => formatMetric(metric, value)}
-				/>
-			</section>
-
-			<div className="mt-12 grid gap-x-12 gap-y-12 sm:grid-cols-2">
-				<Panel
-					className="sm:col-span-2"
-					value={pagesTab}
-					onChange={setPagesTab}
-					views={[
-						{
-							key: 'page',
-							title: 'Pages',
-							unit: (
-								<>
-									visitors
-									<span className="max-sm:hidden"> · read for · scrolled</span>
-								</>
-							),
-							content: (
-								<PageTable
-									rows={stats.pages}
-									active={filters.page}
-									onPick={(row) => onFilter('page', row.key)}
+							<section className="mt-6">
+								<TimeChart
+									key={metric}
+									data={stats.series}
+									dataKey={metric}
+									label={METRICS[metric].label}
+									hourly={hourly}
+									format={(value) => formatMetric(metric, value)}
 								/>
-							)
-						},
-						{
-							key: 'entry',
-							title: 'Entry pages',
-							unit: 'visitors',
-							content: ranking('page', b.entry)
-						},
-						{
-							key: 'clicks',
-							title: 'Links followed',
-							unit: 'clicks',
-							content: (
-								<Ranking
-									rows={stats.clicks}
-									by="views"
-									format={(row) => row.label.replace(/^https?:\/\//, '').replace(/\/$/, '')}
-									empty="No links followed off the site."
-								/>
-							)
-						}
-					]}
-				/>
-				<div className="grid items-start gap-x-12 gap-y-6 sm:col-span-2 sm:grid-cols-2">
-					<section>
-						{Globe && hydrated ? (
-							<Suspense fallback={<GlobeSpace />}>
-								<Globe
-									countries={b.country}
-									cities={stats.places.cities}
-									active={filters}
-									onPick={onFilter}
-								/>
-							</Suspense>
-						) : (
-							<GlobeSpace />
-						)}
-					</section>
-					<Panel
-						value={placesTab}
-						onChange={setPlacesTab}
-						views={[
-							{
-								key: 'country',
-								title: 'Countries',
-								unit: 'visitors',
-								content: ranking('country', b.country, (row) => country(row.key))
-							},
-							{
-								key: 'region',
-								title: 'Regions',
-								unit: 'visitors',
-								content: ranking('region', b.region)
-							},
-							{ key: 'city', title: 'Cities', unit: 'visitors', content: ranking('city', b.city) }
-						]}
-					/>
-				</div>
-				<Panel
-					value={sourcesTab}
-					onChange={setSourcesTab}
-					views={[
-						{
-							key: 'source',
-							title: 'Sources',
-							unit: 'visitors',
-							content: ranking('source', b.source)
-						},
-						{
-							key: 'campaign',
-							title: 'Campaigns',
-							unit: 'visitors',
-							content: (
-								<Ranking
-									rows={b.campaign}
-									empty="No campaign links used. Add ?ref=name to a link you share."
-								/>
-							)
-						}
-					]}
-				/>
-				<Panel menu value={moreTab} onChange={setMoreTab} views={more} />
-				<section className="sm:col-span-2">
-					<h2 className="flex min-h-10 items-center border-b border-foreground/10 pb-2 text-sm text-foreground/50">
-						When people visit
-					</h2>
-					<div className="pt-4">
-						<Heatmap cells={stats.heatmap} />
-					</div>
-				</section>
-			</div>
-
-			<Panel
-				className="mt-12"
-				value={visitsTab}
-				onChange={setVisitsTab}
-				views={[
-					{
-						key: 'latest',
-						title: 'Latest visits',
-						unit: `${stats.recent.length} shown`,
-						content: (
-							<ScrollArea fade viewportClassName="max-h-[32rem]">
-								<VisitList visits={stats.recent} />
-							</ScrollArea>
-						)
-					},
-					{
-						key: 'visitors',
-						title: 'Visitors',
-						unit: 'visits',
-						content: (
-							<ScrollArea fade viewportClassName="max-h-[32rem]">
-								<VisitorList visitors={stats.visitors} />
-							</ScrollArea>
-						)
-					}
-				]}
-			/>
-		</>
+							</section>
+						</>
+					)
+				},
+				{
+					key: 'pages',
+					label: 'pages',
+					content: (
+						<Panel
+							value={pagesTab}
+							onChange={setPagesTab}
+							views={[
+								{
+									key: 'page',
+									title: 'Pages',
+									unit: (
+										<>
+											visitors
+											<span className="max-sm:hidden"> · read for · scrolled</span>
+										</>
+									),
+									content: (
+										<PageTable
+											rows={stats.pages}
+											active={filters.page}
+											onPick={(row) => onFilter('page', row.key)}
+										/>
+									)
+								},
+								{
+									key: 'entry',
+									title: 'Entry pages',
+									unit: 'visitors',
+									content: ranking('page', b.entry)
+								},
+								{
+									key: 'clicks',
+									title: 'Links followed',
+									unit: 'clicks',
+									content: (
+										<Ranking
+											rows={stats.clicks}
+											by="views"
+											format={(row) => row.label.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+											empty="No links followed off the site."
+										/>
+									)
+								}
+							]}
+						/>
+					)
+				},
+				{
+					key: 'places',
+					label: 'places',
+					content: (
+						<div className="grid items-start gap-x-12 gap-y-6 sm:grid-cols-2">
+							<section>
+								{Globe && hydrated ? (
+									<Suspense fallback={<GlobeSpace />}>
+										<Globe
+											countries={b.country}
+											cities={stats.places.cities}
+											active={filters}
+											onPick={onFilter}
+										/>
+									</Suspense>
+								) : (
+									<GlobeSpace />
+								)}
+							</section>
+							<Panel
+								value={placesTab}
+								onChange={setPlacesTab}
+								views={[
+									{
+										key: 'country',
+										title: 'Countries',
+										unit: 'visitors',
+										content: ranking('country', b.country, (row) => country(row.key))
+									},
+									{
+										key: 'region',
+										title: 'Regions',
+										unit: 'visitors',
+										content: ranking('region', b.region)
+									},
+									{
+										key: 'city',
+										title: 'Cities',
+										unit: 'visitors',
+										content: ranking('city', b.city)
+									}
+								]}
+							/>
+						</div>
+					)
+				},
+				{
+					key: 'sources',
+					label: 'sources',
+					content: (
+						<Panel
+							value={sourcesTab}
+							onChange={setSourcesTab}
+							views={[
+								{
+									key: 'source',
+									title: 'Sources',
+									unit: 'visitors',
+									content: ranking('source', b.source)
+								},
+								{
+									key: 'campaign',
+									title: 'Campaigns',
+									unit: 'visitors',
+									content: (
+										<Ranking
+											rows={b.campaign}
+											empty="No campaign links used. Add ?ref=name to a link you share."
+										/>
+									)
+								}
+							]}
+						/>
+					)
+				},
+				{
+					key: 'devices',
+					label: 'devices',
+					content: <Panel menu value={moreTab} onChange={setMoreTab} views={more} />
+				},
+				{
+					key: 'times',
+					label: 'times',
+					content: (
+						<section>
+							<h2 className="flex min-h-10 items-center border-b border-foreground/10 pb-2 text-sm text-foreground/50">
+								When people visit
+							</h2>
+							<div className="pt-4">
+								<Heatmap cells={stats.heatmap} />
+							</div>
+						</section>
+					)
+				},
+				{
+					key: 'visits',
+					label: 'visits',
+					content: (
+						<Panel
+							value={visitsTab}
+							onChange={setVisitsTab}
+							views={[
+								{
+									key: 'latest',
+									title: 'Latest visits',
+									unit: `${stats.recent.length} shown`,
+									content: (
+										<ScrollArea fade viewportClassName="max-h-[32rem]">
+											<VisitList visits={stats.recent} />
+										</ScrollArea>
+									)
+								},
+								{
+									key: 'visitors',
+									title: 'Visitors',
+									unit: 'visits',
+									content: (
+										<ScrollArea fade viewportClassName="max-h-[32rem]">
+											<VisitorList visitors={stats.visitors} />
+										</ScrollArea>
+									)
+								}
+							]}
+						/>
+					)
+				}
+			]}
+		>
+			{children}
+		</Subsections>
 	);
 }
 

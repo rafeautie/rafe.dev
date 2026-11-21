@@ -1,8 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link } from '~/components/Link';
 import { AdminHeader, ControlsRail, ProblemBadge } from '~/components/admin/AdminHeader';
 import { ConfirmDialog } from '~/components/admin/ConfirmDialog';
+import { readSection, Subsections } from '~/components/admin/Subsections';
 import { NUMBER } from '~/components/admin/stats/format';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
@@ -36,9 +37,15 @@ import { cn } from '~/lib/utils';
 // numbers it runs on, and the house's books. Everything is the room's word,
 // asked for again every few seconds while the page is open.
 
+const SECTIONS = ['loop', 'players', 'tuning', 'ledger', 'cars', 'races'] as const;
+
 export const Route = createFileRoute('/admin/race')({
+	// which section shows on a wide screen
+	validateSearch: (search: Record<string, unknown>) => readSection(SECTIONS, search),
 	beforeLoad: requireAdmin,
 	loader: () => getRaceAdmin({ data: { search: '' } }),
+	// the page polls for itself, so switching sections asks nothing new
+	shouldReload: ({ cause }) => cause !== 'stay',
 	component: RacePage
 });
 
@@ -54,6 +61,8 @@ function message(error: unknown) {
 }
 
 function RacePage() {
+	const { section } = Route.useSearch();
+	const navigate = useNavigate({ from: Route.fullPath });
 	const [view, setView] = useState<RaceAdminView>(Route.useLoaderData());
 	// how far the room's clock is ahead of this one, for the time left
 	const [skew, setSkew] = useState(0);
@@ -109,7 +118,43 @@ function RacePage() {
 	const left = Math.max(0, Math.ceil((loop.endsAt - now - skew) / 1000));
 
 	return (
-		<div className="mx-auto max-w-4xl">
+		<Subsections
+			title="race"
+			value={section}
+			onChange={(key) =>
+				navigate({ search: { section: key === 'loop' ? undefined : (key as typeof section) } })
+			}
+			sections={[
+				{ key: 'loop', label: 'race loop', content: <Loop loop={loop} /> },
+				{
+					key: 'players',
+					label: 'players',
+					content: (
+						<Players
+							players={view.players}
+							search={search}
+							setSearch={setSearch}
+							busy={busy}
+							act={act}
+						/>
+					)
+				},
+				{
+					key: 'tuning',
+					label: 'tuning',
+					content: (
+						<Tuning key={JSON.stringify(view.settings)} {...view.settings} busy={busy} act={act} />
+					)
+				},
+				{
+					key: 'ledger',
+					label: 'house ledger',
+					content: <Ledger totals={view.history.totals} />
+				},
+				{ key: 'cars', label: 'cars', content: <Cars cars={view.history.cars} /> },
+				{ key: 'races', label: 'recent races', content: <Races races={view.history.races} /> }
+			]}
+		>
 			<AdminHeader
 				path={[
 					<Link key="rafe" href="/">
@@ -160,12 +205,7 @@ function RacePage() {
 				destructive
 				onConfirm={() => act(() => voidRace())}
 			/>
-
-			<Loop loop={loop} />
-			<Players players={view.players} search={search} setSearch={setSearch} busy={busy} act={act} />
-			<Tuning key={JSON.stringify(view.settings)} {...view.settings} busy={busy} act={act} />
-			<History history={view.history} />
-		</div>
+		</Subsections>
 	);
 }
 
@@ -179,7 +219,7 @@ function Section({
 	children: ReactNode;
 }) {
 	return (
-		<section className="mt-10">
+		<section>
 			<div className="flex min-h-10 items-center justify-between gap-4 border-b border-foreground/10 pb-2 text-sm text-foreground/50">
 				<h2>{title}</h2>
 				{aside}
@@ -490,7 +530,7 @@ function Tuning({
 								step={1}
 								value={Number.isNaN(draft[key]) ? '' : draft[key]}
 								onChange={(event) => setDraft({ ...draft, [key]: number(event.target.value) })}
-								className="w-28"
+								className="w-28 shrink-0"
 							/>
 						</label>
 					))}
@@ -522,106 +562,113 @@ function Tuning({
 	);
 }
 
-function History({ history }: { history: RaceAdminView['history'] }) {
-	const { totals, cars, races } = history;
+type History = RaceAdminView['history'];
+
+function Ledger({ totals }: { totals: History['totals'] }) {
 	return (
-		<>
-			<Section title="House ledger">
-				<div className="grid grid-cols-2 gap-x-6 sm:grid-cols-3">
-					<Figure label="Races run" value={NUMBER.format(totals.run)} />
-					<Figure label="Staked" value={NUMBER.format(totals.staked)} />
-					<Figure label="Paid out" value={NUMBER.format(totals.paid)} />
-					<Figure label="House net" value={NUMBER.format(totals.net)} />
-					<Figure label="Given by bankruptcies" value={NUMBER.format(totals.bankruptcies)} />
-					<Figure label="Given by resets" value={NUMBER.format(totals.resets)} />
-				</div>
-			</Section>
+		<Section title="House ledger">
+			<div className="grid grid-cols-2 gap-x-6 sm:grid-cols-3">
+				<Figure label="Races run" value={NUMBER.format(totals.run)} />
+				<Figure label="Staked" value={NUMBER.format(totals.staked)} />
+				<Figure label="Paid out" value={NUMBER.format(totals.paid)} />
+				<Figure label="House net" value={NUMBER.format(totals.net)} />
+				<Figure label="Given by bankruptcies" value={NUMBER.format(totals.bankruptcies)} />
+				<Figure label="Given by resets" value={NUMBER.format(totals.resets)} />
+			</div>
+		</Section>
+	);
+}
 
-			<Section title="Cars">
-				{cars.length ? (
-					<Table
-						head={[
-							'Car',
-							'Starts',
-							'Wins',
-							'Win rate',
-							'Podiums',
-							'First out',
-							'Fastest lap',
-							'Avg finish'
-						]}
-					>
-						{cars.map((car) => (
-							<tr key={car.car}>
-								<td className={cell}>{carName(car.car)}</td>
-								<td className={cell}>{car.starts}</td>
-								<td className={cell}>{car.wins}</td>
-								<td className={cell}>{Math.round(car.winRate * 100)}%</td>
-								<td className={cell}>{car.podiums}</td>
-								<td className={cell}>{car.firstOuts}</td>
-								<td className={cell}>{car.fastestLaps}</td>
-								<td className={cell}>{car.averagePlace.toFixed(2)}</td>
-							</tr>
-						))}
-					</Table>
-				) : (
-					<p className="py-3 text-foreground/50">No races run yet.</p>
-				)}
-			</Section>
+function Cars({ cars }: { cars: History['cars'] }) {
+	return (
+		<Section title="Cars">
+			{cars.length ? (
+				<Table
+					head={[
+						'Car',
+						'Starts',
+						'Wins',
+						'Win rate',
+						'Podiums',
+						'First out',
+						'Fastest lap',
+						'Avg finish'
+					]}
+				>
+					{cars.map((car) => (
+						<tr key={car.car}>
+							<td className={cell}>{carName(car.car)}</td>
+							<td className={cell}>{car.starts}</td>
+							<td className={cell}>{car.wins}</td>
+							<td className={cell}>{Math.round(car.winRate * 100)}%</td>
+							<td className={cell}>{car.podiums}</td>
+							<td className={cell}>{car.firstOuts}</td>
+							<td className={cell}>{car.fastestLaps}</td>
+							<td className={cell}>{car.averagePlace.toFixed(2)}</td>
+						</tr>
+					))}
+				</Table>
+			) : (
+				<p className="py-3 text-foreground/50">No races run yet.</p>
+			)}
+		</Section>
+	);
+}
 
-			<Section title="Recent races" aside={<span>last {races.length}</span>}>
-				{races.length ? (
-					<Table
-						head={[
-							'Race',
-							'Started',
-							'Grid',
-							'Finish',
-							'First out',
-							'Fastest lap',
-							'Staked',
-							'Paid',
-							'Net'
-						]}
-					>
-						{races.map((race) => (
-							<tr key={race.round} className={cn(race.voided && 'text-foreground/50')}>
-								<td className={cell}>
-									{race.round}
-									{race.voided && (
-										<Badge variant="secondary" className="ml-2">
-											Void
-										</Badge>
-									)}
-								</td>
-								<td className={cell} suppressHydrationWarning>
-									{time(race.started)}
-								</td>
-								<td className={cn(cell, 'whitespace-normal')}>
-									{race.grid
-										.map(
-											({ car, condition }) =>
-												`${carName(car)}${condition === 'normal' ? '' : ` (${CONDITIONS[condition]?.label ?? condition})`}`
-										)
-										.join(', ') || '–'}
-								</td>
-								<td className={cn(cell, 'whitespace-normal')}>
-									{race.order.map(carName).join(', ') || '–'}
-								</td>
-								<td className={cell}>{race.firstOut ? carName(race.firstOut) : '–'}</td>
-								<td className={cell}>{race.fastest ? carName(race.fastest) : '–'}</td>
-								<td className={cell}>{NUMBER.format(race.staked)}</td>
-								<td className={cell}>{NUMBER.format(race.paid)}</td>
-								<td className={cn(cell, race.net < 0 && 'text-destructive')}>
-									{NUMBER.format(race.net)}
-								</td>
-							</tr>
-						))}
-					</Table>
-				) : (
-					<p className="py-3 text-foreground/50">No races yet.</p>
-				)}
-			</Section>
-		</>
+function Races({ races }: { races: History['races'] }) {
+	return (
+		<Section title="Recent races" aside={<span>last {races.length}</span>}>
+			{races.length ? (
+				<Table
+					head={[
+						'Race',
+						'Started',
+						'Grid',
+						'Finish',
+						'First out',
+						'Fastest lap',
+						'Staked',
+						'Paid',
+						'Net'
+					]}
+				>
+					{races.map((race) => (
+						<tr key={race.round} className={cn(race.voided && 'text-foreground/50')}>
+							<td className={cell}>
+								{race.round}
+								{race.voided && (
+									<Badge variant="secondary" className="ml-2">
+										Void
+									</Badge>
+								)}
+							</td>
+							<td className={cell} suppressHydrationWarning>
+								{time(race.started)}
+							</td>
+							<td className={cn(cell, 'whitespace-normal')}>
+								{race.grid
+									.map(
+										({ car, condition }) =>
+											`${carName(car)}${condition === 'normal' ? '' : ` (${CONDITIONS[condition]?.label ?? condition})`}`
+									)
+									.join(', ') || '–'}
+							</td>
+							<td className={cn(cell, 'whitespace-normal')}>
+								{race.order.map(carName).join(', ') || '–'}
+							</td>
+							<td className={cell}>{race.firstOut ? carName(race.firstOut) : '–'}</td>
+							<td className={cell}>{race.fastest ? carName(race.fastest) : '–'}</td>
+							<td className={cell}>{NUMBER.format(race.staked)}</td>
+							<td className={cell}>{NUMBER.format(race.paid)}</td>
+							<td className={cn(cell, race.net < 0 && 'text-destructive')}>
+								{NUMBER.format(race.net)}
+							</td>
+						</tr>
+					))}
+				</Table>
+			) : (
+				<p className="py-3 text-foreground/50">No races yet.</p>
+			)}
+		</Section>
 	);
 }

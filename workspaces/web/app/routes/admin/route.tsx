@@ -4,9 +4,14 @@ import {
 	useRouter,
 	type ErrorComponentProps
 } from '@tanstack/react-router';
+import type { CSSProperties } from 'react';
 import { Link } from '~/components/Link';
+import { AdminSidebar } from '~/components/admin/AdminSidebar';
 import { Button } from '~/components/ui/button';
+import { SidebarInset, SidebarProvider } from '~/components/ui/sidebar';
+import { TooltipProvider } from '~/components/ui/tooltip';
 import { getAdmin } from '~/lib/admin/api';
+import { sidebarOpen } from '~/lib/admin/sidebar';
 import { whoIsSignedIn } from '~/lib/admin/signed-in';
 import { useWritingTheme } from '~/lib/writing-theme';
 
@@ -19,20 +24,44 @@ export const Route = createFileRoute('/admin')({
 		meta: [{ title: 'Admin | Rafe Autie' }, { name: 'robots', content: 'noindex, nofollow' }]
 	}),
 	beforeLoad: async () => {
-		if (typeof window === 'undefined') return { admin: await getAdmin() };
-		// a lapsed sign-in shows AdminError on the next server call
-		return { admin: await whoIsSignedIn() };
+		const [admin, open] = await Promise.all([
+			// a lapsed sign-in shows AdminError on the next server call
+			typeof window === 'undefined' ? getAdmin() : whoIsSignedIn(),
+			sidebarOpen()
+		]);
+		return { admin, sidebarOpen: open };
 	},
 	component: AdminLayout,
 	errorComponent: AdminError
 });
 
+// Signed in, the admin sidebar sits beside every page, open or folded to its
+// icons as it was left (on a phone it slides in from the header); the sign-in
+// page stands alone. A page with its own sidebar (Subsections) sets its own
+// padding.
+
 function AdminLayout() {
 	useWritingTheme();
-	return (
-		<div className="min-h-dvh bg-background px-6 py-8 text-base text-foreground sm:px-8">
+	const { admin, sidebarOpen } = Route.useRouteContext();
+	const page = (
+		<div className="min-w-0 flex-1 px-6 py-8 sm:px-8 lg:px-12 lg:has-[[data-subsections]]:p-0">
 			<Outlet />
 		</div>
+	);
+	if (!admin) {
+		return <main className="min-h-dvh bg-background text-base text-foreground">{page}</main>;
+	}
+	return (
+		<TooltipProvider>
+			<SidebarProvider
+				defaultOpen={sidebarOpen}
+				style={{ '--sidebar-width': '14rem' } as CSSProperties}
+				className="text-base text-foreground"
+			>
+				<AdminSidebar />
+				<SidebarInset>{page}</SidebarInset>
+			</SidebarProvider>
+		</TooltipProvider>
 	);
 }
 
