@@ -215,6 +215,34 @@ describe('the betting', () => {
 		expect(JSON.stringify(other.all('board'))).not.toContain('secret');
 	});
 
+	it('puts only the players watching now on the board', SLOW, async () => {
+		const room = await quick('watching');
+		const stayer = await watch(room, 'secret-of-the-stayer');
+		const leaver = await watch(room, 'secret-of-the-leaver');
+		await vi.waitFor(() => expect(stayer.all('you')).toHaveLength(1));
+		await vi.waitFor(() => expect(leaver.all('you')).toHaveLength(1));
+		const stays = stayer.last('you').you.id;
+		const leaves = leaver.last('you').you.id;
+		const onBoard = () => stayer.last('board').board.map((player) => player.id);
+		// the one already there is told when somebody arrives
+		await vi.waitFor(() => expect(onBoard().sort()).toEqual([stays, leaves].sort()));
+
+		// a second page of theirs closing leaves them on it
+		const tab = await watch(room, 'secret-of-the-leaver');
+		await vi.waitFor(() => expect(tab.all('board')).toHaveLength(1));
+		const told = stayer.all('board').length;
+		tab.socket.close(1000, 'gone');
+		await vi.waitFor(async () =>
+			expect(await runInDurableObject(room, (_, state) => state.getWebSockets())).toHaveLength(2)
+		);
+		expect(stayer.all('board')).toHaveLength(told);
+
+		// their last one closing takes them off, and somebody only watching is never on it
+		await watch(room);
+		leaver.socket.close(1000, 'gone');
+		await vi.waitFor(() => expect(onBoard()).toEqual([stays]));
+	});
+
 	it('takes a bet, moves the odds, and tells everyone', SLOW, async () => {
 		const room = await quick('placing');
 		const punter = await watch(room, 'secret-of-the-punter');

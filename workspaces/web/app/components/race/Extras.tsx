@@ -51,8 +51,8 @@ export function Extras({
 					{board.length === 0 && (
 						<Empty
 							icon={TrophyIcon}
-							title="No players yet"
-							hint="Place a bet to get on the board"
+							title="Nobody is playing"
+							hint="Players show up here while they watch"
 						/>
 					)}
 					{board.slice(0, 6).map((player, place) => (

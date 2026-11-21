@@ -124,7 +124,9 @@ export class RaceRoom extends DurableObject<Env> {
 			if (state.phase !== 'betting' && recording) server.send(recording);
 		}
 		if (player) this.send(server, this.you(player));
-		this.send(server, this.board());
+		// a player arriving is on the board now, for everyone
+		if (player) this.tell(this.board());
+		else this.send(server, this.board());
 		return new Response(null, { status: 101, webSocket: client });
 	}
 
@@ -159,6 +161,17 @@ export class RaceRoom extends DurableObject<Env> {
 		// answer the close; the codes a browser reports but cannot be sent are left out
 		if (code === 1005 || code === 1006 || code === 1015) socket.close();
 		else socket.close(code, reason);
+		this.left(socket);
+	}
+
+	webSocketError(socket: WebSocket) {
+		this.left(socket);
+	}
+
+	/** A page gone: if it was its player's last, the board goes out without them. */
+	private left(socket: WebSocket) {
+		const player: number | null = socket.deserializeAttachment();
+		if (player && !this.connected(socket).has(player)) this.tell(this.board(socket));
 	}
 
 	/** The end of a phase. */
@@ -449,12 +462,29 @@ export class RaceRoom extends DurableObject<Env> {
 		return { type: 'you', you, bets };
 	}
 
-	private board(): FromRoom {
-		const board = this.sql
-			.exec<Standing>(
-				'SELECT id, name, balance, bankruptcies FROM players WHERE banned = 0 ORDER BY balance DESC LIMIT 20'
-			)
-			.toArray();
+	/** The players with a page open, but for one that is closing. */
+	private connected(closing?: WebSocket) {
+		const players = new Set<number>();
+		for (const socket of this.ctx.getWebSockets()) {
+			const player: number | null = socket.deserializeAttachment();
+			if (player && socket !== closing) players.add(player);
+		}
+		return players;
+	}
+
+	/** The leaderboard: only the players watching now, richest first. */
+	private board(closing?: WebSocket): FromRoom {
+		const ids = [...this.connected(closing)];
+		const board = ids.length
+			? this.sql
+					.exec<Standing>(
+						`SELECT id, name, balance, bankruptcies FROM players
+						 WHERE banned = 0 AND id IN (SELECT value FROM json_each(?))
+						 ORDER BY balance DESC LIMIT 20`,
+						JSON.stringify(ids)
+					)
+					.toArray()
+			: [];
 		return { type: 'board', board };
 	}
 
