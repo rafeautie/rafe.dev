@@ -180,7 +180,8 @@ function RacePage() {
 								</>
 							)}
 						</span>
-						{loop.caution && <Badge variant="secondary">Caution</Badge>}
+						{loop.flag === 'yellow' && <Badge variant="secondary">Caution</Badge>}
+						{loop.flag === 'restart' && <Badge variant="secondary">Going green</Badge>}
 						{loop.paused && <Badge variant="secondary">Paused</Badge>}
 						<ProblemBadge text={problem} onDismiss={() => setProblem(null)} />
 					</>
@@ -196,7 +197,7 @@ function RacePage() {
 				{/* the field slows and closes up behind the leader, then races on; the room says why not if it cannot */}
 				<Button
 					variant="outline"
-					disabled={busy || loop.phase !== 'racing' || loop.caution}
+					disabled={busy || loop.phase !== 'racing' || loop.flag !== 'green'}
 					onClick={() => act(() => cautionRace())}
 				>
 					Throw caution

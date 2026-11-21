@@ -1,7 +1,7 @@
 import { createPainter, hex, mix, type Painter } from './pixels';
 import { standing, type ReplayTruck } from './recording';
 import { GARAGE, HALF_LANE, NEARSIDE, RING, SLIP, TRUCK, serviceFor, type Route } from './service';
-import type { Car, Flag, RaceEvent } from './sim';
+import { neutral, type Car, type Flag, type RaceEvent } from './sim';
 import { HULL } from './sim';
 import {
 	HALF_CORRIDOR,
@@ -628,11 +628,11 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 
 			frame.set(ground);
 			// A gate is shut, its barrier across it, unless it has been opened
-			// for a truck to go through. Under caution the lamps flash.
+			// for a truck to go through. Under caution, and until the green, the lamps flash.
 			painting.barriers.forEach((barrier, index) => {
 				if (!service.trucks.some((truck) => truck.gate === index)) barrier.forEach(dab);
 			});
-			const lit = service.flag === 'yellow' && Math.floor(performance.now() / 300) & 1;
+			const lit = neutral(service.flag) && Math.floor(performance.now() / 300) & 1;
 			for (const lamp of painting.lamps) dab({ ...lamp, colour: lit ? LAMP : LAMP_OUT });
 			// a truck in its garage is under the roof, and need not be drawn at all
 			const trucks = service.trucks.filter((truck) => truck.busy);

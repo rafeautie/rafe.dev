@@ -307,7 +307,7 @@ const GOLD = hex('#ffd24a');
 const GOOD = hex('#6fdc7a');
 const BAD = hex('#ff6b61');
 const ALARM = hex('#c8382f');
-/** The caution flag, and the green one. */
+/** The caution flag, and the green one, which is also the colour of going green. */
 const FLAG = hex('#f7e135');
 const GO = hex('#27a84a');
 const BODY = Object.fromEntries(ROSTER.map((car) => [car.id, hex(car.color)]));
@@ -351,7 +351,8 @@ export function createHud() {
 	 * The bar across the top of a panel: what it is on the left, a figure on
 	 * the right. With `alarm` it is red. With `flying` it starts with that
 	 * flag, as a small one: green, yellow, or checked black and white. Under
-	 * the yellow one the whole bar is yellow too.
+	 * the yellow one the whole bar is yellow too; going green, the bar is
+	 * yellow and the flag green.
 	 */
 	function head(
 		p: Painter,
@@ -362,10 +363,17 @@ export function createHud() {
 		flying: Flag | null = null
 	) {
 		const ink = alarm ? PAPER : INK;
-		p.fill(x, y, w, 15, flying === 'yellow' ? FLAG : alarm ? ALARM : PAPER);
+		const neutralised = flying === 'yellow' || flying === 'restart';
+		p.fill(x, y, w, 15, neutralised ? FLAG : alarm ? ALARM : PAPER);
 		if (flying) {
 			p.fill(x + 3, y + 3, 14, 8, INK);
-			p.fill(x + 4, y + 4, 12, 6, flying === 'green' ? GO : flying === 'yellow' ? FLAG : PAPER);
+			p.fill(
+				x + 4,
+				y + 4,
+				12,
+				6,
+				flying === 'green' || flying === 'restart' ? GO : flying === 'yellow' ? FLAG : PAPER
+			);
 			// the checks: every other square of two pixels dark
 			for (let square = flying === 'checkered' ? 0 : 18; square < 18; square++) {
 				const [column, row] = [square % 6, Math.floor(square / 6)];
@@ -407,13 +415,17 @@ export function createHud() {
 		else if (phase === 'betting')
 			head(p, at, urgent ? 'Last call' : 'Bets open', clock(left), urgent);
 		else if (phase === 'racing' && replay && replay.time >= LIGHTS)
-			// the flag that is flying, and its name: a caution turns the whole bar yellow
+			// the flag that is flying, and its name: a caution, and going green
+			// after it, turn the whole bar yellow
 			head(p, at, FLAGS[replay.flag], `Lap ${lap}/${LAPS}`, false, replay.flag);
 		else if (phase === 'racing') head(p, at, 'On the grid', `Race ${room.round}`);
 		else if (phase === 'results') head(p, at, 'Result', clock(left), false, 'checkered');
 		else head(p, at, 'Waiting', '');
 
-		// bet, race, result: each as long as it lasts, filled as far as it has got
+		// bet, race, result: each as long as it lasts, filled as far as it has
+		// got; the race, while it is neutralised, in the colour of the flag
+		const flying = phase === 'racing' && replay && replay.time >= LIGHTS ? replay.flag : null;
+		const racing = flying === 'yellow' ? FLAG : flying === 'restart' ? GO : PAPER;
 		const betting = room?.settings.bettingSeconds ?? 45;
 		const results = room?.settings.resultsSeconds ?? 15;
 		const raced = leader && replay ? replay.raced(leader) : 0;
@@ -431,7 +443,7 @@ export function createHud() {
 			const width = Math.round(((w - 12) * seconds) / total);
 			p.fill(sx, y + 17, width, 3, FAINT);
 			const done = Math.round(width * Math.max(0, Math.min(1, fill)));
-			p.fill(sx, y + 17, done, 3, index === 0 && urgent ? BAD : PAPER);
+			p.fill(sx, y + 17, done, 3, index === 0 && urgent ? BAD : index === 1 ? racing : PAPER);
 			sx += width + 2;
 		});
 

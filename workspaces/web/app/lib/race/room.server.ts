@@ -21,7 +21,7 @@ import {
 } from './room';
 import { drawConditions, inCondition, ROSTER } from './roster';
 import { checkSettings, DEFAULT_SETTINGS, tuned, type Settings } from './settings';
-import { drawGrid, flown, LIGHTS, random, rank, type Flag, type RaceEvent } from './sim';
+import { drawGrid, flown, LIGHTS, neutral, random, rank, type Flag, type RaceEvent } from './sim';
 import { getTrack } from './track';
 
 // The one room everybody at /race is in. It runs the cycle (betting, the
@@ -705,7 +705,7 @@ export class RaceRoom extends DurableObject<Env> {
 		if (at <= LIGHTS) return 'The race has not started';
 		const shown = createReplay(unpack(bytes), ROSTER);
 		shown.seek(at);
-		if (shown.flag === 'yellow') return 'A caution is already out';
+		if (neutral(shown.flag)) return 'A caution is already out';
 		if (at >= shown.duration || shown.cars.some((car) => car.finishTime)) {
 			return 'The race is as good as over';
 		}
@@ -744,15 +744,14 @@ export class RaceRoom extends DurableObject<Env> {
 		this.tell(this.board());
 	}
 
-	/** Whether the race being shown is under caution at this moment. */
-	private caution(state: RoomState) {
-		if (state.phase !== 'racing') return false;
+	/** The flag flying in the race being shown at this moment, or null when no race is. */
+	private flag(state: RoomState): Flag | null {
+		if (state.phase !== 'racing') return null;
 		const at = (Date.now() - state.startsAt) / 1000;
 		const signals = this.ctx.storage.kv.get<Pick<RaceEvent, 'kind' | 'time'>[]>('signals') ?? [];
-		const flag = signals
+		return signals
 			.filter((signal) => signal.time <= at)
 			.reduce<Flag>((flying, signal) => flown(flying, signal.kind), 'green');
-		return flag === 'yellow';
 	}
 
 	private loopView() {
@@ -781,7 +780,7 @@ export class RaceRoom extends DurableObject<Env> {
 			}[state.phase],
 			endsAt: state.endsAt,
 			now: Date.now(),
-			caution: this.caution(state),
+			flag: this.flag(state),
 			paused: this.paused,
 			viewers: sockets.length,
 			players: new Set(sockets.map((socket) => socket.deserializeAttachment()).filter(Boolean))

@@ -12,11 +12,12 @@ import { clamp, HALF_CORRIDOR, HALF_ROAD, lateral, MAX_OFFSET, nearest, type Tra
 //
 // A retirement brings out a caution: the whole field slows, closes up into a
 // queue behind the leader and holds its order while a truck fetches the wreck
-// (recovery.ts). Race control can throw one by hand as well. The race goes
-// green again as the leader crosses the finish line, once the track is clear
-// and the field has closed up. A lap the leader ends under caution is not one
-// of the race's: it is run again, so the race is that much longer and is
-// never won under caution.
+// (recovery.ts). Race control can throw one by hand as well. Once the track
+// is clear and the field has closed up, the race is going green: the field
+// lines up two by two behind the leader, and the green is given as the leader
+// crosses the finish line, if they have had long enough to form up, or a lap
+// later. A lap the leader ends under caution is not one of the race's: it is
+// run again, so the race is that much longer and is never won under caution.
 
 export const DT = 1 / 60;
 export const LAPS = 3;
@@ -54,6 +55,17 @@ const QUEUE = 8;
 /** A caution lasts at least this long, and the field is given no longer than this to close up before it is let go at the line anyway. */
 const CAUTION_MIN = 8;
 const CAUTION_MAX = 25;
+/**
+ * Going green: the fastest the field closes up into its two lines behind
+ * the leader, how far either side of the middle of the road the lines run,
+ * the least time it is given to form up before the green, and how long
+ * after it each car keeps to its line, so the rows do not all dive for the
+ * same piece of road at the first corner.
+ */
+const FORM = 21;
+const LANE = 2;
+const RESTART_MIN = 6;
+const SETTLE = 6;
 /** A knock slower than this (m/s) leaves no mark. */
 const SHRUG = 2.5;
 /** The furthest any corner of the bodywork can be pushed in. */
@@ -122,8 +134,13 @@ type Happening =
 	/** A lap completed, and the seconds it took. */
 	| { kind: 'lap'; lap: number }
 	| { kind: 'retire' | 'finish' }
-	/** The caution comes out, for a wreck or because race control threw it, and goes back in. */
+	/**
+	 * The caution comes out, for a wreck or because race control threw it;
+	 * the field is going green, lining up for the restart; and the caution
+	 * goes back in.
+	 */
 	| { kind: 'caution'; by: 'wreck' | 'control' }
+	| { kind: 'restart' }
 	| { kind: 'green' }
 	/** The leader ends a lap under caution: it does not count, and the race is a lap longer. */
 	| { kind: 'again' };
@@ -135,18 +152,26 @@ type Happening =
  */
 export type RaceEvent = Happening & { time: number; car: number };
 
-/** The flag flying: green while it is raced, yellow under caution, checkered once it has been won. */
-export type Flag = 'green' | 'yellow' | 'checkered';
+/**
+ * The flag flying: green while it is raced, yellow under caution, restart
+ * while the field lines up to go green again, checkered once it has been won.
+ */
+export type Flag = 'green' | 'yellow' | 'restart' | 'checkered';
+
+/** The flags under which the race is neutralised: the caution, and going green at the end of it. */
+export const neutral = (flag: Flag) => flag === 'yellow' || flag === 'restart';
 
 /** The flag flying after something has happened, given the one that was. */
 export const flown = (flag: Flag, kind: RaceEvent['kind']): Flag =>
 	kind === 'caution'
 		? 'yellow'
-		: kind === 'green'
-			? 'green'
-			: kind === 'finish'
-				? 'checkered'
-				: flag;
+		: kind === 'restart'
+			? 'restart'
+			: kind === 'green'
+				? 'green'
+				: kind === 'finish'
+					? 'checkered'
+					: flag;
 
 /**
  * Something on the road, as a driver sees it: where it is, how fast it is
@@ -326,11 +351,22 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		const pinned = typeof car === 'number' && Math.abs(cars[car].across) > HALF_CORRIDOR - 1.5;
 		if (deep || pinned || pushing > Math.max(0, driving)) contact.setEnabled(false);
 	});
-	/** The caution that is out: when it came out, and whether the race is ready to go green at the line. */
-	let caution: { since: number; ready: boolean } | null = null;
+	/**
+	 * The caution that is out: when it came out, whether the race is ready to
+	 * go green, and once it is, when it started going green (0 until then).
+	 */
+	let caution: { since: number; ready: boolean; going: number } | null = null;
 	/** Under caution, the car the queue forms behind, and whether it has just crossed the line. */
 	let pacer: Car | undefined;
 	let atLine = false;
+	/**
+	 * Going green, the order the field lines up in two by two, leader first:
+	 * the order it was in when it started to, of the cars within half a lap
+	 * behind the leader. A car a lap down stays out of it, in the queue. It
+	 * is kept until `settled`, a few seconds after the green.
+	 */
+	let lineup: Car[] = [];
+	let settled = 0;
 	/** Everything on the road this step: the cars, and the trucks that are out on the track. */
 	let road: Obstacle[] = cars;
 
@@ -344,6 +380,13 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		caution !== null &&
 		(!other.retired ||
 			(Math.abs(other.across) < HALF_CORRIDOR && (other.speed > 1 || other.towed)));
+
+	/** The track sample a driver steers for: a little way ahead, further the faster it is going. */
+	const aimed = (car: Car) =>
+		(car.sample + Math.round((5 + Math.abs(car.speed) * 0.3) / spacing)) % n;
+
+	/** Metres from one track sample forward to another, the short way round: negative if it is behind. */
+	const along = (from: number, to: number) => (((to - from + n * 1.5) % n) - n / 2) * spacing;
 
 	const race = {
 		time: 0,
@@ -393,27 +436,42 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 			race.time > LIGHTS + TIME_CAP;
 	}
 
-	/** Brings the caution out. Once the race has been won there is nothing left to neutralise. */
+	/**
+	 * Brings the caution out. Once the race has been won there is nothing
+	 * left to neutralise. One already out stays out; if the field was going
+	 * green, it is held under yellow again until the track is clear once more.
+	 */
 	function raise(wreck: Car | null) {
-		if (caution || cars.some((car) => car.finishTime)) return;
-		caution = { since: race.time, ready: false };
-		pacer = rank(cars.filter((car) => !car.retired))[0];
+		if (cars.some((car) => car.finishTime)) return;
+		if (caution && !caution.going) return;
+		if (caution) {
+			caution.ready = false;
+			caution.going = 0;
+			lineup = [];
+		} else {
+			caution = { since: race.time, ready: false, going: 0 };
+			pacer = rank(cars.filter((car) => !car.retired))[0];
+		}
 		note(wreck, { kind: 'caution', by: wreck ? 'wreck' : 'control' });
 	}
 
 	/**
 	 * Race control, each step: throws the cautions it was told to, and under
-	 * one, names the car the queue forms behind and gives it the green as it
-	 * crosses the line, once the track is clear and the field has closed up or
-	 * has had long enough to.
+	 * one, names the car the queue forms behind. Once the track is clear and
+	 * the field has closed up or has had long enough to, it is going green:
+	 * the field lines up behind that car, and is given the green as it
+	 * crosses the line, if it has had long enough to form up.
 	 */
 	function marshal() {
 		if (race.time > LIGHTS && flags.some((at) => at > race.time - DT && at <= race.time)) {
 			raise(null);
 		}
+		if (!caution && race.time >= settled) lineup = [];
 		if (!caution) return;
 		const racing = cars.filter((car) => !car.retired && !car.finishTime);
-		pacer = rank(racing)[0];
+		// lined up, the leader is the one at the head of the lineup, so the
+		// one beside them does not take over by edging ahead
+		pacer = caution.going ? lineup[0] : rank(racing)[0];
 		const out = race.time - caution.since;
 		// closed up: from the leader back, nobody much more than a queue's gap behind the next
 		const behind = racing.map((car) => onRound(car.sample, pacer!.sample)).sort((a, b) => a - b);
@@ -423,9 +481,16 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		// little as the leader picks up speed for the line.
 		caution.ready =
 			recovery.clear && out >= CAUTION_MIN && (caution.ready || closed || out >= CAUTION_MAX);
-		// the green is only ever given at the line: if it cannot be this time, it is a lap more
-		if (atLine && caution.ready) {
+		if (caution.ready && !caution.going) {
+			caution.going = race.time;
+			lineup = rank(racing).filter((car) => onRound(car.sample, pacer!.sample) < n / 2);
+			note(null, { kind: 'restart' });
+		}
+		// the green is only ever given at the line, and only to a field that
+		// has had time to line up: if it cannot be this time, it is a lap more
+		if (atLine && caution.going && race.time - caution.going >= RESTART_MIN) {
 			caution = null;
+			settled = race.time + SETTLE;
 			note(null, { kind: 'green' });
 		}
 		atLine = false;
@@ -459,7 +524,9 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 				atLine = true;
 				note(car, { kind: 'again' });
 			}
-			if (laps === race.laps) {
+			// under caution only the leader's crossing counts: the car beside them
+			// may be first over the line, but it does not take the flag there
+			if (laps === race.laps && !caution) {
 				car.finishTime = race.time;
 				note(car, { kind: 'finish' });
 			}
@@ -498,9 +565,16 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 			const index = cars.indexOf(car);
 			let blocker: Obstacle | undefined;
 			let gap = 8 + car.speed * 1.2;
+			// and the nearest of what is being followed, which a wreck being
+			// gone round may be nearer than, but which is waited behind all the same
+			let queued: Obstacle | undefined;
+			let queue = Infinity;
 			for (const other of road) {
 				if (other === car) continue;
 				const ahead = (((other.sample - car.sample + n * 1.5) % n) - n / 2) * spacing;
+				const waited =
+					followed(other) && (ahead > 0 || (ahead === 0 && cars.indexOf(other as Car) < index));
+				if (waited && ahead < queue) [queued, queue] = [other, ahead];
 				if (ahead < -5 || Math.abs(ahead) >= Math.abs(gap)) continue;
 				const room = CLEAR + (other.retired ? WRECK : 0);
 				const line = track.line[other.sample];
@@ -517,7 +591,33 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 			}
 			let offset = 0;
 			let limit = Infinity;
-			if (blocker && followed(blocker)) {
+			const place = lineup.indexOf(car);
+			if (place >= 0) {
+				// Going green, two by two: the leader on one side of the road and
+				// the one beside them on the other, a little way back, and each row
+				// a queue's gap behind the one in front. Anything in the other
+				// line is no more in the way than a car being passed. Just after
+				// the green each car still keeps to its line, but races.
+				offset = LANE * (place % 2 ? -1 : 1) - track.line[aimed(car)];
+				if (caution && place > 0) {
+					const back = Math.floor(place / 2) * QUEUE + (place % 2) * 2;
+					// how far behind the leader it is, forward round the lap: a car
+					// that has edged a little ahead of them is a little way behind
+					let behind = onRound(car.sample, pacer!.sample) * spacing;
+					if (behind > length - 20) behind -= length;
+					limit = Math.max(3, Math.max(0, pacer!.speed) + (behind - back) * 1.5);
+				}
+				// and each queues behind whatever is ahead of it in its own line,
+				// the cars still moving across into theirs included (but not a
+				// wreck that has been left off the road)
+				for (const other of road) {
+					if (other === car || (other.retired && !followed(other))) continue;
+					if (Math.abs(other.across - car.across) >= CLEAR) continue;
+					const ahead = along(car.sample, other.sample);
+					if (ahead <= 0 || ahead > 40) continue;
+					limit = Math.min(limit, Math.max(3, Math.max(0, other.speed) + (ahead - QUEUE) * 1.5));
+				}
+			} else if (blocker && followed(blocker)) {
 				// in the queue behind it
 				limit = Math.max(3, Math.max(0, blocker.speed) + (gap - QUEUE) * 1.5);
 			} else if (blocker) {
@@ -547,6 +647,9 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 					const stopping = Math.sqrt(slower ** 2 + grip * G * Math.max(0, gap - car.follow));
 					limit = Math.max(3, Math.min(slower + (gap - car.follow) * 1.5, stopping));
 				}
+				if (queued && queue < 8 + car.speed * 1.2) {
+					limit = Math.min(limit, Math.max(3, Math.max(0, queued.speed) + (queue - QUEUE) * 1.5));
+				}
 			}
 			// Leave room for a car alongside rather than turn in on it: the one
 			// on the inside keeps the inside, and the one being passed has to
@@ -568,7 +671,7 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 			car.offset += clamp(offset - car.offset, -4 * DT, 4 * DT);
 
 			// steer for a point on the line a little way ahead
-			const ahead = (car.sample + Math.round((5 + Math.abs(car.speed) * 0.3) / spacing)) % n;
+			const ahead = aimed(car);
 			const across = clamp(track.line[ahead] + car.offset, -MAX_OFFSET, MAX_OFFSET);
 			const aim = body.getLocalPoint({
 				x: track.x[ahead] + track.nx[ahead] * across,
@@ -595,7 +698,7 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 				// nobody stands on the brakes at the flag: the speed allowed comes
 				// down over a few seconds, so the cars behind are not caught out
 				const easing = 32 - 6 * (race.time - caution.since);
-				const held = car !== pacer ? CATCH : caution.ready ? RUN_IN : PACE;
+				const held = car !== pacer ? (caution.going ? FORM : CATCH) : caution.ready ? RUN_IN : PACE;
 				want = Math.min(want, Math.max(held, easing));
 			}
 			const corner = want;

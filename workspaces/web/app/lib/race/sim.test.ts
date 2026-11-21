@@ -30,8 +30,8 @@ import {
 function run(seed: number, track: Track, flags: number[] = []) {
 	const race = createRace(seed, drawGrid(seed, ROSTER), track, flags);
 	const events: RaceEvent[] = [];
-	// more steps than the longest race is allowed to last
-	for (let step = 0; step < 60 * 190 && !race.done; step++) {
+	// as many steps as the longest race is allowed to last
+	for (let step = 0; step < (LIGHTS + TIME_CAP + 1) / DT && !race.done; step++) {
 		race.step();
 		events.push(...race.events);
 		race.events.length = 0;
@@ -175,11 +175,14 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 
 	it('comes out for a wreck, which a truck takes off the track before the green', () => {
 		const race = run(wrecking, track);
-		const flags = race.all.filter((event) => ['retire', 'caution', 'green'].includes(event.kind));
-		expect(flags.map((event) => event.kind)).toEqual(['retire', 'caution', 'green']);
-		const [retired, caution, green] = flags;
+		const flags = race.all.filter((event) =>
+			['retire', 'caution', 'restart', 'green'].includes(event.kind)
+		);
+		expect(flags.map((event) => event.kind)).toEqual(['retire', 'caution', 'restart', 'green']);
+		const [retired, caution, restart, green] = flags;
 		expect(caution).toMatchObject({ time: retired.time, car: retired.car, by: 'wreck' });
-		expect(green.time - caution.time).toBeGreaterThan(8);
+		expect(restart.time - caution.time).toBeGreaterThan(8);
+		expect(green.time - restart.time).toBeGreaterThan(6);
 		expect(green.time - caution.time).toBeLessThan(90);
 		// the wreck is in the infield, and scored where it stopped, not where it was left
 		const wreck = race.cars[retired.car];
@@ -301,7 +304,8 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 			}
 			race.events.length = 0;
 			// once they have had time to slow, nobody is quicker than the catching-up speed
-			if (out && !back && race.time > out + 5) {
+			// until the field starts lining up to go green
+			if (out && race.flag === 'yellow' && race.time > out + 5) {
 				for (const car of race.cars) expect(car.speed).toBeLessThan(18);
 			}
 		}
@@ -330,5 +334,61 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 		expect(run(clean, track, [1]).all.some((event) => event.kind === 'caution')).toBe(false);
 		const won = run(clean, track).order()[0].finishTime;
 		expect(run(clean, track, [won + 1]).all.some((event) => event.kind === 'caution')).toBe(false);
+	});
+
+	it('goes green after every caution, by way of the restart', { timeout: 120_000 }, () => {
+		for (let seed = 1; seed <= 40; seed++) {
+			const race = run(seed, track, seed % 2 ? [LIGHTS + 20] : []);
+			// what flew, in order, from the first caution on
+			const flown = race.all
+				.filter((event) => ['caution', 'restart', 'green'].includes(event.kind))
+				.map((event) => event.kind);
+			// a yellow can come back while the field is going green, but every
+			// green comes straight after a restart, and no caution ends without one
+			flown.forEach((kind, k) => {
+				if (kind === 'green') expect(flown[k - 1], `seed ${seed}`).toBe('restart');
+				if (kind === 'restart') expect(flown[k - 1], `seed ${seed}`).toBe('caution');
+			});
+			if (flown.length) expect(flown.at(-1), `seed ${seed}`).toBe('green');
+		}
+	});
+
+	it('lines the field up two by two behind the leader before the green', () => {
+		const race = createRace(clean, drawGrid(clean, ROSTER), track, [LIGHTS + 20]);
+		while (!race.done && race.flag !== 'restart') {
+			race.step();
+			race.events.length = 0;
+		}
+		// the order it is in as it starts going green is the order it restarts in
+		const order = running(race);
+		let field: ReturnType<typeof rank<(typeof race.cars)[number]>> = [];
+		while (!race.done && race.flag === 'restart') {
+			field = rank(race.cars.filter((car) => !car.retired));
+			race.step();
+			race.events.length = 0;
+		}
+		expect(race.flag).toBe('green');
+		expect(field.map((car) => car.entry.id)).toEqual(order);
+		const [leader] = field;
+		field.forEach((car, place) => {
+			// one line down each side of the road, alternately
+			expect(Math.sign(car.across), car.entry.id).toBe(place % 2 ? -1 : 1);
+			expect(Math.abs(car.across)).toBeGreaterThan(1);
+			// and each row a car's length or two behind the one in front
+			const behind = leader.progress - car.progress;
+			expect(behind).toBeGreaterThan(Math.floor(place / 2) * 8 + (place % 2) * 2 - 3);
+			expect(behind).toBeLessThan(Math.floor(place / 2) * 8 + (place % 2) * 2 + 3);
+		});
+	});
+
+	it('is held under yellow again if there is trouble while the field is going green', () => {
+		const going = run(clean, track, [LIGHTS + 20]).all.find((event) => event.kind === 'restart')!;
+		const race = run(clean, track, [LIGHTS + 20, going.time + 1]);
+		const flown = race.all
+			.filter((event) => ['caution', 'restart', 'green'].includes(event.kind))
+			.map((event) => event.kind);
+		// (and whatever comes after, which is another race from there on)
+		expect(flown.slice(0, 5)).toEqual(['caution', 'restart', 'caution', 'restart', 'green']);
+		expect(race.flag).toBe('checkered');
 	});
 });

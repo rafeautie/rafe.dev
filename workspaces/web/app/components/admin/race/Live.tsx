@@ -102,7 +102,8 @@ function Status({ loop }: { loop: Loop }) {
 				<span suppressHydrationWarning>
 					{WAITING[loop.phase]}
 					{loop.phase !== 'idle' && ` · ${left}s left`}
-					{loop.caution && ' · under caution'}
+					{loop.flag === 'yellow' && ' · under caution'}
+					{loop.flag === 'restart' && ' · going green'}
 					{loop.paused && ' · stops after this race'}
 				</span>
 			}
@@ -123,6 +124,9 @@ function Status({ loop }: { loop: Loop }) {
 				<div className="flex flex-col gap-1.5">
 					<PhaseBar
 						restart={loop.round}
+						tone={
+							loop.flag === 'yellow' ? 'caution' : loop.flag === 'restart' ? 'restart' : undefined
+						}
 						className="bg-foreground/10"
 						phases={PHASES.map((phase, i) => ({
 							name: phase,
