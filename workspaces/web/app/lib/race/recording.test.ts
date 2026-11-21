@@ -112,8 +112,22 @@ describe('a recording', () => {
 		expect(replay.trucks.every((truck) => !truck.busy)).toBe(true);
 	});
 
+	it('leaves the trucks out of a race none went out in, and shows them parked', () => {
+		// seed 2 is a clean race; seed 7 loses a car, and a truck goes for it
+		const quiet = record(2, drawGrid(2, ROSTER));
+		const busy = record(7, drawGrid(7, ROSTER));
+		const cars = ROSTER.length * 10;
+		expect(quiet.trucks).toBe(0);
+		expect(quiet.poses.length).toBe(quiet.frames * cars);
+		expect(busy.trucks).toBe(3);
+		expect(busy.poses.length).toBeGreaterThan(busy.frames * cars);
+		const replay = createReplay(quiet, ROSTER);
+		replay.seek(30);
+		for (const truck of replay.trucks) expect(truck).toMatchObject({ busy: false, towing: -1 });
+	});
+
 	it('still plays a recording made before there were trucks', () => {
-		const { trucks: _, ...recording } = record(2, drawGrid(2, ROSTER));
+		const { trucks: _, ...recording } = record(7, drawGrid(7, ROSTER));
 		const cars = ROSTER.length * 10;
 		// the same race with the trucks' bytes taken out of every moment
 		const moment = recording.poses.length / recording.frames;
@@ -122,16 +136,14 @@ describe('a recording', () => {
 			poses.set(recording.poses.subarray(frame * moment, frame * moment + cars), frame * cars);
 		}
 		const old = createReplay({ ...recording, poses }, ROSTER);
-		const now = createReplay(record(2, drawGrid(2, ROSTER)), ROSTER);
-		old.seek(30);
-		now.seek(30);
+		const now = createReplay(record(7, drawGrid(7, ROSTER)), ROSTER);
+		old.seek(40);
+		now.seek(40);
 		expect(old.cars).toEqual(now.cars);
-		// its trucks are where they are parked, which is where this race's still are
-		old.trucks.forEach((truck, index) => {
+		// a truck is out by now, but the old recording knows nothing of it: its trucks stay parked
+		expect(now.trucks.some((truck) => truck.busy)).toBe(true);
+		for (const truck of old.trucks)
 			expect(truck).toMatchObject({ busy: false, towing: -1, gate: -1 });
-			expect(Math.abs(truck.x - now.trucks[index].x)).toBeLessThan(0.01);
-			expect(Math.abs(truck.y - now.trucks[index].y)).toBeLessThan(0.01);
-		});
 	});
 
 	it('survives being packed into bytes, and stays under 400 KB', () => {

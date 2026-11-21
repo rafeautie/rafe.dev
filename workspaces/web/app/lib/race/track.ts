@@ -123,15 +123,32 @@ function build() {
 	return { n, step, length, x, y, tx, ty, nx, ny, line, bend };
 }
 
+export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/**
+ * The triangle three points make, as what says how sharply the circle through
+ * them bends: twice its area, signed by which way it turns, and its three
+ * sides multiplied together. The circle's radius is the sides over twice that
+ * area.
+ */
+export function triangle(
+	ax: number,
+	ay: number,
+	bx: number,
+	by: number,
+	cx: number,
+	cy: number
+): [number, number] {
+	const cross = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+	const sides =
+		Math.hypot(bx - ax, by - ay) * Math.hypot(cx - bx, cy - by) * Math.hypot(cx - ax, cy - ay);
+	return [cross, sides];
+}
+
 /** How sharply the circle through three points bends, as 1 / radius, signed by which way. */
 function curve(a: [number, number], b: [number, number], c: [number, number]) {
-	const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-	return (
-		(2 * cross) /
-		(Math.hypot(b[0] - a[0], b[1] - a[1]) *
-			Math.hypot(c[0] - b[0], c[1] - b[1]) *
-			Math.hypot(c[0] - a[0], c[1] - a[1]))
-	);
+	const [cross, sides] = triangle(a[0], a[1], b[0], b[1], c[0], c[1]);
+	return (2 * cross) / sides;
 }
 
 export const TRACK = build();
