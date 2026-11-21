@@ -1,6 +1,8 @@
 import { createServerFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 import { env } from 'cloudflare:workers';
+import { DIMENSIONS } from '~/lib/stats/dimensions';
+import type { Row } from '~/lib/stats/report';
 import { stats } from '~/lib/stats/store.server';
 import { zoneOffset } from '~/lib/stats/zone';
 import { PHOTOS_DIR, PHOTOS_MANIFEST, WRITING_DIR } from './config';
@@ -8,13 +10,15 @@ import { readFields, splitPost } from './frontmatter';
 import { gitHub } from './github.server';
 import { requireToken } from './session.server';
 
-// What /admin's overview shows of each area: a few numbers and what to pick
-// up next, never the whole list. Each area is its own server function, so the
-// page asks for them side by side and one that fails leaves the others shown.
+// What /admin's overview shows of each area: the few numbers and short lists
+// that say how it is doing, never the whole of its page. Each area is its own
+// server function, so the page asks for them side by side and one that fails
+// leaves the others shown.
 
 const DAY = 24 * 60 * 60 * 1000;
-// how many drafts the overview offers to pick back up
-const DRAFTS_SHOWN = 3;
+// how many drafts and posts the overview lists
+const DRAFTS_SHOWN = 4;
+const POSTS_SHOWN = 3;
 // a draft's last edit costs a call to GitHub each, so only the newest are read
 const DRAFTS_READ = 10;
 
@@ -25,6 +29,8 @@ function today(now = Date.now()) {
 	const offset = zoneOffset(cf?.timezone ?? 'UTC', now);
 	return { day: Math.floor((now + offset) / DAY), offset };
 }
+
+// ---------------------------------------------------------------- writing
 
 export type DraftSummary = { slug: string; title: string; edited: string };
 
@@ -59,24 +65,26 @@ export const getWritingSummary = createServerFn({ method: 'GET' }).handler(async
 			return { slug: draft.slug, title: draft.title || draft.slug, edited: last?.date ?? '' };
 		})
 	);
+	const latest = published[0];
 	return {
 		published: published.length,
 		drafts: posts.length - published.length,
-		latest: published[0]
-			? {
-					slug: published[0].slug,
-					title: published[0].title,
-					date: published[0].date,
-					daysAgo: Math.max(0, today().day - Math.floor(Date.parse(published[0].date) / DAY))
-				}
+		// how long the site has gone without something new
+		daysSincePost: latest
+			? Math.max(0, today().day - Math.floor(Date.parse(latest.date) / DAY))
 			: null,
+		recentPosts: published
+			.slice(0, POSTS_SHOWN)
+			.map((post) => ({ slug: post.slug, title: post.title || post.slug, date: post.date })),
 		recentDrafts: edited.sort((a, b) => b.edited.localeCompare(a.edited)).slice(0, DRAFTS_SHOWN)
 	};
 });
 
-// /photos shows them in the manifest's order, so its first few are what a
-// visitor sees first.
-const PHOTOS_SHOWN = 4;
+// ---------------------------------------------------------------- photos
+
+// new photos go to the end of the manifest (as /admin/photos and `pnpm
+// add-photo` add them), so the last few are the latest
+const PHOTOS_SHOWN = 8;
 
 export const getPhotosSummary = createServerFn({ method: 'GET' }).handler(async () => {
 	const github = gitHub(await requireToken());
@@ -96,11 +104,17 @@ export const getPhotosSummary = createServerFn({ method: 'GET' }).handler(async 
 		count: photos.length,
 		// a photo with no alt text says nothing to someone who cannot see it
 		missingAlt: photos.filter((photo) => !photo.alt.trim()).length,
-		first: photos.slice(0, PHOTOS_SHOWN),
+		latest: photos.slice(-PHOTOS_SHOWN).reverse(),
 		ref: head,
 		changed: last ? { date: last.date, message: last.message } : null
 	};
 });
+
+// ---------------------------------------------------------------- visits
+
+// the chart's span, in days, today included
+const CHART_DAYS = 30;
+const RANKED = 5;
 
 export const getVisitsSummary = createServerFn({ method: 'GET' }).handler(async () => {
 	await requireToken();
@@ -110,9 +124,11 @@ export const getVisitsSummary = createServerFn({ method: 'GET' }).handler(async 
 	// this week is today and the six days before it; the week before, for the trend
 	const week = (current - 6) * DAY - offset;
 	const before = (current - 13) * DAY - offset;
+	const chart = (current - CHART_DAYS + 1) * DAY - offset;
 	const visitor = 'coalesce(visitor, session)';
+	const source = DIMENSIONS.source.key;
 
-	const [totals, previous, days, pages, here] = await db.batch([
+	const [totals, previous, days, pages, sources, here] = await db.batch([
 		db
 			.prepare(
 				`SELECT count(DISTINCT ${visitor}) AS visitors, count(*) AS views FROM views WHERE at >= ?`
@@ -126,11 +142,21 @@ export const getVisitsSummary = createServerFn({ method: 'GET' }).handler(async 
 				`SELECT CAST((at + ?) / ? AS INTEGER) AS day, count(DISTINCT ${visitor}) AS visitors
 				FROM views WHERE at >= ? GROUP BY day`
 			)
-			.bind(offset, DAY, week),
+			.bind(offset, DAY, chart),
 		db
 			.prepare(
-				`SELECT path, count(DISTINCT ${visitor}) AS visitors FROM views WHERE at >= ?
-				GROUP BY path ORDER BY visitors DESC, count(*) DESC LIMIT 3`
+				`SELECT path AS key, path AS label, count(DISTINCT ${visitor}) AS visitors,
+					count(*) AS views
+				FROM views WHERE at >= ? GROUP BY path ORDER BY visitors DESC, views DESC LIMIT ${RANKED}`
+			)
+			.bind(week),
+		// where visits came from is on their first page view, as /admin/stats counts it
+		db
+			.prepare(
+				`SELECT ${source} AS key, ${source} AS label, count(DISTINCT ${visitor}) AS visitors,
+					count(*) AS views
+				FROM views WHERE at >= ? AND landing = 1
+				GROUP BY key ORDER BY visitors DESC, views DESC LIMIT ${RANKED}`
 			)
 			.bind(week),
 		// anyone whose page was still open and reporting in the last five minutes
@@ -147,14 +173,20 @@ export const getVisitsSummary = createServerFn({ method: 'GET' }).handler(async 
 		views: first<{ views: number }>(totals).views,
 		previous: first<{ visitors: number }>(previous).visitors,
 		here: first<{ visitors: number }>(here).visitors,
-		// oldest first; `at` is midnight of that day, read as UTC
-		days: Array.from({ length: 7 }, (_, index) => {
-			const day = current - 6 + index;
+		// oldest first; `at` is midnight of that day read as UTC, as getStats' buckets are
+		days: Array.from({ length: CHART_DAYS }, (_, index) => {
+			const day = current - CHART_DAYS + 1 + index;
 			return { at: day * DAY, visitors: perDay.get(day) ?? 0 };
 		}),
-		pages: pages.results as { path: string; visitors: number }[]
+		pages: pages.results as Row[],
+		sources: sources.results as Row[]
 	};
 });
+
+// ---------------------------------------------------------------- race
+
+const RACES_SHOWN = 5;
+const RACES_CHARTED = 20;
 
 export const getRaceSummary = createServerFn({ method: 'GET' }).handler(async () => {
 	await requireToken();
@@ -166,16 +198,27 @@ export const getRaceSummary = createServerFn({ method: 'GET' }).handler(async ()
 		phase: loop.phase,
 		paused: loop.paused,
 		endsAt: loop.endsAt,
+		// the room's clock, so the page can count down by it
 		now: loop.now,
 		watching: loop.viewers,
+		watchingPlayers: loop.players,
+		pools: loop.pools,
 		// the room lists at most 100, most recently seen first
-		players: view.players.length,
 		playersThisWeek: view.players.filter((player) => player.seen >= week).length,
 		run: history.totals.run,
 		net: history.totals.net,
+		staked: history.totals.staked,
+		// newest first; a race still running is left out until it has been shown
+		races: history.races.slice(0, RACES_SHOWN).map((race) => ({
+			round: race.round,
+			started: race.started,
+			voided: race.voided,
+			podium: race.order.slice(0, 3),
+			net: race.net
+		})),
 		// the house's take, race by race, oldest first
-		recent: history.races
-			.slice(0, 20)
+		nets: history.races
+			.slice(0, RACES_CHARTED)
 			.reverse()
 			.map((race) => ({ round: race.round, net: race.net, voided: race.voided }))
 	};

@@ -5,8 +5,9 @@ import { Button } from '~/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { cn } from '~/lib/utils';
 
-// One area of the site on the overview, in its own card: its name links to
-// its page, and what it holds is a few numbers and what to pick up next.
+// One widget of the overview, in its own card: its name links to the admin
+// page (and section) it comes from, and what it holds is a small view of that
+// page: its headline numbers, a chart, a short list.
 
 // The same view transition as the sidebar's (AdminSidebar), so leaving the
 // overview from a card looks like leaving it from the sidebar.
@@ -16,14 +17,46 @@ const PAGE_TRANSITION = { types: ['admin-page'] };
 export type Loaded<T> = { ok: true; value: T } | { ok: false; error: string };
 
 // A link to an admin page, moving there in the page. `to` is a plain path,
-// such as a post's editor, which the router matches like any other.
-export function PageLink({ to, ...props }: { to: string } & Omit<ComponentProps<'a'>, 'href'>) {
-	return <RouterLink to={to} viewTransition={PAGE_TRANSITION} {...props} />;
+// such as a post's editor, which the router matches like any other; `section`
+// opens one of a long page's sections (Subsections' ?section=).
+export function PageLink({
+	to,
+	section,
+	...props
+}: { to: string; section?: string } & Omit<ComponentProps<'a'>, 'href'>) {
+	return (
+		<RouterLink
+			to={to}
+			// each page checks its own section names (readSection), and those
+			// change with the page, so a name here is passed on as it is
+			search={(section ? { section } : undefined) as never}
+			viewTransition={PAGE_TRANSITION}
+			{...props}
+		/>
+	);
+}
+
+// A heading that leads somewhere: the name and a small arrow.
+function Lead({ to, section, children }: { to: string; section?: string; children: ReactNode }) {
+	return (
+		<PageLink
+			to={to}
+			section={section}
+			className="group/lead inline-flex items-center gap-1.5 rounded-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+		>
+			{children}
+			<ArrowRightIcon
+				aria-hidden
+				className="size-3.5 text-foreground/40 transition-transform group-hover/lead:translate-x-0.5 group-hover/lead:text-foreground/70"
+			/>
+		</PageLink>
+	);
 }
 
 export function Area<T>({
 	title,
 	href,
+	section,
 	loaded,
 	action,
 	className,
@@ -32,6 +65,7 @@ export function Area<T>({
 	title: string;
 	// absent for what has no page of its own
 	href?: string;
+	section?: string;
 	loaded: Loaded<T>;
 	action?: ReactNode;
 	className?: string;
@@ -42,16 +76,9 @@ export function Area<T>({
 			<CardHeader>
 				<CardTitle>
 					{href ? (
-						<PageLink
-							to={href}
-							className="group/area inline-flex items-center gap-1.5 rounded-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-						>
+						<Lead to={href} section={section}>
 							{title}
-							<ArrowRightIcon
-								aria-hidden
-								className="size-3.5 text-foreground/40 transition-transform group-hover/area:translate-x-0.5 group-hover/area:text-foreground/70"
-							/>
-						</PageLink>
+						</Lead>
 					) : (
 						title
 					)}
@@ -98,13 +125,30 @@ export function Figure({
 	);
 }
 
-// A short list under a small heading: the drafts, the top pages.
-export function Shortlist({ title, children }: { title: string; children: ReactNode }) {
+// A short list under a small heading: the drafts, the latest races.
+export function Shortlist({ title, children }: { title: ReactNode; children: ReactNode }) {
 	return (
 		<div>
 			<h3 className="text-xs text-foreground/50">{title}</h3>
 			<ul className="mt-1.5 divide-y divide-foreground/5">{children}</ul>
 		</div>
+	);
+}
+
+// A small heading that leads to its section of a page.
+export function SubLead({
+	to,
+	section,
+	children
+}: {
+	to: string;
+	section?: string;
+	children: ReactNode;
+}) {
+	return (
+		<PageLink to={to} section={section} className="hover:text-foreground">
+			{children}
+		</PageLink>
 	);
 }
 

@@ -5,13 +5,10 @@ import { SlashNav } from '~/components/SlashNav';
 import { AdminHeader, ControlsRail } from '~/components/admin/AdminHeader';
 import { BuildBadge, useBuildWatch } from '~/components/admin/BuildStatus';
 import { type Loaded, PageLink } from '~/components/admin/overview/Area';
-import {
-	ActivityCard,
-	PhotosCard,
-	RaceCard,
-	VisitsCard,
-	WritingCard
-} from '~/components/admin/overview/Cards';
+import { ActivityCard, PhotosCard, WritingCard } from '~/components/admin/overview/Cards';
+import { LoopCard, ResultsCard } from '~/components/admin/overview/Race';
+import { useLiveRace } from '~/components/admin/overview/useLiveRace';
+import { ReadersCard, TrafficCard } from '~/components/admin/overview/Stats';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { getOverview } from '~/lib/admin/api';
@@ -95,6 +92,8 @@ function SignIn() {
 function Overview({ overview }: { overview: OverviewData }) {
 	const { changes, writing, photos, visits, race } = overview;
 	const latest = changes.ok ? changes.value.changes[0] : undefined;
+	// the race widgets and the rail's paused badge follow the room as it runs
+	const live = useLiveRace(race);
 	// keeps checking while the latest commit is still building
 	const watch = useBuildWatch(
 		changes.ok
@@ -105,8 +104,9 @@ function Overview({ overview }: { overview: OverviewData }) {
 				}
 			: undefined
 	);
+	// wider than the other pages' column: a dashboard needs room for its grid
 	return (
-		<div className="mx-auto max-w-4xl">
+		<div className="mx-auto max-w-6xl">
 			<AdminHeader
 				path={[
 					<Link key="rafe" href="/">
@@ -121,7 +121,7 @@ function Overview({ overview }: { overview: OverviewData }) {
 					<>
 						<BuildBadge build={watch.build} />
 						{latest && <span>updated {timeAgo(latest.date)}</span>}
-						{race.ok && race.value.paused && (
+						{live.race.ok && live.race.value.paused && (
 							<Badge
 								variant="outline"
 								className="text-foreground/70"
@@ -135,14 +135,19 @@ function Overview({ overview }: { overview: OverviewData }) {
 				}
 			/>
 
-			{/* two columns once the page itself is wide enough, sidebar open or not */}
+			{/* The widgets follow the page's own width, sidebar open or folded:
+			    one column on a phone, two on a tablet, a six-column grid of
+			    wide and narrow cards beyond. */}
 			<div className="@container mt-8">
-				<div className="grid gap-4 @2xl:grid-cols-2">
-					<WritingCard loaded={writing} />
-					<VisitsCard loaded={visits} />
-					<PhotosCard loaded={photos} />
-					<RaceCard loaded={race} />
-					<ActivityCard loaded={changes} className="@2xl:col-span-2" />
+				<div className="grid gap-4 @2xl:grid-cols-2 @4xl:grid-cols-6">
+					{/* what is happening now, then how the week went, then the content */}
+					<TrafficCard loaded={visits} className="@2xl:col-span-2 @4xl:col-span-4" />
+					<LoopCard loaded={live.race} now={live.now} className="@4xl:col-span-2" />
+					<ReadersCard loaded={visits} className="@4xl:col-span-2" />
+					<ResultsCard loaded={live.race} className="@2xl:col-span-2 @4xl:col-span-4" />
+					<WritingCard loaded={writing} className="@4xl:col-span-2" />
+					<ActivityCard loaded={changes} className="@4xl:col-span-4" />
+					<PhotosCard loaded={photos} className="@2xl:col-span-2 @4xl:col-span-6" />
 				</div>
 			</div>
 		</div>
