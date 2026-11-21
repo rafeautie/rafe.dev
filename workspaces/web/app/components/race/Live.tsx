@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Pools } from '~/lib/race/betting';
-import { Game } from './Game';
+import { Game, type Paint } from './Game';
+import { MIN_H, MIN_W, fit, layout } from './hud';
 import { entry, type Running, type Tick } from './shared';
 import { createReplay, unpack, type Replay } from '~/lib/race/recording';
 import { createRenderer, type CarView } from '~/lib/race/render';
@@ -15,9 +16,18 @@ import { TRACK } from '~/lib/race/track';
 // grid while betting is open, then the race, played from the recording the
 // room sends at the moment the room's clock says it has reached, then the
 // result. It runs no race of its own, so every page shows the same one.
+//
+// The race is drawn in a frame fitted to the space the page gives it, with
+// the game's graphics drawn over it each frame (Game.tsx, hud.ts).
 
 export default function Live() {
 	const canvas = useRef<HTMLCanvasElement>(null);
+	const stage = useRef<HTMLDivElement>(null);
+	const [view, setView] = useState(() => fit(MIN_W, MIN_H, 1));
+	const paint = useRef<Paint | null>(null);
+	const setPaint = useCallback((next: Paint) => {
+		paint.current = next;
+	}, []);
 	const [room, setRoom] = useState<RoomState | null>(null);
 	/** Seconds left in the phase, by the room's clock. */
 	const [left, setLeft] = useState(0);
@@ -66,6 +76,21 @@ export default function Live() {
 		let shown = -1;
 		// when the running order was last lifted out for the page
 		let lifted = 0;
+		// when the last frame was drawn
+		let drawn = performance.now();
+
+		// the frame is as big as the space it has, and the track sits where the layout puts it
+		function size() {
+			const { clientWidth, clientHeight } = stage.current!;
+			if (!clientWidth || !clientHeight) return;
+			const next = fit(clientWidth, clientHeight, devicePixelRatio);
+			const { track } = layout(next);
+			renderer.resize(next.width, next.height, track.x, track.y, next.zoom);
+			setView(next);
+		}
+		size();
+		const resized = new ResizeObserver(size);
+		resized.observe(stage.current!);
 
 		// the round the ticker is for, so it starts over with each new one
 		let ticked = -1;
@@ -103,7 +128,7 @@ export default function Live() {
 					setPools(
 						(pools) => pools && { ...pools, [market]: { ...pools[market], [outcome]: pool } }
 					);
-					setTicker((ticker) => [{ name, market, outcome, stake }, ...ticker].slice(0, 8));
+					setTicker((ticker) => [{ name, market, outcome, stake }, ...ticker].slice(0, 40));
 					return;
 				}
 				if (message.type === 'board') {
@@ -147,6 +172,8 @@ export default function Live() {
 		let frame = requestAnimationFrame(function tick() {
 			frame = requestAnimationFrame(tick);
 			let cars = waiting;
+			// the replay, while it is what is being shown
+			let showing: Replay | null = null;
 			let moved = 0;
 			if (replay && state && state.phase !== 'betting') {
 				const time = Math.min(replay.duration, (Date.now() + ahead - state.startsAt) / 1000);
@@ -164,6 +191,7 @@ export default function Live() {
 				}
 				shown = Math.max(0, time);
 				cars = replay.cars;
+				showing = replay;
 				const now = performance.now();
 				if (now - lifted > 250) {
 					lifted = now;
@@ -185,7 +213,12 @@ export default function Live() {
 					});
 				}
 			}
-			renderer.draw(cars, moved, { line: false, hulls: false });
+			const now = performance.now();
+			const dt = Math.min(0.1, (now - drawn) / 1000);
+			drawn = now;
+			renderer.draw(cars, moved, { line: false, hulls: false }, (painter) =>
+				paint.current?.(painter, cars, showing, dt)
+			);
 			audio.current?.update(replay?.cars ?? [], moved);
 		});
 
@@ -194,6 +227,7 @@ export default function Live() {
 			clearTimeout(again);
 			clearInterval(countdown);
 			cancelAnimationFrame(frame);
+			resized.disconnect();
 			socket.current?.close();
 		};
 	}, []);
@@ -212,11 +246,11 @@ export default function Live() {
 			sound={sound}
 			setSound={setSound}
 			send={send}
+			view={view}
+			stage={stage}
+			setPaint={setPaint}
 		>
-			<canvas
-				ref={canvas}
-				className="aspect-video w-full rounded-lg bg-black [image-rendering:pixelated]"
-			/>
+			<canvas ref={canvas} className="block size-full" />
 		</Game>
 	);
 }

@@ -125,7 +125,7 @@ export function unpack(bytes: Uint8Array): Recording {
  * Plays a recording back. `seek` moves the cars to how they were at a race
  * time and returns what happened since the time it was last at, so stepping
  * forward a little each frame yields every event once. Seeking backwards
- * returns nothing.
+ * returns nothing. `gap` is the time between two cars as it now stands.
  */
 export function createReplay(recording: Recording, roster: Entry[]) {
 	const { rate, frames, grid, events, poses } = recording;
@@ -203,6 +203,29 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		return passed;
 	}
 
+	/**
+	 * How many seconds ago car `ahead` was where car `behind` is now: the gap
+	 * between them by the clock. Null while the car ahead has not been seen
+	 * there, as on the grid, where it started further up the road.
+	 */
+	function gap(behind: number, ahead: number): number | null {
+		const stored = (frame: number) =>
+			view.getUint16((frame * grid.length + ahead) * POSE + 6, true);
+		const target = (cars[behind].progress + 100) * 20;
+		// the first moment recorded at which the car ahead had come this far
+		let from = 0;
+		let to = Math.min(frames - 1, Math.ceil(last * rate));
+		while (from < to) {
+			const middle = (from + to) >> 1;
+			if (stored(middle) < target) from = middle + 1;
+			else to = middle;
+		}
+		if (from === 0) return null;
+		const [before, after] = [stored(from - 1), stored(from)];
+		const frame = after > before ? from - 1 + (target - before) / (after - before) : from;
+		return Math.max(0, last - frame / rate);
+	}
+
 	seek(0);
-	return { duration, cars, seek };
+	return { duration, cars, seek, gap };
 }

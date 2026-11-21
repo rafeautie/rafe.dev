@@ -53,6 +53,21 @@ describe('a recording', () => {
 		expect(wound.cars).toEqual(straight.cars);
 	});
 
+	it('gives the gap between two cars by the clock', () => {
+		const replay = createReplay(record(2, drawGrid(2, ROSTER)), ROSTER);
+		// on the grid nobody has yet been where the car behind is
+		expect(replay.gap(1, 0)).toBeNull();
+		replay.seek(30);
+		const [leader, second] = rank(replay.cars).map((car) => replay.cars.indexOf(car));
+		expect(replay.gap(leader, leader)).toBeLessThan(0.05);
+		const gap = replay.gap(second, leader)!;
+		expect(gap).toBeGreaterThan(0);
+		// that long ago, the leader was where the second car is now
+		const where = replay.cars[second].progress;
+		replay.seek(30 - gap);
+		expect(Math.abs(replay.cars[leader].progress - where)).toBeLessThan(0.2);
+	});
+
 	it('survives being packed into bytes, and stays under 150 KB', () => {
 		for (let seed = 1; seed <= 10; seed++) {
 			const recording = record(seed, drawGrid(seed, ROSTER));

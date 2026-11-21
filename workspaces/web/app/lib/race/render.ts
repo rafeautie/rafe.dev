@@ -1,10 +1,15 @@
+import { createPainter, hex, mix, type Painter } from './pixels';
 import type { Car, RaceEvent } from './sim';
 import { HULL } from './sim';
 import { HALF_CORRIDOR, HALF_ROAD, TRACK, WORLD_H, WORLD_W, lateral, nearest } from './track';
 
 // Draws the race as pixel art. Everything is plotted pixel by pixel into one
-// small frame (4 px to the metre) that the page scales up with hard edges;
-// nothing is smoothed, so turned and dented cars stay crisp.
+// small frame (4 px to the metre) that is scaled up with hard edges; nothing
+// is smoothed, so turned and dented cars stay crisp.
+//
+// The frame is the track's own 160 x 90 m unless `resize` makes it larger.
+// Then the track sits somewhere inside it with grass all round, which is where
+// the page draws the broadcast graphics (components/race/hud.ts).
 
 export const SCALE = 4;
 export const WIDTH = WORLD_W * SCALE;
@@ -37,18 +42,11 @@ type Particle = {
 	smoke: boolean;
 };
 
-// colours are packed the way the canvas stores them: alpha, blue, green, red
-function hex(colour: string) {
-	const v = parseInt(colour.slice(1), 16);
-	return (0xff000000 | ((v & 0xff) << 16) | (v & 0xff00) | (v >> 16)) >>> 0;
-}
-function mix(a: number, b: number, t: number) {
-	const channel = (shift: number) =>
-		(((a >> shift) & 0xff) + (((b >> shift) & 0xff) - ((a >> shift) & 0xff)) * t) << shift;
-	return (0xff000000 | channel(16) | channel(8) | channel(0)) >>> 0;
-}
-
-const GRASS = [hex('#3a6b35'), hex('#427739')];
+// two mowings of the grass, each with its speckle
+const GRASS = [
+	[hex('#3a6b35'), hex('#427739')],
+	[hex('#376631'), hex('#3e7135')]
+];
 const VERGE = [hex('#b9a26a'), hex('#ab945c')];
 const TARMAC = [hex('#3b3d45'), hex('#40424b')];
 const SLOT = hex('#2d2f36');
@@ -68,8 +66,19 @@ const SPARK = hex('#ffd866');
 const DEBUG_LINE = hex('#40e0ff');
 const DEBUG_HULL = hex('#ff40c0');
 
+/** A fixed speckle, so each surface has some grain. */
+function grain(px: number, py: number) {
+	const mixed = Math.imul(px * 374761393 + py * 668265263, 1274126177);
+	return ((mixed ^ (mixed >>> 13)) >>> 0) % 7 < 2 ? 1 : 0;
+}
+
+/** The grass at a pixel, counted from the track's corner: mown in broad diagonal stripes. */
+function grass(px: number, py: number) {
+	return GRASS[((px + py) >> 5) & 1][grain(px, py)];
+}
+
 /** The track from above, painted once. */
-function paintGround() {
+function paintTrack() {
 	const { n, step, x, y, tx, ty, bend, length } = TRACK;
 	// the nearest centre-line sample to every pixel near the track
 	const near = new Float32Array(WIDTH * HEIGHT).fill(Infinity);
@@ -94,21 +103,19 @@ function paintGround() {
 	for (let py = 0; py < HEIGHT; py++) {
 		for (let px = 0; px < WIDTH; px++) {
 			const k = py * WIDTH + px;
-			// a fixed speckle, so each surface has some grain
-			const mixed = Math.imul(px * 374761393 + py * 668265263, 1274126177);
-			const grain = ((mixed ^ (mixed >>> 13)) >>> 0) % 7 < 2 ? 1 : 0;
+			const speck = grain(px, py);
 			const i = which[k];
 			const wx = (px + 0.5) / SCALE;
 			const wy = (py + 0.5) / SCALE;
 			const across = near[k] === Infinity ? Infinity : Math.abs(lateral(wx, wy, i));
 			if (across > HALF_CORRIDOR + 0.8) {
-				ground[k] = GRASS[grain];
+				ground[k] = grass(px, py);
 			} else if (across > HALF_CORRIDOR + 0.5) {
 				ground[k] = WALL_SHADOW;
 			} else if (across > HALF_CORRIDOR) {
 				ground[k] = WALL;
 			} else if (across > HALF_ROAD) {
-				ground[k] = VERGE[grain];
+				ground[k] = VERGE[speck];
 			} else {
 				// metres round the lap, for the start line and the kerb stripes
 				const along = i * step + (wx - x[i]) * tx[i] + (wy - y[i]) * ty[i];
@@ -123,7 +130,7 @@ function paintGround() {
 					// the two slots a slot car track would have
 					ground[k] = SLOT;
 				} else {
-					ground[k] = TARMAC[grain];
+					ground[k] = TARMAC[speck];
 				}
 			}
 		}
@@ -161,21 +168,90 @@ function edge(hull: Float32Array, x: number, y: number) {
 }
 
 export function createRenderer(canvas: HTMLCanvasElement) {
-	canvas.width = WIDTH;
-	canvas.height = HEIGHT;
 	const context = canvas.getContext('2d')!;
-	const image = context.createImageData(WIDTH, HEIGHT);
-	const frame = new Uint32Array(image.data.buffer);
-	const clean = paintGround();
+	const track = paintTrack();
+	// the frame's size, and where in it the track's corner is
+	let width = 0;
+	let height = 0;
+	let ox = 0;
+	let oy = 0;
+	// how many of the screen's pixels each of the frame's is shown as, or 0 to
+	// leave the scaling to the page
+	let zoom = 0;
+	let image: ImageData;
+	let frame: Uint32Array;
+	let painter: Painter;
+	let clean: Uint32Array;
 	// the ground with this race's tyre marks and litter on it
-	const ground = clean.slice();
-	const worn = new Uint8Array(WIDTH * HEIGHT);
+	let ground = new Uint32Array(0);
+	let worn = new Uint8Array(0);
 	let particles: Particle[] = [];
+	// the frame at its own size, and at the next whole size up, on the way to the screen
+	const small = document.createElement('canvas');
+	const large = document.createElement('canvas');
+
+	function resize(w: number, h: number, x: number, y: number, scale: number) {
+		const before = { width, ox, oy, ground, worn };
+		[width, height, ox, oy, zoom] = [w, h, x, y, scale];
+		image = new ImageData(width, height);
+		frame = new Uint32Array(image.data.buffer);
+		painter = createPainter(frame, width, height);
+		clean = new Uint32Array(width * height);
+		worn = new Uint8Array(width * height);
+		for (let py = 0; py < height; py++) {
+			for (let px = 0; px < width; px++) {
+				const tx = px - ox;
+				const ty = py - oy;
+				const on = tx >= 0 && ty >= 0 && tx < WIDTH && ty < HEIGHT;
+				clean[py * width + px] = on ? track[ty * WIDTH + tx] : grass(tx, ty);
+			}
+		}
+		ground = clean.slice();
+		// the marks already on the track stay on it, wherever it now is
+		for (let ty = 0; ty < HEIGHT; ty++) {
+			for (let tx = 0; tx < WIDTH; tx++) {
+				const from = (ty + before.oy) * before.width + tx + before.ox;
+				const to = (ty + oy) * width + tx + ox;
+				if (from < before.ground.length && to < ground.length) {
+					ground[to] = before.ground[from];
+					worn[to] = before.worn[from];
+				}
+			}
+		}
+		canvas.width = small.width = width;
+		canvas.height = small.height = height;
+		if (zoom) {
+			canvas.width = Math.round(width * zoom);
+			canvas.height = Math.round(height * zoom);
+			large.width = width * Math.ceil(zoom);
+			large.height = height * Math.ceil(zoom);
+		}
+	}
+	resize(WIDTH, HEIGHT, 0, 0, 0);
+
+	/** Puts the finished frame on the screen. */
+	function present() {
+		if (!zoom) return context.putImageData(image, 0, 0);
+		small.getContext('2d')!.putImageData(image, 0, 0);
+		let from = small;
+		if (!Number.isInteger(zoom)) {
+			// Between whole sizes, hard pixels would come out uneven widths and
+			// make the lettering wobble. So it is scaled up hard to the next
+			// whole size and brought down smoothly from there: every pixel the
+			// same size, with edges a shade soft.
+			const up = large.getContext('2d')!;
+			up.imageSmoothingEnabled = false;
+			up.drawImage(small, 0, 0, large.width, large.height);
+			from = large;
+		}
+		context.imageSmoothingEnabled = from === large;
+		context.drawImage(from, 0, 0, canvas.width, canvas.height);
+	}
 
 	const pixel = (x: number, y: number) => {
-		const px = Math.floor(x * SCALE);
-		const py = Math.floor(y * SCALE);
-		return px < 0 || py < 0 || px >= WIDTH || py >= HEIGHT ? -1 : py * WIDTH + px;
+		const px = Math.floor(x * SCALE) + ox;
+		const py = Math.floor(y * SCALE) + oy;
+		return px < 0 || py < 0 || px >= width || py >= height ? -1 : py * width + px;
 	};
 
 	function puff(x: number, y: number, speed: number, span: number, colour: number, smoke: boolean) {
@@ -199,17 +275,17 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 		const sin = Math.sin(car.angle);
 		const body = hex(car.entry.color);
 		const shade = hex(car.entry.shade);
-		const cx = Math.floor(car.x * SCALE);
-		const cy = Math.floor(car.y * SCALE);
-		for (let py = Math.max(0, cy - 12); py < Math.min(HEIGHT, cy + 13); py++) {
-			for (let px = Math.max(0, cx - 12); px < Math.min(WIDTH, cx + 13); px++) {
+		const cx = Math.floor(car.x * SCALE) + ox;
+		const cy = Math.floor(car.y * SCALE) + oy;
+		for (let py = Math.max(0, cy - 12); py < Math.min(height, cy + 13); py++) {
+			for (let px = Math.max(0, cx - 12); px < Math.min(width, cx + 13); px++) {
 				// this pixel in the car's own metres; the shadow falls a pixel
 				// down and to the right
-				const wx = (px + (shadow ? -0.5 : 0.5)) / SCALE - car.x;
-				const wy = (py + (shadow ? -0.5 : 0.5)) / SCALE - car.y;
+				const wx = (px - ox + (shadow ? -0.5 : 0.5)) / SCALE - car.x;
+				const wy = (py - oy + (shadow ? -0.5 : 0.5)) / SCALE - car.y;
 				const x = wx * cos + wy * sin;
 				const y = wy * cos - wx * sin;
-				const k = py * WIDTH + px;
+				const k = py * width + px;
 				const wheel = Math.abs(Math.abs(y) - 0.85) < 0.22 && Math.abs(Math.abs(x) - 1.3) < 0.5;
 				if (!inside(car.hull, x, y)) {
 					if (wheel) frame[k] = shadow ? mix(frame[k], BLACK, 0.4) : TYRE;
@@ -236,6 +312,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 	}
 
 	return {
+		/**
+		 * Makes the frame `w` by `h` pixels with the track's corner at x, y, each
+		 * pixel shown as `scale` of the screen's.
+		 */
+		resize,
+
 		/** Wipes the marks and litter of the last race. */
 		reset() {
 			ground.set(clean);
@@ -253,8 +335,16 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 			}
 		},
 
-		/** Draws one frame, `dt` seconds after the last. */
-		draw(cars: CarView[], dt: number, show: { line: boolean; hulls: boolean }) {
+		/**
+		 * Draws one frame, `dt` seconds after the last. `over` is handed the
+		 * frame once the race is on it, to draw what goes on top.
+		 */
+		draw(
+			cars: CarView[],
+			dt: number,
+			show: { line: boolean; hulls: boolean },
+			over?: (painter: Painter) => void
+		) {
 			// nothing new is thrown up while the race is paused
 			for (const car of dt > 0 ? cars : []) {
 				const cos = Math.cos(car.angle);
@@ -301,7 +391,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 				if (k < 0) continue;
 				if (p.smoke) {
 					// thinning out as it fades: fewer pixels drawn, then fainter
-					if (p.life / p.span > 0.5 || (k + Math.floor(k / WIDTH)) & 1) {
+					if (p.life / p.span > 0.5 || (k + Math.floor(k / width)) & 1) {
 						frame[k] = mix(frame[k], p.colour, 0.7);
 					}
 				} else if (p.life <= 0) {
@@ -334,7 +424,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 					}
 				}
 			}
-			context.putImageData(image, 0, 0);
+			over?.(painter);
+			present();
 		}
 	};
 }
