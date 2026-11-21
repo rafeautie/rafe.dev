@@ -104,7 +104,9 @@ const KEY_H = 89;
  * How tall the bet slip is for a field of `count` cars: the markets over the
  * cars, a row each, and the stake and the button under them.
  */
-const slipHeight = (count: number) => 58 + count * CAR + 76;
+const SLIP_HEAD = 58;
+const SLIP_FOOT = 76;
+const slipHeight = (count: number) => SLIP_HEAD + count * CAR + SLIP_FOOT;
 /** How tall the tower is for a field of `count` cars, the leaderboard and everybody's bets. */
 const towerHeight = (count: number) => 35 + count * ROW;
 const BOARD_H = 18 + BOARD_ROWS * LINE;
@@ -213,7 +215,7 @@ export function layout(
 	const my = (fh - 170) >> 1;
 	const widths = MARKETS.map((market) => measure(SHORT[market]) + 9);
 	// where the slip's rows of cars end, and what is picked, the stake and the button begin
-	const foot = y + 58 + count * CAR;
+	const foot = y + slipH - SLIP_FOOT;
 	return {
 		unit,
 		key,
@@ -249,9 +251,9 @@ export function layout(
 				13
 			)
 		),
-		cars: rows(count, (row) => box(x + 3, y + 58 + row * CAR, SLIP - 6, CAR - 1)),
-		firsts: rows(count, (row) => box(x + 243, y + 59 + row * CAR, 25, 11)),
-		seconds: rows(count, (row) => box(x + 269, y + 59 + row * CAR, 25, 11)),
+		cars: rows(count, (row) => box(x + 3, y + SLIP_HEAD + row * CAR, SLIP - 6, CAR - 1)),
+		firsts: rows(count, (row) => box(x + 243, y + SLIP_HEAD + 1 + row * CAR, 25, 11)),
+		seconds: rows(count, (row) => box(x + 269, y + SLIP_HEAD + 1 + row * CAR, 25, 11)),
 		legend: box(x + 210, y + 45, 29, 12),
 		clean: [box(x + 6, foot + 4, 76, 15), box(x + 84, foot + 4, 100, 15)],
 		stakes: STAKES.map((_, index) => box(x + 6 + index * 48, foot + 23, 46, 15)),

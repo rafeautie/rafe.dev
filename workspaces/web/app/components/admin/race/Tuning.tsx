@@ -24,6 +24,10 @@ import { cell, type Act, type View } from './format';
 
 type Key = keyof typeof LIMITS;
 
+/** A number as typed, NaN while the box is empty, and back. */
+const read = (value: string) => (value === '' ? NaN : Number(value));
+const shown = (value: number) => (Number.isNaN(value) ? '' : value);
+
 /** A track's centre line, as an SVG path in its world's metres. */
 function outline(id: TrackId) {
 	const { n, x, y } = getTrack(id);
@@ -82,8 +86,6 @@ export const Tuning = memo(function Tuning({
 	const [draft, setDraft] = useState(settings);
 	const [resetting, setResetting] = useState(false);
 	const dirty = JSON.stringify(draft) !== JSON.stringify(settings);
-	const read = (value: string) => (value === '' ? NaN : Number(value));
-	const shown = (value: number) => (Number.isNaN(value) ? '' : value);
 	return (
 		<div className="@container flex flex-col gap-4">
 			<Heading>tuning</Heading>
@@ -294,13 +296,8 @@ function Whole({
 				min={low}
 				max={high}
 				step={1}
-				value={Number.isNaN(draft[name]) ? '' : draft[name]}
-				onChange={(event) =>
-					onChange({
-						...draft,
-						[name]: event.target.value === '' ? NaN : Number(event.target.value)
-					})
-				}
+				value={shown(draft[name])}
+				onChange={(event) => onChange({ ...draft, [name]: read(event.target.value) })}
 				className={cn(draft[name] !== settings[name] && 'border-foreground/50')}
 			/>
 			<span className="text-foreground/50 tabular-nums">
