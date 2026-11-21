@@ -10,6 +10,7 @@ import { NUMBER } from '~/lib/admin/format';
 import { cell, condition, number, type View } from './format';
 import { useRoomClock } from './clock';
 import { TimeAgo } from '~/components/admin/TimeAgo';
+import { PhaseBar } from '~/components/race/PhaseBar';
 
 // What is happening right now, the part of the page that is watched rather
 // than worked: where the loop is and how long is left, who is there, what
@@ -19,11 +20,6 @@ import { TimeAgo } from '~/components/admin/TimeAgo';
 type Loop = View['loop'];
 
 const PHASES = ['betting', 'racing', 'results'] as const;
-
-// Two narrow gaps cut through the phase bar at its thirds, so the one bar
-// reads as three sections.
-const NOTCHES =
-	'linear-gradient(to right, #000 calc(100% / 3 - 1.5px), transparent 0 calc(100% / 3 + 1.5px), #000 0 calc(200% / 3 - 1.5px), transparent 0 calc(200% / 3 + 1.5px), #000 0)';
 
 const WAITING = {
 	idle: 'waiting for somebody to open the game',
@@ -118,22 +114,18 @@ function Status({ loop }: { loop: Loop }) {
 		>
 			<div className="flex flex-col gap-5">
 				{/* the three phases every race goes through, as one bar cut into
-				    thirds, filled as far as the race has got */}
+				    thirds (a race's length is not known until it is run), filled
+				    as far as the race has got */}
 				<div className="flex flex-col gap-1.5">
-					<span
-						className="block h-1.5 overflow-hidden rounded-full bg-foreground/10"
-						style={{ maskImage: NOTCHES, WebkitMaskImage: NOTCHES }}
-						aria-hidden
-					>
-						{/* keyed by race, so a new race starts the fill again from
-						    nothing at once rather than running it back */}
-						<span
-							key={loop.round}
-							suppressHydrationWarning
-							className="block h-full bg-foreground transition-[width] duration-1000 ease-linear"
-							style={{ width: `${(at < 0 ? 0 : (at + through) / PHASES.length) * 100}%` }}
-						/>
-					</span>
+					<PhaseBar
+						restart={loop.round}
+						className="bg-foreground/10"
+						phases={PHASES.map((phase, i) => ({
+							name: phase,
+							weight: 1,
+							fill: i < at ? 1 : i === at ? through : 0
+						}))}
+					/>
 					<ol className="grid grid-cols-3" aria-label="Phase">
 						{PHASES.map((phase, i) => (
 							<li

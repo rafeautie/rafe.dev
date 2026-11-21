@@ -69,6 +69,9 @@ export default function Live() {
 
 		// the round the ticker is for, so it starts over with each new one
 		let ticked = -1;
+		function countDown() {
+			if (state) setLeft(Math.max(0, Math.ceil((state.endsAt - Date.now() - ahead) / 1000)));
+		}
 		let again: ReturnType<typeof setTimeout>;
 		let gone = false;
 		function connect() {
@@ -128,6 +131,9 @@ export default function Live() {
 					ticked = state.round;
 				}
 				setRoom(state);
+				// at once, not on the next tick, so the new phase is never shown
+				// with the last one's time left
+				countDown();
 			};
 			// the room drops its sockets now and then, a deploy for one
 			ws.onclose = () => {
@@ -136,9 +142,7 @@ export default function Live() {
 		}
 		connect();
 
-		const countdown = setInterval(() => {
-			if (state) setLeft(Math.max(0, Math.ceil((state.endsAt - Date.now() - ahead) / 1000)));
-		}, 250);
+		const countdown = setInterval(countDown, 250);
 
 		let frame = requestAnimationFrame(function tick() {
 			frame = requestAnimationFrame(tick);

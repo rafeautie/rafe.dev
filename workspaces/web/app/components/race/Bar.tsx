@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Link } from '~/components/Link';
 import { SlashNav } from '~/components/SlashNav';
 import { ThemeToggle } from '~/components/ThemeToggle';
+import { PhaseBar, type Phase } from './PhaseBar';
 
 // The width of the whole game: the page less its padding, with the rail at
 // --rail. On a wide, short window the track would grow taller than the screen,
@@ -15,19 +16,17 @@ export const FRAME =
 export const iconButton =
 	'grid size-8 shrink-0 cursor-pointer place-items-center rounded-md p-0 text-foreground outline-none transition-colors hover:bg-foreground/10 hover:scale-100 focus-visible:ring-2 focus-visible:ring-ring';
 
-/** One stretch of the timeline: how long it is, how much has passed, and how it looks. */
-export type Segment = { name: string; weight: number; fill: number; urgent?: boolean };
-
 /**
- * The clock: a readout, a caption, and the cycle as three segments (bet, race,
- * result) whose lengths are the phases' own. It is the same size whatever it
- * says, and with no segments it is the empty track.
+ * The clock: a readout, a caption, and the cycle as one bar in three sections
+ * (bet, race, result) whose lengths are the phases' own. It is the same size
+ * whatever it says, and with no segments it is the empty track.
  */
 export function ClockFace({
 	readout = '–:––',
 	small = false,
 	caption = '',
 	urgent = false,
+	round,
 	segments = [
 		{ name: 'Bet', weight: 45, fill: 0 },
 		{ name: 'Race', weight: 65, fill: 0 },
@@ -38,7 +37,9 @@ export function ClockFace({
 	small?: boolean;
 	caption?: string;
 	urgent?: boolean;
-	segments?: Segment[];
+	/** The race this is the clock for; a new one starts the bar again from empty. */
+	round?: number;
+	segments?: Phase[];
 }) {
 	return (
 		<div className="flex w-44 flex-col gap-1.5 lg:w-52">
@@ -50,27 +51,7 @@ export function ClockFace({
 				</span>
 				<span className="text-xs text-muted-foreground">{caption}</span>
 			</p>
-			<div className="flex h-1 gap-1" aria-hidden="true">
-				{segments.map((segment) => (
-					<div
-						key={segment.name}
-						title={segment.name}
-						className="h-full overflow-hidden rounded-full bg-foreground/15"
-						style={{ flex: `${segment.weight} 1 0` }}
-					>
-						<div
-							className={`h-full transition-[width] duration-1000 ease-linear motion-reduce:transition-none ${
-								segment.urgent
-									? 'bg-destructive'
-									: segment.fill >= 1
-										? 'bg-foreground/50'
-										: 'bg-foreground'
-							}`}
-							style={{ width: `${Math.max(0, Math.min(1, segment.fill)) * 100}%` }}
-						/>
-					</div>
-				))}
-			</div>
+			<PhaseBar phases={segments} restart={round} urgent={urgent} className="h-1" />
 			<span className="sr-only">Bet, race, result</span>
 		</div>
 	);

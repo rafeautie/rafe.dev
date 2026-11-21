@@ -4,7 +4,8 @@ import { Dialog, DialogTrigger } from '~/components/ui/dialog';
 import type { RoomState, Standing, ToRoom } from '~/lib/race/room';
 import { DEFAULT_SETTINGS } from '~/lib/race/settings';
 import { LAPS } from '~/lib/race/sim';
-import { Bar, ClockFace, iconButton, type Segment } from './Bar';
+import { Bar, ClockFace, iconButton } from './Bar';
+import type { Phase } from './PhaseBar';
 import { Settings } from './Settings';
 import { chips, signed, useTween, type Running } from './shared';
 
@@ -30,12 +31,11 @@ function Clock({
 	const leader = running ? running.cars[running.order[0]] : null;
 	const lap = leader ? Math.min(LAPS, Math.max(1, leader.lap + 1)) : 1;
 	const raced = phase === 'racing' ? (leader?.fraction ?? 0) : phase === 'results' ? 1 : 0;
-	const segments: Segment[] = [
+	const segments: Phase[] = [
 		{
 			name: 'Bet',
 			weight: bet,
-			fill: phase === 'betting' ? 1 - left / bet : phase === 'idle' ? 0 : 1,
-			urgent
+			fill: phase === 'betting' ? 1 - left / bet : phase === 'idle' ? 0 : 1
 		},
 		{ name: 'Race', weight: RACE, fill: raced },
 		{ name: 'Result', weight: results, fill: phase === 'results' ? 1 - left / results : 0 }
@@ -44,6 +44,7 @@ function Clock({
 		<ClockFace
 			small={phase === 'racing'}
 			urgent={urgent}
+			round={room.round}
 			readout={
 				timed
 					? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
