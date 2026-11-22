@@ -36,6 +36,7 @@ import type { Painter } from '~/lib/race/pixels';
 import type { Replay } from '~/lib/race/recording';
 import { SCALE, type CarView } from '~/lib/race/render';
 import type { Bet, RoomState, Standing, ToRoom } from '~/lib/race/room';
+import { describeRow } from '~/lib/race/status';
 import { CONDITIONS } from '~/lib/race/roster';
 import { DEFAULT_SETTINGS, tuned } from '~/lib/race/settings';
 import { Bar, PAGE, iconButton } from './Bar';
@@ -237,6 +238,8 @@ export function Game({
 	// the one whose numbers are shown, for the graphics drawn after it.
 	const lens = useRef<Lens | null>(null);
 	const shown = useRef<Replay | null>(null);
+	// the place in the tower whose row a mouse is over
+	const hovered = useRef<number | null>(null);
 	const seen = useRef<{ followed: Set<string>; focus: string | null }>({
 		followed: new Set(),
 		focus: null
@@ -379,6 +382,10 @@ export function Game({
 		note
 	};
 	const still = useMemo(() => matchMedia('(prefers-reduced-motion: reduce)').matches, []);
+	// the tower's buttons come and go with the race, and a pointer over one as it goes never leaves it
+	useEffect(() => {
+		hovered.current = null;
+	}, [racing]);
 	useEffect(() => {
 		// While the race runs, the camera follows what was chosen; otherwise,
 		// with the slip or the result over the middle, it rests on the whole track.
@@ -416,6 +423,7 @@ export function Game({
 					cars,
 					replay,
 					backed,
+					hover: racing && hovered.current !== null ? (hud.order()[hovered.current] ?? null) : null,
 					watch: {
 						follow,
 						lens: lens.current ?? { from: at.stage, to: at.stage },
@@ -507,7 +515,14 @@ export function Game({
 												(follow.mode === 'car' && follow.id === id) ||
 												(follow.mode === 'group' && follow.ids.includes(id))
 											}
-											aria-label={`Follow ${entry(id).name}, place ${place + 1}`}
+											aria-label={`Follow ${hud.order()[place] === id && hud.rows()[place] ? describeRow(hud.rows()[place]) : `${entry(id).name}, place ${place + 1}`}`}
+											// the row says what a click does while a pointer is over it; a finger has no hover
+											onPointerEnter={(event) => {
+												if (event.pointerType === 'mouse') hovered.current = place;
+											}}
+											onPointerLeave={() => {
+												if (hovered.current === place) hovered.current = null;
+											}}
 											onClick={(event) =>
 												follows(
 													hud.order()[place] ?? id,

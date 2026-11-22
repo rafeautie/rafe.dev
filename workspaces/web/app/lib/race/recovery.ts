@@ -1,17 +1,19 @@
 import { PolygonShape, type World } from 'planck';
 import { LANE, pitsFor } from './pits';
 import {
+	KERBSIDE,
 	NEARSIDE,
 	RING,
 	TRUCK,
 	TRUCK_HALF,
+	WHEELBASE,
 	hookOf,
 	serviceFor,
 	type Pose,
 	type Route
 } from './service';
 import type { Car } from './sim';
-import { HALF_CORRIDOR, clamp, lateral, nearest, triangle, type Track } from './track';
+import { HALF_CORRIDOR, HALF_ROAD, clamp, lateral, nearest, triangle, type Track } from './track';
 
 // The tow trucks and the job they do. Each is a flatbed with room on its bed
 // for two cars, one behind the other, and a crane between the cab and the
@@ -33,14 +35,16 @@ import { HALF_CORRIDOR, clamp, lateral, nearest, triangle, type Track } from './
 // the box. Then it goes back to its stand, or straight out for the next.
 //
 // The truck is not driven like a car. It follows a way worked out for each
-// part of the job (service.ts), with one axle on the way and the other
-// following it, so it turns only as it moves and no tighter than the way
-// bends. What is on the crane or the bed goes where the truck takes it, off
-// the ground, where no car can touch it. The truck itself is solid, and as
-// heavy as a loaded flatbed is: a car that runs into it takes the knock, and
-// hardly moves it, and the truck is back where it should be the next moment.
-// It drives through the track's walls, where the pit lane meets the track,
-// as a car in the pits does. It does not drive on over a car it bumps into.
+// part of the job (service.ts), and it is steered along it as a truck is:
+// its front wheels turn, no further than they go and no faster than they
+// can be turned, and the truck goes round about its back axles, so it turns
+// only as it moves, and those cut a little inside the way its front takes.
+// What is on the crane or the bed goes where the truck takes it, off the
+// ground, where no car can touch it. The truck itself is solid, and as heavy
+// as a loaded flatbed is: a car that runs into it takes the knock, and hardly
+// moves it, and the truck is straight back on its way. It drives through the
+// track's walls, where the pit lane meets the track, as a car in the pits
+// does. It does not drive on over a car it bumps into.
 
 /** Seconds from the call to the truck leaving its stand. */
 const SCRAMBLE = 0.6;
@@ -89,6 +93,14 @@ const HAUL = 6;
 const SQUARE = 0.4;
 /** How far along the lane it takes to turn into a stand off it, no tighter than a truck steers. */
 const TURN_IN = 14;
+/** From the back axles to the point on the truck that is steered along the way. */
+const GUIDE = TRUCK.axle - TRUCK.rear;
+/** How hard it is steered back onto the way, for each metre off it; and how far ahead along it it looks for which way the way runs, in seconds at the pace it is going. */
+const HOLD_LINE = 1.2;
+const LOOK = 0.05;
+/** The front of the truck's front tyres, and how near the edge of the tarmac it lets its tyres go. */
+const FRONT = TRUCK.wheels[0] + 0.5;
+const ROADSIDE = HALF_ROAD - 0.2;
 /** How fast it goes down the pit lane, m/s. */
 const LANE_PACE = 11;
 /** On the track, a truck stops this far short of another that is going for a wreck or at work on one (m). */
@@ -248,6 +260,8 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		...stall,
 		/** Forward speed, m/s. */
 		speed: 0,
+		/** How far its front wheels are turned, towards its left positive. */
+		steer: 0,
 		/** Out on a job, lights going, rather than on its stand. */
 		busy: false,
 		/** The car on the crane, as an index into the race's cars, or -1. */
@@ -269,7 +283,9 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		/** On its way to a wreck or at work on one. */
 		get fetching(): boolean {
 			return stage === 'out' || stage === 'held' || stage === 'approach' || stage === 'lift';
-		}
+		},
+		/** Whether a car on its wheels, wrecked or not, was up against it, which may have nudged it, as of the last `sync`. */
+		touched: false
 	};
 	/**
 	 * The front of the truck, as the drivers see it: where the truck is, but
@@ -314,8 +330,6 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	let gone = 0;
 	let at = 0;
 	let pace = 0;
-	/** The way the front axle faces as the way begins, which is the way to the back one, reversed. */
-	let setOff = 0;
 	/** Seconds in the crane's step, for the ones that are waits. */
 	let timer = 0;
 	/** Seconds it has been waiting behind a car on the track. */
@@ -422,7 +436,6 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	function take(next: Route, loaded: boolean) {
 		way = next;
 		gone = at = 0;
-		setOff = body.getAngle();
 		door = 0;
 		const { count, x, y, along } = next;
 		caps = new Float64Array(count);
@@ -438,6 +451,13 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			const bend = sides ? Math.abs(2 * cross) / sides : 0;
 			const hold = clamp(7 + (1 / Math.max(bend, 1e-3) - 10) * 0.4, 7, 14) * (loaded ? 0.8 : 1);
 			if (bend > 1e-3) caps[k] = Math.min(caps[k], Math.sqrt(hold / bend));
+			// Nor faster into a bend, or out of one, than the wheel can be
+			// turned to take it: the more it has to be turned for each metre,
+			// the slower.
+			const wheel = (at: number) => Math.atan(WHEELBASE * bendAt(at));
+			const [c, d] = [Math.max(0, k - 2), Math.min(count - 1, k + 2)];
+			const turning = Math.abs(wheel(d) - wheel(c)) / Math.max(along[d] - along[c], 1e-3);
+			if (turning > 1e-3) caps[k] = Math.min(caps[k], TRUCK.steering / turning);
 		}
 		// slowing in time for each bend, and for the stop at the end
 		for (let k = count - 2; k >= 0; k--) {
@@ -449,18 +469,103 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	}
 
 	/**
-	 * Where the way is, `far` metres along it. Before its start it runs
-	 * straight back the way it sets out, which is where the truck's other
-	 * axle is when it begins.
+	 * Where on the way, as far along it as the truck has got or a little on,
+	 * a place is nearest: how far along, and how far to the left of it.
 	 */
-	function point(far: number): [number, number] {
+	function onWay(px: number, py: number): [number, number] {
 		const { count, x, y, along } = way!;
-		if (far < 0) return [x[0] + Math.cos(setOff) * far, y[0] + Math.sin(setOff) * far];
+		let best = Infinity;
+		let found: [number, number] = [gone, 0];
+		for (let k = Math.max(0, at - 2); k < Math.min(count - 1, at + 40); k++) {
+			const [dx, dy] = [x[k + 1] - x[k], y[k + 1] - y[k]];
+			const span = Math.hypot(dx, dy) || 1;
+			const t = clamp(((px - x[k]) * dx + (py - y[k]) * dy) / span ** 2, 0, 1);
+			const [ex, ey] = [px - x[k] - dx * t, py - y[k] - dy * t];
+			const off = Math.hypot(ex, ey);
+			if (off < best) {
+				best = off;
+				found = [along[k] + span * t, (dx * ey - dy * ex) / span];
+			}
+		}
+		return found;
+	}
+
+	/** How sharply the way bends at a point of it, towards the left positive, as one over the radius. */
+	function bendAt(k: number) {
+		const { count, x, y } = way!;
+		const [a, b] = [Math.max(0, k - 3), Math.min(count - 1, k + 3)];
+		const [cross, sides] = triangle(x[a], y[a], x[k], y[k], x[b], y[b]);
+		return sides ? (2 * cross) / sides : 0;
+	}
+
+	/**
+	 * How far to the left of the way the point the truck is steered by is
+	 * steered. Round a bend the back axles cut inside the way that point
+	 * takes, and the front of the truck swings outside it: it is steered a
+	 * little outside it, so that the one is as far inside as the other is
+	 * outside. Out on the track, on a way that keeps to the tarmac, it is
+	 * steered further over if it must be to keep all its tyres on it too.
+	 */
+	function wide(k: number) {
+		const { count, across } = way!;
+		// the bend the whole of the truck is in, its back as well as its front
+		let bend = 0;
+		for (let j = Math.max(0, k - 8); j <= Math.min(count - 1, k + 2); j++) {
+			const here = bendAt(j);
+			if (Math.abs(here) > Math.abs(bend)) bend = here;
+		}
+		const inside = (GUIDE ** 2 * Math.abs(bend)) / 2;
+		const outside = (((FRONT - TRUCK.rear) ** 2 - GUIDE ** 2) * Math.abs(bend)) / 2;
+		const even = ((outside - inside) / 2) * Math.sign(bend);
+		if (Math.abs(across[k]) > KERBSIDE + 0.1) return even;
+		// as across the track counts, which may be the other way from the way's left
+		const sample = way!.sample[k];
+		const ahead = heading(way!.along[k]);
+		const flip =
+			Math.sign(track.nx[sample] * -Math.sin(ahead) + track.ny[sample] * Math.cos(ahead)) || 1;
+		const towards = Math.sign(bend) * flip;
+		const inner = across[k] + towards * (inside + TRUCK_HALF);
+		const outer = across[k] - towards * (outside + TRUCK_HALF);
+		const [low, high] = [-ROADSIDE - Math.min(inner, outer), ROADSIDE - Math.max(inner, outer)];
+		const shift = low <= high ? clamp(even * flip, low, high) : (low + high) / 2;
+		return shift * flip;
+	}
+
+	/** Where the way is, `far` metres along it, or at its end. */
+	function wayAt(far: number): [number, number] {
+		const { count, x, y, along } = way!;
 		let k = Math.min(at, count - 2);
-		while (k > 0 && along[k] > far) k--;
 		while (k + 2 < count && along[k + 1] <= far) k++;
 		const t = clamp((far - along[k]) / (along[k + 1] - along[k] || 1), 0, 1);
 		return [x[k] + (x[k + 1] - x[k]) * t, y[k] + (y[k + 1] - y[k]) * t];
+	}
+
+	/** Which way the way runs, `far` metres along it. */
+	function heading(far: number) {
+		const { count, x, y, along } = way!;
+		let k = Math.min(at, count - 2);
+		while (k + 2 < count && along[k + 1] <= far) k++;
+		return Math.atan2(y[k + 1] - y[k], x[k + 1] - x[k]);
+	}
+
+	/**
+	 * Steers the truck `travel` metres on, as a truck goes: its front wheels
+	 * turned towards `wheel`, as far as they go and as fast as they turn, and
+	 * the truck going round about the middle of its back axles, the tighter
+	 * the further they are turned. Backwards, for less than nothing.
+	 */
+	function roll(travel: number, wheel: number, dt: number) {
+		const [steer] = toward(truck.steer, clamp(wheel, -TRUCK.lock, TRUCK.lock), TRUCK.steering * dt);
+		truck.steer = steer;
+		const { x, y } = body.getPosition();
+		const angle = body.getAngle();
+		const [rx, ry] = [x + Math.cos(angle) * TRUCK.rear, y + Math.sin(angle) * TRUCK.rear];
+		const turned = (travel * Math.tan(steer)) / WHEELBASE;
+		const [mid, next] = [angle + turned / 2, angle + turned];
+		const [bx, by] = [rx + Math.cos(mid) * travel, ry + Math.sin(mid) * travel];
+		const [cx, cy] = [bx - Math.cos(next) * TRUCK.rear, by - Math.sin(next) * TRUCK.rear];
+		move(body, cx, cy, next, dt);
+		return { x: cx, y: cy, angle: next };
 	}
 
 	/** How far along the way its front axle first comes to a sample. */
@@ -482,21 +587,32 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		pace += clamp(cap - pace, -1.5 * BRAKE * dt, pull * dt);
 		// (edging past a car that will not move, it may push it)
 		if (limit > NUDGE && bumped()) pace = 0;
-		gone = Math.min(length, gone + pace * dt);
+		// The point it is steered by is taken along the way, and back onto it
+		// if it is off it: the wheel is turned for whichever way that is to go,
+		// a little way on, and the truck goes round to it as fast as it does.
+		const angle = body.getAngle();
+		const guide = on(TRUCK.axle);
+		const [, off] = onWay(guide.x, guide.y);
+		const lookTo = Math.min(length, gone + clamp(pace * LOOK, 0.2, 1.5));
+		const wanted = heading(lookTo) - Math.atan2(HOLD_LINE * (off - wide(at)), Math.max(pace, 2));
+		const swing = clamp(turn(wanted - angle), -1.2, 1.2);
+		const wheel = Math.atan((WHEELBASE * Math.tan(swing)) / GUIDE);
+		// (the point steered by goes faster than the back axles, the more so the tighter it turns)
+		const slip = Math.atan((GUIDE * Math.tan(truck.steer)) / WHEELBASE);
+		const pose = roll(pace * Math.cos(slip) * dt, wheel, dt);
+		const [cos, sin] = [Math.cos(pose.angle), Math.sin(pose.angle)];
+		const [far] = onWay(pose.x + cos * TRUCK.axle, pose.y + sin * TRUCK.axle);
+		gone = Math.max(gone, Math.min(length, far));
 		const arrived = length - gone < 0.05;
 		if (arrived) {
 			gone = length;
 			pace = 0;
 		}
 		truck.speed = pace;
+		while (at + 2 < count && along[at + 1] <= gone) at++;
 		const reached = arrived ? count - 1 : at;
 		truck.sample = way!.sample[reached];
 		truck.across = way!.across[reached];
-		// one axle is on the way here and the other on it a wheelbase behind:
-		// the truck is between them, facing from its back axle to its front
-		const [lx, ly] = point(gone);
-		const [fx, fy] = point(gone - 2 * TRUCK.axle);
-		move(body, (lx + fx) / 2, (ly + fy) / 2, Math.atan2(ly - fy, lx - fx), dt);
 		return arrived;
 	}
 
@@ -855,11 +971,13 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		const stopping = pace ** 2 / (3 * BRAKE);
 		const probe = (far: number) => [x + Math.cos(angle) * far, y + Math.sin(angle) * far];
 		for (let far = BUMPER + 0.5; far <= BUMPER + 3 + stopping; far += 2.5) {
-			const [px, py] = probe(far);
-			for (const car of cars) {
-				if (car.lane < LANE.in) continue;
-				const at = car.body.getPosition();
-				if (Math.hypot(at.x - px, at.y - py) < SHY) return 0;
+			// straight ahead, and where the way it is steering along takes it
+			for (const [px, py] of [probe(far), wayAt(gone + far)]) {
+				for (const car of cars) {
+					if (car.lane < LANE.in) continue;
+					const at = car.body.getPosition();
+					if (Math.hypot(at.x - px, at.y - py) < SHY) return 0;
+				}
 			}
 		}
 		// Nor into the other truck, which may be held at the end of the lane
@@ -1114,6 +1232,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 				const step = Math.min(1, (SQUARE * dt) / Math.max(far, Math.abs(off) * TRUCK.axle, 1e-9));
 				move(body, at.x + dx * step, at.y + dy * step, body.getAngle() + off * step, dt);
 				if (step === 1) stage = 'parked';
+				[truck.steer] = toward(truck.steer, 0, TRUCK.steering * dt);
 			}
 			// with nothing to do, the crane is folded away
 			if (stage !== 'lift' && stage !== 'drop' && stage !== 'approach') slew(STOWED, dt);
@@ -1130,6 +1249,11 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			truck.x = x;
 			truck.y = y;
 			truck.angle = body.getAngle();
+			truck.touched = false;
+			for (let edge = body.getContactList(); edge; edge = edge.next) {
+				if (edge.contact.isTouching() && edge.contact.isEnabled() && edge.other?.isDynamic())
+					truck.touched = true;
+			}
 			// (a truck on its stand is nothing to the drivers)
 			if (stage === 'parked') return;
 			const lifting = stage === 'lift' ? (wreck ?? carried?.car) : null;

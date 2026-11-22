@@ -99,6 +99,13 @@ const FORM = 21;
 const LANE = 2;
 const RESTART_MAX = 15;
 const SETTLE = 10;
+/**
+ * After SETTLE, a car keeps to its line while there is a car in the other
+ * one this near (m), ahead or behind, but no longer than this long after the
+ * green (s).
+ */
+const SPLIT = 20;
+const SETTLE_MAX = 25;
 /** Under caution, a car moves over for the tow truck when it is this near behind (m), and leaves this much room between their middles. */
 const GIVE_WAY = 60;
 const MAKE_WAY = 3.6;
@@ -418,10 +425,13 @@ export function createRace(
 	 * Going green, the order the field lines up in two by two, leader first:
 	 * the order it was in when it started to, of the cars within half a lap
 	 * behind the leader. A car a lap down stays out of it, in the queue. It
-	 * is kept until `settled`, a few seconds after the green.
+	 * is kept until `settled`, a few seconds after the green, and after that
+	 * by each car until it has the road to itself to move over in.
 	 */
 	let lineup: Car[] = [];
 	let settled = 0;
+	/** The cars that have left their line since, each once there was nobody alongside it in the other. */
+	const merged = new Set<Car>();
 	/** Whether the lineup has formed: every car in it near its place. Till then the leader holds the pace down. */
 	let formed = false;
 	/** Everything on the road this step: the cars, and the trucks that are out on the track. */
@@ -526,11 +536,37 @@ export function createRace(
 		approach(ahead, gap, keep, caution ? QUEUE_BRAKE : Infinity);
 
 	/**
+	 * Just after the green, how fast to go behind the car ahead in the same
+	 * line, `gap` metres ahead: the gap is let open with the speed, but by
+	 * accelerating after it rather than braking. A car still a queue's gap
+	 * back or more holds whatever speed the one ahead has, even with less room
+	 * than it would want at that speed, since the rows cross the line a queue's
+	 * gap apart and would otherwise all brake at once at the green.
+	 */
+	const opening = (ahead: Obstacle, gap: number, speed: number) =>
+		Math.max(
+			queueing(ahead, gap, QUEUE + speed * 0.5),
+			Math.min(Math.max(0, ahead.speed), queueing(ahead, gap))
+		);
+
+	/**
 	 * Going green, how far behind the leader each place in the lineup is: the
 	 * one beside them a little way back, and each row a queue's gap behind the
 	 * one in front.
 	 */
 	const slot = (place: number) => Math.floor(place / 2) * QUEUE + (place % 2) * 2;
+
+	/** Whether there is a car in the other line near enough, ahead or behind, to be run into by moving over. */
+	const alongside = (car: Car) =>
+		cars.some(
+			(other) =>
+				other !== car &&
+				!other.retired &&
+				!other.finishTime &&
+				other.lane === PIT.racing &&
+				Math.abs(other.across - car.across) >= CLEAR &&
+				Math.abs(along(car.sample, other.sample)) < SPLIT
+		);
 
 	/** How far behind the leader a car is, forward round the lap: one that has edged a little ahead of them is a little way behind. */
 	function trailing(car: Car) {
@@ -611,6 +647,7 @@ export function createRace(
 		if (caution) {
 			caution.going = 0;
 			lineup = [];
+			merged.clear();
 			formed = false;
 		} else {
 			caution = { since: race.time, going: 0 };
@@ -631,7 +668,18 @@ export function createRace(
 			raise(null);
 		}
 		if (!caution) {
-			if (lineup.length && race.time >= settled) lineup = [];
+			// Once settled, each car leaves its line as soon as it has room to,
+			// rather than the whole field diving for the same piece of road at
+			// once, two by two, wherever it has got to (on the circuit, the
+			// hairpin). One still alongside another by SETTLE_MAX goes anyway.
+			if (lineup.length && race.time >= settled) {
+				const loose = race.time >= settled - SETTLE + SETTLE_MAX;
+				for (const car of lineup) if (loose || !alongside(car)) merged.add(car);
+				if (lineup.every((car) => merged.has(car))) {
+					lineup = [];
+					merged.clear();
+				}
+			}
 			return;
 		}
 		// a car in the pits is neither led nor waited for, unless they all are
@@ -658,6 +706,7 @@ export function createRace(
 		// green until that is off the track too.
 		if (!caution.going && recovery.away && out >= CAUTION_MIN && (closed || out >= CAUTION_MAX)) {
 			caution.going = race.time;
+			merged.clear();
 			lineup = rank(racing).filter((car) => onRound(car.sample, pacer!.sample) < n / 2);
 			formed = false;
 			note(null, { kind: 'restart' });
@@ -733,8 +782,12 @@ export function createRace(
 		const velocity = body.getLinearVelocity();
 		const heading = body.getWorldVector({ x: 1, y: 0 });
 		car.speed = velocity.x * heading.x + velocity.y * heading.y;
-		// a wreck on a truck goes where the truck takes it, and a car in the pits where its crew sends it
-		if (car.towed || car.lane >= PIT.in) return;
+		// A wreck on a truck goes where the truck takes it, and a car in the
+		// pits where its crew sends it, with nothing sliding.
+		if (car.towed || car.lane >= PIT.in) {
+			car.slip = 0;
+			return;
+		}
 
 		const offRoad = Math.abs(car.across) > HALF_ROAD;
 		const grip = car.grip * (offRoad ? VERGE_GRIP : 1) * (1 - 0.2 * car.damage) * tyreGrip(car);
@@ -812,7 +865,7 @@ export function createRace(
 					limit = Math.min(limit, Math.sqrt((GO_BY * tight) ** 2 + (QUEUE_BRAKE / 2) * slowing));
 				}
 			}
-			const place = funnel ? -1 : lineup.indexOf(car);
+			const place = funnel || merged.has(car) ? -1 : lineup.indexOf(car);
 			/** Whether it is on its way round a wreck, or a truck, which comes before making for the pits. */
 			let rounding = false;
 			if (place >= 0) {
@@ -834,7 +887,7 @@ export function createRace(
 					if (ahead <= 0 || ahead > 40 + car.speed) continue;
 					limit = Math.min(
 						limit,
-						queueing(other, ahead, caution ? QUEUE : QUEUE + car.speed * 0.5)
+						caution ? queueing(other, ahead) : opening(other, ahead, car.speed)
 					);
 				}
 			} else if (blocker && !followed(blocker)) {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { BOX, BOX_ACROSS, LANE, STAND, pitsFor } from './pits';
+import { BOX, BOX_ACROSS, createPits, LANE, STAND, pitsFor } from './pits';
 import { LOAD } from './recovery';
 import { createReplay, pack, record, unpack } from './recording';
+import { offRoadAt } from './render';
 import { ROSTER, type Entry } from './roster';
 import { TRUCK } from './service';
 import { HULL } from './sim';
@@ -14,11 +15,21 @@ import {
 	LIGHTS,
 	RULES,
 	timeCap,
+	type Car,
 	type Flag,
 	type RaceEvent,
 	type Rules
 } from './sim';
-import { getTrack, HALF_CORRIDOR, lateral, nearest, TRACK_IDS, type TrackId } from './track';
+import {
+	getTrack,
+	HALF_CORRIDOR,
+	HALF_ROAD,
+	lateral,
+	MAX_OFFSET,
+	nearest,
+	TRACK_IDS,
+	type TrackId
+} from './track';
 
 /** A stop as the test saw it: who, when it pulled up and when it left, what was done, and what it did to the car. */
 type Stopped = {
@@ -53,6 +64,9 @@ function run(
 	const joined: number[] = [];
 	let nearest2 = Infinity;
 	let least = Infinity;
+	// the most any car off the track slid, and how often one of its rear tyres was off the road
+	let slid = 0;
+	let rough = 0;
 	for (let step = 0; step < (LIGHTS + timeCap(rules.laps) + 1) / DT && !race.done; step++) {
 		const before = race.cars.map((car) => ({ fuel: car.fuel, wear: car.wear, lane: car.lane }));
 		race.step();
@@ -101,6 +115,17 @@ function run(
 			}
 		}
 		for (const car of race.cars) least = Math.min(least, car.fuel);
+		for (const car of race.cars) {
+			if (car.retired || car.lane < LANE.in) continue;
+			slid = Math.max(slid, car.slip);
+			const [cos, sin] = [Math.cos(car.angle), Math.sin(car.angle)];
+			for (const side of [-0.85, 0.85]) {
+				// where the renderer has a rear tyre (render.ts)
+				const x = car.x - 1.3 * cos - side * sin;
+				const y = car.y - 1.3 * sin + side * cos;
+				if (offRoadAt(track, x, y)) rough++;
+			}
+		}
 	}
 	return Object.assign(race, {
 		all: events,
@@ -110,7 +135,9 @@ function run(
 		entered,
 		joined,
 		nearest: nearest2,
-		least
+		least,
+		slid,
+		rough
 	});
 }
 
@@ -120,6 +147,28 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 	const track = getTrack(id);
 	const { n } = track;
 	const lane = pitsFor(track);
+
+	it('is paved, as the track is, while the verge and the grass are not', () => {
+		/** How many points the given distance either side of the centre line are off the road, as a share of them. */
+		const rough = (across: number) => {
+			let off = 0;
+			for (let i = 0; i < n; i++) {
+				for (const side of [-1, 1]) {
+					const x = track.x[i] - track.ty[i] * across * side;
+					const y = track.y[i] + track.tx[i] * across * side;
+					if (offRoadAt(track, x, y)) off++;
+				}
+			}
+			return off / (2 * n);
+		};
+		expect(rough(0)).toBe(0);
+		expect(rough(HALF_ROAD - 0.6)).toBe(0);
+		// (less where the ways to and from the pits are paved through it)
+		expect(rough(HALF_ROAD + 0.4)).toBeGreaterThan(0.9);
+		// (and the grass inside, along the pit lane)
+		expect(rough(HALF_CORRIDOR + 3)).toBeGreaterThan(0.6);
+		for (const box of lane.boxes) expect(offRoadAt(track, box.x, box.y)).toBe(false);
+	});
 
 	it('has a box for every car, each clear of the next', () => {
 		expect(lane.boxes).toHaveLength(ROSTER.length);
@@ -244,6 +293,14 @@ describe.each(TRACK_IDS)('pit stops on the %s', (id) => {
 		for (const race of races) {
 			expect(race.fastest).toBeLessThanOrEqual(RULES.limit + 0.01);
 			expect(race.nearest).toBeGreaterThan(3.5);
+		}
+	});
+
+	it('throw up nothing on the way: no sliding, and never a tyre off the paving', () => {
+		for (const race of races) {
+			expect(race.stops.length).toBeGreaterThan(0);
+			expect(race.slid).toBe(0);
+			expect(race.rough).toBe(0);
 		}
 	});
 
@@ -607,5 +664,128 @@ describe('the settings for the pits', () => {
 		}
 		expect(filled).not.toHaveProperty('pitSpeed');
 		expect(checkSettings(filled)).toEqual(filled);
+	});
+});
+
+/**
+ * Two cars through the lane with nothing else about: the first in for box
+ * `first`, the second `delay` seconds behind it for box `second`. Each is
+ * put down called in where the way in leaves the track, on the inside, at
+ * about the speed it would be doing there. The cars are only places in the
+ * world, which is all the pits ask of them.
+ *
+ * What comes back: the slowest the second went down the lane before it had
+ * its own box to slow for; how near the two came anywhere off the track, and
+ * in the lane while the first was still in it; whether the second ever got
+ * ahead of the first there; and how many of them pulled up in their boxes.
+ */
+function twoIn(id: TrackId, first: number, second: number, delay: number) {
+	const track = getTrack(id);
+	const lane = pitsFor(track);
+	const { n } = track;
+	const across = -MAX_OFFSET;
+	const stand = (sample: number) => {
+		const car = {
+			entry: { crew: 0.5 },
+			x: track.x[sample] + track.nx[sample] * across,
+			y: track.y[sample] + track.ny[sample] * across,
+			angle: Math.atan2(track.ty[sample], track.tx[sample]),
+			speed: 15,
+			sample,
+			across,
+			retired: true,
+			finishTime: 0,
+			progress: 0,
+			fuel: 1.2,
+			wear: 0.3,
+			lane: LANE.racing as number,
+			pace: new Float32Array(n).fill(30),
+			offset: 0,
+			steer: 0,
+			stuck: 0,
+			slip: 0,
+			body: {
+				setActive() {},
+				setAngularVelocity() {},
+				setTransform({ x, y }: { x: number; y: number }, angle: number) {
+					car.x = x;
+					car.y = y;
+					car.angle = angle;
+					car.sample = nearest(track, x, y, car.sample);
+				},
+				setLinearVelocity({ x, y }: { x: number; y: number }) {
+					car.speed = Math.hypot(x, y);
+				}
+			}
+		};
+		return car;
+	};
+	// the rest of the field is out of the race, and never comes near
+	const cars = ROSTER.map(() => stand(lane.entry));
+	let seed = 7;
+	const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+	const pits = createPits(cars as unknown as Car[], track, RULES, rand, {
+		flag: () => 'green',
+		laps: () => RULES.laps,
+		note: () => {},
+		retire: () => {},
+		trucks: []
+	});
+	const call = (car: (typeof cars)[number]) => {
+		const { body: _, ...there } = stand(lane.entry);
+		Object.assign(car, there, { retired: false, lane: LANE.called });
+	};
+	const [a, b] = [cars[first], cars[second]];
+	/** How far down the lane a car is, in samples past the line where it begins. */
+	const down = (car: typeof a) => (((car.sample - lane.in1) % n) + n) % n;
+	const off = (car: typeof a) => car.lane === LANE.in || car.lane === LANE.out;
+	// the first is still in the lane until it is this far from its box, where it turns in
+	const turns = lane.boxes[first].sample - lane.in1 - 10;
+	const own = lane.boxes[second].sample - lane.in1 - 14;
+	let [slowest, closest, behind] = [Infinity, Infinity, Infinity];
+	let order = true;
+	const stops = new Set<number>();
+	call(a);
+	for (let time = 0, called = false; time < 40; time += DT) {
+		if (!called && time >= delay) [called] = [true, call(b)];
+		pits.step(time, true, DT);
+		if (a.lane === LANE.box) stops.add(first);
+		if (b.lane === LANE.box) stops.add(second);
+		if (off(a) && off(b)) closest = Math.min(closest, Math.hypot(a.x - b.x, a.y - b.y));
+		if (b.lane === LANE.in && down(b) > 3 && down(b) < own) slowest = Math.min(slowest, b.speed);
+		if (a.lane === LANE.in && b.lane === LANE.in && down(b) < turns && down(a) < turns) {
+			behind = Math.min(behind, Math.hypot(a.x - b.x, a.y - b.y));
+			if (down(b) >= down(a)) order = false;
+		}
+		if (called && time > delay + 1 && !off(a) && !off(b) && a.lane !== LANE.box) break;
+	}
+	return { slowest, closest, behind, order, stops: stops.size };
+}
+
+describe.each(TRACK_IDS)('two cars in the pit lane on the %s', (id) => {
+	it('keep to the limit going by a box where the other is turning in, stopped or pulling out', () => {
+		// From a car's length or so behind the first as it turns into its box,
+		// to well after it has stopped there and is getting away again: the
+		// second has its own box further on, and nothing else to slow for.
+		// (Any closer behind than that, it has to brake for the first before
+		// it is out of the way.)
+		for (let delay = 0.9; delay < 12; delay += 0.3) {
+			const { slowest, closest, stops } = twoIn(id, 1, 6, delay);
+			expect(stops).toBe(2);
+			expect(slowest, `${delay.toFixed(1)} s behind`).toBeGreaterThan(RULES.limit * 0.97);
+			expect(slowest).toBeLessThanOrEqual(RULES.limit + 0.01);
+			expect(closest).toBeGreaterThan(3.5);
+		}
+		for (const delay of [0.3, 0.6]) expect(twoIn(id, 1, 6, delay).closest).toBeGreaterThan(3.5);
+	});
+
+	it('queue behind one that is ahead of them in the lane, and never go through it', () => {
+		for (let delay = 0.3; delay < 2; delay += 0.2) {
+			const { closest, behind, order, stops } = twoIn(id, 5, 6, delay);
+			expect(stops).toBe(2);
+			expect(order).toBe(true);
+			expect(behind, `${delay.toFixed(1)} s behind`).toBeGreaterThan(5.5);
+			expect(closest).toBeGreaterThan(3.5);
+		}
 	});
 });
