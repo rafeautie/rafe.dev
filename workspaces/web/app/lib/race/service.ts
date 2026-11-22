@@ -1,5 +1,6 @@
 import {
 	HALF_CORRIDOR,
+	HALF_ROAD,
 	clamp,
 	lateral,
 	nearest,
@@ -8,84 +9,44 @@ import {
 	type TrackId
 } from './track';
 
-// The recovery crews' side of a track: a service road round the infield just
-// inside the wall, gates in that wall onto the track, three garages, each on
-// a lay-by off the road, and bays on the grass where wrecks are left. The
-// road runs one way, the way the race does. All of it is placed by track
-// sample, like everything else, with the same `across` the cars use: negative
-// is the infield, so the wall is at -HALF_CORRIDOR and the service road
-// further in, at -RING.
+// What is off the track on its infield side, and the ways there are to drive
+// about it: the pit lane and all that is on it (pits.ts), which the tow
+// trucks use too (recovery.ts). All of it is placed by track sample, like
+// everything else, with the same `across` the cars use: negative is the
+// infield, so the wall is at -HALF_CORRIDOR and the pit lane further in, at
+// -RING.
 //
-// A truck cannot turn on the spot, so nothing here asks it to: the road, and
-// every way on and off it, bends no tighter than a truck steers.
+// A truck cannot turn on the spot, so nothing here asks it to: every way
+// worked out for one bends no tighter than a truck steers.
 
-/** Centre line to the middle of the service road. */
+/** Centre line to the middle of the pit lane. */
 export const RING = 10;
-/** Half the service road's width. */
-export const HALF_LANE = 1.5;
-/** How far inside the service road the garage's lay-by runs, and a wreck is left. */
-export const LAYBY = 6;
-export const BAY = 3.8;
-
-/** A lay-by leaves the service road this far before its garage and is back on it this far after. */
-export const LAYBY_IN = 26;
-export const LAYBY_OUT = 22;
-/**
- * A lay-by runs straight through its garage, from this far before the
- * garage's sample to this far after, which is where a parked truck's front
- * axle is.
- */
-export const STALL = { before: 4, stop: 2 };
-/** A garage: how long it is, along the lay-by, and how wide. */
-export const GARAGE = { length: 9, width: 6 };
-
-/** A truck coming through a gate leaves the service road this far before it and is on the track this far after. */
-export const SLIP = 10;
-/** Where across the track a truck runs when it has just come on, or is about to go off. */
-export const NEARSIDE = -3.8;
-/** A truck is off the service road for a bay from BAY_IN before it to BAY_OUT after. */
-export const BAY_IN = 14;
-export const BAY_OUT = 20;
-
+/** Half the pit lane's width: it runs from the wall to the boxes. */
+export const HALF_LANE = 2.2;
 /**
  * The truck from above, x forward: half its length and width, how far behind
  * its middle the hook is, and how far either side of it the axles are.
  */
 export const TRUCK = { long: 3, wide: 1.2, hook: 3.2, axle: 1.8 };
-/** The tightest the service road bends, as a radius in metres, and the tightest any way on or off it does. */
+/** Half the truck's width over its tyres. */
+export const TRUCK_HALF = TRUCK.wide + 0.22;
+/**
+ * The furthest from the centre line the middle of a truck out on the track
+ * runs if all of it is to stay on the tarmac, with some to spare: round a
+ * bend its back wheels follow a little inside its front ones.
+ */
+export const KERBSIDE = HALF_ROAD - TRUCK_HALF - 0.45;
+/** Where across the track a truck runs when it has just come on, or is about to go off: on the infield side, all of it on the tarmac. */
+export const NEARSIDE = -KERBSIDE;
+/** The tightest the line the pit lane is on bends, as a radius in metres, and the tightest any way worked out for a truck does. */
 export const TIGHTEST = 9;
 const STEER = 6.5;
-
-/**
- * Where on each track the garages, gates and bays are, as track samples:
- * a truck parked in each garage, a gate just after each garage, and bays
- * beside the service road where wrecks are left. The road being one way, a
- * wreck is reached from the garage before it.
- */
-const LAYOUTS: Record<TrackId, { homes: number[]; gates: number[]; bays: number[] }> = {
-	// At the end of the main straight, a little before the hairpin and the
-	// corners after it, where most of the wrecks are, and on the far side.
-	circuit: {
-		homes: [36, 128, 310],
-		gates: [8, 38, 74, 100, 126, 166, 196, 222, 244, 284, 314, 348, 374],
-		bays: [68, 86, 168, 232, 346]
-	},
-	// Evenly round the lap, a third of it apart: one off the start line, one
-	// as the right-hand bend opens out, one at the top of the left-hand bend.
-	// Gates every 29 samples or so, one close after each garage, and bays in
-	// pairs between the garages.
-	oval: {
-		homes: [0, 115, 230],
-		gates: [11, 40, 69, 98, 126, 155, 184, 213, 241, 270, 299, 328],
-		bays: [50, 70, 165, 185, 280, 300]
-	}
-};
 
 export type Service = ReturnType<typeof build>;
 
 const built = new Map<TrackId, Service>();
 
-/** The service road and all on it for a track, worked out the first time it is asked for. */
+/** The ways about the infield of a track, worked out the first time they are asked for. */
 export function serviceFor(track: Track): Service {
 	let service = built.get(track.id);
 	if (!service) {
@@ -160,14 +121,15 @@ export function curve(from: Pose, to: Pose): [number, number][] {
 
 function build(track: Track) {
 	const { n, x, y, nx, ny } = track;
-	const { homes, gates, bays } = LAYOUTS[track.id];
 
 	/** How far round the lap it is from one sample on to another. */
 	const ahead = (from: number, to: number) => (((to - from) % n) + n) % n;
 
-	// The service road: the centre line moved RING into the infield, then eased
-	// until it bends no tighter than a truck can turn and is nowhere nearer the
-	// track than it set out.
+	// The line the pit lane is on, all the way round the lap, though the lane
+	// is only on it where the pits are: the centre line moved RING into the
+	// infield, then eased until it bends no tighter than a truck can turn and
+	// is nowhere nearer the track than it set out. Whatever is further into
+	// the infield is placed from it.
 	const ring = (() => {
 		const rx = Float64Array.from(x, (v, i) => v - nx[i] * RING);
 		const ry = Float64Array.from(y, (v, i) => v - ny[i] * RING);
@@ -222,7 +184,7 @@ function build(track: Track) {
 		return { x: rx, y: ry, ix, iy };
 	})();
 
-	/** Where in the world a sample is, `across` from the centre line: on the track, through a gate, or in the infield. */
+	/** Where in the world a sample is, `across` from the centre line: on the track, through the wall, or in the infield. */
 	function place(sample: number, across: number): [number, number] {
 		const i = ((Math.round(sample) % n) + n) % n;
 		const edge: [number, number] = [x[i] - nx[i] * HALF_CORRIDOR, y[i] - ny[i] * HALF_CORRIDOR];
@@ -237,23 +199,6 @@ function build(track: Track) {
 		const t = (-HALF_CORRIDOR - across) / (RING - HALF_CORRIDOR);
 		return [edge[0] + (road[0] - edge[0]) * t, edge[1] + (road[1] - edge[1]) * t];
 	}
-
-	/** Where a truck is parked, in the garage at `home`, and which way it faces. */
-	function parked(home: number) {
-		const [px, py] = place(home, -RING - LAYBY);
-		const [ax, ay] = place(home - 2, -RING - LAYBY);
-		const [bx, by] = place(home + 2, -RING - LAYBY);
-		return { x: px, y: py, angle: Math.atan2(by - ay, bx - ax) };
-	}
-
-	/** The lay-by through the garage at `home`, from the service road and back to it. */
-	const layby = (home: number) =>
-		route([
-			[home - LAYBY_IN, -RING],
-			[home - STALL.before, -RING - LAYBY],
-			[home + STALL.stop, -RING - LAYBY],
-			[home + LAYBY_OUT, -RING]
-		]);
 
 	/**
 	 * A way to drive: through each `[sample, across]` in turn, easing across
@@ -332,5 +277,5 @@ function build(track: Track) {
 		return measure(out);
 	}
 
-	return { homes, gates, bays, ahead, place, parked, layby, route, trace, drive };
+	return { ahead, place, route, trace, drive };
 }

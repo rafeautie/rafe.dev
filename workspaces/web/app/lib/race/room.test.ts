@@ -672,7 +672,7 @@ describe('the admin', () => {
 			count: 3,
 			cars: {
 				...DEFAULT_SETTINGS.cars,
-				vixen: { speed: 0.1, grip: 0.2, aggression: 0.3, reliability: 0.4 }
+				vixen: { speed: 0.1, grip: 0.2, aggression: 0.3, reliability: 0.4, crew: 0.5 }
 			},
 			seed: 600,
 			start: 400,
@@ -765,7 +765,9 @@ describe('the admin', () => {
 			// round 2 is called off with a bet on it, round 3 runs with none
 			await ring(room);
 			await vi.waitFor(() => expect(punter.states().at(-1)!.round).toBe(2));
-			await punter.ask({ type: 'bet', market: 'win', outcome: grid[0], stake: 30 });
+			// on a car that is in round 2's field, which need not have any of round 1's in it
+			const again = punter.states().at(-1)!.grid[0];
+			await punter.ask({ type: 'bet', market: 'win', outcome: again, stake: 30 });
 			expect(await room.adminVoid()).toBeNull();
 			await ring(room);
 			await ring(room);

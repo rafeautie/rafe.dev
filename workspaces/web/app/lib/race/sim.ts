@@ -1,4 +1,6 @@
 import { ChainShape, PolygonShape, World, type Body, type Fixture } from 'planck';
+import { createPits, LANE as PIT, tyreGrip, type Stop } from './pits';
+import { curvature, SPAN } from './line';
 import { createRecovery } from './recovery';
 import type { Entry } from './roster';
 import { serviceFor } from './service';
@@ -19,13 +21,26 @@ import { clamp, HALF_CORRIDOR, HALF_ROAD, lateral, MAX_OFFSET, nearest, type Tra
 // run again, so the race is that much longer and is never won under caution.
 
 export const DT = 1 / 60;
-export const LAPS = 3;
 /** Seconds the cars sit on the grid before the start. */
 export const LIGHTS = 2;
-/** The race is called off this long after the start, whoever is still out. A caution or two fits inside it. */
-export const TIME_CAP = 240;
+
+/**
+ * What a race is run to, which /admin/race can change (settings.ts): how
+ * many laps it is, whether the cars burn fuel, wear tyres and pit for more
+ * (pits.ts), how many laps of hard running a full tank holds, how fast the
+ * tyres wear as a share of the usual, and the pit lane's speed limit in m/s.
+ */
+export type Rules = { laps: number; pits: boolean; tank: number; wear: number; limit: number };
+export const RULES: Rules = { laps: 4, pits: true, tank: 3.3, wear: 1, limit: 12 };
+/** The race as it was before there were pits: three laps, flat out all the way. */
+export const CLASSIC: Rules = { ...RULES, laps: 3, pits: false };
+
+/** A race is called off this long after the start, whoever is still out. A caution or two fits inside it, each as long as the tow truck takes to go round for the wreck. */
+export const timeCap = (laps: number) => 180 + 60 * laps;
 /** Once someone has won, the rest get this long to finish. */
 const AFTER_WINNER = 8;
+/** And this much longer where there are pits, which string a field out. */
+const AFTER_STOPS = 4;
 
 const G = 9.81;
 /** The tyres' grip, as a share of G, of a car middling for grip. */
@@ -35,6 +50,14 @@ const INERTIA = 1800;
 /** Centre of the car to each axle. */
 const AXLE = 1.3;
 const MAX_STEER = 0.55;
+/**
+ * How far down the road, in metres, a driver steering back onto the line
+ * takes to get there: firmly, since a car off the line in a bend is a car
+ * heading for the edge of the road, but not so hard that it swings past.
+ */
+const HOLD = 3.5;
+/** Seconds a driver brakes ahead of where the speed has to be down. */
+const BEAT = 0.2;
 /** Grip on the verge, as a share of grip on tarmac. */
 const VERGE_GRIP = 0.6;
 /** How hard a wreck's wheels drag, bent and flat as they are, as a share of the grip it has. */
@@ -70,6 +93,8 @@ const FORM = 21;
 const LANE = 2;
 const RESTART_MAX = 15;
 const SETTLE = 10;
+/** Under caution, a car moves over for the tow truck when it is this near behind (m). */
+const GIVE_WAY = 60;
 /** A knock slower than this (m/s) leaves no mark. */
 const SHRUG = 2.5;
 /** The furthest any corner of the bodywork can be pushed in. */
@@ -130,6 +155,11 @@ export type Car = {
 	errorBy: number;
 	stuck: number;
 	reverseUntil: number;
+	/** Fuel in the tank, in laps of hard running, and how worn the tyres are: 0 new, 1 worn out. */
+	fuel: number;
+	wear: number;
+	/** Where the car is with the pits (LANE in pits.ts): 0 racing, 1 called in, and off the track from 2. */
+	lane: number;
 };
 
 type Happening =
@@ -138,6 +168,14 @@ type Happening =
 	/** A lap completed, and the seconds it took. */
 	| { kind: 'lap'; lap: number }
 	| { kind: 'retire' | 'finish' }
+	/**
+	 * In the pits: the car stops in its box, and for what; it leaves, having
+	 * stood this long, longer if the crew fumbled it. And out on the track,
+	 * a car runs out of fuel, which retires it.
+	 */
+	| { kind: 'pit'; service: Stop }
+	| { kind: 'away'; seconds: number; slow: boolean }
+	| { kind: 'dry' }
 	/**
 	 * The caution comes out, for a wreck or because race control threw it;
 	 * the field is going green, lining up for the restart; and the caution
@@ -184,6 +222,7 @@ export const flown = (flag: Flag, kind: RaceEvent['kind']): Flag => FLIES[kind] 
  */
 type Obstacle = Pick<Car, 'sample' | 'across' | 'speed' | 'retired' | 'towed'> & {
 	backing?: boolean;
+	lane?: number;
 };
 
 export type Race = ReturnType<typeof createRace>;
@@ -228,9 +267,15 @@ export function drawGrid(seed: number, roster: Entry[], count = roster.length): 
 /**
  * `grid` is the starting order, pole first, on `track`. `flags` are the race
  * times at which race control throws a caution, whatever is happening on the
- * track.
+ * track. `rules` are what it is run to.
  */
-export function createRace(seed: number, grid: Entry[], track: Track, flags: number[] = []) {
+export function createRace(
+	seed: number,
+	grid: Entry[],
+	track: Track,
+	flags: number[] = [],
+	rules: Rules = RULES
+) {
 	const rand = random(seed);
 	const { n, step: spacing, length } = track;
 	const { ahead: onRound } = serviceFor(track);
@@ -308,7 +353,10 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 			errorUntil: 0,
 			errorBy: 1,
 			stuck: 0,
-			reverseUntil: 0
+			reverseUntil: 0,
+			fuel: rules.tank,
+			wear: 0,
+			lane: PIT.racing
 		};
 		reshape(car);
 		return car;
@@ -392,6 +440,8 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 	 */
 	const followed = (other: Obstacle) =>
 		caution !== null &&
+		// a car in the pits is not on the road at all
+		!(other.lane! >= PIT.in) &&
 		(!other.retired ||
 			(Math.abs(other.across) < HALF_CORRIDOR &&
 				(Math.abs(other.speed) > 1 || other.towed || !!other.backing)));
@@ -407,6 +457,42 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 	/** The track sample a driver steers for: a little way ahead, further the faster it is going. */
 	const aimed = (car: Car) =>
 		(car.sample + Math.round((5 + Math.abs(car.speed) * 0.3) / spacing)) % n;
+
+	/**
+	 * The steering that keeps a car on the line it is taking, `held` (where
+	 * that is at each sample). Steering for a point on it some way ahead, as
+	 * a driver finding their way would, cuts the inside of every bend, and the
+	 * faster the car the further ahead the point and the more it cuts. So it
+	 * is steered the way the bend just ahead takes, with as much lock as that
+	 * bends by, and corrected for how far it is to one side of the line and
+	 * how far it is heading off it, enough to bring it back on within a few
+	 * metres (HOLD) without swinging past. A car's tyres do not slide until
+	 * they are asked for more than they have, so the lock a bend takes is
+	 * simply the one that turns the car on an arc as tight as the bend.
+	 */
+	function hold(car: Car, held: (i: number) => [number, number]) {
+		const { sample } = car;
+		// the bend a little ahead, as far as the steering takes to wind on
+		const lead = sample + Math.round((1 + Math.abs(car.speed) * 0.08) / spacing);
+		const bend = curvature(...held(lead - SPAN), ...held(lead), ...held(lead + SPAN));
+		// how far the car is to one side of the line (+ the side the track's
+		// normal points to), and how far it is heading off it
+		const [bx, by] = held(sample - 1);
+		const [fx, fy] = held(sample + 1);
+		const way = Math.atan2(fy - by, fx - bx);
+		const { x: vx, y: vy } = car.body.getLinearVelocity();
+		// which way the car is going: where it is heading, as the wheels
+		// would take it, until it is going fast enough to tell by that
+		const going =
+			Math.hypot(vx, vy) > 2
+				? Math.atan2(vy, vx)
+				: car.angle + Math.atan(Math.tan(car.steer) / 2) + (car.speed < 0 ? Math.PI : 0);
+		const off = Math.atan2(Math.sin(going - way), Math.cos(going - way));
+		const [hx, hy] = held(sample);
+		const wide = (car.x - hx) * track.nx[sample] + (car.y - hy) * track.ny[sample];
+		const want = bend - clamp(wide, -3, 3) / HOLD ** 2 - (1.8 * off) / HOLD;
+		return Math.atan(2 * AXLE * want);
+	}
 
 	/** Metres from one track sample forward to another, the short way round: negative if it is behind. */
 	const along = (from: number, to: number) => (((to - from + n * 1.5) % n) - n / 2) * spacing;
@@ -457,7 +543,8 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		done: false,
 		flag: 'green' as Flag,
 		/** How many laps the race is: more than it set out to be by each lap ended under caution. */
-		laps: LAPS,
+		laps: rules.laps,
+		rules,
 		cars,
 		trucks: recovery.trucks,
 		/** What has happened since the caller last emptied this. */
@@ -472,6 +559,17 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		race.events.push({ ...what, time: race.time, car: car ? cars.indexOf(car) : -1 });
 	}
 
+	// The pit crews have their own run of random numbers, so the race is the
+	// same with them as without until a car first does something about its
+	// fuel or its tyres.
+	const pits = createPits(cars, track, rules, random(seed ^ 0x51ed270b), {
+		flag: () => race.flag,
+		laps: () => race.laps,
+		note,
+		retire,
+		trucks: recovery.trucks
+	});
+
 	function step() {
 		if (race.done) return;
 		race.time += DT;
@@ -480,6 +578,7 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		// the trucks do not move until the drivers have had their turn
 		road = [...cars, ...recovery.onTrack];
 		for (const car of cars) drive(car);
+		pits.step(race.time, race.time >= LIGHTS, DT);
 		recovery.step(race.time, DT);
 		world.step(DT, 8, 3);
 		for (const hit of hits) dent(hit);
@@ -496,8 +595,8 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		const won = Math.min(...cars.map((car) => car.finishTime || Infinity));
 		race.done =
 			running.every((car) => car.finishTime) ||
-			race.time > won + AFTER_WINNER ||
-			race.time > LIGHTS + TIME_CAP;
+			race.time > won + AFTER_WINNER + (rules.pits ? AFTER_STOPS : 0) ||
+			race.time > LIGHTS + timeCap(rules.laps);
 	}
 
 	/**
@@ -534,10 +633,18 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 			if (lineup.length && race.time >= settled) lineup = [];
 			return;
 		}
-		const racing = cars.filter((car) => !car.retired && !car.finishTime);
+		// a car in the pits is neither led nor waited for, unless they all are
+		const running = cars.filter((car) => !car.retired && !car.finishTime);
+		const racing = running.some((car) => car.lane < PIT.in)
+			? running.filter((car) => car.lane < PIT.in)
+			: running;
+		// nor is one that is in the pits, or on its way there, held to a place in the lines
+		if (lineup.some((car) => car.lane !== PIT.racing)) {
+			lineup = lineup.filter((car) => car.lane === PIT.racing);
+		}
 		// lined up, the leader is the one at the head of the lineup, so the
 		// one beside them does not take over by edging ahead
-		pacer = caution.going ? lineup[0] : rank(racing)[0];
+		pacer = (caution.going && lineup[0]) || rank(racing)[0];
 		const out = race.time - caution.since;
 		// closed up: from the leader back, nobody much more than a queue's gap behind the next
 		const behind = racing.map((car) => onRound(car.sample, pacer!.sample)).sort((a, b) => a - b);
@@ -545,7 +652,10 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		// Going green once the track is clear and the field is together, and
 		// from then on unless there is another wreck (which brings the yellow
 		// back): the queue strings out a little as the leader picks up speed.
-		if (!caution.going && recovery.clear && out >= CAUTION_MIN && (closed || out >= CAUTION_MAX)) {
+		// It starts lining up as soon as the last wreck is on the hook, the
+		// truck having a lap of the track to tow it yet, but is not given the
+		// green until that is off the track too.
+		if (!caution.going && recovery.away && out >= CAUTION_MIN && (closed || out >= CAUTION_MAX)) {
 			caution.going = race.time;
 			lineup = rank(racing).filter((car) => onRound(car.sample, pacer!.sample) < n / 2);
 			formed = false;
@@ -558,7 +668,12 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		// the green is only ever given at the line, and only to a field that
 		// has lined up (or had long enough to): if it cannot be this time, it
 		// is a lap more
-		if (atLine && caution.going && (formed || race.time - caution.going >= RESTART_MAX)) {
+		if (
+			atLine &&
+			caution.going &&
+			recovery.clear &&
+			(formed || race.time - caution.going >= RESTART_MAX)
+		) {
 			caution = null;
 			settled = race.time + SETTLE;
 			note(null, { kind: 'green' });
@@ -589,11 +704,18 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 			const lap = race.time - car.lapStart;
 			if (!car.bestLap || lap < car.bestLap) car.bestLap = lap;
 			note(car, { kind: 'lap', lap });
-			if (caution && car === pacer) {
+			// The lap the leader ends under caution is run again, whether it
+			// ends it on the track or in the pit lane, which the line runs
+			// across too. The green is for the car the field is behind, as it
+			// comes to the line on the track.
+			const leads = cars.every(
+				(other) => other.retired || other.finishTime > 0 || other.progress <= car.progress
+			);
+			if (caution && leads) {
 				race.laps++;
-				atLine = true;
 				note(car, { kind: 'again' });
 			}
+			if (caution && car === pacer) atLine = true;
 			// the race is never won under caution, even by a car beside the
 			// leader that gets to the line first
 			if (laps === race.laps && !caution) {
@@ -610,11 +732,11 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		const velocity = body.getLinearVelocity();
 		const heading = body.getWorldVector({ x: 1, y: 0 });
 		car.speed = velocity.x * heading.x + velocity.y * heading.y;
-		// a wreck on the hook goes where the truck draws it
-		if (car.towed) return;
+		// a wreck on the hook goes where the truck draws it, and a car in the pits where its crew sends it
+		if (car.towed || car.lane >= PIT.in) return;
 
 		const offRoad = Math.abs(car.across) > HALF_ROAD;
-		const grip = car.grip * (offRoad ? VERGE_GRIP : 1) * (1 - 0.2 * car.damage);
+		const grip = car.grip * (offRoad ? VERGE_GRIP : 1) * (1 - 0.2 * car.damage) * tyreGrip(car);
 
 		if (car.retired) {
 			// Nobody is driving a wreck, but it is still on its wheels: they
@@ -723,6 +845,20 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 			}
 			// and in the queue behind whatever is being followed, if anything is
 			if (place < 0 && queued && queue < reach) limit = Math.min(limit, queueing(queued, queue));
+			// called in: to the inside, and slowing for the way into the pits
+			const bound = pits.call(car);
+			if (bound) limit = Math.min(limit, bound.limit);
+			// Under caution the tow truck is let by: with it coming up behind,
+			// or alongside, a car keeps to the outside until it has gone, even
+			// one that was making for the pits, which will come round again.
+			const letBy =
+				caution !== null &&
+				recovery.onTrack.some((truck) => {
+					const clear = along(truck.sample, car.sample);
+					return !truck.backing && clear > -8 && clear < GIVE_WAY;
+				});
+			if (letBy) offset = MAX_OFFSET - track.line[aimed(car)];
+			else if (bound && bound.across !== null) offset = bound.across - track.line[aimed(car)];
 			// Leave room for a car alongside rather than turn in on it: the one
 			// on the inside keeps the inside, and the one being passed has to
 			// give up the line. Where that runs out of road, lift and let it
@@ -742,24 +878,34 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 			}
 			car.offset += clamp(offset - car.offset, -4 * DT, 4 * DT);
 
-			// steer for a point on the line a little way ahead
+			// where the line, or the line this car is taking, is at a sample
+			const held = (i: number): [number, number] => {
+				const k = ((i % n) + n) % n;
+				const across = clamp(track.line[k] + car.offset, -MAX_OFFSET, MAX_OFFSET);
+				return [track.x[k] + track.nx[k] * across, track.y[k] + track.ny[k] * across];
+			};
+			// Which way to go, roughly: for a point on it a little way ahead.
+			// That is how a car facing the wrong way, or backing off something,
+			// finds its way; one on its way round follows the line itself.
 			const ahead = aimed(car);
-			const across = clamp(track.line[ahead] + car.offset, -MAX_OFFSET, MAX_OFFSET);
-			const aim = body.getLocalPoint({
-				x: track.x[ahead] + track.nx[ahead] * across,
-				y: track.y[ahead] + track.ny[ahead] * across
-			});
+			const [aimX, aimY] = held(ahead);
+			const aim = body.getLocalPoint({ x: aimX, y: aimY });
 			const bearing = Math.atan2(aim.y, aim.x);
 			let steer = Math.atan2(4 * AXLE * Math.sin(bearing), Math.hypot(aim.x, aim.y));
+			if (Math.abs(bearing) < 1.2 && race.time >= car.reverseUntil) steer = hold(car, held);
 
 			// Off the line, the arc through a bend is tighter on the inside and
 			// wider on the outside, and so is the speed it can be taken at.
 			const inside = (car.across - track.line[car.sample]) * track.turn[car.sample];
 			const arc = Math.sqrt(clamp(1 - track.bend[car.sample] * inside, 0.5, 1.5));
+			// The speed for here, or for a moment from now if that is less: a
+			// driver starts braking a beat before the braking point, since the
+			// car takes that long to slow once they do.
+			const soon = (car.sample + Math.round((Math.abs(car.speed) * BEAT) / spacing)) % n;
+			let want = Math.min(car.pace[car.sample], car.pace[soon]) * Math.sqrt(grip / car.grip) * arc;
 			// A mistake: once one is due, the driver misjudges the next braking
 			// point and arrives at the corner too fast, by a few per cent most
 			// times and by a quarter now and then.
-			let want = car.pace[car.sample] * Math.sqrt(grip / car.grip) * arc;
 			if (race.time >= car.errorAt && car.speed > want + 0.5) {
 				car.errorUntil = race.time + 0.3 + rand() ** 2 * 0.7;
 				car.errorBy = 1.06 + rand() ** 3 * 0.22;
@@ -791,7 +937,7 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 				// a car ahead gets the brakes harder and sooner than a corner does
 				brake = Math.min((car.speed - want) / (limit < corner ? 1.5 : 4), spare + 0.25, 1);
 			} else {
-				throttle = clamp((want - car.speed) / 2, 0, 1);
+				throttle = Math.min(clamp((want - car.speed) / 2, 0, 1), pits.lift(car));
 			}
 
 			// stopped against something: back away from it (but not when
@@ -816,7 +962,10 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 			// the engine pushes the rear axle, as hard as its power allows at
 			// this speed and no harder than the rear tyres can take
 			const most = (grip * G * MASS) / 2;
-			const engine = Math.min(11000, car.power / Math.max(Math.abs(car.speed), 8));
+			// with nothing in the tank there is no engine to speak of
+			const engine =
+				car.fuel > 0 ? Math.min(11000, car.power / Math.max(Math.abs(car.speed), 8)) : 0;
+			pits.use(car, throttle, cornering, DT);
 			const push =
 				throttle < 0 ? -4000 : Math.min(throttle * engine * (1 - 0.35 * car.damage), most * spare);
 			const stop = brake * most;
@@ -868,6 +1017,11 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 		if (!wrecked) car.damage = Math.min(1, car.damage + blow / (5 * car.tough));
 		note(car, { kind: 'hit', x, y, force: blow + SHRUG, damage: car.damage });
 		if (wrecked || car.damage < 1) return;
+		retire(car);
+	}
+
+	/** Puts a car out of the race where it is: wrecked, or out of fuel. */
+	function retire(car: Car) {
 		car.retired = true;
 		car.slip = 0;
 		car.body.setLinearDamping(1.5);

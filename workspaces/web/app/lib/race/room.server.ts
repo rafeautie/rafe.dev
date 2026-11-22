@@ -20,8 +20,25 @@ import {
 	type ToRoom
 } from './room';
 import { drawConditions, inCondition, ROSTER } from './roster';
-import { checkSettings, DEFAULT_SETTINGS, tuned, type Settings } from './settings';
-import { drawGrid, flown, LIGHTS, neutral, random, rank, type Flag, type RaceEvent } from './sim';
+import {
+	checkSettings,
+	complete,
+	DEFAULT_SETTINGS,
+	rulesOf,
+	tuned,
+	type Settings
+} from './settings';
+import {
+	CLASSIC,
+	drawGrid,
+	flown,
+	LIGHTS,
+	neutral,
+	random,
+	rank,
+	type Flag,
+	type RaceEvent
+} from './sim';
 import { getTrack } from './track';
 
 // The one room everybody at /race is in. It runs the cycle (betting, the
@@ -207,12 +224,18 @@ export class RaceRoom extends DurableObject<Env> {
 		const state = this.ctx.storage.kv.get<RoomState>('state');
 		// A state kept from before races carried their settings takes today's;
 		// one from before a setting existed has the code's, except that one from
-		// before there was a choice of track was raced on the circuit.
+		// before there was a choice of track was raced on the circuit, and one
+		// from before there were pits was three laps with none.
 		return state
 			? {
 					...state,
 					settings: state.settings
-						? { ...DEFAULT_SETTINGS, ...state.settings, track: state.settings.track ?? 'circuit' }
+						? complete(state.settings, {
+								...DEFAULT_SETTINGS,
+								track: 'circuit',
+								laps: CLASSIC.laps,
+								pits: CLASSIC.pits
+							})
 						: this.settings
 				}
 			: { ...IDLE, settings: this.settings };
@@ -222,9 +245,7 @@ export class RaceRoom extends DurableObject<Env> {
 	private get settings(): Settings {
 		const saved = this.ctx.storage.kv.get<Settings>('settings');
 		// saved before a setting existed, it is the code's
-		return saved
-			? { ...DEFAULT_SETTINGS, ...saved, cars: { ...DEFAULT_SETTINGS.cars, ...saved.cars } }
-			: DEFAULT_SETTINGS;
+		return saved ? complete(saved) : DEFAULT_SETTINGS;
 	}
 
 	private get paused() {
@@ -281,7 +302,7 @@ export class RaceRoom extends DurableObject<Env> {
 		const cars = field.map((entry, slot) => inCondition(entry, conditions[slot]));
 		const track = getTrack(settings.track);
 		const trials = Array.from({ length: settings.trials }, () =>
-			resultOf(record(seed(), cars, track))
+			resultOf(record(seed(), cars, track, [], rulesOf(settings)))
 		);
 		this.ctx.storage.kv.delete('recording');
 		for (const market of MARKETS) {
@@ -312,7 +333,13 @@ export class RaceRoom extends DurableObject<Env> {
 		const cars = state.grid.map((id, slot) =>
 			inCondition(roster.find((entry) => entry.id === id)!, state.conditions[slot])
 		);
-		const recording = record(raceSeed, cars, getTrack(state.settings.track), flags);
+		const recording = record(
+			raceSeed,
+			cars,
+			getTrack(state.settings.track),
+			flags,
+			rulesOf(state.settings)
+		);
 		const result = resultOf(recording);
 		const bytes = pack(recording);
 		this.ctx.storage.kv.put('recording', bytes);

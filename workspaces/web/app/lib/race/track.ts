@@ -1,3 +1,6 @@
+import { racingLine, SPAN } from './line';
+import LINES from './lines.json';
+
 // The tracks: each a closed centre line through its control points,
 // resampled about every metre, and the line the drivers aim for. Distances
 // are metres. Every track fits the same 160 x 90 world so it can be watched
@@ -10,8 +13,14 @@ export const WORLD_H = 90;
 export const HALF_ROAD = 4.5;
 /** Centre line to wall: the tarmac plus a strip of low-grip verge. */
 export const HALF_CORRIDOR = 7;
-/** How far from the centre line a driver will place the middle of the car. */
-export const MAX_OFFSET = HALF_ROAD - 1.3;
+/** Half a car's width, over its tyres. */
+export const HALF_CAR = 1.07;
+/**
+ * How far from the centre line a driver will place the middle of the car:
+ * as far as keeps all of it on the tarmac, with a little to spare for the
+ * way a car going round a bend sweeps out wider than it is, front and back.
+ */
+export const MAX_OFFSET = HALF_ROAD - HALF_CAR - 0.35;
 
 // Each track is its control points, driven in order. The first point is the
 // start line, on the bottom straight; the grid forms up behind it.
@@ -114,7 +123,13 @@ export function getTrack(id: TrackId): Track {
 	return track;
 }
 
-function build(id: TrackId, control: [number, number][]) {
+/**
+ * A track's centre line, sampled about every metre, with the direction of
+ * travel at each sample and the normal across the track.
+ */
+export const centreOf = (id: TrackId) => centre(TRACKS[id].control);
+
+function centre(control: [number, number][]) {
 	// a Catmull-Rom spline through the control points, as a fine polyline
 	const fine: [number, number][] = [];
 	const count = control.length;
@@ -166,39 +181,28 @@ function build(id: TrackId, control: [number, number][]) {
 	}
 	const nx = ty.map((v) => -v);
 	const ny = tx.slice();
+	return { n, step, length, x, y, tx, ty, nx, ny };
+}
 
-	// The racing line, as an offset along the normal. Each point is moved
-	// until it bends as much as the average of the stretches either side of
-	// it, which spreads every corner over as wide an arc as the track allows:
-	// out wide on the way in, across the apex, and wide again on the way out.
-	// Working from long stretches down to short ones settles the big shapes
-	// first.
-	const line = new Float32Array(n);
+function build(id: TrackId, control: [number, number][]) {
+	const { n, step, length, x, y, tx, ty, nx, ny } = centre(control);
+
+	// The racing line, as an offset along the normal (line.ts). It takes a
+	// while to work out, so it is worked out ahead of time and kept, in
+	// centimetres (scripts/race-lines.mjs); and now, if the track has changed since.
+	const kept: number[] | undefined = (LINES as Record<string, number[]>)[id];
+	const line =
+		kept?.length === n
+			? Float32Array.from(kept, (cm) => cm / 100)
+			: racingLine(x, y, nx, ny, step, MAX_OFFSET);
 	const at = (i: number): [number, number] => {
 		const j = ((i % n) + n) % n;
 		return [x[j] + nx[j] * line[j], y[j] + ny[j] * line[j]];
 	};
-	for (const k of [32, 16, 8, 4, 2, 1]) {
-		for (let pass = 0; pass < 150; pass++) {
-			for (let i = 0; i < n; i++) {
-				const a = at(i - k);
-				const b = at(i + k);
-				const want = (curve(at(i - 2 * k), a, at(i)) + curve(at(i), b, at(i + 2 * k))) / 2;
-				// where on the normal the line would run straight from a to b,
-				// and how much each metre from there bends it
-				const abx = b[0] - a[0];
-				const aby = b[1] - a[1];
-				const straight = -((x[i] - a[0]) * aby - (y[i] - a[1]) * abx) / (nx[i] * aby - ny[i] * abx);
-				const nudged = straight + 0.01;
-				const per = curve(a, [x[i] + nx[i] * nudged, y[i] + ny[i] * nudged], b) / 0.01;
-				line[i] = Math.max(-MAX_OFFSET, Math.min(MAX_OFFSET, straight + want / per));
-			}
-		}
-	}
 
 	// how sharply the racing line bends at each sample, as 1 / radius
 	const bend = new Float32Array(n);
-	for (let i = 0; i < n; i++) bend[i] = Math.abs(curve(at(i - 4), at(i), at(i + 4)));
+	for (let i = 0; i < n; i++) bend[i] = Math.abs(curve(at(i - SPAN), at(i), at(i + SPAN)));
 
 	// which way the track bends at each sample: 1 to the left, -1 to the right
 	const turn = new Int8Array(n);

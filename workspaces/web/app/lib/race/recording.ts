@@ -1,15 +1,17 @@
+import { pitsFor, type Stop } from './pits';
 import type { Entry } from './roster';
-import { serviceFor } from './service';
 import {
+	CLASSIC,
 	createRace,
 	DT,
 	flown,
 	HULL,
-	LAPS,
 	LIGHTS,
-	TIME_CAP,
+	RULES,
+	timeCap,
 	type Flag,
-	type RaceEvent
+	type RaceEvent,
+	type Rules
 } from './sim';
 import { clamp, getTrack, type Track, type TrackId } from './track';
 
@@ -22,7 +24,12 @@ import { clamp, getTrack, type Track, type TrackId } from './track';
 const EVERY = 2;
 /** Bytes for one car at one moment: x, y, angle and progress as 16 bits each, speed and slip as 8. */
 const POSE = 10;
-/** Bytes for one truck at one moment: x, y and angle as 16 bits each, what it is doing, and the gate it has open. */
+/** And three more in a race with pits: fuel, tyre wear, and where the car is with the pits. */
+const PITS = 3;
+/** Progress is written down in whole numbers of this many to the metre: fewer in a longer race, so it still fits. */
+const FINE = 20;
+const COARSE = 10;
+/** Bytes for one truck at one moment: x, y and angle as 16 bits each, what it is doing, and a byte that said which gate it had open when there were gates. */
 const TRUCK = 8;
 /** What a truck is doing: the car on its hook, counted from 1, in the low bits, and this one set while it is out. */
 const BUSY = 128;
@@ -41,6 +48,12 @@ export type Recording = {
 	frames: number;
 	/** The cars' ids in starting order, which is the order of everything else here. */
 	grid: string[];
+	/** How many laps the race set out to be. One recorded before that could change was three. */
+	laps?: number;
+	/** In a race with pits, what a full tank holds; each car's moments are then PITS bytes longer. */
+	tank?: number;
+	/** How many to the metre progress is recorded in, where it is not FINE. */
+	per?: number;
 	events: RecordedEvent[];
 	/** How many tow trucks are recorded. A recording from before there were any has none. */
 	trucks?: number;
@@ -53,11 +66,11 @@ export type ReplayTruck = {
 	x: number;
 	y: number;
 	angle: number;
-	/** Out on a job, rather than parked in its garage. */
+	/** Out on a job, rather than on its stand at the end of the pit lane. */
 	busy: boolean;
 	/** The car on its hook, as an index into the cars, or -1. */
 	towing: number;
-	/** The gate open for it to go through, as an index into the gates, or -1. */
+	/** Always -1 now. When trucks had gates of their own to go through, the one open for it. */
 	gate: number;
 };
 
@@ -76,14 +89,26 @@ export type ReplayCar = {
 	laps: number;
 	bestLap: number;
 	finishTime: number;
+	/** Fuel as a share of a full tank and tyre wear, 0 to 1 (a race with no pits has a full tank and new tyres throughout), and where the car is with the pits (LANE in pits.ts). */
+	fuel: number;
+	wear: number;
+	lane: number;
+	/** The stop the car is making or last made: what for, the seconds it has stood, whether the crew fumbled it, and whether it is over. */
+	stop: { service: Stop; since: number; seconds: number; slow: boolean; over: boolean } | null;
 };
 
 export type Replay = ReturnType<typeof createReplay>;
 
-/** The trucks as they stand when none is out: each parked in its garage. */
+/** The trucks as they stand when none is out: each on its stand at the end of the pit lane. */
 export function standing(track: Track): ReplayTruck[] {
-	const { homes, parked } = serviceFor(track);
-	return homes.map((home) => ({ ...parked(home), busy: false, towing: -1, gate: -1 }));
+	return pitsFor(track).stands.map(({ x, y, angle }) => ({
+		x,
+		y,
+		angle,
+		busy: false,
+		towing: -1,
+		gate: -1
+	}));
 }
 
 // adding 0 turns the -0 that rounding can give into 0, which JSON would do anyway
@@ -92,12 +117,20 @@ const round = (value: number, places = 0) => Math.round(value * 10 ** places) / 
 /**
  * Runs the race for a seed and starting order on a track to its end, and
  * returns it recorded. `flags` are the race times at which a caution is
- * thrown by hand.
+ * thrown by hand, and `rules` what the race is run to.
  */
-export function record(seed: number, grid: Entry[], track: Track, flags: number[] = []): Recording {
-	const race = createRace(seed, grid, track, flags);
-	const longest = Math.ceil((LIGHTS + TIME_CAP) / DT / EVERY) + 2;
-	const moment = grid.length * POSE + race.trucks.length * TRUCK;
+export function record(
+	seed: number,
+	grid: Entry[],
+	track: Track,
+	flags: number[] = [],
+	rules: Rules = RULES
+): Recording {
+	const race = createRace(seed, grid, track, flags, rules);
+	const longest = Math.ceil((LIGHTS + timeCap(rules.laps)) / DT / EVERY) + 2;
+	const pose = POSE + (rules.pits ? PITS : 0);
+	const per = rules.laps > CLASSIC.laps ? COARSE : FINE;
+	const moment = grid.length * pose + race.trucks.length * TRUCK;
 	const view = new DataView(new ArrayBuffer(longest * moment));
 	const heading = (angle: number) => {
 		const turn = angle / (2 * Math.PI);
@@ -105,21 +138,25 @@ export function record(seed: number, grid: Entry[], track: Track, flags: number[
 	};
 	const events: RecordedEvent[] = [];
 	let frames = 0;
-	/** Whether any truck has been out of its garage. */
+	/** Whether any truck has been off its stand. */
 	let called = false;
 
 	const write = () => {
 		race.cars.forEach((car, index) => {
-			const at = frames * moment + index * POSE;
+			const at = frames * moment + index * pose;
 			view.setUint16(at, car.x * 256, true);
 			view.setUint16(at + 2, car.y * 256, true);
 			view.setUint16(at + 4, heading(car.angle), true);
-			view.setUint16(at + 6, (car.progress + 100) * 20, true);
+			view.setUint16(at + 6, Math.min(65535, (car.progress + 100) * per), true);
 			view.setInt8(at + 8, Math.max(-127, Math.min(127, car.speed * 2)));
 			view.setUint8(at + 9, Math.min(255, car.slip * 10));
+			if (!rules.pits) return;
+			view.setUint8(at + 10, Math.round((car.fuel / rules.tank) * 255));
+			view.setUint8(at + 11, Math.round(car.wear * 255));
+			view.setUint8(at + 12, car.lane);
 		});
 		race.trucks.forEach((truck, index) => {
-			const at = frames * moment + grid.length * POSE + index * TRUCK;
+			const at = frames * moment + grid.length * pose + index * TRUCK;
 			view.setUint16(at, truck.x * 256, true);
 			view.setUint16(at + 2, truck.y * 256, true);
 			view.setUint16(at + 4, heading(truck.angle), true);
@@ -145,6 +182,8 @@ export function record(seed: number, grid: Entry[], track: Track, flags: number[
 				);
 			} else if (recorded.kind === 'lap') {
 				recorded.lap = round(recorded.lap, 3);
+			} else if (recorded.kind === 'away') {
+				recorded.seconds = round(recorded.seconds, 2);
 			}
 			events.push(recorded);
 		}
@@ -154,7 +193,7 @@ export function record(seed: number, grid: Entry[], track: Track, flags: number[
 
 	// Most races no truck goes out in, and they have no need of the trucks'
 	// share of every moment: it is left out, and they are shown parked.
-	const kept = called ? moment : grid.length * POSE;
+	const kept = called ? moment : grid.length * pose;
 	const poses = new Uint8Array(frames * kept);
 	for (let frame = 0; frame < frames; frame++) {
 		poses.set(new Uint8Array(view.buffer, frame * moment, kept), frame * kept);
@@ -165,6 +204,10 @@ export function record(seed: number, grid: Entry[], track: Track, flags: number[
 		rate: 1 / (DT * EVERY),
 		frames,
 		grid: grid.map((entry) => entry.id),
+		// what a recording from before there were pits could not say, and so need not
+		...(rules.laps !== CLASSIC.laps && { laps: rules.laps }),
+		...(rules.pits && { tank: rules.tank }),
+		...(per !== FINE && { per }),
 		events,
 		trucks: called ? race.trucks.length : 0,
 		poses
@@ -195,8 +238,9 @@ export function unpack(bytes: Uint8Array): Recording {
  * at, so stepping forward a little each frame yields every event once.
  * Seeking backwards returns nothing. `gap` is the time between two cars as it
  * now stands, `flag` the flag that is flying, `extra` how many laps have been
- * ended under caution, `lap` and `raced` how far through the race a car is
- * without them, and `time` the race time it is at.
+ * ended under caution, `laps` how many it set out to be, `lap` and `raced`
+ * how far through the race a car is without them, and `time` the race time
+ * it is at.
  */
 export function createReplay(recording: Recording, roster: Entry[]) {
 	const { rate, frames, grid, events, poses } = recording;
@@ -216,13 +260,23 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			progress: 0,
 			laps: -1,
 			bestLap: 0,
-			finishTime: 0
+			finishTime: 0,
+			fuel: 1,
+			wear: 0,
+			lane: 0,
+			stop: null
 		})
 	);
-	// one that was never called out stays parked
+	const laps = recording.laps ?? CLASSIC.laps;
+	const pits = recording.tank !== undefined;
+	const pose = POSE + (pits ? PITS : 0);
+	const per = recording.per ?? FINE;
+	// One that was never called out stays parked. A recording from when there
+	// were more trucks than there are now has them all in its moments, but
+	// only as many as there are now are shown.
 	const trucks = standing(track);
 	const recorded = recording.trucks ?? 0;
-	const moment = grid.length * POSE + recorded * TRUCK;
+	const moment = grid.length * pose + recorded * TRUCK;
 	const duration = (frames - 1) / rate;
 	let flag: Flag = 'green';
 	/** Laps ended under caution so far, which the race is longer by. */
@@ -238,6 +292,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 				car.hull.set(HULL);
 				car.damage = car.bestLap = car.finishTime = 0;
 				car.retired = false;
+				car.stop = null;
 			}
 			flag = 'green';
 			extra = 0;
@@ -260,6 +315,16 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 				car.finishTime = event.time;
 			} else if (event.kind === 'retire') {
 				car.retired = true;
+			} else if (event.kind === 'pit') {
+				car.stop = {
+					service: event.service,
+					since: event.time,
+					seconds: 0,
+					slow: false,
+					over: false
+				};
+			} else if (event.kind === 'away' && car.stop) {
+				car.stop = { ...car.stop, seconds: event.seconds, slow: event.slow, over: true };
 			}
 		}
 		const passed = time < last ? [] : events.slice(from, next);
@@ -278,26 +343,34 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			return ((heading + turned * t) / 65536) * 2 * Math.PI;
 		};
 		cars.forEach((car, index) => {
-			const a = frame * moment + index * POSE;
+			const a = frame * moment + index * pose;
 			const b = a + moment;
 			car.x = between(a) / 256;
 			car.y = between(a + 2) / 256;
 			car.angle = facing(a + 4);
-			car.progress = between(a + 6) / 20 - 100;
+			car.progress = between(a + 6) / per - 100;
 			car.laps = Math.floor(car.progress / track.length);
 			car.speed = (view.getInt8(a + 8) * (1 - t) + view.getInt8(b + 8) * t) / 2;
 			car.slip = (view.getUint8(a + 9) * (1 - t) + view.getUint8(b + 9) * t) / 10;
+			if (car.stop && !car.stop.over) car.stop.seconds = Math.max(0, time - car.stop.since);
+			if (!pits) return;
+			car.fuel = (view.getUint8(a + 10) * (1 - t) + view.getUint8(b + 10) * t) / 255;
+			car.wear = (view.getUint8(a + 11) * (1 - t) + view.getUint8(b + 11) * t) / 255;
+			// which is one thing or another, never between: as at the nearer of the two moments
+			car.lane = view.getUint8((t > 0.5 ? b : a) + 12);
 		});
-		for (let index = 0; index < recorded; index++) {
+		for (let index = 0; index < Math.min(recorded, trucks.length); index++) {
 			const truck = trucks[index];
-			const a = frame * moment + grid.length * POSE + index * TRUCK;
+			const a = frame * moment + grid.length * pose + index * TRUCK;
 			truck.x = between(a) / 256;
 			truck.y = between(a + 2) / 256;
 			truck.angle = facing(a + 4);
-			const doing = view.getUint8(a + 6);
+			// what it is doing is one thing or another, never between: as at the nearer of the two moments
+			const nearer = t > 0.5 ? a + moment : a;
+			const doing = view.getUint8(nearer + 6);
 			truck.busy = doing >= BUSY;
 			truck.towing = (doing & (BUSY - 1)) - 1;
-			truck.gate = view.getUint8(a + 7) - 1;
+			truck.gate = view.getUint8(nearer + 7) - 1;
 		}
 		return passed;
 	}
@@ -308,8 +381,8 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 	 * there, as on the grid, where it started further up the road.
 	 */
 	function gap(behind: number, ahead: number): number | null {
-		const stored = (frame: number) => view.getUint16(frame * moment + ahead * POSE + 6, true);
-		const target = (cars[behind].progress + 100) * 20;
+		const stored = (frame: number) => view.getUint16(frame * moment + ahead * pose + 6, true);
+		const target = (cars[behind].progress + 100) * per;
 		// the first moment recorded at which the car ahead had come this far
 		let from = 0;
 		let to = Math.min(frames - 1, Math.ceil(last * rate));
@@ -342,8 +415,11 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			return extra;
 		},
 		/** The lap of the race a car is on: one ended under caution is run again, so it is not counted. */
-		lap: (car: ReplayCar) => clamp(car.laps + 1 - extra, 1, LAPS),
+		/** How many laps the race set out to be, and whether its cars pit. */
+		laps,
+		pits,
+		lap: (car: ReplayCar) => clamp(car.laps + 1 - extra, 1, laps),
 		/** How much of the race a car has run, 0 to 1, counted the same way. */
-		raced: (car: ReplayCar) => clamp(car.progress / track.length / LAPS - extra / LAPS, 0, 1)
+		raced: (car: ReplayCar) => clamp(car.progress / track.length / laps - extra / laps, 0, 1)
 	};
 }
