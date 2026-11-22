@@ -137,3 +137,65 @@ describe.each(TRACK_IDS)('the tow trucks on the %s, sent for five wrecks at once
 		expect([...on].sort()).toEqual([0, 1]);
 	});
 });
+
+describe.each(TRACK_IDS)('a tow truck on the %s', (id) => {
+	const track = getTrack(id);
+	// the stand behind the other, whose truck has nothing behind it
+	const { stands } = pitsFor(track);
+	const stand = stands[stands.length - 1];
+	const world = new World();
+	// a car, as heavy as one, driven straight at the back of the truck on it
+	const [cos, sin] = [Math.cos(stand.angle), Math.sin(stand.angle)];
+	const start = TRUCK.long + 6;
+	const body = world.createBody({
+		type: 'dynamic',
+		position: { x: stand.x - cos * start, y: stand.y - sin * start },
+		angle: stand.angle,
+		userData: 0
+	});
+	body.createFixture({
+		shape: new PolygonShape(
+			HULL.filter((_, k) => k % 2 === 0).map((x, k) => ({ x, y: HULL[2 * k + 1] }))
+		),
+		density: 1
+	});
+	body.setMassData({ mass: 1000, center: { x: 0, y: 0 }, I: 1800 });
+	body.setLinearVelocity({ x: cos * 10, y: sin * 10 });
+	const car = { body, retired: false, towed: false, lane: 0, speed: 10 } as unknown as Car;
+	const recovery = createRecovery(world, [car], track);
+	const truck = recovery.trucks[stands.length - 1];
+
+	let knock = 0;
+	world.on('post-solve', (contact, impulse) => {
+		const points = contact.getManifold().pointCount;
+		knock = Math.max(
+			knock,
+			impulse.normalImpulses.slice(0, points).reduce((a, b) => a + b, 0)
+		);
+	});
+	let shoved = 0;
+	let nearest = Infinity;
+	for (let time = 0; time < 1.5; time += DT) {
+		recovery.step(time, DT);
+		world.step(DT, 8, 3);
+		recovery.sync();
+		shoved = Math.max(shoved, Math.hypot(truck.x - stand.x, truck.y - stand.y));
+		const at = body.getPosition();
+		nearest = Math.min(nearest, (stand.x - at.x) * cos + (stand.y - at.y) * sin);
+	}
+
+	it('is solid: a car that runs into it stops at it, and takes the knock', () => {
+		// (its middle no nearer the truck's than the two of them end to end)
+		expect(nearest).toBeGreaterThan(TRUCK.long + 2.1 - 0.3);
+		// a knock of most of the 10 m/s it was doing
+		expect(knock / 1000).toBeGreaterThan(8);
+		const { x, y } = body.getLinearVelocity();
+		expect(x * cos + y * sin).toBeLessThan(1);
+	});
+
+	it('is hardly moved by it, and is back where it was the moment after', () => {
+		expect(shoved).toBeLessThan(0.05);
+		expect(Math.hypot(truck.x - stand.x, truck.y - stand.y)).toBeLessThan(0.005);
+		expect(truck.doing).toBe('parked');
+	});
+});

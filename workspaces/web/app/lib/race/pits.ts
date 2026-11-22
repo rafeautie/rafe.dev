@@ -409,6 +409,8 @@ const behind = (speed: number, space: number, keep: number) =>
 /** A car on the track no further than this from the inside, just past where the way out joins it, is in the way of one coming out. */
 const JOINED = 2.5;
 const LEVEL = 3;
+/** On its way out, a car stops this far short of joining the track with a tow truck across where it joins. */
+const SHORT = 8;
 /** A car looks for a gap on the track from this far before the end of the lane. Held there this long, it goes whoever is coming. */
 const LOOK = 12;
 const PATIENCE = 8;
@@ -791,6 +793,14 @@ export function createPits(
 			const past = other.speed * arrives - short;
 			if (past > -(6 + Math.max(0, other.speed - 16) * 1.2) && past < 8) return false;
 		}
+		// nor a tow truck coming by on the track, which is a good deal longer than a car, and slower to stop
+		for (const truck of race.trucks) {
+			if (!truck.busy || truck.across < -HALF_CORRIDOR) continue;
+			const short = along(truck.sample, lane.merge);
+			if (short < -25 || short > 160) continue;
+			const past = truck.speed * arrives - short;
+			if (past > -(10 + truck.speed * 0.5) && past < 22) return false;
+		}
 		return true;
 	}
 
@@ -864,6 +874,12 @@ export function createPits(
 					target = Math.min(target, behind(lorry.speed, space, KEEP_TRUCK));
 				}
 			}
+			// On the way out, it does not join the track into the side of a tow
+			// truck that is out there across where it joins: it stops short until
+			// the truck has gone on.
+			if (car.lane === LANE.out && truckAtJoin(rail.length - crew.s)) {
+				target = Math.min(target, behind(0, rail.length - crew.s, SHORT));
+			}
 		}
 		crew.v = Math.max(0, crew.v + clamp(target - crew.v, -brake * dt, pull * dt));
 		crew.s = Math.min(rail.length, crew.s + crew.v * dt);
@@ -892,6 +908,22 @@ export function createPits(
 			car.steer = 0;
 			car.stuck = 0;
 		}
+	}
+
+	/**
+	 * Whether a tow truck out on the track is in the way of a car joining it
+	 * `left` metres from now: on the inside, with some of it within a few
+	 * metres of where the way out joins, or about to be.
+	 */
+	function truckAtJoin(left: number) {
+		if (left > SHORT + 30) return false;
+		return race.trucks.some((truck) => {
+			if (!truck.busy || truck.across < -HALF_CORRIDOR + 0.5 || truck.across > 1) return false;
+			// how far past the join its front bumper is, and its back
+			const front = along(lane.merge, truck.sample) + TRUCK.long - TRUCK.axle;
+			const back = front - 2 * TRUCK.long;
+			return front > -4 - truck.speed && back < 6;
+		});
 	}
 
 	/** A truck that is in the lane, or crossing it, as the cars there see it. */

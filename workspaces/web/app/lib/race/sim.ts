@@ -2,7 +2,7 @@ import { ChainShape, PolygonShape, World, type Body, type Fixture } from 'planck
 import type { Plan } from './crew';
 import { createPits, LANE as PIT, tyreGrip } from './pits';
 import { curvature, SPAN } from './line';
-import { createRecovery } from './recovery';
+import { createRecovery, WALLS } from './recovery';
 import type { Entry } from './roster';
 import { serviceFor } from './service';
 import { clamp, HALF_CORRIDOR, HALF_ROAD, lateral, MAX_OFFSET, nearest, type Track } from './track';
@@ -77,6 +77,11 @@ const CATCH = 17;
 const RUN_IN = 16;
 /** How far apart the queue runs, middle to middle. */
 const QUEUE = 8;
+/** Under caution, how fast (m/s) a car goes by a wreck, or a truck at work, and from how far either side of it (m). */
+const GO_BY = 8;
+const PAST = 6;
+/** Under caution, how far ahead (m) a driver looks out for wrecks and trucks. */
+const SIGHT = 80;
 /** Twice the braking (m/s²) a car in a queue counts on: half of what the tyres of an average car can take. */
 const QUEUE_BRAKE = GRIP * G;
 /** A caution lasts at least this long, and the field is given no longer than this to close up before it is let go at the line anyway. */
@@ -94,10 +99,13 @@ const FORM = 21;
 const LANE = 2;
 const RESTART_MAX = 15;
 const SETTLE = 10;
-/** Under caution, a car moves over for the tow truck when it is this near behind (m). */
+/** Under caution, a car moves over for the tow truck when it is this near behind (m), and leaves this much room between their middles. */
 const GIVE_WAY = 60;
+const MAKE_WAY = 3.6;
 /** A knock slower than this (m/s) leaves no mark. */
 const SHRUG = 2.5;
+/** From the middle of a car to either end of it. */
+const NOSE = 2.1;
 /** The furthest any corner of the bodywork can be pushed in. */
 const MAX_DENT = 0.5;
 
@@ -292,7 +300,12 @@ export function createRace(
 				y: track.y[i] + track.ny[i] * HALF_CORRIDOR * side
 			});
 		}
-		walls.createFixture({ shape: new ChainShape(loop, true), friction: 0.3, restitution: 0.2 });
+		walls.createFixture({
+			shape: new ChainShape(loop, true),
+			friction: 0.3,
+			restitution: 0.2,
+			filterCategoryBits: WALLS
+		});
 	}
 
 	// How long each driver takes to react to the lights: mostly quick, now
@@ -384,30 +397,14 @@ export function createRace(
 	});
 
 	const recovery = createRecovery(world, cars, track);
-	// A truck, and a wreck it has lifted, cannot be pushed, so a car they bore
-	// down on would be crushed against the wall. A car that drives into them
-	// hits them; one they are the ones closing on, they pass over, and go on
-	// passing over until they are clear of it, or it would be thrown out from
-	// under them the moment they stopped.
+	// A truck is as solid as a car, and much heavier (recovery.ts): a car that
+	// runs into it is knocked, and the truck hardly moves. What it has lifted,
+	// and a wreck it has put down in its box, it is not knocked by.
 	world.on('pre-solve', (contact) => {
 		const a = contact.getFixtureA().getBody();
 		const b = contact.getFixtureB().getBody();
-		const [fixed, free] = a.isKinematic() ? [a, b] : [b, a];
-		if (!fixed.isKinematic() || !free.isDynamic()) return;
-		const manifold = contact.getWorldManifold(null);
-		if (!manifold?.pointCount) return;
-		// the normal runs from the first body to the second: here, from the truck to the car
-		const way = fixed === a ? 1 : -1;
-		const { x: nx, y: ny } = manifold.normal;
-		const push = fixed.getLinearVelocityFromWorldPoint(manifold.points[0]);
-		const come = free.getLinearVelocity();
-		const pushing = (push.x * nx + push.y * ny) * way;
-		const driving = -(come.x * nx + come.y * ny) * way;
-		const deep = Math.min(...manifold.separations.slice(0, manifold.pointCount)) < -0.3;
-		// nor is a car with the wall at its other side given a knock it cannot ride
-		const car = free.getUserData();
-		const pinned = typeof car === 'number' && Math.abs(cars[car].across) > HALF_CORRIDOR - 1.5;
-		if (deep || pinned || pushing > Math.max(0, driving)) contact.setEnabled(false);
+		const truck = a.getUserData() === 'truck' ? a : b.getUserData() === 'truck' ? b : null;
+		if (truck && !(truck === a ? b : a).isDynamic()) contact.setEnabled(false);
 	});
 	/**
 	 * The caution that is out: when it came out, and once the track is clear
@@ -508,12 +505,14 @@ export function createRace(
 	 * of the way), nor towards something coming back down the road: for
 	 * those it stops. A car level with this one is no such thing: stopping
 	 * for it while it gives way to this one would hold the two of them there
-	 * for good.
+	 * for good. A wreck or a truck, though, gives way to nobody, and is not
+	 * crept into while it edges along: it is waited behind.
 	 */
-	function approach({ speed }: Obstacle, gap: number, keep: number, brake: number) {
+	function approach({ speed, retired }: Obstacle, gap: number, keep: number, brake: number) {
 		const slower = Math.max(0, speed);
 		const stopping = gap > keep ? Math.sqrt(slower ** 2 + brake * (gap - keep)) : slower;
-		const crawl = speed < -1 || (gap > 2 && gap < keep - 2) ? 0 : 3;
+		// (nor does it creep into a wreck, or a truck, that is only edging along: it would only push it on)
+		const crawl = speed < -1 || (gap > 2 && gap < keep - 2) || (retired && slower < 3) ? 0 : 3;
 		return Math.max(crawl, Math.min(slower + (gap - keep) * 1.5, stopping));
 	}
 
@@ -789,7 +788,33 @@ export function createRace(
 			}
 			let offset = 0;
 			let limit = Infinity;
-			const place = lineup.indexOf(car);
+			// Under caution, a wreck on the road, or a truck stopped at work, is
+			// gone by slowly, and slowed for in good time, by a car on its side of
+			// the road; and two by two, the lines go by it, or wait behind it,
+			// single file.
+			let funnel = false;
+			if (caution) {
+				for (const other of road) {
+					if (!other.retired || other.lane! >= PIT.in) continue;
+					if (Math.abs(other.across - car.across) >= clearOf(other) + 2.5) continue;
+					const ahead = along(car.sample, other.sample);
+					if (ahead <= -PAST || ahead >= SIGHT) continue;
+					funnel = true;
+					if (followed(other)) continue;
+					// (slower still where it leaves little room)
+					const room = clearOf(other);
+					const tight = clamp(
+						(Math.abs(other.across - car.across) - CLEAR) / (room - CLEAR),
+						0.4,
+						1
+					);
+					const slowing = Math.max(0, ahead - PAST);
+					limit = Math.min(limit, Math.sqrt((GO_BY * tight) ** 2 + (QUEUE_BRAKE / 2) * slowing));
+				}
+			}
+			const place = funnel ? -1 : lineup.indexOf(car);
+			/** Whether it is on its way round a wreck, or a truck, which comes before making for the pits. */
+			let rounding = false;
 			if (place >= 0) {
 				// Going green, two by two: the leader on one side of the road and
 				// the one beside them on the other, each in its place. Anything in
@@ -813,12 +838,20 @@ export function createRace(
 					);
 				}
 			} else if (blocker && !followed(blocker)) {
-				// go round it on whichever side is nearer the line already held
+				// Go round it on whichever side is nearer the line already held, of
+				// those with room. A wreck lying near the middle of the road may leave
+				// the full room on neither: then it is the side with the more, or the
+				// car would sit behind it and push it on down the road.
 				const room = clearOf(blocker);
 				const line = track.line[blocker.sample];
-				const sides = [blocker.across + room - line, blocker.across - room - line]
-					.filter((o) => Math.abs(line + o) <= MAX_OFFSET)
-					.sort((p, q) => Math.abs(p - car.offset) - Math.abs(q - car.offset));
+				let sides = [blocker.across + room - line, blocker.across - room - line].filter(
+					(o) => Math.abs(line + o) <= MAX_OFFSET
+				);
+				if (!sides.length && blocker.retired) {
+					const way = passing(blocker, 1, room) >= passing(blocker, -1, room) ? 1 : -1;
+					sides = [blocker.across + way * passing(blocker, way, room) - line];
+				}
+				sides.sort((p, q) => Math.abs(p - car.offset) - Math.abs(q - car.offset));
 				// Once to one side of it, stay there, even where the road runs out
 				// on that side: crossing back behind it throws the move away, and
 				// a car alongside will be given room. A wreck or a truck gives
@@ -835,6 +868,7 @@ export function createRace(
 				const closing = Math.max(0, car.speed - Math.max(0, blocker.speed));
 				if (gap < car.follow + 3 + closing * 1.5) {
 					offset = Math.abs(apart) > 1 ? blocker.across + side * room - line : (sides[0] ?? 0);
+					rounding = blocker.retired;
 				}
 				// And hold back while tucked in behind it, slowing in time to be
 				// no faster than it by the following distance, which matters most
@@ -846,26 +880,44 @@ export function createRace(
 					limit = Math.max(3, approach(blocker, gap, car.follow, grip * G));
 			}
 			// and in the queue behind whatever is being followed, if anything is
-			if (place < 0 && queued && queue < reach) limit = Math.min(limit, queueing(queued, queue));
+			// (seen from further off when it is a wreck or a truck, which may be standing still)
+			const sight = caution && queued?.retired ? SIGHT : reach;
+			if (place < 0 && queued && queue < sight) limit = Math.min(limit, queueing(queued, queue));
 			// called in: to the inside, and slowing for the way into the pits
 			const bound = pits.call(car);
 			if (bound) limit = Math.min(limit, bound.limit);
 			// Under caution the tow truck is let by: with it coming up behind,
-			// or alongside, a car keeps to the outside until it has gone, even
-			// one that was making for the pits, which will come round again.
-			// One that has stopped beside a wreck is gone round, either side.
-			const letBy =
-				caution !== null &&
-				recovery.onTrack.some((truck) => {
+			// or alongside, a car keeps out of its way until it has gone, even
+			// one that was making for the pits, which will come round again. It
+			// moves over only as far as it has to, to the side of the truck it
+			// is on if there is room there: thrown right across the road, in a
+			// bend, it would run on into the wall. One that has stopped beside a
+			// wreck is gone round, either side.
+			let letBy = false;
+			if (caution) {
+				for (const truck of recovery.onTrack) {
 					const clear = along(truck.sample, car.sample);
-					return truck.speed > 1 && clear > -8 && clear < GIVE_WAY;
-				});
-			if (letBy) offset = MAX_OFFSET - track.line[aimed(car)];
-			else if (bound && bound.across !== null) offset = bound.across - track.line[aimed(car)];
+					if (truck.speed <= 1 || clear <= -8 || clear >= GIVE_WAY) continue;
+					letBy = true;
+					// (one on its way round a wreck goes on round it: the truck waits behind it)
+					if (rounding) break;
+					const apart = car.across - truck.across;
+					let side = apart === 0 ? 1 : Math.sign(apart);
+					// (but not by crossing in front of it, with it close behind: it will wait behind this car)
+					if (passing(truck, side, MAKE_WAY) < MAKE_WAY && clear > GIVE_WAY / 2) side = -side;
+					const room = clamp(truck.across + side * MAKE_WAY, -MAX_OFFSET, MAX_OFFSET);
+					const line = track.line[aimed(car)];
+					offset = side > 0 ? Math.max(offset, room - line) : Math.min(offset, room - line);
+				}
+			}
+			if (!letBy && !rounding && bound && bound.across !== null)
+				offset = bound.across - track.line[aimed(car)];
 			// Leave room for a car alongside rather than turn in on it: the one
 			// on the inside keeps the inside, and the one being passed has to
 			// give up the line. Where that runs out of road, lift and let it
-			// through rather than be squeezed onto the verge.
+			// through rather than be squeezed onto the verge. (Under caution,
+			// where two may be all but stopped dead level, only one of them
+			// does, or neither would ever go: the one further down the grid.)
 			for (const other of cars) {
 				if (other === car || other.retired) continue;
 				const ahead = along(car.sample, other.sample);
@@ -876,7 +928,8 @@ export function createRace(
 					apart > 0
 						? Math.max(offset, room - track.line[car.sample])
 						: Math.min(offset, room - track.line[car.sample]);
-				if (Math.abs(room) > MAX_OFFSET + 0.3 && ahead > -1)
+				const yields = ahead > 0 || (ahead === 0 && (!caution || cars.indexOf(other) < index));
+				if (Math.abs(room) > MAX_OFFSET + 0.3 && yields)
 					limit = Math.min(limit, Math.max(0, other.speed) - 1);
 			}
 			car.offset += clamp(offset - car.offset, -4 * DT, 4 * DT);
@@ -939,6 +992,9 @@ export function createRace(
 			if (car.speed > want + 0.5) {
 				// a car ahead gets the brakes harder and sooner than a corner does
 				brake = Math.min((car.speed - want) / (limit < corner ? 1.5 : 4), spare + 0.25, 1);
+			} else if (caution && want < 0.5 && car.speed > 0) {
+				// told to stop, in a queue under caution: on the brakes, not rolling on into the car ahead
+				brake = 1;
 			} else {
 				throttle = Math.min(clamp((want - car.speed) / 2, 0, 1), pits.lift(car));
 			}
@@ -950,7 +1006,18 @@ export function createRace(
 				brake = 0;
 				steer = -steer;
 			} else {
-				car.stuck = Math.abs(car.speed) < 1 && want > 1 ? car.stuck + DT : 0;
+				// (and nosing a wreck on down the road is being stuck against it,
+				// however slowly the two of them are going)
+				const shoving =
+					caution !== null &&
+					blocker?.retired &&
+					cars.includes(blocker as Car) &&
+					gap < 2 * NOSE + 1 &&
+					Math.abs(car.across - blocker.across) < 1.5 &&
+					Math.abs(blocker.speed) > 0.3 &&
+					car.speed < 2.5;
+				const stalled = Math.abs(car.speed) < 1 || shoving;
+				car.stuck = stalled && want > 1 ? car.stuck + DT : 0;
 				if (car.stuck > 1) {
 					car.stuck = 0;
 					car.reverseUntil = race.time + 1.4;
