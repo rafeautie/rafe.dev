@@ -352,7 +352,10 @@ describe.each(TRACK_IDS)('the line the pit lane is on, on the %s', (id) => {
  */
 const SEEDS: Record<TrackId, { wreck: number; clean: number }> = {
 	circuit: { wreck: 59, clean: 8 },
-	oval: { wreck: 3, clean: 5 }
+	oval: { wreck: 3, clean: 5 },
+	daytona: { wreck: 9, clean: 7 },
+	indianapolis: { wreck: 6, clean: 4 },
+	martinsville: { wreck: 3, clean: 7 }
 };
 
 describe.each(TRACK_IDS)('a caution on the %s', (id) => {

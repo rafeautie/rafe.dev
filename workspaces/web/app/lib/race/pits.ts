@@ -98,14 +98,16 @@ export function pitsFor(track: Track): PitLane {
 function build(track: Track) {
 	const { n } = track;
 	const { place } = serviceFor(track);
-	const { from, slip, thirst, away } = track.pits;
+	const { from, slip, thirst, away, boxes: firstBox } = track.pits;
 	// Samples here count on past the line without starting again, so the way
 	// through is always forwards: in from the track between in0 and in1, past
 	// the boxes and the trucks' stand to the end of the lane at out0, on in
 	// line with it to leave, and out to the track between there and out1.
 	const in0 = from;
 	const in1 = in0 + slip;
-	const first = in1 + PULL;
+	// the first box, a car's length and more down the lane, or as far on as the
+	// track's layout puts it, where the lane runs round a bend before the boxes
+	const first = firstBox === undefined ? in1 + PULL : in1 + ((((firstBox - in1) % n) + n) % n);
 	/** Where in the world a sample, which need not be a whole one, is `across` from the centre line. */
 	const at = (sample: number, across: number): [number, number] => {
 		const whole = Math.floor(sample);

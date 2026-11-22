@@ -63,12 +63,15 @@ describe.each(TRACK_IDS)('the racing line on the %s', (id) => {
 			let apex = -Infinity;
 			for (let k = from; k < to; k++) apex = Math.max(apex, at(k));
 			expect(apex).toBeGreaterThan(MAX_OFFSET - 0.1);
-			// and well over to the outside on the way in, and on the way out
+			// and well over to the outside on the way in, and on the way out; or
+			// on a banked corner, taken so fast that it is worth less to open it
+			// out, past the middle of the road
 			const outside = (ks: number[]) => Math.min(...ks.map(at));
 			const before = Array.from({ length: 30 }, (_, d) => from - 1 - d);
 			const after = Array.from({ length: 30 }, (_, d) => to + d);
-			expect(outside(before)).toBeLessThan(-MAX_OFFSET / 2);
-			expect(outside(after)).toBeLessThan(-MAX_OFFSET / 2);
+			const wide = track.bank[wrap(from)] > 1.01 ? 0 : -MAX_OFFSET / 2;
+			expect(outside(before)).toBeLessThan(wide);
+			expect(outside(after)).toBeLessThan(wide);
 		}
 	});
 

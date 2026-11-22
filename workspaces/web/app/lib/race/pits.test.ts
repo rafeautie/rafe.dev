@@ -446,7 +446,11 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 		const trip = race.trucks.map(() => [] as number[]);
 		while (!race.done) {
 			race.step();
-			for (const event of race.events) if (event.kind === 'retire') retired.push(event.car);
+			// (the trucks do not go out once the race has been won: a car that
+			// comes to grief on its way round after that is left where it is)
+			for (const event of race.events) {
+				if (event.kind === 'retire' && race.flag !== 'checkered') retired.push(event.car);
+			}
 			race.events.length = 0;
 			const [one, other] = race.trucks;
 			seen.nearest = Math.min(seen.nearest, Math.hypot(one.x - other.x, one.y - other.y));
@@ -483,7 +487,7 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 	/** The first race of those seeds that is what is wanted. */
 	function find(count: number, wanted: (seen: ReturnType<typeof watched>) => boolean) {
 		let seen = watched(1, count);
-		for (let seed = 2; !wanted(seen) && seed <= 60; seed++) seen = watched(seed, count);
+		for (let seed = 2; !wanted(seen) && seed <= 120; seed++) seen = watched(seed, count);
 		expect(wanted(seen)).toBe(true);
 		return seen;
 	}

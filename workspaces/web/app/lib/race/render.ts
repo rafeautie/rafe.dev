@@ -89,6 +89,8 @@ const GRASS = [
 ];
 const VERGE = [hex('#b9a26a'), hex('#ab945c')];
 const TARMAC = [hex('#3b3d45'), hex('#40424b')];
+// the high side of a banked bend
+const BANKED = hex('#666a75');
 const SLOT = hex('#2d2f36');
 const PAINT = hex('#e8e6df');
 const KERB = hex('#c8382f');
@@ -213,6 +215,13 @@ function paint(track: Track) {
 				} else if (Math.abs(across - 2) < 0.13) {
 					// the two slots a slot car track would have
 					ground[k] = SLOT;
+				} else if (track.bank[i] > 1.001) {
+					// banking, which a flat picture can only suggest: the road
+					// paler the higher it climbs towards the outside wall, the
+					// more so the steeper it is
+					const steep = Math.min(1, (track.bank[i] - 1) / 0.72);
+					const high = (lateral(track, wx, wy, i) / HALF_ROAD + 1) / 2;
+					ground[k] = mix(TARMAC[speck], BANKED, clamp(high, 0, 1) * steep * 0.55);
 				} else {
 					ground[k] = TARMAC[speck];
 				}

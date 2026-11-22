@@ -139,7 +139,10 @@ function fetch(id: TrackId, lying: [number, number, number?][], most = 900) {
 /** On each track, two wrecks on a straight, the second some way back from the first, and when it happens. */
 const BEHIND: Record<TrackId, [[number, number], [number, number], number]> = {
 	circuit: [[305, 2], [272, -1.5], 30],
-	oval: [[178, 2], [148, -1.5], 25]
+	oval: [[178, 2], [148, -1.5], 25],
+	daytona: [[190, 2], [160, -1.5], 25],
+	indianapolis: [[195, 2], [165, -1.5], 25],
+	martinsville: [[190, 2], [160, -1.5], 25]
 };
 
 /** How far a corner of either truck is inside the outline of the other (m), at the most: 0 for not at all. */

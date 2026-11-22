@@ -704,6 +704,8 @@ type Offer = {
  */
 type Yard = {
 	claims: (number | null)[];
+	/** Each truck whose spot another has taken on its way home, which is to go for the one it was left. */
+	respot: boolean[];
 	trucks: Truck[];
 	pending: Car[];
 	/** The wrecks lying where they stopped: waiting, or set out for. */
@@ -725,6 +727,7 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 	let dirty = false;
 	const yard: Yard = {
 		claims: lane.stands.map((stand) => stand.front),
+		respot: lane.stands.map(() => false),
 		trucks: [],
 		pending,
 		lying: () => [...pending, ...crews.flatMap((crew) => (crew.target ? [crew.target] : []))],
@@ -1725,6 +1728,19 @@ function createTruck(
 	 * and along it, or straight on if the spot is just ahead.
 	 */
 	function goHome(front = spotFor(true)) {
+		// Another truck coming to a spot further up the yard than this one's,
+		// that is behind this one in the lane or not yet in it, would have to
+		// get by this one standing in its spot: so this one takes that spot,
+		// and the other the one this one would have had.
+		const here = inLane(truck.sample);
+		yard.trucks.forEach((other, i) => {
+			const claim = yard.claims[i];
+			if (i === index || claim === null || claim <= front || other.doing === 'parked') return;
+			if (other.across < -HALF_CORRIDOR && inLane(other.sample) >= here) return;
+			yard.claims[i] = front;
+			yard.respot[i] = true;
+			front = claim;
+		});
 		yard.claims[index] = front;
 		home = lane.yard.spot(front);
 		const { sample, across } = truck;
@@ -2096,6 +2112,11 @@ function createTruck(
 		/** One step of the job. Call before the world is stepped. */
 		step(time: number, dt: number) {
 			now = time;
+			// its spot taken by the other truck on its way home: on to the one it was left
+			if (yard.respot[index]) {
+				yard.respot[index] = false;
+				if (stage === 'home' || stage === 'park') goHome(yard.claims[index] ?? spotFor(true));
+			}
 			if (stage === 'parked') {
 				if (plan.length && time >= ready && canLeave()) fetch();
 				else if (!plan.length) {

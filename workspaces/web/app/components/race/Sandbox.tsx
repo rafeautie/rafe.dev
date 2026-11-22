@@ -16,7 +16,25 @@ import { LANE } from '~/lib/race/pits';
 import { CLASSIC, drawGrid, LIGHTS, rank, RULES, type Flag } from '~/lib/race/sim';
 import { FLAGS } from './shared';
 import { createSound, type Sound } from '~/lib/race/sound';
-import { FEET, getTrack, MPH, trackName, TRACK_IDS, type TrackId } from '~/lib/race/track';
+import {
+	FEET,
+	getTrack,
+	isTrackId,
+	MPH,
+	trackName,
+	TRACK_IDS,
+	type TrackId
+} from '~/lib/race/track';
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue
+} from '~/components/ui/select';
+
+/** Every track, for the picker: ovals first, then road courses. */
+const TRACKS = TRACK_IDS.map((id) => ({ value: id, label: trackName(id) }));
 
 // The race on its own, with nothing networked: pick a seed, and the whole
 // race is run and recorded at once, then played back here the way everyone
@@ -264,21 +282,27 @@ export default function Sandbox() {
 				<Button variant="outline" onClick={() => race(seed + 1)}>
 					Next seed
 				</Button>
-				<div className="flex items-center gap-1">
-					{TRACK_IDS.map((id) => (
-						<Button
-							key={id}
-							variant={id === trackId ? 'default' : 'outline'}
-							onClick={() => {
-								// another race altogether, with none of this one's cautions
-								setFlags([]);
-								setTrackId(id);
-							}}
-						>
-							{trackName(id)}
-						</Button>
-					))}
-				</div>
+				<Select
+					items={TRACKS}
+					value={trackId}
+					onValueChange={(next) => {
+						if (!isTrackId(next)) return;
+						// another race altogether, with none of this one's cautions
+						setFlags([]);
+						setTrackId(next);
+					}}
+				>
+					<SelectTrigger className="w-48" aria-label="Track">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						{TRACKS.map((track) => (
+							<SelectItem key={track.value} value={track.value}>
+								{track.label}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
 				<Button
 					variant="outline"
 					disabled={view?.flag !== 'green'}

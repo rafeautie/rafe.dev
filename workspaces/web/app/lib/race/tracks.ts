@@ -37,9 +37,17 @@ export type Layout = {
 	 * leaves it at the first of those samples and joins the track at the second.
 	 * `thirst` is how much fuel a metre of the track takes next to the next:
 	 * more where there is less of it flat out, so that a lap raced burns a lap's
-	 * worth of fuel whichever track it is.
+	 * worth of fuel whichever track it is. With `boxes`, the lane runs on from
+	 * the way in, round a bend if need be, and the first box is level with
+	 * that sample.
 	 */
-	pits: { from: number; slip: number; thirst: number; away?: [number, number] };
+	pits: {
+		from: number;
+		slip: number;
+		thirst: number;
+		away?: [number, number];
+		boxes?: number;
+	};
 };
 
 /** The world most tracks sit in, metres across. */
@@ -228,5 +236,66 @@ export const LAYOUTS = {
 			[44, 76]
 		],
 		pits: { from: 308, slip: 30, thirst: 1.23 }
+	},
+	/**
+	 * The tri-oval: two long, steeply banked bends joined by a straight
+	 * behind and a front stretch bent out in the middle, where the start line
+	 * is, banked less. The pits are on the infield of the front stretch, in
+	 * from the end of the last bend; the way out runs on round the infield of
+	 * the first bend and joins on the back straight.
+	 */
+	daytona: {
+		name: 'Daytona tri-oval',
+		kind: 'oval',
+		world: WORLD,
+		...corners(
+			[
+				[124, 42, 27, 'L', 31],
+				[36, 42, 27, 'L', 31],
+				[80, 7, 70, 'L', 18]
+			],
+			0.35
+		),
+		pits: { from: 224, slip: 40, thirst: 1, away: [115, 155] }
+	},
+	/**
+	 * A rectangle with its corners rounded off: two long straights, two short
+	 * ones between the corners at each end, and four corners alike, all of a
+	 * quarter turn and hardly banked. The pits are on the infield of the front
+	 * straight, in from the short straight before it; the way out runs on round
+	 * the infield of the first two corners and joins on the back straight.
+	 */
+	indianapolis: {
+		name: 'Indianapolis',
+		kind: 'oval',
+		world: WORLD,
+		...corners(
+			[
+				[127, 56, 22, 'L', 9],
+				[127, 34, 22, 'L', 9],
+				[33, 34, 22, 'L', 9],
+				[33, 56, 22, 'L', 9]
+			],
+			0.6
+		),
+		pits: { from: 275, slip: 34, thirst: 1, away: [134, 184], boxes: 323 }
+	},
+	/**
+	 * The paperclip: two long straights and a tight, lightly banked hairpin at
+	 * each end. The pits run the length of the front straight and on round the
+	 * infield of the first hairpin, joining on the back straight.
+	 */
+	martinsville: {
+		name: 'Martinsville',
+		kind: 'oval',
+		world: WORLD,
+		...corners(
+			[
+				[132.5, 45, 19.5, 'L', 12],
+				[27.5, 45, 19.5, 'L', 12]
+			],
+			0.55
+		),
+		pits: { from: 204, slip: 42, thirst: 1, away: [76, 118], boxes: 287 }
 	}
 } satisfies Record<string, Layout>;
