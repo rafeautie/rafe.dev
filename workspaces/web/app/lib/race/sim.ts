@@ -221,6 +221,8 @@ export const flown = (flag: Flag, kind: RaceEvent['kind']): Flag => FLIES[kind] 
  */
 type Obstacle = Pick<Car, 'sample' | 'across' | 'speed' | 'retired' | 'towed'> & {
 	lane?: number;
+	/** How much further it reaches to either side than a wreck does: a truck beside the wreck it is lifting, as the two of them are gone round. */
+	wide?: number;
 };
 
 export type Race = ReturnType<typeof createRace>;
@@ -442,6 +444,9 @@ export function createRace(
 		(!other.retired ||
 			(Math.abs(other.across) < HALF_CORRIDOR && (Math.abs(other.speed) > 1 || other.towed)));
 
+	/** How far from the middle of something a car going by it keeps: more for a wreck, which may be lying across the road, and more again for a truck at work on one. */
+	const clearOf = (other: Obstacle) => CLEAR + (other.retired ? WRECK + (other.wide ?? 0) : 0);
+
 	/**
 	 * How far from the middle of something a car can get going by it on one
 	 * side (1 the left, -1 the right), wanting `room`, short of the road
@@ -571,7 +576,8 @@ export function createRace(
 		for (const car of cars) locate(car);
 		marshal();
 		// the trucks do not move until the drivers have had their turn
-		road = [...cars, ...recovery.onTrack];
+		// (a wreck a truck has stopped beside to lift is part of the truck, to a driver)
+		road = [...cars.filter((car) => !recovery.covers(car)), ...recovery.onTrack];
 		for (const car of cars) drive(car);
 		pits.step(race.time, race.time >= LIGHTS, DT);
 		recovery.step(race.time, DT);
@@ -767,7 +773,7 @@ export function createRace(
 					queue = ahead;
 				}
 				if (ahead < -5 || Math.abs(ahead) >= Math.abs(gap)) continue;
-				const room = CLEAR + (other.retired ? WRECK : 0);
+				const room = clearOf(other);
 				const line = track.line[other.sample];
 				if (
 					waits
@@ -807,7 +813,7 @@ export function createRace(
 				}
 			} else if (blocker && !followed(blocker)) {
 				// go round it on whichever side is nearer the line already held
-				const room = CLEAR + (blocker.retired ? WRECK : 0);
+				const room = clearOf(blocker);
 				const line = track.line[blocker.sample];
 				const sides = [blocker.across + room - line, blocker.across - room - line]
 					.filter((o) => Math.abs(line + o) <= MAX_OFFSET)

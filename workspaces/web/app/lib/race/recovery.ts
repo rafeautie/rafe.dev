@@ -125,6 +125,8 @@ export type Marker = {
 	speed: number;
 	retired: true;
 	towed: boolean;
+	/** How much further it reaches to either side than a wreck does. */
+	wide: number;
 };
 
 /**
@@ -154,6 +156,8 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 		},
 		/** The trucks out on the track, each as a marker at either end of it, for the cars to go round: as of the last `sync`. */
 		onTrack,
+		/** Whether a wreck has a truck stopped beside it to lift it: the drivers go round the two of them as one, by the truck's markers. */
+		covers: (car: Car) => crews.some((crew) => crew.lifting === car),
 		/**
 		 * Sends a truck for a wreck: one already out for wrecks with room on
 		 * its bed for this one too, or failing that one on its stand, the
@@ -254,20 +258,22 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	 * for one stopped beside a wreck to lift it, which is the two of them
 	 * together, to be gone round as one, the same side all the way by.
 	 */
-	const nose = {
+	const nose: Marker = {
 		sample: homeOf(slot),
 		across: stand.across,
 		speed: 0,
-		retired: true as const,
-		towed: false
+		retired: true,
+		towed: false,
+		wide: 0
 	};
 	/** The back of the truck, as the drivers see it. */
-	const tail = {
+	const tail: Marker = {
 		sample: (homeOf(slot) - Math.round(TRUCK.axle + TRUCK.long) + n) % n,
 		across: stand.across,
 		speed: 0,
-		retired: true as const,
-		towed: false
+		retired: true,
+		towed: false,
+		wide: 0
 	};
 
 	/** Wrecks called in and not yet gone for. */
@@ -927,6 +933,11 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		truck,
 
 		/** Adds where the drivers see the truck, while it is out on the track: one marker at the front of it, and one at the back. */
+		/** The wreck the truck has stopped beside to lift, still on the ground, or null. */
+		get lifting() {
+			return stage === 'lift' ? wreck : null;
+		},
+
 		mark(into: Marker[]) {
 			if (!truck.busy) return;
 			if (nose.across > -HALF_CORRIDOR - 1) into.push(nose);
@@ -1061,6 +1072,8 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			const lifting = stage === 'lift' ? (wreck ?? carried?.car) : null;
 			nose.sample = truck.sample;
 			nose.across = lifting ? (truck.across + lifting.across) / 2 : truck.across;
+			// as wide as the two of them, from the one's middle to the other's, and out to either side
+			nose.wide = tail.wide = lifting ? Math.abs(truck.across - lifting.across) / 2 : 0;
 			nose.speed = truck.speed;
 			nose.towed = truck.towed;
 			const back = on(-TRUCK.long);
