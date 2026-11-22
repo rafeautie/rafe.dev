@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ROSTER } from './roster';
 import { LIMITS } from './settings';
-import { LANE } from './pits';
+import { LANE, pitsFor } from './pits';
 import { KERBSIDE, RING, TIGHTEST, TRUCK, TRUCK_HALF, serviceFor } from './service';
 import {
 	CLASSIC,
@@ -385,6 +385,7 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 
 	it('is cleared by a truck that steers like one, with a crane that lifts the wreck onto its bed', () => {
 		const race = createRace(wrecking, drawGrid(wrecking, SIX), track, [], CLASSIC);
+		const { stands } = pitsFor(track);
 		const turned = (from: number, to: number) =>
 			Math.abs(Math.atan2(Math.sin(to - from), Math.cos(to - from)));
 		const snap = () =>
@@ -400,10 +401,14 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 				const was = trucks[index];
 				const moved = Math.hypot(truck.x - was.x, truck.y - was.y);
 				// It turns only as it moves: never on the spot, never tighter than
-				// it can steer. (Squaring up on its stand as it parks is a turn of
-				// the wheel at a crawl.)
-				if (truck.doing !== 'park') {
-					expect(turned(was.angle, truck.angle)).toBeLessThan(moved / 3.5 + 1e-4);
+				// it can steer. Squaring up on its stand as it parks is a last turn
+				// of the wheel at a crawl, and never much of one: it turns in off
+				// the lane early enough to be all but straight on the stand.
+				if (truck.doing !== 'park' && was.doing !== 'park') {
+					expect(turned(was.angle, truck.angle)).toBeLessThan(moved / 6 + 1e-4);
+				} else if (truck.doing === 'park') {
+					const square = Math.min(...stands.map((stand) => turned(stand.angle, truck.angle)));
+					expect(square).toBeLessThan(0.2);
 				}
 				expect(moved).toBeLessThan(29 * DT);
 				// and its crane swings, reaches and lifts no faster than a crane does

@@ -73,8 +73,10 @@ const BUMPER = TRUCK.long - TRUCK.axle;
 const BRAKE = 5;
 const PULL = 8;
 const HAUL = 6;
-/** How fast it squares itself up on its stand, m/s at its ends. */
-const SQUARE = 1.2;
+/** How fast it squares itself up on its stand, m/s at its ends: the last of a turn of the wheel, at a crawl. */
+const SQUARE = 0.4;
+/** How far along the lane it takes to turn into a stand off it, no tighter than a truck steers. */
+const TURN_IN = 14;
 /** How fast it goes down the pit lane, m/s. */
 const LANE_PACE = 11;
 /** On the track, a truck stops this far short of another that is going for a wreck or at work on one (m). */
@@ -529,7 +531,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	function lying(car: Car, from: number, across: number, creep = false) {
 		const over = Math.abs(beside(car) - across);
 		const gentle = clamp(over * 4, 2, DRIFT);
-		const sharp = clamp(over * 2, 2, DRIFT);
+		const sharp = clamp(over * 3, 3, DRIFT);
 		const least = from + (creep ? 2 : sharp + STRAIGHT_ON);
 		const at = least + ahead(least, car.sample);
 		return { at, drift: creep ? 0 : Math.min(gentle, at - from - STRAIGHT_ON) };
@@ -562,7 +564,8 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		const side = beside(wreck!);
 		const { at, drift } = lying(wreck!, from, across, creep);
 		const stop = at + LEAD;
-		if (creep) keys.push([stop, side]);
+		// creeping, it keeps the line it is on: the crane can reach across from there
+		if (creep) keys.push([stop, across]);
 		else {
 			keys.push(
 				[Math.max(from, stop - STRAIGHT_ON - drift), across],
@@ -640,7 +643,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		const from = nearest(track, front.x, front.y, truck.sample);
 		const across = lateral(track, front.x, front.y, from);
 		// far enough to be back at the kerb without throwing what is on about
-		const run = Math.ceil(Math.max(10, Math.sqrt(42 * Math.abs(across - NEARSIDE))));
+		const run = Math.ceil(Math.max(16, Math.sqrt(100 * Math.abs(across - NEARSIDE))));
 		const into = from + run + ahead(from + run, lane.entry);
 		// how long the way in is, from the track to the lane
 		const slip = lane.in1 - lane.in0;
@@ -699,13 +702,19 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			stage = 'parked';
 			return;
 		}
-		// in line with the stand by the time its back axle is on it, if there is room for that
+		// In line with the stand by the time its back axle is on it. With too
+		// little of the lane left for that, it turns in as tightly as it must,
+		// and straightens up on the stand as far as there is room left to.
 		const { front, back } = lane.stands[slot];
 		const straight = Math.ceil(front - back) + 1;
 		const keys: [number, number][] = [[sample, across]];
-		if (to - sample > straight + 20) {
-			keys.push([sample + 9, -RING], [to - straight - 10, -RING], [to - straight, stand.across]);
-		} else if (to - sample > straight + 6) keys.push([to - straight, stand.across]);
+		// (moving up from the stand behind, it is on the line already)
+		if (Math.abs(across - stand.across) > 0.5) {
+			const turnIn = clamp(to - sample - straight, 6, TURN_IN);
+			const onLine = Math.min(straight, to - sample - turnIn);
+			if (to - sample > straight + TURN_IN + 12) keys.push([sample + 9, -RING]);
+			if (onLine >= 2) keys.push([to - onLine - turnIn, -RING], [to - onLine, stand.across]);
+		}
 		keys.push([to, stand.across]);
 		take(drive(on(TRUCK.axle), keys), false);
 		stage = 'home';
@@ -803,7 +812,12 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 				// A wreck knocked out of reach since the truck pulled up is gone
 				// after again: crept up to, if it is a little way up the road.
 				if (!reachable(wreck!)) {
-					const creep = ahead(truck.sample, wreck!.sample) < 40;
+					// (straight on up the road, if that passes it near enough to reach and far enough to miss)
+					const off = Math.abs(wreck!.across - truck.across);
+					const creep =
+						ahead(truck.sample, wreck!.sample) < 40 &&
+						off > TRUCK_HALF + GAP + NOSE &&
+						off < REACH - 1;
 					waiting.unshift(wreck!);
 					if (!creep) wreck = null;
 					return approach(creep);

@@ -43,7 +43,7 @@ export const KERBSIDE = HALF_ROAD - TRUCK_HALF - 0.6;
 export const NEARSIDE = -KERBSIDE;
 /** The tightest the line the pit lane is on bends, as a radius in metres, and the tightest any way worked out for a truck does. */
 export const TIGHTEST = 9;
-const STEER = 6.5;
+const STEER = 10;
 
 export type Service = ReturnType<typeof build>;
 
@@ -263,7 +263,7 @@ function build(track: Track) {
 	 * off it or not facing along it: it curves onto the way over the first
 	 * `joining` metres, and is on it from there.
 	 */
-	function drive(from: Pose, keys: [number, number][], joining = 9): Route {
+	function drive(from: Pose, keys: [number, number][], joining = 12): Route {
 		const way = route(keys);
 		let join = 1;
 		while (join + 1 < way.count && way.along[join] < joining) join++;

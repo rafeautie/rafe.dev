@@ -54,7 +54,7 @@ const ROAD_GRIP = 11;
  * last of them the lane ends, which is what a truck needs to steer out into
  * it.
  */
-export const STAND = { after: 9.8, pitch: 12.8, long: 12.4, wide: 4, run: 12 };
+export const STAND = { after: 9.8, pitch: 12.8, long: 12.4, wide: 4, run: 15 };
 /** How many tow trucks there are. */
 const TRUCKS = 2;
 
