@@ -150,8 +150,13 @@ export const LEGEND = [
 /** What a pit stop is for, as the tower has room to say it. */
 const STOPS = { fuel: 'Fuel', tyres: 'Tires', both: 'F+T' };
 
-/** Where in a row of the tower the chip saying what its car is doing goes. */
-const STATUS_X = 69;
+/**
+ * Where in a row of the tower the chip saying what its car is doing goes, and
+ * how big every chip is: room for a word of three letters with a gap round it.
+ */
+const STATUS_X = 68;
+const CHIP_W = 23;
+const CHIP_H = 11;
 
 /**
  * How far ahead, in metres, a car must get before the tower moves it up a
@@ -629,7 +634,7 @@ export function createHud() {
 			const space = car ? x + STATUS_X - 2 - named : x + w - 40 - named;
 			p.text(named, ry + 3, clip(entry(id).name, space), gone ? DIM : PAPER);
 			// once the race is over every car is home, which needs no saying on each row
-			if (car && (phase === 'racing' || status !== 'home')) chip(p, x + STATUS_X, ry + 2, status);
+			if (car && (phase === 'racing' || status !== 'home')) chip(p, x + STATUS_X, ry + 1, status);
 
 			let figure = '';
 			let colour = DIM;
@@ -638,7 +643,7 @@ export function createHud() {
 				// here, and at the flag the difference in their times; nothing for
 				// a car in the pit lane or out, whose chip says it
 				const behind = gaps.get(id) ?? null;
-				if (status === 'box') [figure, colour] = [stopText(car.stop!), GOLD];
+				if (status === 'box') [figure, colour] = [boxText(car.stop!), GOLD];
 				else if (status === 'home')
 					[figure, colour] = [
 						car === top || !top.finishTime
@@ -689,20 +694,21 @@ export function createHud() {
 	function chip(p: Painter, cx: number, cy: number, status: Status) {
 		if (status === 'racing') return;
 		if (status === 'home') {
-			p.fill(cx, cy, 11, 9, INK);
-			p.outline(cx, cy, 11, 9, PAPER);
-			for (let square = 0; square < 12; square++) {
-				const [column, row] = [square % 4, Math.floor(square / 4)];
-				if (!((column + row) & 1))
-					p.fill(cx + 1 + column * 2 + 1, cy + 1 + row * 2 + 1, 2, 2, PAPER);
+			// the checks, three pixels square, fill it inside its edge exactly
+			p.fill(cx, cy, CHIP_W, CHIP_H, INK);
+			p.outline(cx, cy, CHIP_W, CHIP_H, PAPER);
+			const [columns, rows] = [(CHIP_W - 2) / 3, (CHIP_H - 2) / 3];
+			for (let square = 0; square < columns * rows; square++) {
+				const [column, row] = [square % columns, Math.floor(square / columns)];
+				if (!((column + row) & 1)) p.fill(cx + 1 + column * 3, cy + 1 + row * 3, 3, 3, PAPER);
 			}
 			return;
 		}
+		// every word is three letters, so each sits in the middle with room round it
 		const [word, colour, filled] = CHIPS[status];
-		const cw = measure(word) + 4;
-		p.fill(cx, cy, cw, 9, filled ? colour : INK);
-		if (!filled) p.outline(cx, cy, cw, 9, colour);
-		p.text(cx + 2, cy + 1, word, filled ? (status === 'out' ? PAPER : INK) : colour);
+		p.fill(cx, cy, CHIP_W, CHIP_H, filled ? colour : INK);
+		if (!filled) p.outline(cx, cy, CHIP_W, CHIP_H, colour);
+		p.centre(cx + (CHIP_W >> 1), cy + 2, word, filled ? (status === 'out' ? PAPER : INK) : colour);
 	}
 
 	/**
@@ -1304,3 +1310,10 @@ function chipText(follow: Follow, focus: string | null) {
 			return named;
 	}
 }
+
+/** What a stop is for, as a row of the tower has room to say it beside its chip. */
+const BOXED = { fuel: 'Fuel', tyres: 'Tire', both: 'F+T' };
+
+/** A stop in a row of the tower: what for, and the seconds, in no more than eight letters. */
+const boxText = (stop: NonNullable<Readout['stop']>) =>
+	`${BOXED[stop.service]} ${stop.seconds < 10 ? stop.seconds.toFixed(1) : Math.round(stop.seconds)}`;
