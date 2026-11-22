@@ -11,8 +11,8 @@ export const Route = createFileRoute('/admin/logout')({
 				const origin = request.headers.get('origin');
 				if (origin && origin !== url.origin) return new Response('Wrong origin', { status: 403 });
 				const session = await adminSession();
-				const { token } = session.data;
-				await session.clear();
+				const { token } = session;
+				session.destroy();
 				markSignedIn(false);
 				// end the token at GitHub too, so a copy of the cookie stops working
 				if (token) {

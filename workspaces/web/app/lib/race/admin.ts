@@ -36,7 +36,7 @@ function flag(value: unknown, name: string) {
 }
 
 export const getRaceAdmin = createServerFn({ method: 'GET' })
-	.inputValidator((input: unknown) => {
+	.validator((input: unknown) => {
 		const { search } = object(input ?? {});
 		return { search: typeof search === 'string' ? search.slice(0, 40) : '' };
 	})
@@ -47,7 +47,7 @@ export const getRaceAdmin = createServerFn({ method: 'GET' })
 	});
 
 export const renameRacePlayer = createServerFn({ method: 'POST' })
-	.inputValidator((input: unknown) => {
+	.validator((input: unknown) => {
 		const { name } = object(input);
 		if (typeof name !== 'string') throw new Error('Bad request: name');
 		return { id: player(input), name: name.slice(0, 64) };
@@ -58,14 +58,14 @@ export const renameRacePlayer = createServerFn({ method: 'POST' })
 	});
 
 export const resetRacePlayer = createServerFn({ method: 'POST' })
-	.inputValidator((input: unknown) => ({ id: player(input) }))
+	.validator((input: unknown) => ({ id: player(input) }))
 	.handler(async ({ data }) => {
 		await requireToken();
 		return done(await room().adminReset(data.id));
 	});
 
 export const banRacePlayer = createServerFn({ method: 'POST' })
-	.inputValidator((input: unknown) => ({
+	.validator((input: unknown) => ({
 		id: player(input),
 		banned: flag(object(input).banned, 'banned')
 	}))
@@ -75,7 +75,7 @@ export const banRacePlayer = createServerFn({ method: 'POST' })
 	});
 
 export const pauseRace = createServerFn({ method: 'POST' })
-	.inputValidator((input: unknown) => ({ paused: flag(object(input).paused, 'paused') }))
+	.validator((input: unknown) => ({ paused: flag(object(input).paused, 'paused') }))
 	.handler(async ({ data }) => {
 		await requireToken();
 		return done(await room().adminPause(data.paused));
@@ -92,7 +92,7 @@ export const cautionRace = createServerFn({ method: 'POST' }).handler(async () =
 });
 
 export const saveRaceSettings = createServerFn({ method: 'POST' })
-	.inputValidator((input: unknown) => {
+	.validator((input: unknown) => {
 		const settings = checkSettings(object(input).settings);
 		if (typeof settings === 'string') throw new Error(settings);
 		return { settings };

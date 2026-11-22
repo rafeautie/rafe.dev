@@ -204,7 +204,7 @@ function totalsOf(views: Headline, visits: VisitHeadline): Record<Metric, number
 }
 
 export const getStats = createServerFn({ method: 'GET' })
-	.inputValidator((input: unknown) => {
+	.validator((input: unknown) => {
 		const data = (input ?? {}) as Record<string, unknown>;
 		return {
 			range: isRange(data.range) ? data.range : '7d',
@@ -424,7 +424,7 @@ export const getStats = createServerFn({ method: 'GET' })
 // Everything one browser has done on the site (or one visit, for a browser
 // without an id).
 export const getVisitor = createServerFn({ method: 'GET' })
-	.inputValidator((input: unknown) => {
+	.validator((input: unknown) => {
 		const id = (input as { id?: unknown } | null)?.id;
 		if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) throw new Error('Bad visitor');
 		return { id };

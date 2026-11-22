@@ -1,39 +1,21 @@
 import { env } from 'cloudflare:workers';
-import {
-	deleteCookie,
-	getCookie,
-	getRequest,
-	setCookie,
-	useSession
-} from '@tanstack/react-start/server';
+import { deleteCookie, getCookie, getRequest, setCookie } from '@tanstack/react-start/server';
+import { getIronSession } from 'iron-session';
 import { ADMIN_GITHUB_ID, SIGNED_IN_COOKIE } from './config';
+import { EIGHT_HOURS, sessionOptions, type AdminSession } from './session';
 
-// The sign-in lives in one encrypted, HTTP-only cookie: GitHub's token for this
-// GitHub App and who it belongs to. The browser holds it but cannot read it,
-// page scripts cannot touch it, and it lapses after 8 hours, when the token
-// itself expires.
-export type AdminSession = {
-	token?: string;
-	userId?: number;
-	login?: string;
-	avatarUrl?: string;
-	// the OAuth state, between /admin/login and /admin/auth
-	state?: string;
-};
-
-const EIGHT_HOURS = 8 * 60 * 60;
-
+// iron-session seals it with SESSION_SECRET (see sessionOptions) and reads and
+// writes it through TanStack Start's cookie helpers. Change the session's
+// fields, then save() to send the cookie or destroy() to remove it, before the
+// response is returned.
 export function adminSession() {
-	// TanStack's server-side session helper, not a React hook
-	// eslint-disable-next-line react-hooks/rules-of-hooks
-	return useSession<AdminSession>({
-		name: 'rafe-admin',
-		password: env.SESSION_SECRET,
-		maxAge: EIGHT_HOURS,
-		// only ever the cookie, never a request header
-		sessionHeader: false,
-		cookie: { httpOnly: true, secure: true, sameSite: 'lax', path: '/' }
-	});
+	return getIronSession<AdminSession>(
+		{
+			read: (name) => getCookie(name),
+			write: (name, value, options) => setCookie(name, value, options)
+		},
+		sessionOptions(env.SESSION_SECRET)
+	);
 }
 
 // The public pages' hint (SIGNED_IN_COOKIE), set and cleared with the session.
@@ -54,7 +36,7 @@ export class NotSignedIn extends Error {
 // id is checked again here in case that ever changes.
 export async function currentAdmin() {
 	const session = await adminSession();
-	const { token, userId, login, avatarUrl } = session.data;
+	const { token, userId, login, avatarUrl } = session;
 	if (!token || userId !== ADMIN_GITHUB_ID || !login) return null;
 	return { token, login, avatarUrl: avatarUrl ?? '' };
 }

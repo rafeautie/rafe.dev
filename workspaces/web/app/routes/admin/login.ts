@@ -10,7 +10,8 @@ export const Route = createFileRoute('/admin/login')({
 			GET: async ({ request }) => {
 				const state = crypto.randomUUID();
 				const session = await adminSession();
-				await session.update({ state });
+				session.state = state;
+				await session.save();
 				const authorize = new URL('https://github.com/login/oauth/authorize');
 				authorize.searchParams.set('client_id', env.GITHUB_CLIENT_ID);
 				authorize.searchParams.set('redirect_uri', new URL('/admin/auth', request.url).href);
