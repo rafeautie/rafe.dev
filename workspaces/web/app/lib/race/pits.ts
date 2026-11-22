@@ -1,3 +1,4 @@
+import { fuelled, planStop, type Plan } from './crew';
 import { ROSTER } from './roster';
 import { HALF_LANE, RING, TRUCK, curve, serviceFor, type Route } from './service';
 import type { Car, Flag, Rules } from './sim';
@@ -22,14 +23,20 @@ import { HALF_CORRIDOR, MAX_OFFSET, clamp, type Track, type TrackId } from './tr
 
 /**
  * A box, which is a good deal bigger than a car, with room for its crew to
- * work all round one: how far it is from one to the next along the lane, and
- * how long and wide one is painted.
+ * work all round one and for their kit (crew.ts): how far it is from one to
+ * the next along the lane, how long and wide one is painted, and how far
+ * from its edge on the lane's side the middle of a car standing in it is.
+ * The boxes are painted on the same paving as the lane, beside it.
  */
-export const BOX = { pitch: 6.6, long: 6.2, wide: 4 };
+export const BOX = { pitch: 8, long: 7.6, wide: 6.4, front: 2 };
 /** There is a box for every car there is, whether it is racing or not. */
 const BOXES = ROSTER.length;
-/** Centre line to the middle of a box, which is hard against the lane. */
-export const BOX_ACROSS = RING + HALF_LANE + BOX.wide / 2 + 0.05;
+/** Where the lane's paving ends and the boxes' begins, across from the centre line. */
+export const BOX_EDGE = RING + HALF_LANE + 0.05;
+/** Centre line to the middle of a car standing in its box, and to the tow trucks' stands. */
+export const BOX_ACROSS = BOX_EDGE + BOX.front;
+/** Centre line to the back of the boxes, where the paving ends. */
+export const APRON = BOX_EDGE + BOX.wide;
 /** Where across the track a car leaves it for the pits, and comes back on. */
 const INSIDE = -MAX_OFFSET;
 /** How far along the lane it takes a car to turn into its box, and out of it. */
@@ -54,7 +61,14 @@ const ROAD_GRIP = 11;
  * last of them the lane ends, which is what a truck needs to steer out into
  * it.
  */
-export const STAND = { after: 9.8, pitch: 12.8, long: 12.4, wide: 4, run: 15 };
+export const STAND = {
+	// as close behind the last box as the boxes are to one another, and a little more
+	after: BOX.long / 2 + 12.4 / 2 + (BOX.pitch - BOX.long) + 0.4,
+	pitch: 12.8,
+	long: 12.4,
+	wide: 4,
+	run: 15
+};
 /** How many tow trucks there are. */
 const TRUCKS = 2;
 
@@ -74,8 +88,8 @@ const LAYOUTS: Record<
 	TrackId,
 	{ from: number; slip: number; thirst: number; away?: [number, number] }
 > = {
-	circuit: { from: 313, slip: 30, thirst: 1.23 },
-	oval: { from: 258, slip: 49, thirst: 1.06, away: [136, 180] }
+	circuit: { from: 308, slip: 30, thirst: 1.23 },
+	oval: { from: 258, slip: 40, thirst: 1.06, away: [136, 180] }
 };
 
 /** What is done at a stop. */
@@ -430,7 +444,7 @@ type Meeting = {
 	note: (
 		car: Car,
 		what:
-			| { kind: 'pit'; service: Stop }
+			| ({ kind: 'pit' } & Omit<Plan, 'seconds'>)
 			| { kind: 'away'; seconds: number; slow: boolean }
 			| { kind: 'dry' }
 	) => void;
@@ -514,8 +528,10 @@ export function createPits(
 		until: 0,
 		service: 'fuel' as Stop,
 		slow: false,
-		/** Fuel going in, each second. */
-		flow: 0,
+		/** What the stop is made of (crew.ts), and the fuel in the car as it began, and going in at it. */
+		job: null as Plan | null,
+		start: 0,
+		add: 0,
 		tyres: false,
 		/** Since when it has been held at the end of the lane, or 0, and whether it has been let go. */
 		held: 0,
@@ -657,16 +673,26 @@ export function createPits(
 		const skill = clamp(car.entry.crew, 0, 1);
 		crew.service = add && tyres ? 'both' : add ? 'fuel' : 'tyres';
 		crew.slow = rand() < lerp(FUMBLES[0], FUMBLES[1], skill);
-		const seconds =
-			(tyres ? both : filling) * lerp(SLOWEST, QUICKEST, skill) +
-			(crew.slow ? FUMBLE + rand() * FUMBLE_MORE : 0);
+		const pace = lerp(SLOWEST, QUICKEST, skill);
+		const fumble = crew.slow ? FUMBLE + rand() * FUMBLE_MORE : 0;
+		const seconds = (tyres ? both : filling) * pace + fumble;
+		// the jobs that make up that time, which the fuel goes in by (crew.ts)
+		const plan = planStop(crew.service, filling * pace, tyres ? TYRES * pace : 0, fumble, seconds);
 		crew.since = time;
 		crew.until = time + seconds;
-		crew.flow = add / seconds;
+		crew.job = plan;
+		crew.start = car.fuel;
+		crew.add = add;
 		crew.tyres = tyres;
 		crew.stops++;
 		car.lane = LANE.box;
-		race.note(car, { kind: 'pit', service: crew.service });
+		race.note(car, {
+			kind: 'pit',
+			service: plan.service,
+			fuel: plan.fuel,
+			tyres: plan.tyres,
+			fumble: plan.fumble
+		});
 	}
 
 	/**
@@ -780,7 +806,11 @@ export function createPits(
 			brake = SLOW * 1.3;
 		} else if (car.lane === LANE.box) {
 			target = 0;
-			car.fuel = Math.min(rules.tank, car.fuel + crew.flow * dt);
+			// the fuel goes in while the nozzle is on, and only then
+			if (crew.job && crew.add) {
+				const share = fuelled(crew.job, time - crew.since);
+				car.fuel = Math.min(rules.tank, crew.start + crew.add * share);
+			}
 			if (time >= crew.until && free(car, crew, lorries)) {
 				if (crew.tyres) car.wear = 0;
 				car.lane = LANE.out;

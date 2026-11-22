@@ -1,4 +1,5 @@
-import { pitsFor, type Stop } from './pits';
+import { planStop, type Plan } from './crew';
+import { LANE, pitsFor, type Stop } from './pits';
 import { LOAD, STOWED, type Crane } from './recovery';
 import type { Entry } from './roster';
 import {
@@ -107,9 +108,36 @@ export type ReplayCar = {
 	fuel: number;
 	wear: number;
 	lane: number;
-	/** The stop the car is making or last made: what for, the seconds it has stood, whether the crew fumbled it, and whether it is over. */
-	stop: { service: Stop; since: number; seconds: number; slow: boolean; over: boolean } | null;
+	/**
+	 * The stop the car is making or last made: what for, the seconds it has
+	 * stood, whether the crew fumbled it, whether it is over, and the jobs it
+	 * is made of (crew.ts).
+	 */
+	stop: {
+		service: Stop;
+		since: number;
+		seconds: number;
+		slow: boolean;
+		over: boolean;
+		plan: Plan;
+	} | null;
+	/** On its way in to its box: the stop it is coming in to make, which its crew get ready for. */
+	coming: Plan | null;
 };
+
+/**
+ * The jobs of a recorded stop. One recorded before they were has the
+ * service only, and is taken to be a middling stop for it.
+ */
+export function planOf(event: Extract<RaceEvent, { kind: 'pit' }>): Plan {
+	const { service } = event;
+	if (event.fuel === undefined) {
+		const [fuel, tyres] = [service === 'tyres' ? 0 : 3, service === 'fuel' ? 0 : 3.6];
+		return planStop(service, fuel, tyres, 0, Math.max(fuel, tyres) + (fuel && tyres ? 0.8 : 0));
+	}
+	const seconds = Math.max(event.fuel, event.tyres) + event.fumble;
+	return planStop(service, event.fuel, event.tyres, event.fumble, seconds);
+}
 
 export type Replay = ReturnType<typeof createReplay>;
 
@@ -203,6 +231,10 @@ export function record(
 				recorded.lap = round(recorded.lap, 3);
 			} else if (recorded.kind === 'away') {
 				recorded.seconds = round(recorded.seconds, 2);
+			} else if (recorded.kind === 'pit') {
+				recorded.fuel = round(recorded.fuel, 2);
+				recorded.tyres = round(recorded.tyres, 2);
+				recorded.fumble = round(recorded.fumble, 2);
 			}
 			events.push(recorded);
 		}
@@ -266,27 +298,26 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 	const { rate, frames, grid, events, poses } = recording;
 	const track = getTrack(recording.track);
 	const view = new DataView(poses.buffer, poses.byteOffset, poses.byteLength);
-	const cars = grid.map(
-		(id): ReplayCar => ({
-			entry: roster.find((entry) => entry.id === id)!,
-			x: 0,
-			y: 0,
-			angle: 0,
-			speed: 0,
-			slip: 0,
-			hull: Float32Array.from(HULL),
-			damage: 0,
-			retired: false,
-			progress: 0,
-			laps: -1,
-			bestLap: 0,
-			finishTime: 0,
-			fuel: 1,
-			wear: 0,
-			lane: 0,
-			stop: null
-		})
-	);
+	const cars = grid.map((id): ReplayCar => ({
+		entry: roster.find((entry) => entry.id === id)!,
+		x: 0,
+		y: 0,
+		angle: 0,
+		speed: 0,
+		slip: 0,
+		hull: Float32Array.from(HULL),
+		damage: 0,
+		retired: false,
+		progress: 0,
+		laps: -1,
+		bestLap: 0,
+		finishTime: 0,
+		fuel: 1,
+		wear: 0,
+		lane: 0,
+		stop: null,
+		coming: null
+	}));
 	const laps = recording.laps ?? CLASSIC.laps;
 	const pits = recording.tank !== undefined;
 	const pose = POSE + (pits ? PITS : 0);
@@ -314,7 +345,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 				car.hull.set(HULL);
 				car.damage = car.bestLap = car.finishTime = 0;
 				car.retired = false;
-				car.stop = null;
+				car.stop = car.coming = null;
 			}
 			flag = 'green';
 			extra = 0;
@@ -343,8 +374,10 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 					since: event.time,
 					seconds: 0,
 					slow: false,
-					over: false
+					over: false,
+					plan: planOf(event)
 				};
+				car.coming = null;
 			} else if (event.kind === 'away' && car.stop) {
 				car.stop = { ...car.stop, seconds: event.seconds, slow: event.slow, over: true };
 			}
@@ -384,6 +417,14 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			car.wear = (view.getUint8(a + 11) * (1 - t) + view.getUint8(b + 11) * t) / 255;
 			// which is one thing or another, never between: as at the nearer of the two moments
 			car.lane = view.getUint8((t > 0.5 ? b : a) + 12);
+			// on its way in: the stop it is coming in for is the next it makes
+			if (car.lane !== LANE.called && car.lane !== LANE.in) car.coming = null;
+			else if (!car.coming) {
+				const stop = events.find(
+					(event, at) => at >= next && event.kind === 'pit' && event.car === index
+				);
+				if (stop?.kind === 'pit') car.coming = planOf(stop);
+			}
 		});
 		for (let index = 0; index < Math.min(recorded, trucks.length); index++) {
 			const truck = trucks[index];

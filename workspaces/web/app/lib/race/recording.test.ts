@@ -12,6 +12,8 @@ const track = getTrack('circuit');
  * seeds below were picked for races between them, so they race here.
  */
 const SIX = ROSTER.slice(0, 6);
+/** A race between them that loses a car early on, and a truck goes for it. */
+const WRECK = 20;
 
 describe('a recording', () => {
 	it('plays back as the race it was made from', () => {
@@ -79,11 +81,11 @@ describe('a recording', () => {
 	});
 
 	it('plays back the caution and the truck that fetched the wreck, crane and all', () => {
-		// seed 7 loses a car ten seconds in
-		const grid = drawGrid(7, SIX);
-		const recording = record(7, grid, track, [], CLASSIC);
+		// seed WRECK loses a car ten seconds in
+		const grid = drawGrid(WRECK, SIX);
+		const recording = record(WRECK, grid, track, [], CLASSIC);
 		const replay = createReplay(recording, ROSTER);
-		const race = createRace(7, grid, track, [], CLASSIC);
+		const race = createRace(WRECK, grid, track, [], CLASSIC);
 		let cautions = 0;
 		let again = 0;
 		let towed = 0;
@@ -127,9 +129,9 @@ describe('a recording', () => {
 	});
 
 	it('leaves the trucks out of a race none went out in, and shows them parked', () => {
-		// seed 5 is a clean race; seed 7 loses a car, and a truck goes for it
+		// seed 5 is a clean race; seed WRECK loses a car, and a truck goes for it
 		const quiet = record(5, drawGrid(5, SIX), track, [], CLASSIC);
-		const busy = record(7, drawGrid(7, SIX), track, [], CLASSIC);
+		const busy = record(WRECK, drawGrid(WRECK, SIX), track, [], CLASSIC);
 		const cars = SIX.length * 10;
 		expect(quiet.trucks).toBe(0);
 		expect(quiet.poses.length).toBe(quiet.frames * cars);
@@ -141,7 +143,7 @@ describe('a recording', () => {
 	});
 
 	it('still plays a recording made before there were trucks', () => {
-		const { trucks: _, ...recording } = record(7, drawGrid(7, SIX), track, [], CLASSIC);
+		const { trucks: _, ...recording } = record(WRECK, drawGrid(WRECK, SIX), track, [], CLASSIC);
 		const cars = SIX.length * 10;
 		// the same race with the trucks' bytes taken out of every moment
 		const moment = recording.poses.length / recording.frames;
@@ -150,7 +152,7 @@ describe('a recording', () => {
 			poses.set(recording.poses.subarray(frame * moment, frame * moment + cars), frame * cars);
 		}
 		const old = createReplay({ ...recording, poses }, ROSTER);
-		const now = createReplay(record(7, drawGrid(7, SIX), track, [], CLASSIC), ROSTER);
+		const now = createReplay(record(WRECK, drawGrid(WRECK, SIX), track, [], CLASSIC), ROSTER);
 		old.seek(40);
 		now.seek(40);
 		expect(old.cars).toEqual(now.cars);
@@ -161,7 +163,7 @@ describe('a recording', () => {
 	});
 
 	it('still plays a recording made before the trucks had cranes', () => {
-		const { cranes, ...recording } = record(7, drawGrid(7, SIX), track, [], CLASSIC);
+		const { cranes, ...recording } = record(WRECK, drawGrid(WRECK, SIX), track, [], CLASSIC);
 		expect(cranes).toBe(true);
 		const cars = SIX.length * 10;
 		// the same race with each truck's moment cut down to what it was: where it was, and what it was doing
@@ -178,7 +180,7 @@ describe('a recording', () => {
 			}
 		}
 		const before = createReplay({ ...recording, poses }, ROSTER);
-		const now = createReplay(record(7, drawGrid(7, SIX), track, [], CLASSIC), ROSTER);
+		const now = createReplay(record(WRECK, drawGrid(WRECK, SIX), track, [], CLASSIC), ROSTER);
 		for (let time = 0; time < now.duration; time += 0.5) {
 			before.seek(time);
 			now.seek(time);
