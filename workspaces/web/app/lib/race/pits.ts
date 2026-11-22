@@ -403,6 +403,15 @@ const CRAWL = 7;
 /** How far behind another car in the lane one stops, and behind the middle of a truck, which is long; nearer than this, two cars are level. */
 const KEEP = 6;
 const KEEP_TRUCK = 10.5;
+/**
+ * A car in the pits further than this (m) to one side of another's way is
+ * out of it, and is passed, not queued behind: one turning into its box, or
+ * pulling out of it, once it is that far over.
+ */
+const CLEAR = 2.8;
+/** A car turning into its box starts this far before it (m), and is about this long. */
+const TURN = PULL + 1;
+const LENGTH = 4.5;
 /** How fast a car in the pits may go with something `space` metres ahead going at `speed`, to stop `keep` metres behind it. */
 const behind = (speed: number, space: number, keep: number) =>
 	Math.sqrt(Math.max(0, speed) ** 2 + 2 * BRAKE * Math.max(0, space - keep));
@@ -710,14 +719,21 @@ export function createPits(
 	/** Whether a car is on the move in the pits: on its way to its box or away from it, not standing in it. */
 	const moving = (car: Car) => car.lane === LANE.in || car.lane === LANE.out;
 
-	/** Whether a car in its box can pull out into the lane: nothing coming down it, or just past. */
+	/**
+	 * Whether a car in its box can pull out into the lane: nothing coming down
+	 * it, or just past. It waits for one coming to go by unless it can be up to
+	 * the lane's limit before that one is on it, so that it never has to brake.
+	 */
 	function free(car: Car, crew: Crew, lorries: Lorry[]) {
+		const up = rules.limit / PULL_AWAY;
 		for (const other of cars) {
 			if (other === car || !moving(other)) continue;
 			// one that is turning into a box before this one never gets here
 			if (other.lane === LANE.in && crews[cars.indexOf(other)].box < crew.box) continue;
+			const coming = Math.min(other.speed, rules.limit);
+			const room = Math.max(16, coming * up - (PULL_AWAY * up ** 2) / 2 + KEEP + 2);
 			const gap = aheadOf(car, other, cars.indexOf(other) < cars.indexOf(car));
-			if (gap > -16 && gap < 7) return false;
+			if (gap > -room && gap < 7) return false;
 		}
 		return lorries.every((lorry) => {
 			const gap = aheadOf(car, lorry);
@@ -794,6 +810,42 @@ export function createPits(
 		return true;
 	}
 
+	/**
+	 * Where something at `x`, `y` is as a car in the pits sees it, along its
+	 * own way through them: how far on along it, negative if behind, and how
+	 * far to one side of it. Only the stretch of the way from a little behind
+	 * the car to a little past where it would queue is looked along, so what
+	 * is further than that either way is a long way to one side of it.
+	 */
+	function onTheWay(crew: Crew, x: number, y: number) {
+		const rail = crew.rail!;
+		let k = crew.at;
+		while (k > 0 && rail.along[k] > crew.s - LEVEL - 1) k--;
+		let [space, side] = [0, Infinity];
+		for (; k < rail.along.length && rail.along[k] < crew.s + 26; k++) {
+			const far = Math.hypot(rail.x[k] - x, rail.y[k] - y);
+			if (far < side) [space, side] = [rail.along[k] - crew.s, far];
+		}
+		return { space, side };
+	}
+
+	/**
+	 * Where a car turning into its box will be `soon` seconds from now, at the
+	 * soonest: it is braking for its box, and stops there.
+	 */
+	function turning(crew: Crew, soon: number): [number, number] {
+		const rail = crew.rail!;
+		const gone = Math.min(crew.v * soon - (BRAKE * soon ** 2) / 2, crew.v ** 2 / (2 * BRAKE));
+		const s = Math.min(rail.stop, crew.s + Math.max(0, gone));
+		let k = crew.at;
+		while (k + 2 < rail.along.length && rail.along[k + 1] <= s) k++;
+		const t = clamp((s - rail.along[k]) / (rail.along[k + 1] - rail.along[k] || 1), 0, 1);
+		return [
+			rail.x[k] + (rail.x[k + 1] - rail.x[k]) * t,
+			rail.y[k] + (rail.y[k + 1] - rail.y[k]) * t
+		];
+	}
+
 	/** One step of a car that is off the track: down the lane, into its box, out again. */
 	function ride(car: Car, crew: Crew, time: number, dt: number, lorries: Lorry[]) {
 		const rail = crew.rail!;
@@ -838,7 +890,21 @@ export function createPits(
 		if (car.lane !== LANE.box) {
 			for (const other of cars) {
 				if (other === car || !moving(other)) continue;
-				const space = aheadOf(car, other, cars.indexOf(other) < cars.indexOf(car));
+				// One pulling out of its box ahead is coming into the lane, so it
+				// is in the way already. Of the rest only what is on its own way
+				// counts: not one off to the side of it, turning into its box,
+				// nor one turning in that will be off to the side by the time this
+				// one is up to it.
+				const them = crews[cars.indexOf(other)];
+				const joining = other.lane === LANE.out && them.s < them.rail!.stop + PULL;
+				const { space, side } = joining
+					? { space: aheadOf(car, other, cars.indexOf(other) < cars.indexOf(car)), side: 0 }
+					: onTheWay(crew, other.x, other.y);
+				if (side > CLEAR) continue;
+				if (other.lane === LANE.in && them.s > them.rail!.stop - TURN && space > LEVEL) {
+					const soon = clamp((space - LENGTH) / Math.max(1, crew.v), 0, 1.5);
+					if (onTheWay(crew, ...turning(them, soon)).side > CLEAR) continue;
+				}
 				if (space > LEVEL && space < 25) {
 					target = Math.min(target, behind(other.speed, space, KEEP));
 				} else if (Math.abs(space) <= LEVEL && cars.indexOf(other) < cars.indexOf(car)) {
