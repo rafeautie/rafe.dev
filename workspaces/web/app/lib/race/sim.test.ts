@@ -276,9 +276,10 @@ describe.each(TRACK_IDS)('the wheels on the %s', (id) => {
 	});
 
 	// A tow truck going down the track runs on the infield side of it, all of
-	// it on the tarmac, and only goes onto the verge to pull up beside a wreck
-	// lying there, which it starts across for a good way short of it, or to
-	// go off and on at the pits.
+	// it on the tarmac, light or with wrecks on, and only goes onto the verge
+	// to pull up beside a wreck lying there, which it starts across for a good
+	// way short of it (and stays at while it lifts it), or to go off and on at
+	// the pits.
 	it('of a tow truck driving down the track stay on the tarmac', { timeout: 120_000 }, () => {
 		expect(KERBSIDE + TRUCK_HALF).toBeLessThan(HALF_ROAD);
 		let driving = 0;
@@ -287,7 +288,7 @@ describe.each(TRACK_IDS)('the wheels on the %s', (id) => {
 			while (!race.done) {
 				race.step();
 				for (const truck of race.trucks) {
-					if (!truck.busy || truck.towed) continue;
+					if (!truck.busy || truck.doing === 'lift') continue;
 					const { x, y, sample, angle } = truck;
 					// on the track, and not still on the way on to it: its back axles
 					// come on from the pits a good way behind its front one
@@ -304,8 +305,8 @@ describe.each(TRACK_IDS)('the wheels on the %s', (id) => {
 				}
 			}
 		}
-		// (enough of it to go by: most of the way a truck drives it has a wreck on board)
-		expect(driving).toBeGreaterThan(300);
+		// (enough of it to go by)
+		expect(driving).toBeGreaterThan(1000);
 	});
 });
 
