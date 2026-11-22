@@ -1,6 +1,15 @@
 import { PolygonShape, type World } from 'planck';
 import { BOX_ACROSS, LANE, pitsFor } from './pits';
-import { NEARSIDE, RING, TRUCK, curve, serviceFor, type Pose, type Route } from './service';
+import {
+	NEARSIDE,
+	RING,
+	TRUCK,
+	TRUCK_HALF,
+	curve,
+	serviceFor,
+	type Pose,
+	type Route
+} from './service';
 import type { Car } from './sim';
 import { HALF_CORRIDOR, clamp, lateral, nearest, triangle, type Track } from './track';
 
@@ -36,7 +45,7 @@ const DRIFT = 14;
 /** It is across by this far before the wreck, and stops with its front axle this far past it. */
 const BEFORE = 7;
 const PAST = 21;
-/** How far to one side the truck passes a wreck, middle to middle, and how near the wall it will go. */
+/** The furthest to one side the truck passes a wreck, middle to middle, and how near the wall it will go if it has to. */
 const PASS = 3.7;
 const EDGE = 5.4;
 /** The tightest the truck steers, backing up, as a radius in metres. */
@@ -403,6 +412,22 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	}
 
 	/**
+	 * Where across the track the truck goes by a wreck: far enough to one
+	 * side to clear it, the way it is lying, and on the tarmac if there is
+	 * room for that either side of it. If there is not, it goes the side
+	 * that takes it least far onto the verge, and as far as it has to.
+	 */
+	function passBy(car: Car) {
+		const skew = car.angle - Math.atan2(track.ty[car.sample], track.tx[car.sample]);
+		const wide = Math.abs(Math.sin(skew)) * NOSE + Math.abs(Math.cos(skew)) * 0.95;
+		const clear = Math.min(PASS, wide + TRUCK_HALF + 0.5);
+		const sides = [car.across - clear, car.across + clear].sort(
+			(a, b) => Math.abs(a) - Math.abs(b)
+		);
+		return clamp(sides[0], -EDGE, EDGE);
+	}
+
+	/**
 	 * Out the way out of the pits and along the track, across to the side of
 	 * the wreck with more room, and past it far enough to back up to it. A
 	 * wreck too near the way out to line up on is gone round the lap for.
@@ -410,11 +435,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	function approach() {
 		const from = truck.sample;
 		const lying = from + room + ahead(from + room, wreck!.sample);
-		const side = clamp(
-			wreck!.across >= PASS - EDGE ? wreck!.across - PASS : wreck!.across + PASS,
-			-EDGE,
-			EDGE
-		);
+		const side = passBy(wreck!);
 		const on = from + HOLD + lane.ramp;
 		take(
 			drive(axleAt(TRUCK.axle), [
