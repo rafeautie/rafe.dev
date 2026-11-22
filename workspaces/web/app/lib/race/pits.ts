@@ -37,12 +37,15 @@ const PULL = 10;
 /** The ways through the pits are worked out at points this far apart, in samples. */
 const STEP = 0.5;
 /**
- * How long the way out is, from the lane to the track; the way in is as long
- * as each track's layout says. They are slip roads: a car leaves the track
- * at racing speed and does its braking on the way in, and is back up to
- * speed on the way out before it joins.
+ * How long the way out is, from the lane to the track, unless a track's
+ * layout takes it further; the way in is as long as each track's layout
+ * says. They are slip roads: a car leaves the track at racing speed and does
+ * its braking on the way in, and is back up to speed on the way out before
+ * it joins.
  */
-export const RAMP = 24;
+const RAMP = 24;
+/** How hard (m/s², sideways) a car takes a bend on the way out, a good deal short of racing. */
+const ROAD_GRIP = 11;
 /**
  * The tow trucks' stands, in line with the boxes, one behind the other, and
  * like the boxes a good deal bigger than what stands on them: how far past
@@ -59,14 +62,20 @@ const TRUCKS = 2;
  * Where the pits are on each track: the sample the way in leaves the track
  * at, and how long it is. It leaves in the bend before the straight the
  * start line is on, where a car is on the inside anyway and need give
- * nothing up to stay there; the boxes are on that straight, and the way out
- * joins the track in the bend after it. `thirst` is how much fuel a metre of the track takes next to the next:
- * more where there is less of it flat out, so that a lap raced burns a lap's
- * worth of fuel whichever track it is.
+ * nothing up to stay there; the boxes are on that straight. The way out
+ * joins the track in the bend after it, or with `away`, runs on round the
+ * infield of that bend in line with the lane and leaves it at the first of
+ * those samples, to join the track at the second: on the oval, on the back
+ * straight. `thirst` is how much fuel a metre of the track takes next to the
+ * next: more where there is less of it flat out, so that a lap raced burns a
+ * lap's worth of fuel whichever track it is.
  */
-const LAYOUTS: Record<TrackId, { from: number; slip: number; thirst: number }> = {
+const LAYOUTS: Record<
+	TrackId,
+	{ from: number; slip: number; thirst: number; away?: [number, number] }
+> = {
 	circuit: { from: 313, slip: 30, thirst: 1.23 },
-	oval: { from: 258, slip: 49, thirst: 1.06 }
+	oval: { from: 258, slip: 49, thirst: 1.06, away: [136, 180] }
 };
 
 /** What is done at a stop. */
@@ -95,10 +104,11 @@ export function pitsFor(track: Track): PitLane {
 function build(track: Track) {
 	const { n } = track;
 	const { place } = serviceFor(track);
-	const { from, slip, thirst } = LAYOUTS[track.id];
+	const { from, slip, thirst, away } = LAYOUTS[track.id];
 	// Samples here count on past the line without starting again, so the way
 	// through is always forwards: in from the track between in0 and in1, past
-	// the boxes and the trucks' stand, out to the track between out0 and out1.
+	// the boxes and the trucks' stand to the end of the lane at out0, on in
+	// line with it to leave, and out to the track between there and out1.
 	const in0 = from;
 	const in1 = in0 + slip;
 	const first = in1 + PULL;
@@ -188,16 +198,50 @@ function build(track: Track) {
 	/** Where the tow trucks stand when they are not out, the front one first. */
 	const stands = spots.map((sample) => standing(sample, -BOX_ACROSS));
 	const out0 = Math.ceil(spots[0] + TRUCK.axle + STAND.run);
-	const out1 = out0 + RAMP;
+	/** The first sample at or after `after` that is `sample` as the track counts them. */
+	const past = (after: number, sample: number) => after + ((((sample - after) % n) + n) % n);
+	const leave = away ? past(out0, away[0]) : out0;
+	const out1 = away ? past(leave, away[1]) : out0 + RAMP;
+	/** The way out, from the end of the lane: in line with it to where it leaves for the track. */
+	const road = (to: number): [number, number][] =>
+		leave > out0 ? [[out0, -RING], [leave, -RING], [out1, to]] : [[out0, -RING], [out1, to]];
 
-	const paths = new Map<number, { way: Route; line: number; stop: number; end: number }>();
+	const paths = new Map<
+		number,
+		{ way: Route; line: number; stop: number; end: number; look: number; fast: Float64Array }
+	>();
+
+	/**
+	 * How fast each point of a way may be passed (m/s), up to point `upTo`:
+	 * what its bends allow at ROAD_GRIP, and slow enough before each to brake
+	 * for it. From there on, where it eases out onto the track, it is wide
+	 * enough open to be taken at whatever pace a car is joining at.
+	 */
+	function speeds(way: Route, upTo: number) {
+		const fast = new Float64Array(way.count).fill(Infinity);
+		const reach = 6;
+		for (let k = reach; k + reach < way.count && k <= upTo; k++) {
+			const [ax, ay, bx, by, cx, cy] = [-reach, 0, reach].flatMap((d) => [way.x[k + d], way.y[k + d]]);
+			const cross = Math.abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
+			const sides =
+				Math.hypot(bx - ax, by - ay) * Math.hypot(cx - bx, cy - by) * Math.hypot(cx - ax, cy - ay);
+			if (cross > 1e-9) fast[k] = Math.sqrt(ROAD_GRIP * (sides / (2 * cross)));
+		}
+		for (let k = way.count - 2; k >= 0; k--) {
+			const ds = way.along[k + 1] - way.along[k];
+			fast[k] = Math.min(fast[k], Math.sqrt(fast[k + 1] ** 2 + 2 * BRAKE * ds));
+		}
+		return fast;
+	}
 
 	/**
 	 * The way through the pits for the car whose box is `box`: in from the
 	 * track, down the lane, into the box and out of it, down the rest of the
 	 * lane and out onto the track. `line` is how far along it the lane, and
-	 * its speed limit, begins; `stop` how far along the box is; and `end` how
-	 * far along the lane ends and the way out begins.
+	 * its speed limit, begins; `stop` how far along the box is; `end` how far
+	 * along the lane ends and the way out begins; `look` how far along the
+	 * way out leaves for the track, which is where a car waits for a gap to
+	 * join in; and `fast`, how fast each point of it may be passed.
 	 */
 	function path(box: number) {
 		let made = paths.get(box);
@@ -210,14 +254,15 @@ function build(track: Track) {
 				[sample - 0.5, -BOX_ACROSS],
 				[sample + 0.5, -BOX_ACROSS],
 				[sample + PULL, -RING],
-				[out0, -RING],
-				[out1, INSIDE]
+				...road(INSIDE)
 			]);
 			made = {
 				way: through,
 				line: through.along[Math.round((in1 - in0) / STEP)],
 				stop: through.along[Math.round((sample - in0) / STEP)],
-				end: through.along[Math.round((out0 - in0) / STEP)]
+				end: through.along[Math.round((out0 - in0) / STEP)],
+				look: through.along[Math.round((leave - in0) / STEP)],
+				fast: speeds(through, Math.round((leave - in0) / STEP))
 			};
 			paths.set(box, made);
 		}
@@ -230,6 +275,9 @@ function build(track: Track) {
 		in1,
 		out0,
 		out1,
+		/** Where the way out leaves the line of the lane for the track, and how far it is from there to the track. */
+		leave,
+		ramp: out1 - leave,
 		/** The samples a car leaves the track at and rejoins it at, as the track counts them. */
 		entry: ((in0 % n) + n) % n,
 		merge: ((out1 % n) + n) % n,
@@ -247,10 +295,7 @@ function build(track: Track) {
 				[in1, -RING],
 				[out0, -RING]
 			]),
-			way([
-				[out0, -RING],
-				[out1, INSIDE - 0.6]
-			])
+			way(road(INSIDE - 0.6))
 		],
 		at
 	};
@@ -383,6 +428,9 @@ type Rail = {
 	line: number;
 	stop: number;
 	end: number;
+	look: number;
+	/** How fast each point may be passed. */
+	fast: number[];
 };
 
 /** How much grip a car's tyres have left, as a share of what they had new. */
@@ -504,7 +552,7 @@ export function createPits(
 
 	/** Takes a car off the track at the way in, and lays the way through the pits from where it is. */
 	function take(car: Car, crew: Crew) {
-		const { way, line, stop, end } = lane.path(crew.box);
+		const { way, line, stop, end, look, fast } = lane.path(crew.box);
 		// the point of the way nearest the car, and the one it joins at, a little further on
 		let near = 0;
 		for (let k = 1; k < Math.min(way.count, 60); k++) {
@@ -522,14 +570,26 @@ export function createPits(
 			{ x: car.x, y: car.y, angle: car.angle },
 			{ x: way.x[join], y: way.y[join], angle: onto }
 		).slice(0, -1);
-		const rail: Rail = { x: [], y: [], along: [], length: 0, line: 0, stop: 0, end: 0 };
+		const rail: Rail = {
+			x: [],
+			y: [],
+			along: [],
+			length: 0,
+			line: 0,
+			stop: 0,
+			end: 0,
+			look: 0,
+			fast: []
+		};
 		for (const [x, y] of lead) {
 			rail.x.push(x);
 			rail.y.push(y);
+			rail.fast.push(Infinity);
 		}
 		for (let k = join; k < way.count; k++) {
 			rail.x.push(way.x[k]);
 			rail.y.push(way.y[k]);
+			rail.fast.push(fast[k]);
 		}
 		rail.along.push(0);
 		for (let k = 1; k < rail.x.length; k++) {
@@ -542,6 +602,7 @@ export function createPits(
 		rail.line = line + joined;
 		rail.stop = stop + joined;
 		rail.end = end + joined;
+		rail.look = look + joined;
 		crew.rail = rail;
 		crew.at = 0;
 		crew.s = 0;
@@ -615,10 +676,13 @@ export function createPits(
 	function joining(car: Car, crew: Crew) {
 		const rail = crew.rail!;
 		const away = joins(car);
-		let [s, v, t] = [crew.s, crew.v, 0];
+		let [s, v, t, at] = [crew.s, crew.v, 0, crew.at];
 		for (; s < rail.length && t < 10; t += 0.05) {
+			while (at + 2 < rail.along.length && rail.along[at + 1] <= s) at++;
 			v =
-				s < rail.end ? Math.min(rules.limit, v + PULL_AWAY * 0.05) : Math.min(away, v + GO * 0.05);
+				s < rail.end
+					? Math.min(rules.limit, v + PULL_AWAY * 0.05)
+					: Math.min(away, rail.fast[at + 1], v + GO * 0.05);
 			s += v * 0.05;
 		}
 		return t;
@@ -696,19 +760,20 @@ export function createPits(
 			}
 		} else if (car.lane === LANE.in) {
 			target = Math.min(target, Math.sqrt(2 * BRAKE * Math.max(0, rail.stop - crew.s)));
-		} else if (crew.s >= rail.end) {
-			// on the way out, and committed to it
-			target = joins(car);
-			pull = GO;
-		} else if (!crew.go && rail.end - crew.s < LOOK) {
-			// At the end of the lane it looks for a gap to join in, and once it
-			// has seen one it goes; until then it is held there.
+		} else if (!crew.go && rail.look - crew.s < Math.max(LOOK, crew.v ** 2 / (2 * BRAKE) + 2)) {
+			// Where the way out leaves for the track it looks for a gap to join
+			// in, and once it has seen one it goes; until then it is held there.
 			crew.held ||= time;
 			// (held too long behind a wreck, it goes anyway: the truck wants the lane to fetch it)
 			const waited = time - crew.held;
 			if (waited > 3 * PATIENCE || (!blocked() && (gap(car, crew) || waited > PATIENCE))) {
 				crew.go = true;
-			} else target = Math.min(target, Math.sqrt(2 * BRAKE * Math.max(0, rail.end - 1 - crew.s)));
+			} else target = Math.min(target, Math.sqrt(2 * BRAKE * Math.max(0, rail.look - 1 - crew.s)));
+			if (crew.s >= rail.end) target = Math.min(target, rail.fast[crew.at + 1]);
+		} else if (crew.s >= rail.end) {
+			// on the way out, past the lane's limit, and no faster than its bends allow
+			target = Math.min(joins(car), rail.fast[crew.at + 1]);
+			pull = GO;
 		}
 		// Behind whatever is ahead of it on the move in the pits. Two that are
 		// level cannot both go: the one further up the grid does.
