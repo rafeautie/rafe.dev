@@ -1,6 +1,15 @@
 import { PolygonShape, type World } from 'planck';
 import { LANE, pitsFor } from './pits';
-import { NEARSIDE, RING, TRUCK, TRUCK_HALF, serviceFor, type Pose, type Route } from './service';
+import {
+	NEARSIDE,
+	RING,
+	TRUCK,
+	TRUCK_HALF,
+	hookOf,
+	serviceFor,
+	type Pose,
+	type Route
+} from './service';
 import type { Car } from './sim';
 import { HALF_CORRIDOR, clamp, lateral, nearest, triangle, type Track } from './track';
 
@@ -51,8 +60,8 @@ const FLANK = 0.95;
 const LEAD = TRUCK.axle - TRUCK.pivot;
 /** The furthest the crane reaches. */
 const REACH = 8;
-/** The crane folded away: across the truck, just behind the cab. */
-const STOWED = { swing: Math.PI / 2, reach: 1 };
+/** The crane folded away: across the truck, just behind the cab, with nothing on it. */
+export const STOWED: Crane = { swing: Math.PI / 2, reach: 1, raise: 0 };
 /** How fast the crane slews round (rad/s), runs its boom out or in (m/s), and lifts or lowers a car (all the way up, a second). */
 const SLEW = 1.4;
 const EXTEND = 3;
@@ -92,6 +101,9 @@ export const LOAD = TRUCK.bed.length;
 /** An angle as the short way round, -π to π. */
 const turn = (angle: number) => Math.atan2(Math.sin(angle), Math.cos(angle));
 
+/** Of a way round and the way round opposite it, the one an angle is nearer: 0 or π. */
+const nearerEnd = (angle: number) => (Math.abs(turn(angle)) < Math.PI / 2 ? 0 : Math.PI);
+
 /** Moves a value towards another, no more than `step`; says whether it got there. */
 function toward(value: number, to: number, step: number): [number, boolean] {
 	return Math.abs(to - value) <= step ? [to, true] : [value + Math.sign(to - value) * step, false];
@@ -107,7 +119,13 @@ export type Crane = { swing: number; reach: number; raise: number };
  * each end of it, so a car coming up behind one sees the back of it as well
  * as the front.
  */
-export type Marker = Pick<Truck, 'sample' | 'across' | 'speed' | 'retired' | 'towed'>;
+export type Marker = {
+	sample: number;
+	across: number;
+	speed: number;
+	retired: true;
+	towed: boolean;
+};
 
 /**
  * What the trucks share: which of them has each stand, the front one first,
@@ -122,6 +140,8 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 	const yard: Yard = { stands: stands.map((_, index) => index), trucks: [] };
 	const crews = stands.map((_, index) => createTruck(world, cars, track, index, yard));
 	yard.trucks = crews.map((crew) => crew.truck);
+	/** To a driver each truck out on the track is one more wreck to go round, at either end of it. */
+	const onTrack: Marker[] = [];
 	return {
 		trucks: crews.map((crew) => crew.truck),
 		/** Whether the track is clear: no wreck waiting, and none on a truck still on it. */
@@ -132,10 +152,8 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 		get away() {
 			return crews.every((crew) => crew.away);
 		},
-		/** The trucks out on the track, each as a marker at either end of it, for the cars to go round. */
-		get onTrack(): Marker[] {
-			return crews.flatMap((crew) => crew.markers);
-		},
+		/** The trucks out on the track, each as a marker at either end of it, for the cars to go round: as of the last `sync`. */
+		onTrack,
 		/**
 		 * Sends a truck for a wreck: one already out for wrecks with room on
 		 * its bed for this one too, or failing that one on its stand, the
@@ -145,7 +163,7 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 		call(car: Car, time: number) {
 			const taking = crews
 				.filter((crew) => crew.room > 0)
-				.sort((a, b) => Number(b.out) - Number(a.out) || a.stand - b.stand);
+				.sort((a, b) => Number(b.truck.fetching) - Number(a.truck.fetching) || a.stand - b.stand);
 			const crew =
 				taking[0] ??
 				crews.reduce((best, crew) =>
@@ -159,7 +177,11 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 		},
 		/** Reads where the trucks have got to. Call after the world is stepped. */
 		sync() {
-			for (const crew of crews) crew.sync();
+			onTrack.length = 0;
+			for (const crew of crews) {
+				crew.sync();
+				crew.mark(onTrack);
+			}
 		}
 	};
 }
@@ -210,12 +232,10 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		towing: -1,
 		/** The cars on the bed, by their places on it (TRUCK.bed), as indices into the race's cars: -1 where there is room. */
 		load: TRUCK.bed.map(() => -1),
-		crane: { ...STOWED, raise: 0 } as Crane,
+		crane: { ...STOWED },
 		/** Where on the lap the axle it is steered by is, as a car's place is kept. */
 		sample: homeOf(slot),
 		across: stand.across,
-		// To a driver it is one more wreck to go round.
-		retired: true as const,
 		/** Whether it has a car on board, on the bed or on the crane. */
 		get towed(): boolean {
 			return this.towing >= 0 || this.load.some((car) => car >= 0);
@@ -439,22 +459,10 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		slot = -1;
 		const from = truck.sample;
 		const hold = from + ahead(from, exit);
-		take(
-			drive(
-				on(TRUCK.axle),
-				hold - from > 20
-					? [
-							[from, truck.across],
-							[from + 10, -RING],
-							[hold, -RING]
-						]
-					: [
-							[from, truck.across],
-							[hold, -RING]
-						]
-			),
-			false
-		);
+		const keys: [number, number][] = [[from, truck.across]];
+		if (hold - from > 20) keys.push([from + 10, -RING]);
+		keys.push([hold, -RING]);
+		take(drive(on(TRUCK.axle), keys), false);
 		stage = 'out';
 	}
 
@@ -503,21 +511,26 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	function start(): { from: number; across: number; keys: [number, number][] } {
 		if (stage === 'held') {
 			const from = truck.sample;
-			const on = from + HOLD + lane.ramp;
+			const onto = from + HOLD + lane.ramp;
 			return {
-				from: on,
+				from: onto,
 				across: NEARSIDE,
 				keys: [
 					[from, -RING],
 					[from + HOLD, -RING],
-					[on, NEARSIDE]
+					[onto, NEARSIDE]
 				]
 			};
 		}
+		const { from, across } = whereOnTrack();
+		return { from, across, keys: [[from, across]] };
+	}
+
+	/** Where on the track the truck's front axle is, as the track counts its samples, and how far across. */
+	function whereOnTrack() {
 		const front = on(TRUCK.axle);
 		const from = nearest(track, front.x, front.y, truck.sample);
-		const across = lateral(track, front.x, front.y, from);
-		return { from, across, keys: [[from, across]] };
+		return { front, from, across: lateral(track, front.x, front.y, from) };
 	}
 
 	/**
@@ -559,8 +572,10 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	 */
 	function approach(creep = false) {
 		const { from, across, keys } = start();
-		if (!creep) wreck = next(from, across)!;
-		waiting.splice(waiting.indexOf(wreck!), 1);
+		if (!creep) {
+			wreck = next(from, across)!;
+			waiting.splice(waiting.indexOf(wreck), 1);
+		}
 		const side = beside(wreck!);
 		const { at, drift } = lying(wreck!, from, across, creep);
 		const stop = at + LEAD;
@@ -603,9 +618,9 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		return aim(x, y).reach < REACH - 0.5;
 	};
 
-	/** The crane at work on a wreck from where the truck has stopped. */
-	function lift() {
-		stage = 'lift';
+	/** The crane at work where the truck has stopped: lifting a wreck onto the bed, or a car off it into its box. */
+	function craneAt(at: 'lift' | 'drop') {
+		stage = at;
 		job = 'reach';
 		timer = 0;
 		truck.speed = pace = 0;
@@ -618,7 +633,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		if (room && near) {
 			waiting.splice(waiting.indexOf(near), 1);
 			wreck = near;
-			lift();
+			craneAt('lift');
 		} else if (room && waiting.length) approach();
 		else haul();
 	}
@@ -639,9 +654,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	 * lane, and alongside the first of their boxes.
 	 */
 	function haul() {
-		const front = on(TRUCK.axle);
-		const from = nearest(track, front.x, front.y, truck.sample);
-		const across = lateral(track, front.x, front.y, from);
+		const { front, from, across } = whereOnTrack();
 		// far enough to be back at the kerb without throwing what is on about
 		const run = Math.ceil(Math.max(16, Math.sqrt(100 * Math.abs(across - NEARSIDE))));
 		const into = from + run + ahead(from + run, lane.entry);
@@ -668,7 +681,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		const box = besideBox(truck.load[drops()[0]], lane.in0) % n;
 		const to = from + ahead(from, box);
 		// (one it is already level with, or a whisker past, it puts in from here)
-		if (to - from < 1 || to - from > n / 2) return drop();
+		if (to - from < 1 || to - from > n / 2) return craneAt('drop');
 		take(
 			drive(on(TRUCK.axle), [
 				[from, truck.across],
@@ -677,14 +690,6 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			true
 		);
 		stage = 'haul';
-	}
-
-	/** The crane at work putting a car from the bed into its box. */
-	function drop() {
-		stage = 'drop';
-		job = 'reach';
-		timer = 0;
-		truck.speed = pace = 0;
 	}
 
 	/**
@@ -818,8 +823,10 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 						ahead(truck.sample, wreck!.sample) < 40 &&
 						off > TRUCK_HALF + GAP + NOSE &&
 						off < REACH - 1;
-					waiting.unshift(wreck!);
-					if (!creep) wreck = null;
+					if (!creep) {
+						waiting.unshift(wreck!);
+						wreck = null;
+					}
 					return approach(creep);
 				}
 				if (slew(aim(x, y), dt)) [job, timer] = ['sling', 0];
@@ -851,20 +858,13 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		} else if (job === 'lift') {
 			if (hoist(1, dt)) job = 'swing';
 		} else if (job === 'swing') {
+			// Onto the bed, lying along it, or into the box, lying along that:
+			// whichever way round is the nearer.
 			const { car, place } = carried!;
-			let to: { swing: number; reach: number };
-			let lie: number;
-			if (loading) {
-				to = overBed(place);
-				const facing = turn(carried!.lie + truck.crane.swing);
-				lie = Math.abs(facing) < Math.PI / 2 ? 0 : Math.PI;
-				lies[place] = lie;
-			} else {
-				const box = lane.boxes[cars.indexOf(car)];
-				to = aim(box.x, box.y);
-				const facing = turn(carried!.lie + truck.crane.swing + body.getAngle() - box.angle);
-				lie = box.angle - body.getAngle() + (Math.abs(facing) < Math.PI / 2 ? 0 : Math.PI);
-			}
+			const box = loading ? null : lane.boxes[cars.indexOf(car)];
+			const to = box ? aim(box.x, box.y) : overBed(place);
+			const along = box ? box.angle - body.getAngle() : 0;
+			const lie = along + nearerEnd(carried!.lie + truck.crane.swing - along);
 			const swung = truck.crane.swing;
 			const there = slew(to, dt);
 			// The crew turn it as it goes, to lie the way it is to go down, and
@@ -877,11 +877,12 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			if (there && straight) job = 'lower';
 		} else if (job === 'lower') {
 			if (!hoist(0, dt)) return;
-			const { car, place } = carried!;
+			const { car, place, lie } = carried!;
 			truck.towing = -1;
 			carried = null;
 			if (loading) {
 				truck.load[place] = cars.indexOf(car);
+				lies[place] = nearerEnd(lie + truck.crane.swing);
 				return onward();
 			}
 			// down in its box, where it stays
@@ -917,26 +918,19 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			move(cars[index].body, cx + cos * fore, cy + sin * fore, facing + lies[place], dt);
 		});
 		if (carried) {
-			const { swing, reach } = truck.crane;
-			const [px, py] = [cx + cos * TRUCK.pivot, cy + sin * TRUCK.pivot];
-			const toward = facing + swing;
-			move(
-				carried.car.body,
-				px + Math.cos(toward) * reach,
-				py + Math.sin(toward) * reach,
-				toward + carried.lie,
-				dt
-			);
+			const [hx, hy] = hookOf(cx, cy, facing, truck.crane);
+			move(carried.car.body, hx, hy, facing + truck.crane.swing + carried.lie, dt);
 		}
 	}
 
 	return {
 		truck,
 
-		/** Where the drivers see the truck, while it is out on the track: one marker at the front of it, and one at the back. */
-		get markers(): Marker[] {
-			if (!truck.busy) return [];
-			return [nose, tail].filter((end) => end.across > -HALF_CORRIDOR - 1);
+		/** Adds where the drivers see the truck, while it is out on the track: one marker at the front of it, and one at the back. */
+		mark(into: Marker[]) {
+			if (!truck.busy) return;
+			if (nose.across > -HALF_CORRIDOR - 1) into.push(nose);
+			if (tail.across > -HALF_CORRIDOR - 1) into.push(tail);
 		},
 
 		/** How many wrecks the truck has still to see to. */
@@ -946,20 +940,8 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 
 		/** How many more wrecks this truck can take on, on its way out for them or at work on the track; none once it is on its way in with them. */
 		get room() {
-			const taking =
-				stage === 'parked' ||
-				stage === 'home' ||
-				stage === 'park' ||
-				stage === 'out' ||
-				stage === 'held' ||
-				stage === 'approach' ||
-				stage === 'lift';
-			return taking ? LOAD - aboard() - waiting.length - (wreck ? 1 : 0) : 0;
-		},
-
-		/** Whether it is out for wrecks already. */
-		get out() {
-			return truck.fetching;
+			if (stage === 'haul' || stage === 'drop') return 0;
+			return LOAD - aboard() - waiting.length - (wreck ? 1 : 0);
 		},
 
 		/** Which stand it has, the front one being 0; more than any, while it has none. */
@@ -972,12 +954,9 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			return (
 				waiting.length === 0 &&
 				!wreck &&
-				(stage === 'parked' ||
-					stage === 'home' ||
-					stage === 'park' ||
-					stage === 'drop' ||
-					// on its way in, once it is behind the wall
-					(stage === 'haul' && gone >= door))
+				!truck.fetching &&
+				// on its way in, once it is behind the wall
+				!(stage === 'haul' && gone < door)
 			);
 		},
 
@@ -1035,7 +1014,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 					wreck = null;
 					approach();
 				}
-				if (advance(dt, traffic(dt), truck.towed ? HAUL : PULL)) lift();
+				if (advance(dt, traffic(dt), truck.towed ? HAUL : PULL)) craneAt('lift');
 				else if (way!.length - gone < READY) {
 					// the crane swung round to the wreck as the truck comes up to it
 					const { x, y } = wreck!.body.getPosition();
@@ -1046,7 +1025,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 				rest(body);
 				work(dt);
 			} else if (stage === 'haul') {
-				if (advance(dt, Math.min(traffic(dt), pitTraffic()), HAUL)) drop();
+				if (advance(dt, Math.min(traffic(dt), pitTraffic()), HAUL)) craneAt('drop');
 			} else if (stage === 'home') {
 				if (advance(dt, pitTraffic())) stage = 'park';
 			} else if (stage === 'park') {
@@ -1077,6 +1056,8 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			truck.x = x;
 			truck.y = y;
 			truck.angle = body.getAngle();
+			// (a truck on its stand is nothing to the drivers)
+			if (stage === 'parked') return;
 			const lifting = stage === 'lift' ? (wreck ?? carried?.car) : null;
 			nose.sample = truck.sample;
 			nose.across = lifting ? (truck.across + lifting.across) / 2 : truck.across;

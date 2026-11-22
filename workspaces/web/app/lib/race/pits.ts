@@ -389,6 +389,9 @@ const CRAWL = 7;
 /** How far behind another car in the lane one stops, and behind the middle of a truck, which is long; nearer than this, two cars are level. */
 const KEEP = 6;
 const KEEP_TRUCK = 10.5;
+/** How fast a car in the pits may go with something `space` metres ahead going at `speed`, to stop `keep` metres behind it. */
+const behind = (speed: number, space: number, keep: number) =>
+	Math.sqrt(Math.max(0, speed) ** 2 + 2 * BRAKE * Math.max(0, space - keep));
 /** A car on the track no further than this from the inside, just past where the way out joins it, is in the way of one coming out. */
 const JOINED = 2.5;
 const LEVEL = 3;
@@ -693,7 +696,7 @@ export function createPits(
 		return lorries.every((lorry) => {
 			const gap = aheadOf(car, lorry);
 			// one stopped behind is waiting for this very car to go
-			return gap <= -22 || gap >= lorry.keep || (gap < 0 && lorry.speed < 0.5);
+			return gap <= -22 || gap >= KEEP_TRUCK || (gap < 0 && lorry.speed < 0.5);
 		});
 	}
 
@@ -807,10 +810,7 @@ export function createPits(
 				if (other === car || !moving(other)) continue;
 				const space = aheadOf(car, other, cars.indexOf(other) < cars.indexOf(car));
 				if (space > LEVEL && space < 25) {
-					target = Math.min(
-						target,
-						Math.sqrt(Math.max(0, other.speed) ** 2 + 2 * BRAKE * Math.max(0, space - KEEP))
-					);
+					target = Math.min(target, behind(other.speed, space, KEEP));
 				} else if (Math.abs(space) <= LEVEL && cars.indexOf(other) < cars.indexOf(car)) {
 					target = 0;
 				}
@@ -824,20 +824,14 @@ export function createPits(
 					if (past < -2 || past > 20 || Math.abs(other.across - INSIDE) > JOINED) continue;
 					const space = aheadOf(car, other);
 					if (space > 0 && space < 25) {
-						target = Math.min(
-							target,
-							Math.sqrt(Math.max(0, other.speed) ** 2 + 2 * BRAKE * Math.max(0, space - KEEP))
-						);
+						target = Math.min(target, behind(other.speed, space, KEEP));
 					}
 				}
 			}
 			for (const lorry of lorries) {
 				const space = aheadOf(car, lorry);
 				if (space > 0 && space < 28) {
-					target = Math.min(
-						target,
-						Math.sqrt(lorry.speed ** 2 + 2 * BRAKE * Math.max(0, space - lorry.keep))
-					);
+					target = Math.min(target, behind(lorry.speed, space, KEEP_TRUCK));
 				}
 			}
 		}
@@ -871,7 +865,7 @@ export function createPits(
 	}
 
 	/** A truck that is in the lane, or crossing it, as the cars there see it. */
-	type Lorry = { x: number; y: number; sample: number; speed: number; keep: number };
+	type Lorry = { x: number; y: number; sample: number; speed: number };
 	function inTheLane(): Lorry[] {
 		const found: Lorry[] = [];
 		for (const truck of race.trucks) {
@@ -884,8 +878,7 @@ export function createPits(
 					x: truck.x,
 					y: truck.y,
 					sample,
-					speed: Math.max(0, truck.speed),
-					keep: KEEP_TRUCK
+					speed: Math.max(0, truck.speed)
 				});
 			}
 		}

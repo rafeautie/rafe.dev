@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { pitsFor } from './pits';
 import { LOAD, createRecovery } from './recovery';
 import { TRUCK } from './service';
-import { DT, type Car } from './sim';
+import { DT, HULL, type Car } from './sim';
 import { HALF_CORRIDOR, TRACK_IDS, getTrack, lateral, nearest } from './track';
 
 /** Where on the lap the wrecks lie, as metres on from where the way out of the pits joins the track, and how far across. */
@@ -38,12 +38,9 @@ describe.each(TRACK_IDS)('the tow trucks on the %s, sent for five wrecks at once
 			userData: index
 		});
 		body.createFixture({
-			shape: new PolygonShape([
-				{ x: 2.1, y: 0.95 },
-				{ x: -2.1, y: 0.95 },
-				{ x: -2.1, y: -0.95 },
-				{ x: 2.1, y: -0.95 }
-			]),
+			shape: new PolygonShape(
+				HULL.filter((_, k) => k % 2 === 0).map((x, k) => ({ x, y: HULL[2 * k + 1] }))
+			),
 			density: 1
 		});
 		const { x, y } = body.getPosition();

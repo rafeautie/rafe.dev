@@ -1,5 +1,5 @@
 import { pitsFor, type Stop } from './pits';
-import { LOAD, type Crane } from './recovery';
+import { LOAD, STOWED, type Crane } from './recovery';
 import type { Entry } from './roster';
 import {
 	CLASSIC,
@@ -112,9 +112,6 @@ export type ReplayCar = {
 };
 
 export type Replay = ReturnType<typeof createReplay>;
-
-/** The crane folded away, as it is on a truck standing by. */
-const STOWED: Crane = { swing: Math.PI / 2, reach: 1, raise: 0 };
 
 /** The trucks as they stand when none is out: each on its stand at the end of the pit lane, with nothing on. */
 export function standing(track: Track): ReplayTruck[] {
@@ -361,11 +358,15 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		/** The 16 bits at byte `a` of this moment, on their way to those of the next. */
 		const between = (a: number) =>
 			view.getUint16(a, true) * (1 - t) + view.getUint16(a + moment, true) * t;
-		/** The same for a heading, the short way round from the one to the next. */
-		const facing = (a: number) => {
-			const heading = view.getUint16(a, true);
-			const turned = ((view.getUint16(a + moment, true) - heading + 98304) % 65536) - 32768;
-			return ((heading + turned * t) / 65536) * 2 * Math.PI;
+		/** The 8 bits at byte `a`, the same way. */
+		const byte = (a: number) => view.getUint8(a) * (1 - t) + view.getUint8(a + moment) * t;
+		/** A heading, 16 bits or 8, the short way round from the one moment to the next. */
+		const facing = (a: number, bits = 16) => {
+			const read = (at: number) => (bits === 16 ? view.getUint16(at, true) : view.getUint8(at));
+			const full = 2 ** bits;
+			const heading = read(a);
+			const turned = ((read(a + moment) - heading + full * 1.5) % full) - full / 2;
+			return ((heading + turned * t) / full) * 2 * Math.PI;
 		};
 		cars.forEach((car, index) => {
 			const a = frame * moment + index * pose;
@@ -400,13 +401,9 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			for (let place = 0; place < LOAD; place++) {
 				truck.load[place] = view.getUint8(nearer + 7 + place) - 1;
 			}
-			const swing = view.getUint8(a + 7 + LOAD);
-			const swung = ((view.getUint8(a + moment + 7 + LOAD) - swing + 384) % 256) - 128;
-			truck.crane.swing = ((swing + swung * t) / 256) * 2 * Math.PI;
-			const byte = (at: number) =>
-				view.getUint8(a + at) * (1 - t) + view.getUint8(a + moment + at) * t;
-			truck.crane.reach = byte(8 + LOAD) / BOOM;
-			truck.crane.raise = byte(9 + LOAD) / 255;
+			truck.crane.swing = facing(a + 7 + LOAD, 8);
+			truck.crane.reach = byte(a + 8 + LOAD) / BOOM;
+			truck.crane.raise = byte(a + 9 + LOAD) / 255;
 		}
 		return passed;
 	}

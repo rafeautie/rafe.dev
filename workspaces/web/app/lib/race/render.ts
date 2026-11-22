@@ -57,12 +57,12 @@ const WAIT = 0.45;
 /** A stop's time stays up over its box until the car is this far away (m). */
 const TIME_NEAR = 16;
 /**
- * The truck, x forward of its middle: where the cab begins and the deck the
- * crane stands on, between it and the bed, and where its wheels are.
+ * The truck, x forward of its middle: where the cab begins, and the deck the
+ * crane stands on, between it and the bed.
  */
 const CAB = TRUCK.long - 1.8;
 const DECK = TRUCK.long - 2.6;
-const WHEELS = [TRUCK.long - 1, -2.4, -3.6];
+const [FRONT_WHEEL, MID_WHEEL, BACK_WHEEL] = TRUCK.wheels;
 /** A car lifted all the way up by a crane is drawn this much bigger, and its shadow this many pixels further off. */
 const LIFTED_GROWS = 0.12;
 const LIFTED_SHADOW = 2.5;
@@ -484,8 +484,10 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		const cy = Math.floor(car.y * SCALE) + oy;
 		const grown = 1 + LIFTED_GROWS * lifted;
 		const fall = 0.5 + LIFTED_SHADOW * lifted;
-		for (let py = Math.max(0, cy - 13); py < Math.min(height, cy + 15); py++) {
-			for (let px = Math.max(0, cx - 13); px < Math.min(width, cx + 15); px++) {
+		// as far out as a corner of it can be, and its shadow
+		const reach = Math.ceil(2.8 * SCALE * grown + fall);
+		for (let py = Math.max(0, cy - reach); py <= Math.min(height - 1, cy + reach); py++) {
+			for (let px = Math.max(0, cx - reach); px <= Math.min(width - 1, cx + reach); px++) {
 				// this pixel in the car's own metres; the shadow falls a pixel
 				// down and to the right, or further for one lifted
 				const wx = ((px - ox + (shadow ? -fall : 0.5)) / SCALE - car.x) / grown;
@@ -537,9 +539,12 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		const cy = Math.floor(truck.y * SCALE) + oy;
 		// its two lamps flash turn about while it is out
 		const flash = truck.busy ? 1 + (Math.floor(performance.now() / 180) & 1) : 0;
-		const span = Math.ceil(TRUCK.long * SCALE) + 3;
-		for (let py = Math.max(0, cy - span); py < Math.min(height, cy + span + 1); py++) {
-			for (let px = Math.max(0, cx - span); px < Math.min(width, cx + span + 1); px++) {
+		// the box round it, turned as it is, with its tyres
+		const half = TRUCK.wide + 0.22;
+		const ex = Math.ceil((Math.abs(cos) * TRUCK.long + Math.abs(sin) * half) * SCALE) + 2;
+		const ey = Math.ceil((Math.abs(sin) * TRUCK.long + Math.abs(cos) * half) * SCALE) + 2;
+		for (let py = Math.max(0, cy - ey); py <= Math.min(height - 1, cy + ey); py++) {
+			for (let px = Math.max(0, cx - ex); px <= Math.min(width - 1, cx + ex); px++) {
 				const wx = (px - ox + (shadow ? -0.5 : 0.5)) / SCALE - truck.x;
 				const wy = (py - oy + (shadow ? -0.5 : 0.5)) / SCALE - truck.y;
 				const x = wx * cos + wy * sin;
@@ -549,7 +554,10 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 				if (Math.abs(x) > TRUCK.long || side > TRUCK.wide) {
 					// the tyres stand a little proud of it: one axle under the cab, two under the back of the bed
 					const wheel =
-						Math.abs(side - TRUCK.wide) < 0.22 && WHEELS.some((at) => Math.abs(x - at) < 0.5);
+						Math.abs(side - TRUCK.wide) < 0.22 &&
+						(Math.abs(x - FRONT_WHEEL) < 0.5 ||
+							Math.abs(x - MID_WHEEL) < 0.5 ||
+							Math.abs(x - BACK_WHEEL) < 0.5);
 					if (wheel) frame[k] = shadow ? mix(frame[k], BLACK, 0.4) : TYRE;
 					continue;
 				}
@@ -596,7 +604,8 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		const [dx, dy] = [Math.cos(truck.angle + swing), Math.sin(truck.angle + swing)];
 		const fall = (1 + 2 * raise) / SCALE;
 		for (const shadow of [true, false]) {
-			for (let d = 0.2; d <= reach; d += 0.1) {
+			// a pixel at a time along it
+			for (let d = 0.2; d <= reach; d += 1 / SCALE) {
 				for (const off of [-0.14, 0.1]) {
 					const x = px + dx * d - dy * off + (shadow ? fall : 0);
 					const y = py + dy * d + dx * off + (shadow ? fall : 0);

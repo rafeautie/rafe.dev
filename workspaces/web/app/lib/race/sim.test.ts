@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ROSTER } from './roster';
 import { LIMITS } from './settings';
 import { LANE, pitsFor } from './pits';
-import { KERBSIDE, RING, TIGHTEST, TRUCK, TRUCK_HALF, serviceFor } from './service';
+import { KERBSIDE, RING, TIGHTEST, TRUCK, TRUCK_HALF, hookOf, serviceFor } from './service';
 import {
 	CLASSIC,
 	createRace,
@@ -221,8 +221,8 @@ function reach(
 const TYRES = [1.8, -1.8].flatMap((fore) =>
 	[HALF_CAR, -HALF_CAR].map((side): [number, number] => [fore, side])
 );
-const TRUCK_TYRES = [TRUCK.long - 0.5, -TRUCK.long + 1.5].flatMap((fore) =>
-	[TRUCK_HALF, -TRUCK_HALF].map((side): [number, number] => [fore, side])
+const TRUCK_TYRES = [TRUCK.wheels[0] + 0.5, TRUCK.wheels[TRUCK.wheels.length - 1] - 0.5].flatMap(
+	(fore) => [TRUCK_HALF, -TRUCK_HALF].map((side): [number, number] => [fore, side])
 );
 
 describe.each(TRACK_IDS)('the wheels on the %s', (id) => {
@@ -431,9 +431,7 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 				const [cos, sin] = [Math.cos(truck.angle), Math.sin(truck.angle)];
 				if (truck.towing === index) {
 					// on the crane, it hangs under the hook
-					const swing = truck.angle + truck.crane.swing;
-					const hx = truck.x + cos * TRUCK.pivot + Math.cos(swing) * truck.crane.reach;
-					const hy = truck.y + sin * TRUCK.pivot + Math.sin(swing) * truck.crane.reach;
+					const [hx, hy] = hookOf(truck.x, truck.y, truck.angle, truck.crane);
 					expect(Math.hypot(car.x - hx, car.y - hy)).toBeLessThan(0.01);
 					lifted++;
 				} else {
