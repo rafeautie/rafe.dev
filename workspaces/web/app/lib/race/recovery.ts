@@ -137,6 +137,10 @@ const NUDGE = 1;
 const CLEAR_FOR = 4;
 /** After this long held at the end of the lane, the truck goes whoever is coming. */
 const PATIENCE = 8;
+/** What the dispatcher counts a wreck left waiting as costing: more than any trip, however late in the race. */
+const LEFT = 1e6;
+/** A wreck moving no faster than this (m/s) is as good as lying still, to a truck that has waited for it that long. */
+const CREEPING = 3;
 /** What the truck weighs (kg): nine of the cars. */
 const MASS = 9000;
 /** A car a truck has lifted, as the physics tells what touches what: the trucks never touch one. */
@@ -868,7 +872,9 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 				if (had[k] >= 0 && !pick.some((trip) => trip.includes(k))) moved++;
 			}
 			const total = done.reduce((a, b) => a + b, 0);
-			return Math.max(...done) + total / 4 + 500 * (wrecks.length - taken) + KEEP * moved;
+			// (a wreck left waiting costs more than any way of fetching it: the
+			// times here are race times, which late in a long race are large)
+			return Math.max(...done) + total / 4 + LEFT * (wrecks.length - taken) + KEEP * moved;
 		}
 		search(0, new Set());
 		crews.forEach((crew, i) =>
@@ -2150,7 +2156,11 @@ function createTruck(
 			} else if (stage === 'held') {
 				timer += dt;
 				const rolling = wreck!.body.getLinearVelocity();
-				const still = Math.hypot(rolling.x, rolling.y) < 0.5;
+				const speed = Math.hypot(rolling.x, rolling.y);
+				// (one still creeping along once it has waited, as a wreck tangled
+				// with a car that is dragging it does for as long as it is left,
+				// is gone after all the same: lifted, it lets the car go)
+				const still = speed < 0.5 || (timer > PATIENCE && speed < CREEPING);
 				if (still && timer > 0.3 && !passing() && (open() || timer > PATIENCE)) approach();
 			} else if (stage === 'approach') {
 				// one knocked on since the truck set out for it is set out for again

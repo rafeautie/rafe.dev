@@ -55,9 +55,18 @@ describe.each(TRACK_IDS)('the racing line on the %s', (id) => {
 		expect(least).toBeLessThan(lap(new Float64Array(n)));
 	});
 
+	/** How far a stretch of the track turns, in degrees. */
+	const turned = (from: number, to: number) => {
+		const [a, b] = [wrap(from), wrap(to)];
+		const angle = Math.atan2(track.ty[b], track.tx[b]) - Math.atan2(track.ty[a], track.tx[a]);
+		return (Math.abs(Math.atan2(Math.sin(angle), Math.cos(angle))) * 180) / Math.PI;
+	};
+
 	it('takes every corner from the outside, across to the inside and out again', () => {
 		expect(corners.length).toBeGreaterThanOrEqual(2);
-		for (const [from, to, inside] of corners) {
+		// (a kink in a chicane, which turns only a little, is driven all but
+		// straight through, and is no corner to take that way)
+		for (const [from, to, inside] of corners.filter(([from, to]) => turned(from, to) >= 45)) {
 			const at = (k: number) => line[wrap(k)] * inside;
 			// all the way in at the apex
 			let apex = -Infinity;
@@ -65,13 +74,31 @@ describe.each(TRACK_IDS)('the racing line on the %s', (id) => {
 			expect(apex).toBeGreaterThan(MAX_OFFSET - 0.1);
 			// and well over to the outside on the way in, and on the way out; or
 			// on a banked corner, taken so fast that it is worth less to open it
-			// out, past the middle of the road
+			// out, past the middle of the road. Not where the next bend, or the
+			// one before, is so near that the line is already setting up for it,
+			// nor where it runs on into a gentler bend the same way, as the esses
+			// at the Glen do from the first corner.
 			const outside = (ks: number[]) => Math.min(...ks.map(at));
 			const before = Array.from({ length: 30 }, (_, d) => from - 1 - d);
 			const after = Array.from({ length: 30 }, (_, d) => to + d);
+			const sweeping = (ks: number[]) => {
+				const same = ks.filter((k) => {
+					const [a, b, c] = [k - 4, k, k + 4].map(wrap);
+					const [cross, sides] = triangle(x[a], y[a], x[b], y[b], x[c], y[c]);
+					return (
+						Math.abs((2 * cross) / sides) > 1 / 250 && Math.sign(cross) * track.hand === inside
+					);
+				});
+				return same.length > ks.length / 2;
+			};
+			const near = (ks: number[]) =>
+				sweeping(ks) ||
+				corners.some(
+					([f, t]) => f !== from && ks.some((k) => wrap(k) >= wrap(f) && wrap(k) < wrap(t))
+				);
 			const wide = track.bank[wrap(from)] > 1.01 ? 0 : -MAX_OFFSET / 2;
-			expect(outside(before)).toBeLessThan(wide);
-			expect(outside(after)).toBeLessThan(wide);
+			if (!near(before)) expect(outside(before)).toBeLessThan(wide);
+			if (!near(after)) expect(outside(after)).toBeLessThan(wide);
 		}
 	});
 

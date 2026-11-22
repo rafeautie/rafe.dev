@@ -19,11 +19,16 @@ import {
 import { clamp, getTrack, type Track, type TrackId } from './track';
 
 // A whole race, run ahead of time and written down so it can be played back
-// anywhere: where every car and tow truck was thirty times a second, and what
+// anywhere: where every car and tow truck was thirty times a second (fewer on a
+// long lap), and what
 // happened. Whoever runs the race keeps the result; everyone watching gets the
 // recording and sees exactly the same thing, without running any physics.
 
-/** Positions are written down every other step of the race. */
+/**
+ * Positions are written down every other step of the race; on a longer lap
+ * than the first tracks', where a race may last that much longer, that much
+ * less often, so the longest race still fits where a race is kept.
+ */
 const EVERY = 2;
 /** Bytes for one car at one moment: x, y, angle and progress as 16 bits each, speed and slip as 8. */
 const POSE = 10;
@@ -180,7 +185,8 @@ export function record(
 	rules: Rules = RULES
 ): Recording {
 	const race = createRace(seed, grid, track, flags, rules);
-	const longest = Math.ceil((LIGHTS + timeCap(rules.laps)) / DT / EVERY) + 2;
+	const every = Math.ceil((EVERY * timeCap(rules.laps, track.length)) / timeCap(rules.laps));
+	const longest = Math.ceil((LIGHTS + timeCap(rules.laps, track.length)) / DT / every) + 2;
 	const pose = POSE + (rules.pits ? PITS : 0);
 	// fine, unless the race is long or the track is, and the distance it could
 	// run to (the laps, and one more after the flag) would not fit
@@ -229,7 +235,7 @@ export function record(
 	};
 
 	for (let tick = 0; !race.done; tick++) {
-		if (tick % EVERY === 0) write();
+		if (tick % every === 0) write();
 		race.step();
 		for (const event of race.events) {
 			const recorded: RecordedEvent = { ...event, time: round(event.time, 3) };
@@ -266,7 +272,7 @@ export function record(
 
 	return {
 		track: track.id,
-		rate: 1 / (DT * EVERY),
+		rate: 1 / (DT * every),
 		frames,
 		grid: grid.map((entry) => entry.id),
 		// what a recording from before there were pits could not say, and so need not

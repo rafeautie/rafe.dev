@@ -297,5 +297,73 @@ export const LAYOUTS = {
 			0.55
 		),
 		pits: { from: 204, slip: 42, thirst: 1, away: [76, 118], boxes: 287 }
+	},
+	/**
+	 * The fast one: the main straight, the chicane at the end of it and the
+	 * long right after, a second chicane, the two right-handers into the
+	 * woods, the run down to the left-right-left onto the back straight and
+	 * the long, widening last corner onto the main straight again. The pits
+	 * are on the infield of the main straight, in from the last corner; the
+	 * way out runs on beside the first chicane.
+	 */
+	monza: {
+		name: 'Monza',
+		kind: 'road',
+		world: 240,
+		control: [
+			[142, 124.6],
+			[128, 124],
+			[113, 123],
+			[97, 121.5],
+			[90, 117],
+			[83, 115],
+			[76, 116.5],
+			[69.0, 117.5],
+			[61.0, 116.4],
+			[53.5, 113.3],
+			[47.1, 108.4],
+			[42.2, 102.0],
+			[39.1, 94.5],
+			[38.0, 86.5],
+			[38, 78],
+			[38, 70],
+			[37.8, 62],
+			[36.5, 56],
+			[34, 50],
+			[33.5, 44],
+			[34, 37],
+			[33, 29],
+			[35.5, 19.5],
+			[42.5, 12.5],
+			[52, 10],
+			[60, 10],
+			[69.5, 12.5],
+			[76.5, 19],
+			[83, 28.5],
+			[89, 38],
+			[95, 47.5],
+			[100.5, 56.5],
+			[105, 64],
+			[110, 71],
+			[116, 76.5],
+			[123, 81],
+			[131, 84.5],
+			[140, 86],
+			[152, 86.5],
+			[166, 86.5],
+			[181, 86.5],
+			[196, 86],
+			[211, 86],
+			[221, 88.7],
+			[228.3, 96],
+			[231, 106],
+			[228.3, 116],
+			[221, 123.3],
+			[211, 126],
+			[196, 126],
+			[178, 125.8],
+			[160, 125.3]
+		],
+		pits: { from: 446, slip: 34, thirst: 0.9, away: [66, 92], boxes: 490 }
 	}
 } satisfies Record<string, Layout>;

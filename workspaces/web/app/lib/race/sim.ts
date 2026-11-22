@@ -46,8 +46,16 @@ export const RULES: Rules = { laps: 4, pits: true, tank: 3.3, wear: 1, limit: 12
 /** The race as it was before there were pits: three laps, flat out all the way. */
 export const CLASSIC: Rules = { ...RULES, laps: 3, pits: false };
 
-/** A race is called off this long after the start, whoever is still out. A caution or two fits inside it, each as long as the tow truck takes to go round for the wreck. */
-export const timeCap = (laps: number) => 180 + 60 * laps;
+/** The lap the time a race may take was set for: the first tracks', more or less. */
+const CAP_LAP = 390;
+/**
+ * A race is called off this long after the start, whoever is still out. A
+ * caution or two fits inside it, each as long as the tow truck takes to go
+ * round for the wreck; on a longer lap than the first tracks', everything
+ * takes that much longer, laps and cautions alike.
+ */
+export const timeCap = (laps: number, length = CAP_LAP) =>
+	(180 + 60 * laps) * Math.max(1, length / CAP_LAP);
 /** Once someone has won, the rest get this long to finish. */
 const AFTER_WINNER = 8;
 /** And this much longer where there are pits, which string a field out. */
@@ -109,6 +117,8 @@ const FORM = 21;
 const LANE = 2;
 const RESTART_MAX = 15;
 const SETTLE = 10;
+/** How long (s) a car wedged into another passes through the other cars to get clear of it. */
+const GHOST = 2;
 /**
  * After SETTLE, a car keeps to its line while there is a car in the other
  * one this near (m), ahead or behind, but no longer than this long after the
@@ -178,6 +188,15 @@ export type Car = {
 	/** How much too fast the driver takes the corner they misjudge, as a share of the right speed. */
 	errorBy: number;
 	stuck: number;
+	/**
+	 * Wedged into another car, as two pressed hard together under caution can
+	 * be, so that neither backing off nor going on frees it: how many times in
+	 * a row it has backed off and got nowhere, from where, and until when it
+	 * passes through the other cars to get clear.
+	 */
+	jams: number;
+	jammedAt: number;
+	ghostUntil: number;
 	reverseUntil: number;
 	/** Fuel in the tank, in laps of hard running, and how worn the tyres are: 0 new, 1 worn out. */
 	fuel: number;
@@ -382,6 +401,9 @@ export function createRace(
 			errorUntil: 0,
 			errorBy: 1,
 			stuck: 0,
+			jams: 0,
+			jammedAt: 0,
+			ghostUntil: 0,
 			reverseUntil: 0,
 			fuel: rules.tank,
 			wear: 0,
@@ -409,6 +431,15 @@ export function createRace(
 		const { x: nx, y: ny } = manifold.normal;
 		if (typeof a === 'number') hits.push({ car: cars[a], x, y, dx: -nx, dy: -ny, blow });
 		if (typeof b === 'number') hits.push({ car: cars[b], x, y, dx: nx, dy: ny, blow });
+	});
+
+	// A car wedged into another gets clear by passing through the other cars
+	// for a moment: walls and trucks stay as solid as ever.
+	world.on('pre-solve', (contact) => {
+		const a = contact.getFixtureA().getBody().getUserData();
+		const b = contact.getFixtureB().getBody().getUserData();
+		if (typeof a !== 'number' || typeof b !== 'number') return;
+		if (cars[a].ghostUntil > race.time || cars[b].ghostUntil > race.time) contact.setEnabled(false);
 	});
 
 	// A truck is as solid as a car, and much heavier (recovery.ts): a car that
@@ -636,7 +667,7 @@ export function createRace(
 		race.done =
 			running.every((car) => car.finishTime) ||
 			race.time > won + AFTER_WINNER + (rules.pits ? AFTER_STOPS : 0) ||
-			race.time > LIGHTS + timeCap(rules.laps);
+			race.time > LIGHTS + timeCap(rules.laps, track.length);
 	}
 
 	/**
@@ -1082,6 +1113,10 @@ export function createRace(
 				if (car.stuck > 1) {
 					car.stuck = 0;
 					car.reverseUntil = race.time + 1.4;
+					// backing off for the third time without getting anywhere: wedged
+					car.jams = Math.abs(car.progress - car.jammedAt) < 2 ? car.jams + 1 : 0;
+					car.jammedAt = car.progress;
+					if (car.jams >= 2) car.ghostUntil = race.time + GHOST;
 				}
 			}
 

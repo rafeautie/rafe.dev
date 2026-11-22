@@ -67,7 +67,11 @@ function run(
 	// the most any car off the track slid, and how often one of its rear tyres was off the road
 	let slid = 0;
 	let rough = 0;
-	for (let step = 0; step < (LIGHTS + timeCap(rules.laps) + 1) / DT && !race.done; step++) {
+	for (
+		let step = 0;
+		step < (LIGHTS + timeCap(rules.laps, track.length) + 1) / DT && !race.done;
+		step++
+	) {
 		const before = race.cars.map((car) => ({ fuel: car.fuel, wear: car.wear, lane: car.lane }));
 		race.step();
 		race.cars.forEach((car, index) => {
@@ -285,7 +289,7 @@ describe.each(TRACK_IDS)('pit stops on the %s', (id) => {
 			expect(race.cars.filter((car) => car.lane >= LANE.in).length).toBeLessThanOrEqual(1);
 			// and the race is still won, with time to spare
 			expect(race.cars.some((car) => car.finishTime)).toBe(true);
-			expect(race.time).toBeLessThan(LIGHTS + timeCap(RULES.laps) - 10);
+			expect(race.time).toBeLessThan(LIGHTS + timeCap(RULES.laps, getTrack(id).length) - 10);
 		}
 	});
 

@@ -44,7 +44,10 @@ import {
 // laps, with no fuel or tyres to think of. The pits have their own tests
 // (pits.test.ts).
 const LAPS = CLASSIC.laps;
-const TIME_CAP = timeCap(LAPS);
+/** The longest a race of LAPS laps on a track may last. */
+const capOf = (track: Track) => timeCap(LAPS, track.length);
+/** How much longer everything takes on a track than on the first ones. */
+const stretchOf = (track: Track) => capOf(track) / timeCap(LAPS);
 
 /**
  * The six cars that raced every time before the field could change size. The
@@ -61,7 +64,7 @@ function run(seed: number, track: Track, flags: number[] = [], field = SIX) {
 	const race = createRace(seed, drawGrid(seed, field), track, flags, CLASSIC);
 	const events: RaceEvent[] = [];
 	// as many steps as the longest race is allowed to last
-	for (let step = 0; step < (LIGHTS + TIME_CAP + 1) / DT && !race.done; step++) {
+	for (let step = 0; step < (LIGHTS + capOf(track) + 1) / DT && !race.done; step++) {
 		race.step();
 		events.push(...race.events);
 		race.events.length = 0;
@@ -121,7 +124,7 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 				const race = run(seed, track);
 				expect(race.done).toBe(true);
 				// ended by the cars finishing, not by the clock running out, cautions and all
-				expect(race.time).toBeLessThan(LIGHTS + TIME_CAP - 10);
+				expect(race.time).toBeLessThan(LIGHTS + capOf(track) - 10);
 				const [winner] = race.order();
 				expect(winner.finishTime).toBeGreaterThan(0);
 				// every lap of it, and one more for each that was ended under caution
@@ -168,7 +171,7 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 				`seed ${seed}`
 			).toBe(true);
 			if (race.flag === 'checkered') won++;
-			else expect(race.time).toBeGreaterThan(LIGHTS + TIME_CAP);
+			else expect(race.time).toBeGreaterThan(LIGHTS + capOf(track));
 			for (const car of race.cars) {
 				expect(Number.isFinite(car.x + car.y + car.angle)).toBe(true);
 				const across = lateral(track, car.x, car.y, nearest(track, car.x, car.y));
@@ -355,12 +358,14 @@ const SEEDS: Record<TrackId, { wreck: number; clean: number }> = {
 	oval: { wreck: 3, clean: 5 },
 	daytona: { wreck: 9, clean: 7 },
 	indianapolis: { wreck: 6, clean: 4 },
-	martinsville: { wreck: 3, clean: 7 }
+	martinsville: { wreck: 3, clean: 7 },
+	monza: { wreck: 16, clean: 2 }
 };
 
 describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 	const track = getTrack(id);
 	const { wreck: wrecking, clean } = SEEDS[id];
+	const stretch = stretchOf(track);
 
 	it('comes out for a wreck, which a truck takes off the track before the green', () => {
 		const race = run(wrecking, track);
@@ -372,7 +377,8 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 		expect(caution).toMatchObject({ time: retired.time, car: retired.car, by: 'wreck' });
 		expect(restart.time - caution.time).toBeGreaterThan(8);
 		expect(green.time - restart.time).toBeGreaterThan(3);
-		expect(green.time - caution.time).toBeLessThan(90);
+		// (on a longer lap than the first tracks', the truck has that much further to go)
+		expect(green.time - caution.time).toBeLessThan(90 * stretch);
 		// the wreck is in the infield, and scored where it stopped, not where it was left
 		const wreck = race.cars[retired.car];
 		expect(wreck.towed).toBe(true);
@@ -606,7 +612,7 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 					if (kind === 'restart') expect(flown[k - 1], `seed ${seed}`).toBe('caution');
 				});
 				// unless the race was called off at the time cap with a caution out
-				if (flown.length && race.time <= LIGHTS + TIME_CAP) {
+				if (flown.length && race.time <= LIGHTS + capOf(track)) {
 					expect(flown.at(-1), `seed ${seed}`).toBe('green');
 				}
 			}
