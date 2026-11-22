@@ -663,6 +663,8 @@ export function createPits(
 		crew.held = 0;
 		crew.go = false;
 		car.lane = LANE.in;
+		// on the rail its tyres do not slide, so nothing comes off them
+		car.slip = 0;
 		// nothing can run into it from here on
 		car.body.setActive(false);
 	}
