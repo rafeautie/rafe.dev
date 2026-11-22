@@ -945,9 +945,9 @@ export function createPits(
 			// On the way out, it does not join the track into the side of a tow
 			// truck that is out there across where it joins: it stops short until
 			// the truck has gone on.
-			if (car.lane === LANE.out && truckAtJoin(rail.length - crew.s)) {
-				target = Math.min(target, behind(0, rail.length - crew.s, SHORT));
-			}
+			const left = rail.length - crew.s;
+			if (car.lane === LANE.out && truckAtJoin(left))
+				target = Math.min(target, behind(0, left, SHORT));
 		}
 		crew.v = Math.max(0, crew.v + clamp(target - crew.v, -brake * dt, pull * dt));
 		crew.s = Math.min(rail.length, crew.s + crew.v * dt);

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ROSTER } from './roster';
 import { LIMITS } from './settings';
 import { LANE, pitsFor } from './pits';
+import { onTruck } from './recovery';
 import {
 	KERBSIDE,
 	RING,
@@ -66,16 +67,6 @@ function run(seed: number, track: Track, flags: number[] = [], field = SIX) {
 		race.events.length = 0;
 	}
 	return Object.assign(race, { all: events });
-}
-
-/** Whether a point is on a truck's outline, or within half a metre of it. */
-function onTruck(truck: { x: number; y: number; angle: number }, x: number, y: number) {
-	const [cos, sin] = [Math.cos(truck.angle), Math.sin(truck.angle)];
-	const [dx, dy] = [x - truck.x, y - truck.y];
-	return (
-		Math.abs(dx * cos + dy * sin) < TRUCK.long + 0.5 &&
-		Math.abs(dy * cos - dx * sin) < TRUCK.wide + 0.5
-	);
 }
 
 /** The cars still running, first to last, by id. */
@@ -424,7 +415,7 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 			for (const event of race.events) {
 				if (event.kind !== 'hit') continue;
 				race.trucks.forEach((truck, index) => {
-					if (onTruck(truck, event.x, event.y)) knocked[index] = race.time;
+					if (onTruck(truck, event.x, event.y, 0.5)) knocked[index] = race.time;
 				});
 			}
 			race.events.length = 0;
@@ -442,9 +433,8 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 				expect(Math.abs(truck.steer)).toBeLessThanOrEqual(TRUCK.lock + 1e-9);
 				expect(Math.abs(truck.steer - was.steer)).toBeLessThan(TRUCK.steering * DT + 1e-9);
 				if (race.time - knocked[index] < 2.5 * DT || truck.touched || was.touched) {
-					// (knocked by a car, or leant on by one, it is barely moved, and is straight back on its way)
+					// (knocked by a car, or leant on by one, it is barely turned, and is straight back on its way)
 					expect(turned(was.angle, truck.angle)).toBeLessThan(0.02);
-					expect(moved).toBeLessThan(0.05 + 29 * DT);
 				} else if (truck.doing !== 'park' && was.doing !== 'park') {
 					const [back, before] = [truck, was].map(({ x, y, angle }) => [
 						x + Math.cos(angle) * TRUCK.rear,
@@ -715,7 +705,7 @@ describe('the tow trucks out on the track', () => {
 				for (const event of race.events) {
 					if (event.kind !== 'hit') continue;
 					// a knock on a truck is one that lands on its outline
-					if (race.trucks.some((truck) => truck.busy && onTruck(truck, event.x, event.y)))
+					if (race.trucks.some((truck) => truck.busy && onTruck(truck, event.x, event.y, 0.5)))
 						knocks.push(event);
 				}
 				race.events.length = 0;

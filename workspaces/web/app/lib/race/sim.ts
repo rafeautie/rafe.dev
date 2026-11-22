@@ -2,10 +2,20 @@ import { ChainShape, PolygonShape, World, type Body, type Fixture } from 'planck
 import type { Plan } from './crew';
 import { createPits, LANE as PIT, tyreGrip } from './pits';
 import { curvature, SPAN } from './line';
-import { createRecovery, WALLS } from './recovery';
+import { createRecovery } from './recovery';
 import type { Entry } from './roster';
 import { serviceFor } from './service';
-import { clamp, HALF_CORRIDOR, HALF_ROAD, lateral, MAX_OFFSET, nearest, type Track } from './track';
+import {
+	clamp,
+	HALF_CORRIDOR,
+	HALF_ROAD,
+	lateral,
+	MAX_OFFSET,
+	nearest,
+	NOSE,
+	WALLS,
+	type Track
+} from './track';
 
 // One race, start to finish. Each car is a rigid body pushed around by its
 // two axles' tyres, which grip up to a limit and slide past it, and steered
@@ -111,8 +121,6 @@ const GIVE_WAY = 60;
 const MAKE_WAY = 3.6;
 /** A knock slower than this (m/s) leaves no mark. */
 const SHRUG = 2.5;
-/** From the middle of a car to either end of it. */
-const NOSE = 2.1;
 /** The furthest any corner of the bodywork can be pushed in. */
 const MAX_DENT = 0.5;
 
@@ -403,16 +411,9 @@ export function createRace(
 		if (typeof b === 'number') hits.push({ car: cars[b], x, y, dx: nx, dy: ny, blow });
 	});
 
-	const recovery = createRecovery(world, cars, track);
 	// A truck is as solid as a car, and much heavier (recovery.ts): a car that
-	// runs into it is knocked, and the truck hardly moves. What it has lifted,
-	// and a wreck it has put down in its box, it is not knocked by.
-	world.on('pre-solve', (contact) => {
-		const a = contact.getFixtureA().getBody();
-		const b = contact.getFixtureB().getBody();
-		const truck = a.getUserData() === 'truck' ? a : b.getUserData() === 'truck' ? b : null;
-		if (truck && !(truck === a ? b : a).isDynamic()) contact.setEnabled(false);
-	});
+	// runs into it is knocked, and the truck hardly moves.
+	const recovery = createRecovery(world, cars, track);
 	/**
 	 * The caution that is out: when it came out, and once the track is clear
 	 * and the field together, when it started going green (0 until then).
@@ -849,18 +850,15 @@ export function createRace(
 			if (caution) {
 				for (const other of road) {
 					if (!other.retired || other.lane! >= PIT.in) continue;
-					if (Math.abs(other.across - car.across) >= clearOf(other) + 2.5) continue;
+					const apart = Math.abs(other.across - car.across);
+					const room = clearOf(other);
+					if (apart >= room + CLEAR) continue;
 					const ahead = along(car.sample, other.sample);
 					if (ahead <= -PAST || ahead >= SIGHT) continue;
 					funnel = true;
 					if (followed(other)) continue;
 					// (slower still where it leaves little room)
-					const room = clearOf(other);
-					const tight = clamp(
-						(Math.abs(other.across - car.across) - CLEAR) / (room - CLEAR),
-						0.4,
-						1
-					);
+					const tight = clamp((apart - CLEAR) / (room - CLEAR), 0.4, 1);
 					const slowing = Math.max(0, ahead - PAST);
 					limit = Math.min(limit, Math.sqrt((GO_BY * tight) ** 2 + (QUEUE_BRAKE / 2) * slowing));
 				}
@@ -946,25 +944,23 @@ export function createRace(
 			// is on if there is room there: thrown right across the road, in a
 			// bend, it would run on into the wall. One that has stopped beside a
 			// wreck is gone round, either side.
+			// (One on its way round a wreck goes on round it: the truck waits behind it.)
+			const line = track.line[aimed(car)];
 			let letBy = false;
-			if (caution) {
+			if (caution && !rounding) {
 				for (const truck of recovery.onTrack) {
 					const clear = along(truck.sample, car.sample);
 					if (truck.speed <= 1 || clear <= -8 || clear >= GIVE_WAY) continue;
 					letBy = true;
-					// (one on its way round a wreck goes on round it: the truck waits behind it)
-					if (rounding) break;
 					const apart = car.across - truck.across;
 					let side = apart === 0 ? 1 : Math.sign(apart);
 					// (but not by crossing in front of it, with it close behind: it will wait behind this car)
 					if (passing(truck, side, MAKE_WAY) < MAKE_WAY && clear > GIVE_WAY / 2) side = -side;
 					const room = clamp(truck.across + side * MAKE_WAY, -MAX_OFFSET, MAX_OFFSET);
-					const line = track.line[aimed(car)];
 					offset = side > 0 ? Math.max(offset, room - line) : Math.min(offset, room - line);
 				}
 			}
-			if (!letBy && !rounding && bound && bound.across !== null)
-				offset = bound.across - track.line[aimed(car)];
+			if (!letBy && !rounding && bound && bound.across !== null) offset = bound.across - line;
 			// Leave room for a car alongside rather than turn in on it: the one
 			// on the inside keeps the inside, and the one being passed has to
 			// give up the line. Where that runs out of road, lift and let it
@@ -1064,11 +1060,12 @@ export function createRace(
 				const shoving =
 					caution !== null &&
 					blocker?.retired &&
-					cars.includes(blocker as Car) &&
 					gap < 2 * NOSE + 1 &&
 					Math.abs(car.across - blocker.across) < 1.5 &&
 					Math.abs(blocker.speed) > 0.3 &&
-					car.speed < 2.5;
+					car.speed < 2.5 &&
+					// (a wreck, that is, not a truck)
+					'body' in blocker;
 				const stalled = Math.abs(car.speed) < 1 || shoving;
 				car.stuck = stalled && want > 1 ? car.stuck + DT : 0;
 				if (car.stuck > 1) {

@@ -4,7 +4,7 @@ import { pitsFor } from './pits';
 import { LOAD, createRecovery } from './recovery';
 import { TRUCK } from './service';
 import { DT, HULL, type Car } from './sim';
-import { HALF_CORRIDOR, TRACK_IDS, getTrack, lateral, nearest } from './track';
+import { HALF_CORRIDOR, NOSE, TRACK_IDS, getTrack, lateral, nearest } from './track';
 
 /** Where on the lap the wrecks lie, as metres on from where the way out of the pits joins the track, and how far across. */
 const LYING: [number, number][] = [
@@ -186,7 +186,7 @@ describe.each(TRACK_IDS)('a tow truck on the %s', (id) => {
 
 	it('is solid: a car that runs into it stops at it, and takes the knock', () => {
 		// (its middle no nearer the truck's than the two of them end to end)
-		expect(nearest).toBeGreaterThan(TRUCK.long + 2.1 - 0.3);
+		expect(nearest).toBeGreaterThan(TRUCK.long + NOSE - 0.3);
 		// a knock of most of the 10 m/s it was doing
 		expect(knock / 1000).toBeGreaterThan(8);
 		const { x, y } = body.getLinearVelocity();

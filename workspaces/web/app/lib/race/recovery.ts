@@ -1,4 +1,4 @@
-import { PolygonShape, type World } from 'planck';
+import { PolygonShape, type Contact, type World } from 'planck';
 import { LANE, pitsFor } from './pits';
 import {
 	KERBSIDE,
@@ -13,7 +13,17 @@ import {
 	type Route
 } from './service';
 import type { Car } from './sim';
-import { HALF_CORRIDOR, HALF_ROAD, clamp, lateral, nearest, triangle, type Track } from './track';
+import {
+	HALF_CORRIDOR,
+	HALF_ROAD,
+	NOSE,
+	WALLS,
+	clamp,
+	lateral,
+	nearest,
+	triangle,
+	type Track
+} from './track';
 
 // The tow trucks and the job they do. Each is a flatbed with room on its bed
 // for two cars, one behind the other, and a crane between the cab and the
@@ -60,8 +70,7 @@ const PASS = 4;
 const EDGE = 5.4;
 /** How much room it leaves between its tyres and a wreck it pulls up beside. */
 const GAP = 0.5;
-/** From the middle of a car to either end of it, and to either side. */
-const NOSE = 2.1;
+/** From the middle of a car to either side of it. */
 const FLANK = 0.95;
 /** How far forward of the axle it is steered by the crane is: the truck stops with that axle this far past what it is to lift. */
 const LEAD = TRUCK.axle - TRUCK.pivot;
@@ -114,8 +123,8 @@ const CLEAR_FOR = 4;
 const PATIENCE = 8;
 /** What the truck weighs (kg): nine of the cars. */
 const MASS = 9000;
-/** The track's walls, as the physics tells what touches what: the trucks go through them. */
-export const WALLS = 0x0002;
+/** A car a truck has lifted, as the physics tells what touches what: the trucks never touch one. */
+const TOWED = 0x0004;
 
 /** How many cars a truck's bed holds. */
 export const LOAD = TRUCK.bed.length;
@@ -132,6 +141,21 @@ function toward(value: number, to: number, step: number): [number, boolean] {
 }
 
 export type Truck = ReturnType<typeof createTruck>['truck'];
+
+/** Whether a place is on a truck, or within `margin` of it. */
+export function onTruck(
+	truck: { x: number; y: number; angle: number },
+	px: number,
+	py: number,
+	margin: number
+) {
+	const [cos, sin] = [Math.cos(truck.angle), Math.sin(truck.angle)];
+	const [dx, dy] = [px - truck.x, py - truck.y];
+	return (
+		Math.abs(dx * cos + dy * sin) < TRUCK.long + margin &&
+		Math.abs(dy * cos - dx * sin) < TRUCK.wide + margin
+	);
+}
 
 /** The crane: which way it points from straight ahead (radians, towards the truck's left positive), how far out its hook is from where it turns, and how high it has lifted what is on it, 0 to 1. */
 export type Crane = { swing: number; reach: number; raise: number };
@@ -247,7 +271,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		),
 		friction: 0.3,
 		restitution: 0.1,
-		filterMaskBits: 0xffff & ~WALLS
+		filterMaskBits: 0xffff & ~WALLS & ~TOWED
 	});
 	// a box, as heavy as the truck and its load, all of it about its middle
 	body.setMassData({
@@ -284,8 +308,10 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		get fetching(): boolean {
 			return stage === 'out' || stage === 'held' || stage === 'approach' || stage === 'lift';
 		},
-		/** Whether a car on its wheels, wrecked or not, was up against it, which may have nudged it, as of the last `sync`. */
-		touched: false
+		/** Whether a car on its wheels, wrecked or not, is up against it, which may have nudged it. */
+		get touched(): boolean {
+			return against(() => true);
+		}
 	};
 	/**
 	 * The front of the truck, as the drivers see it: where the truck is, but
@@ -363,10 +389,14 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	/** Where the truck is standing, while it stands: a car that knocks it, it is back there the next step. */
 	let standing: Pose | null = null;
 
-	/** Keeps the truck standing where it stopped. */
-	function stay(dt: number) {
-		standing ??= on(0);
-		move(body, standing.x, standing.y, standing.angle, dt);
+	/** Whether any car on its wheels, wrecked or not, up against the truck is `one`, by where it touches it. */
+	function against(one: (contact: Contact, car: Car) => boolean) {
+		for (let edge = body.getContactList(); edge; edge = edge.next) {
+			const index = edge.other?.getUserData();
+			if (typeof index !== 'number' || !edge.contact.isTouching()) continue;
+			if (one(edge.contact, cars[index])) return true;
+		}
+		return false;
 	}
 
 	/**
@@ -374,19 +404,12 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	 * its wheels: it stops at once, rather than drive on over it or shove it
 	 * along the road.
 	 */
-	function bumped() {
-		for (let edge = body.getContactList(); edge; edge = edge.next) {
-			const { contact, other } = edge;
-			if (!other || !contact.isTouching() || !other.isDynamic()) continue;
-			const index = other.getUserData();
-			if (typeof index !== 'number' || cars[index].retired) continue;
+	const bumped = () =>
+		against((contact, car) => {
 			const manifold = contact.getWorldManifold(null);
-			if (!manifold?.pointCount) continue;
-			const at = body.getLocalPoint(manifold.points[0]);
-			if (at.x > TRUCK.long - 2.5) return true;
-		}
-		return false;
-	}
+			if (car.retired || !manifold?.pointCount) return false;
+			return body.getLocalPoint(manifold.points[0]).x > TRUCK.long - 2.5;
+		});
 
 	/** Whether a car can be touched by anything: not while it is up on the crane or the bed. */
 	function solid(car: Car, is: boolean) {
@@ -586,7 +609,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		const cap = Math.min(limit, Math.max(0.6, caps[at] + (caps[at + 1] - caps[at]) * t));
 		pace += clamp(cap - pace, -1.5 * BRAKE * dt, pull * dt);
 		// (edging past a car that will not move, it may push it)
-		if (limit > NUDGE && bumped()) pace = 0;
+		if (limit > NUDGE && pace > 0 && bumped()) pace = 0;
 		// The point it is steered by is taken along the way, and back onto it
 		// if it is off it: the wheel is turned for whichever way that is to go,
 		// a little way on, and the truck goes round to it as fast as it does.
@@ -907,7 +930,8 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		if (truck.across < -HALF_CORRIDOR) return Infinity;
 		let limit = Infinity;
 		let stopped = false;
-		const look = BUMPER + NOSE + 8 + pace ** 2 / (2 * BRAKE);
+		const stopping = pace ** 2 / (2 * BRAKE);
+		const look = BUMPER + NOSE + 8 + stopping;
 		for (const car of cars) {
 			const before = ahead(truck.sample, car.sample);
 			// (a car coming out of the pits is in its way as soon as it is on the track)
@@ -936,7 +960,6 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			if (other === truck) continue;
 			const fore = (other.x - x) * Math.cos(angle) + (other.y - y) * Math.sin(angle);
 			const side = (other.y - y) * Math.cos(angle) - (other.x - x) * Math.sin(angle);
-			const stopping = pace ** 2 / (2 * BRAKE);
 			if (other.fetching && other.across > -HALF_CORRIDOR) {
 				// One that is at a wreck, or about to be, is not gone by at all,
 				// wherever across the road it is: it will be swinging its crane
@@ -947,16 +970,6 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			}
 		}
 		return limit;
-	}
-
-	/** Whether a place is on another truck, or within `margin` of it. */
-	function onTruck(other: Truck, px: number, py: number, margin: number) {
-		const [cos, sin] = [Math.cos(other.angle), Math.sin(other.angle)];
-		const [dx, dy] = [px - other.x, py - other.y];
-		return (
-			Math.abs(dx * cos + dy * sin) < TRUCK.long + margin &&
-			Math.abs(dy * cos - dx * sin) < TRUCK.wide + margin
-		);
 	}
 
 	/**
@@ -1027,6 +1040,9 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 				car.towed = true;
 				car.body.setKinematic();
 				solid(car, false);
+				for (let fixture = car.body.getFixtureList(); fixture; fixture = fixture.getNext()) {
+					fixture.setFilterData({ groupIndex: 0, categoryBits: TOWED, maskBits: 0xffff });
+				}
 				// it goes on the bed lying whichever way round is the nearer
 				const lie = turn(car.body.getAngle() - body.getAngle() - truck.crane.swing);
 				carried = { car, place: truck.load.indexOf(-1), lie };
@@ -1179,12 +1195,12 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			// a call on the way home is answered from where the truck is
 			if ((stage === 'home' || stage === 'park') && waiting.length && alone) fetch();
 
-			const standsStill =
-				stage === 'parked' || stage === 'held' || stage === 'lift' || stage === 'drop';
-			if (!standsStill) standing = null;
-			if (stage === 'parked') {
-				stay(dt);
-			} else if (stage === 'out') {
+			// Standing, it is kept where it stopped, however a car knocks it.
+			if (stage === 'parked' || stage === 'held' || stage === 'lift' || stage === 'drop') {
+				standing ??= on(0);
+				move(body, standing.x, standing.y, standing.angle, dt);
+			} else standing = null;
+			if (stage === 'out') {
 				if (advance(dt, pitTraffic())) {
 					stage = 'held';
 					timer = 0;
@@ -1193,7 +1209,6 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 					vacating = -1;
 				}
 			} else if (stage === 'held') {
-				stay(dt);
 				timer += dt;
 				const { from, across } = start();
 				const rolling = next(from, across)!.body.getLinearVelocity();
@@ -1214,7 +1229,6 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 					slew({ swing, reach: STOWED.reach + 1 }, dt);
 				} else slew(STOWED, dt);
 			} else if (stage === 'lift' || stage === 'drop') {
-				stay(dt);
 				work(dt);
 			} else if (stage === 'haul') {
 				if (advance(dt, Math.min(traffic(dt), pitTraffic()), HAUL)) craneAt('drop');
@@ -1249,11 +1263,6 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			truck.x = x;
 			truck.y = y;
 			truck.angle = body.getAngle();
-			truck.touched = false;
-			for (let edge = body.getContactList(); edge; edge = edge.next) {
-				if (edge.contact.isTouching() && edge.contact.isEnabled() && edge.other?.isDynamic())
-					truck.touched = true;
-			}
 			// (a truck on its stand is nothing to the drivers)
 			if (stage === 'parked') return;
 			const lifting = stage === 'lift' ? (wreck ?? carried?.car) : null;
