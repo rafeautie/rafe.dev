@@ -7,7 +7,8 @@ import type { Bet, RoomState, Standing } from '~/lib/race/room';
 import { CONDITIONS, ROSTER, inCondition } from '~/lib/race/roster';
 import { DEFAULT_SETTINGS, STATS } from '~/lib/race/settings';
 import { LIGHTS, neutral, rank, type Flag } from '~/lib/race/sim';
-import { GAPS_EVERY, createTelemetry, pitOf, type Readout } from '~/lib/race/telemetry';
+import { GAPS_EVERY, createTelemetry, type Readout } from '~/lib/race/telemetry';
+import { statusOf, type Row, type Status } from '~/lib/race/status';
 import { ASKS, FLAGS, SHORT, chips, entry, holding, label, signed } from './shared';
 import type { Running, Selection, Tick } from './shared';
 
@@ -148,6 +149,9 @@ export const LEGEND = [
 
 /** What a pit stop is for, as the tower has room to say it. */
 const STOPS = { fuel: 'Fuel', tyres: 'Tires', both: 'F+T' };
+
+/** Where in a row of the tower the chip saying what its car is doing goes. */
+const STATUS_X = 69;
 
 /**
  * How far ahead, in metres, a car must get before the tower moves it up a
@@ -372,6 +376,8 @@ export type Scene = {
 	replay: Replay | null;
 	/** The ids of the cars you have bet on. */
 	backed: Set<string>;
+	/** The car whose row in the tower a pointer is over, if any. */
+	hover: string | null;
 	/** What this viewer's camera is following, and where it is looking. */
 	watch: Watch;
 };
@@ -406,6 +412,16 @@ const FACE: Record<Flag, ReturnType<typeof hex>> = {
 	restart: GO,
 	checkered: PAPER
 };
+/**
+ * The chip in the tower for what a car is doing: its word, its colour, and
+ * whether it is filled (the car stands) or outlined (it moves).
+ */
+const CHIPS = {
+	pit: ['PIT', GOLD, false],
+	box: ['BOX', GOLD, true],
+	out: ['OUT', ALARM, true],
+	tow: ['TOW', BAD, false]
+} as const;
 const BODY = Object.fromEntries(ROSTER.map((car) => [car.id, hex(car.color)]));
 
 const clock = (seconds: number) =>
@@ -428,6 +444,8 @@ export function createHud() {
 	// leader as last read, and how many seconds ago that was
 	let running: string[] = [];
 	const gaps = new Map<string, number | null>();
+	// each row of the tower as last drawn, for the page to say as text
+	let described: Row[] = [];
 	let read = Infinity;
 
 	/** A value that glides to its target rather than jumping, so a change is seen as one. */
@@ -579,52 +597,112 @@ export function createHud() {
 				gaps.set(car.entry.id, replay.gap(index, replay.cars.indexOf(top)))
 			);
 		}
-		const { backed } = scene;
+		const { backed, watch } = scene;
+		const pits = Boolean(replay?.pits) && phase === 'racing';
+		const trucks = replay?.trucks ?? [];
+		const said: Row[] = [];
 		order.forEach((id, place) => {
 			const ry = y + 34 + Math.round(glide(`row ${id}`, place * ROW, dt));
-			const car = field?.find((car) => car.entry.id === id);
+			const index = field ? field.findIndex((car) => car.entry.id === id) : -1;
+			const car = field?.[index];
+			const status: Status = car ? statusOf(car, index, trucks) : 'racing';
+			const gone = status === 'out' || status === 'tow';
 			// the cars being followed are picked out
-			if (field && scene.watch.followed.has(id)) {
-				p.fill(x + 2, ry, w - 2, ROW - 1, PAPER, id === scene.watch.focus ? 0.16 : 0.08);
+			if (field && watch.followed.has(id)) {
+				p.fill(x + 2, ry, w - 2, ROW - 1, PAPER, id === watch.focus ? 0.16 : 0.08);
 			}
 			if (backed.has(id)) p.fill(x, ry, 2, ROW - 1, GOLD);
-			p.text(x + 5, ry + 3, String(place + 1), place === 0 ? PAPER : DIM);
+			p.text(x + 5, ry + 3, String(place + 1), place === 0 && !gone ? PAPER : DIM);
 			tile(p, x + 14, ry + 2, id);
-			p.text(x + 30, ry + 3, entry(id).name, car?.retired ? DIM : PAPER);
-			if (car && replay?.pits && phase === 'racing' && !car.retired) {
-				// under the name, what is left in the tank and of the tyres:
-				// each bar runs down, and turns red when there is little left
-				[car.fuel, 1 - car.wear].forEach((share, which) =>
-					meter(p, x + 30 + which * 16, ry + 11, 14, 1, share, supply(share, which))
-				);
+			// a car out of the race is faded
+			if (gone) p.fill(x + 14, ry + 2, 13, 9, INK, 0.55);
+			if (car && pits && !gone && status !== 'home') {
+				// beside the car, what is left in the tank and of the tyres: each
+				// bar runs down, and turns red when there is little left
+				[car.fuel, 1 - car.wear].forEach((share, which) => {
+					const full = Math.round(9 * clamp01(share));
+					p.fill(x + 30 + which * 3, ry + 2, 2, 9, FAINT);
+					p.fill(x + 30 + which * 3, ry + 11 - full, 2, full, supply(share, which));
+				});
 			}
+			const named = x + (pits ? 37 : 30);
+			const space = car ? x + STATUS_X - 2 - named : x + w - 40 - named;
+			p.text(named, ry + 3, clip(entry(id).name, space), gone ? DIM : PAPER);
+			// once the race is over every car is home, which needs no saying on each row
+			if (car && (phase === 'racing' || status !== 'home')) chip(p, x + STATUS_X, ry + 2, status);
+
+			let figure = '';
+			let colour = DIM;
 			if (car && top) {
 				// the gap to the leader in seconds: how long ago the leader was
-				// here, and at the flag the difference in their times
+				// here, and at the flag the difference in their times; nothing for
+				// a car in the pit lane or out, whose chip says it
 				const behind = gaps.get(id) ?? null;
-				const [gap, colour] = car.retired
-					? ['Out', BAD]
-					: pitOf(car.lane) === 'box' && car.stop
-						? // standing in its box: what for, and for how long so far
-							[stopText(car.stop), GOLD]
-						: pitOf(car.lane) !== 'track' && !car.finishTime
-							? ['Pit', GOLD]
-							: car === top
-								? car.finishTime
-									? [(car.finishTime - LIGHTS).toFixed(2), PAPER]
-									: ['Leader', DIM]
-								: car.finishTime && top.finishTime
-									? [`+${(car.finishTime - top.finishTime).toFixed(2)}`, PAPER]
-									: [behind === null ? '' : `+${behind.toFixed(1)}`, DIM];
-				p.right(x + w - 4, ry + 3, gap, colour);
+				if (status === 'box') [figure, colour] = [stopText(car.stop!), GOLD];
+				else if (status === 'home')
+					[figure, colour] = [
+						car === top || !top.finishTime
+							? (car.finishTime - LIGHTS).toFixed(2)
+							: `+${(car.finishTime - top.finishTime).toFixed(2)}`,
+						PAPER
+					];
+				else if (status === 'racing')
+					figure = car === top ? 'Leader' : behind === null ? '' : `+${behind.toFixed(1)}`;
+				said.push({
+					name: entry(id).name,
+					place: place + 1,
+					status,
+					leading: car === top,
+					gap: car === top ? null : behind,
+					finish: car.finishTime
+						? {
+								time: car.finishTime - LIGHTS,
+								behind: car === top || !top.finishTime ? null : car.finishTime - top.finishTime
+							}
+						: null,
+					stop: status === 'box' ? car.stop : null,
+					supplies: pits ? { fuel: car.fuel, tyres: 1 - car.wear } : null
+				});
+				// a pointer over the row: what a click on it does, in place of its figure
+				if (scene.hover === id) {
+					const unfollow = watch.follow.mode === 'car' && watch.follow.id === id;
+					[figure, colour] = [unfollow ? 'Unfollow' : 'Follow', PAPER];
+				}
 			} else if (room && pools && phase === 'betting') {
 				// before the race: how each car turned up, and what it pays
 				const by = CONDITIONS[room.conditions[place]].by;
 				if (by) p.text(x + 62, ry + 3, by > 0 ? '↑' : '↓', by > 0 ? GOOD : BAD);
 				const odds = glide(`${priced} ${id}`, pays(pools[priced], priced, id), dt);
-				p.right(x + w - 4, ry + 3, times(odds), PAPER);
+				[figure, colour] = [times(odds), PAPER];
 			}
+			p.right(x + w - 4, ry + 3, figure, colour);
 		});
+		described = said;
+	}
+
+	/**
+	 * What a car in the tower is doing, as a chip with a word on it: filled
+	 * while it stands (in its box, or out of the race), only outlined while it
+	 * moves (in the pit lane, or on a truck); gold for the pits, red for out.
+	 * A car that is home has the checked flag instead; one racing, nothing.
+	 */
+	function chip(p: Painter, cx: number, cy: number, status: Status) {
+		if (status === 'racing') return;
+		if (status === 'home') {
+			p.fill(cx, cy, 11, 9, INK);
+			p.outline(cx, cy, 11, 9, PAPER);
+			for (let square = 0; square < 12; square++) {
+				const [column, row] = [square % 4, Math.floor(square / 4)];
+				if (!((column + row) & 1))
+					p.fill(cx + 1 + column * 2 + 1, cy + 1 + row * 2 + 1, 2, 2, PAPER);
+			}
+			return;
+		}
+		const [word, colour, filled] = CHIPS[status];
+		const cw = measure(word) + 4;
+		p.fill(cx, cy, cw, 9, filled ? colour : INK);
+		if (!filled) p.outline(cx, cy, cw, 9, colour);
+		p.text(cx + 2, cy + 1, word, filled ? (status === 'out' ? PAPER : INK) : colour);
 	}
 
 	/**
@@ -1136,6 +1214,8 @@ export function createHud() {
 	return {
 		/** The tower's running order as it is showing it, top first. */
 		order: () => running,
+		/** The tower's rows as last drawn, top first, for the page to say as text. */
+		rows: () => described,
 		/** The followed car's numbers as last drawn, for the page to say as text. */
 		readout: () => readout,
 
@@ -1147,6 +1227,7 @@ export function createHud() {
 			if (room && room.round !== round) {
 				round = room.round;
 				running = [];
+				described = [];
 				gaps.clear();
 				read = Infinity;
 				const balance = shown.get('balance');
