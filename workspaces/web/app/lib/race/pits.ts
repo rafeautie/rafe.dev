@@ -54,7 +54,7 @@ const ROAD_GRIP = 11;
  * last of them the lane ends, which is what a truck needs to steer out into
  * it.
  */
-export const STAND = { after: 8, pitch: 8.4, long: 7.6, wide: 4, run: 12 };
+export const STAND = { after: 9.8, pitch: 12.8, long: 12.4, wide: 4, run: 12 };
 /** How many tow trucks there are. */
 const TRUCKS = 2;
 
@@ -170,15 +170,15 @@ function build(track: Track) {
 
 	/**
 	 * The sample that is `far` metres on from another along the line the
-	 * boxes are on. Where the track bends a little, a sample is less than a
-	 * metre there.
+	 * boxes are on, or back from it if `far` is negative. Where the track
+	 * bends, a sample is less than a metre there.
 	 */
 	function on(sample: number, far: number) {
 		const [x, y] = at(sample, -BOX_ACROSS);
 		let next = sample + far;
-		for (let pass = 0; pass < 6; pass++) {
+		for (let pass = 0; pass < 8; pass++) {
 			const [nx, ny] = at(next, -BOX_ACROSS);
-			next += far - Math.hypot(nx - x, ny - y);
+			next += Math.sign(far) * (Math.abs(far) - Math.hypot(nx - x, ny - y));
 		}
 		return next;
 	}
@@ -190,21 +190,44 @@ function build(track: Track) {
 	}
 	const last = boxes[BOXES - 1].sample;
 	// The trucks' stands, the front one first: it is the one nearest the way
-	// out. Each is where a truck's front axle is level with a whole sample,
-	// since a truck's way to it is worked out in whole samples.
-	const whole = (sample: number) => Math.round(sample + TRUCK.axle) - TRUCK.axle;
-	const spots = [whole(on(last, STAND.after))];
-	while (spots.length < TRUCKS) spots.unshift(whole(on(spots[0], STAND.pitch)));
-	/** Where the tow trucks stand when they are not out, the front one first. */
-	const stands = spots.map((sample) => standing(sample, -BOX_ACROSS));
-	const out0 = Math.ceil(spots[0] + TRUCK.axle + STAND.run);
+	// out. A truck stands with both its axles on the line the boxes are on,
+	// its front one level with a whole sample, since a truck's way to it is
+	// worked out in whole samples. Where that line bends, as it does on into
+	// a turn, the truck stands straight across the bend, between the two.
+	const fronts = [Math.round(on(on(last, STAND.after), TRUCK.axle))];
+	while (fronts.length < TRUCKS) fronts.unshift(Math.round(on(fronts[0], STAND.pitch)));
+	/** Where the tow trucks stand when they are not out, the front one first: where the middle of one is and which way it faces, and the samples its axles are level with. */
+	const stands = fronts.map((front) => {
+		const back = on(front, -2 * TRUCK.axle);
+		const [fx, fy] = at(front, -BOX_ACROSS);
+		const [bx, by] = at(back, -BOX_ACROSS);
+		return {
+			sample: (front + back) / 2,
+			across: -BOX_ACROSS,
+			x: (fx + bx) / 2,
+			y: (fy + by) / 2,
+			angle: Math.atan2(fy - by, fx - bx),
+			front,
+			back
+		};
+	});
+	const out0 = Math.ceil(fronts[0] + STAND.run);
 	/** The first sample at or after `after` that is `sample` as the track counts them. */
 	const past = (after: number, sample: number) => after + ((((sample - after) % n) + n) % n);
 	const leave = away ? past(out0, away[0]) : out0;
 	const out1 = away ? past(leave, away[1]) : out0 + RAMP;
 	/** The way out, from the end of the lane: in line with it to where it leaves for the track. */
 	const road = (to: number): [number, number][] =>
-		leave > out0 ? [[out0, -RING], [leave, -RING], [out1, to]] : [[out0, -RING], [out1, to]];
+		leave > out0
+			? [
+					[out0, -RING],
+					[leave, -RING],
+					[out1, to]
+				]
+			: [
+					[out0, -RING],
+					[out1, to]
+				];
 
 	const paths = new Map<
 		number,
@@ -221,7 +244,10 @@ function build(track: Track) {
 		const fast = new Float64Array(way.count).fill(Infinity);
 		const reach = 6;
 		for (let k = reach; k + reach < way.count && k <= upTo; k++) {
-			const [ax, ay, bx, by, cx, cy] = [-reach, 0, reach].flatMap((d) => [way.x[k + d], way.y[k + d]]);
+			const [ax, ay, bx, by, cx, cy] = [-reach, 0, reach].flatMap((d) => [
+				way.x[k + d],
+				way.y[k + d]
+			]);
 			const cross = Math.abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
 			const sides =
 				Math.hypot(bx - ax, by - ay) * Math.hypot(cx - bx, cy - by) * Math.hypot(cx - ax, cy - ay);
@@ -360,11 +386,11 @@ const GO = 8;
 const EXIT = 0.95;
 /** How fast a car joins the track when there is a wreck lying near where it does (m/s). */
 const CRAWL = 7;
-/** How far behind another car in the lane one stops, and behind a truck; nearer than this, two cars are level. */
+/** How far behind another car in the lane one stops, and behind the middle of a truck, which is long; nearer than this, two cars are level. */
 const KEEP = 6;
-const KEEP_TRUCK = 9;
-/** And how much further behind one with a wreck on its hook, which trails it. */
-const TRAILER = 6;
+const KEEP_TRUCK = 10.5;
+/** A car on the track no further than this from the inside, just past where the way out joins it, is in the way of one coming out. */
+const JOINED = 2.5;
 const LEVEL = 3;
 /** A car looks for a gap on the track from this far before the end of the lane. Held there this long, it goes whoever is coming. */
 const LOOK = 12;
@@ -407,7 +433,7 @@ type Meeting = {
 	) => void;
 	/** Puts a car out of the race where it is. */
 	retire: (car: Car) => void;
-	/** The tow trucks, which use the lane too: where each is, in the world and by the track's count, and whether it has a wreck on its hook. */
+	/** The tow trucks, which use the lane too: where each is, in the world and by the track's count. */
 	trucks: {
 		x: number;
 		y: number;
@@ -415,7 +441,6 @@ type Meeting = {
 		across: number;
 		busy: boolean;
 		speed: number;
-		towing: number;
 	}[];
 };
 
@@ -790,6 +815,22 @@ export function createPits(
 					target = 0;
 				}
 			}
+			// On the way out, behind one that has just joined the track ahead of
+			// it, which may be crawling there round a wreck or a truck.
+			if (car.lane === LANE.out && crew.s >= rail.look) {
+				for (const other of cars) {
+					if (other === car || other.retired || other.lane !== LANE.racing) continue;
+					const past = along(lane.merge, other.sample);
+					if (past < -2 || past > 20 || Math.abs(other.across - INSIDE) > JOINED) continue;
+					const space = aheadOf(car, other);
+					if (space > 0 && space < 25) {
+						target = Math.min(
+							target,
+							Math.sqrt(Math.max(0, other.speed) ** 2 + 2 * BRAKE * Math.max(0, space - KEEP))
+						);
+					}
+				}
+			}
 			for (const lorry of lorries) {
 				const space = aheadOf(car, lorry);
 				if (space > 0 && space < 28) {
@@ -844,7 +885,7 @@ export function createPits(
 					y: truck.y,
 					sample,
 					speed: Math.max(0, truck.speed),
-					keep: KEEP_TRUCK + (truck.towing >= 0 ? TRAILER : 0)
+					keep: KEEP_TRUCK
 				});
 			}
 		}

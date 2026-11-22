@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ROSTER } from './roster';
 import { LIMITS } from './settings';
-import { RING, TIGHTEST, serviceFor } from './service';
+import { RING, TIGHTEST, TRUCK, serviceFor } from './service';
 import {
 	CLASSIC,
 	createRace,
@@ -278,44 +278,69 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 		}
 	});
 
-	it('is cleared by a truck that steers like one, and a wreck drawn in on a cable', () => {
+	it('is cleared by a truck that steers like one, with a crane that lifts the wreck onto its bed', () => {
 		const race = createRace(wrecking, drawGrid(wrecking, SIX), track, [], CLASSIC);
 		const turned = (from: number, to: number) =>
 			Math.abs(Math.atan2(Math.sin(to - from), Math.cos(to - from)));
-		let trucks = race.trucks.map((truck) => ({ ...truck }));
+		const snap = () =>
+			race.trucks.map((truck) => ({ ...truck, crane: { ...truck.crane }, load: [...truck.load] }));
+		let trucks = snap();
 		let cars = race.cars.map(({ x, y, angle, towed }) => ({ x, y, angle, towed }));
-		let winched = 0;
+		let lifted = 0;
+		let carried = 0;
 		while (!race.done) {
 			race.step();
 			race.events.length = 0;
 			race.trucks.forEach((truck, index) => {
 				const was = trucks[index];
 				const moved = Math.hypot(truck.x - was.x, truck.y - was.y);
-				// it turns only as it moves: never on the spot, never tighter than its own length
-				expect(turned(was.angle, truck.angle)).toBeLessThan(moved / 3.5 + 1e-4);
+				// It turns only as it moves: never on the spot, never tighter than
+				// it can steer. (Squaring up on its stand as it parks is a turn of
+				// the wheel at a crawl.)
+				if (truck.doing !== 'park') {
+					expect(turned(was.angle, truck.angle)).toBeLessThan(moved / 3.5 + 1e-4);
+				}
 				expect(moved).toBeLessThan(29 * DT);
+				// and its crane swings, reaches and lifts no faster than a crane does
+				expect(turned(was.crane.swing, truck.crane.swing)).toBeLessThan(1.5 * DT);
+				expect(Math.abs(truck.crane.reach - was.crane.reach)).toBeLessThan(3.1 * DT);
+				expect(Math.abs(truck.crane.raise - was.crane.raise)).toBeLessThan(0.81 * DT);
 			});
 			race.cars.forEach((car, index) => {
 				const was = cars[index];
 				if (!car.towed) return;
 				const moved = Math.hypot(car.x - was.x, car.y - was.y);
-				// taking up the cable does not move it, and nothing after that jerks it
+				// putting the slings on does not move it, and nothing after that jerks it
 				if (!was.towed) expect(moved).toBeLessThan(1 * DT);
 				expect(moved).toBeLessThan(19 * DT);
 				expect(turned(was.angle, car.angle)).toBeLessThan(2 * DT);
-				// with the truck stopped it comes in at the winch's pace, and it does come in
-				const hauling = race.trucks.findIndex((truck) => truck.towing === index);
-				const stopped = race.trucks[hauling]?.speed === 0 && trucks[hauling].speed === 0;
-				if (stopped && trucks[hauling].towing === index && moved > 0) {
-					expect(moved).toBeLessThan(1 * DT);
-					winched += moved;
+				const truck = race.trucks.find(
+					(truck) => truck.towing === index || truck.load.includes(index)
+				);
+				if (!truck) return;
+				const [cos, sin] = [Math.cos(truck.angle), Math.sin(truck.angle)];
+				if (truck.towing === index) {
+					// on the crane, it hangs under the hook
+					const swing = truck.angle + truck.crane.swing;
+					const hx = truck.x + cos * TRUCK.pivot + Math.cos(swing) * truck.crane.reach;
+					const hy = truck.y + sin * TRUCK.pivot + Math.sin(swing) * truck.crane.reach;
+					expect(Math.hypot(car.x - hx, car.y - hy)).toBeLessThan(0.01);
+					lifted++;
+				} else {
+					// on the bed, it stays where it was put on it, lying along it
+					const fore = TRUCK.bed[truck.load.indexOf(index)];
+					expect(
+						Math.hypot(car.x - truck.x - cos * fore, car.y - truck.y - sin * fore)
+					).toBeLessThan(0.01);
+					expect(Math.abs(Math.sin(car.angle - truck.angle))).toBeLessThan(0.01);
+					carried++;
 				}
 			});
-			trucks = race.trucks.map((truck) => ({ ...truck }));
+			trucks = snap();
 			cars = race.cars.map(({ x, y, angle, towed }) => ({ x, y, angle, towed }));
 		}
-		expect(winched).toBeGreaterThan(0.3);
-		expect(winched).toBeLessThan(3);
+		expect(lifted).toBeGreaterThan(0);
+		expect(carried).toBeGreaterThan(0);
 	});
 
 	it('ends as the leader crosses the line, and the laps ended under it are run again', () => {

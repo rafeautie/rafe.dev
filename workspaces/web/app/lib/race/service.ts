@@ -26,10 +26,13 @@ export const HALF_LANE = 2.2;
 export const NEARSIDE = -3.8;
 
 /**
- * The truck from above, x forward: half its length and width, how far behind
- * its middle the hook is, and how far either side of it the axles are.
+ * The truck from above, x forward: a flatbed with a crane between the cab and
+ * the bed. Half its length and width; how far either side of its middle the
+ * axles it is steered by are; how far forward of its middle the crane turns;
+ * and where the middle of each of the two cars it carries goes on the bed,
+ * the back one first, which is the one it loads first.
  */
-export const TRUCK = { long: 3, wide: 1.2, hook: 3.2, axle: 1.8 };
+export const TRUCK = { long: 5.6, wide: 1.25, axle: 3.6, pivot: 3.4, bed: [-3.45, 0.85] };
 /** The tightest the line the pit lane is on bends, as a radius in metres, and the tightest any way worked out for a truck does. */
 export const TIGHTEST = 9;
 const STEER = 6.5;
