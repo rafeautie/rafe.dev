@@ -12,7 +12,8 @@ import {
 import { createRenderer } from '~/lib/race/render';
 import { ROSTER, type Entry } from '~/lib/race/roster';
 import { DEFAULT_SETTINGS } from '~/lib/race/settings';
-import { drawGrid, LAPS, LIGHTS, rank, type Flag } from '~/lib/race/sim';
+import { LANE } from '~/lib/race/pits';
+import { CLASSIC, drawGrid, LIGHTS, rank, RULES, type Flag } from '~/lib/race/sim';
 import { FLAGS } from './shared';
 import { createSound, type Sound } from '~/lib/race/sound';
 import { getTrack, trackName, TRACK_IDS, type TrackId } from '~/lib/race/track';
@@ -32,6 +33,9 @@ type Row = {
 	slide: number;
 	damage: number;
 	best: number;
+	/** Fuel as a share of a full tank and tyre wear, both in per cent. */
+	fuel: number;
+	wear: number;
 	status: string;
 };
 
@@ -41,6 +45,9 @@ type View = {
 	duration: number;
 	/** The flag flying, once the lights have gone out. */
 	flag: Flag | null;
+	/** How many laps the race set out to be, and whether its cars pit. */
+	laps: number;
+	pits: boolean;
 	/** The recording's size once packed, in bytes. */
 	size: number;
 	/** How loud the sound is, in decibels, when it is on. */
@@ -61,6 +68,13 @@ function describe(event: RecordedEvent, replay: Replay) {
 	if (event.kind === 'again') return `${when} lap ended under caution, to be run again`;
 	const at = `${when} ${replay.cars[event.car].entry.name}`;
 	if (event.kind === 'hit') return `${at} hit at ${(event.force * 3.6).toFixed(0)} km/h`;
+	if (event.kind === 'pit') {
+		return `${at} in its box for ${event.service === 'both' ? 'fuel and tyres' : event.service}`;
+	}
+	if (event.kind === 'away') {
+		return `${at} away after ${event.seconds.toFixed(1)} s${event.slow ? ', fumbled' : ''}`;
+	}
+	if (event.kind === 'dry') return `${at} out of fuel`;
 	return `${at} ${event.kind === 'retire' ? 'retired' : 'finished'}`;
 }
 
@@ -71,6 +85,8 @@ function read(recording: Recording, replay: Replay, time: number, size: number):
 		time,
 		duration: replay.duration,
 		flag: time < LIGHTS ? null : replay.flag,
+		laps: replay.laps,
+		pits: replay.pits,
 		size,
 		log: recording.events
 			.filter((event) => event.time <= time && event.kind !== 'lap')
@@ -90,7 +106,19 @@ function read(recording: Recording, replay: Replay, time: number, size: number):
 			slide: car.slip,
 			damage: Math.round(car.damage * 100),
 			best: car.bestLap,
-			status: car.retired ? 'retired' : car.finishTime ? 'finished' : 'racing'
+			fuel: Math.round(car.fuel * 100),
+			wear: Math.round(car.wear * 100),
+			status: car.retired
+				? 'retired'
+				: car.lane === LANE.box && car.stop
+					? `${car.stop.service} ${car.stop.seconds.toFixed(1)} s`
+					: car.lane >= LANE.in
+						? 'pit lane'
+						: car.finishTime
+							? 'finished'
+							: car.lane === LANE.called
+								? 'pitting'
+								: 'racing'
 		}))
 	};
 }
@@ -105,6 +133,8 @@ export default function Sandbox() {
 	const [rate, setRate] = useState(1);
 	const [show, setShow] = useState({ line: false, hulls: false });
 	const [sound, setSound] = useState(false);
+	// with the pits off, the race as it was before there were any
+	const [pits, setPits] = useState(true);
 	const [view, setView] = useState<View | null>(null);
 	// What the running loop reads each frame, so changing a control does not
 	// start the race again. `seekTo` and `stepOnce` are requests it clears.
@@ -138,7 +168,13 @@ export default function Sandbox() {
 	useEffect(() => {
 		const track = getTrack(trackId);
 		const renderer = createRenderer(canvas.current!, track);
-		const recording = record(seed, drawGrid(seed, ROSTER, DEFAULT_SETTINGS.count), track, flags);
+		const recording = record(
+			seed,
+			drawGrid(seed, ROSTER, DEFAULT_SETTINGS.count),
+			track,
+			flags,
+			pits ? RULES : CLASSIC
+		);
 		const replay = createReplay(recording, ROSTER);
 		const size = pack(recording).length;
 		let time = Math.min(live.current.resume, replay.duration);
@@ -178,7 +214,7 @@ export default function Sandbox() {
 			}
 		});
 		return () => cancelAnimationFrame(frame);
-	}, [seed, trackId, flags]);
+	}, [seed, trackId, flags, pits]);
 
 	/** Another race altogether, with none of the cautions thrown in this one. */
 	const race = (next: number) => {
@@ -304,6 +340,18 @@ export default function Sandbox() {
 					/>
 					Collision corners
 				</label>
+				<label className="flex items-center gap-1.5">
+					<input
+						type="checkbox"
+						checked={pits}
+						onChange={(event) => {
+							// another race altogether
+							setFlags([]);
+							setPits(event.target.checked);
+						}}
+					/>
+					Pits
+				</label>
 				{view && (
 					<span className="ml-auto text-foreground/60 tabular-nums">
 						Recording {(view.size / 1000).toFixed(0)} KB
@@ -326,7 +374,9 @@ export default function Sandbox() {
 								<th className="font-normal">Slide m/s</th>
 								<th className="font-normal">Damage</th>
 								<th className="font-normal">Best lap</th>
-								<th className="font-normal">Spd / Grip / Aggr / Rel</th>
+								{view.pits && <th className="font-normal">Fuel</th>}
+								{view.pits && <th className="font-normal">Tyre wear</th>}
+								<th className="font-normal">Spd / Grip / Aggr / Rel / Crew</th>
 								<th className="font-normal">Status</th>
 							</tr>
 						</thead>
@@ -344,15 +394,23 @@ export default function Sandbox() {
 									</td>
 									<td>{row.grid}</td>
 									<td>
-										{row.lap}/{LAPS}
+										{row.lap}/{view.laps}
 									</td>
 									<td>{row.gap}</td>
 									<td>{row.kmh}</td>
 									<td>{row.slide.toFixed(1)}</td>
 									<td>{row.damage}%</td>
 									<td>{row.best ? `${row.best.toFixed(2)} s` : ''}</td>
+									{view.pits && <td>{row.fuel}%</td>}
+									{view.pits && <td>{row.wear}%</td>}
 									<td className="text-foreground/60">
-										{[row.entry.speed, row.entry.grip, row.entry.aggression, row.entry.reliability]
+										{[
+											row.entry.speed,
+											row.entry.grip,
+											row.entry.aggression,
+											row.entry.reliability,
+											row.entry.crew
+										]
 											.map((stat) => Math.round(stat * 100))
 											.join(' / ')}
 									</td>

@@ -1,11 +1,12 @@
 import { MAX_BETS, MARKETS, pays, type Market, type Pools } from '~/lib/race/betting';
+import { LANE } from '~/lib/race/pits';
 import { ADVANCE, clip, enlarge, hex, measure, wrap, type Painter } from '~/lib/race/pixels';
 import type { Replay } from '~/lib/race/recording';
 import { HEIGHT, SCALE, WIDTH, type CarView } from '~/lib/race/render';
 import type { Bet, RoomState, Standing } from '~/lib/race/room';
 import { CONDITIONS, ROSTER, inCondition } from '~/lib/race/roster';
 import { DEFAULT_SETTINGS, STATS } from '~/lib/race/settings';
-import { LAPS, LIGHTS, neutral, rank, type Flag } from '~/lib/race/sim';
+import { LIGHTS, neutral, rank, type Flag } from '~/lib/race/sim';
 import { ASKS, FLAGS, SHORT, chips, entry, holding, label, signed } from './shared';
 import type { Running, Selection, Tick } from './shared';
 
@@ -99,7 +100,7 @@ export const TICKS = 5;
 const SLIP = 300;
 const MENU = 232;
 const KEY_W = 166;
-const KEY_H = 89;
+const KEY_H = 110;
 /**
  * How tall the bet slip is for a field of `count` cars: the markets over the
  * cars, a row each, and the stake and the button under them.
@@ -124,13 +125,17 @@ const SIDE = COLUMN + 8;
 const panelsHeight = (count: number) => 4 + towerHeight(count) + 4 + BOARD_H + 4 + TICKER_H + 4;
 // the frame is chosen before the field is known, so it leaves room for the biggest
 const LEAST = 60 + slipHeight(ROSTER.length) + 8;
-/** What the four bars beside each car are, by the letter over them. */
+/** What the five bars beside each car are, by the letter over them. */
 export const LEGEND = [
 	['Speed', 'Engine power'],
 	['Grip', 'Cornering'],
 	['Aggression', 'Pushes harder, errs more'],
-	['Reliability', 'Knocks it can take']
+	['Reliability', 'Knocks it can take'],
+	['Crew', 'Quicker, surer pit stops']
 ];
+
+/** What a pit stop is for, as the tower has room to say it. */
+const STOPS = { fuel: 'Fuel', tyres: 'Tyres', both: 'F+T' };
 
 /**
  * How far ahead, in metres, a car must get before the tower moves it up a
@@ -254,7 +259,7 @@ export function layout(
 		cars: rows(count, (row) => box(x + 3, y + SLIP_HEAD + row * CAR, SLIP - 6, CAR - 1)),
 		firsts: rows(count, (row) => box(x + 243, y + SLIP_HEAD + 1 + row * CAR, 25, 11)),
 		seconds: rows(count, (row) => box(x + 269, y + SLIP_HEAD + 1 + row * CAR, 25, 11)),
-		legend: box(x + 210, y + 45, 29, 12),
+		legend: box(x + 210, y + 45, 35, 12),
 		clean: [box(x + 6, foot + 4, 76, 15), box(x + 84, foot + 4, 100, 15)],
 		stakes: STAKES.map((_, index) => box(x + 6 + index * 48, foot + 23, 46, 15)),
 		input: box(x + 198, foot + 23, 96, 15),
@@ -436,7 +441,7 @@ export function createHud() {
 		else if (flying)
 			// the flag that is flying, and its name: a caution, and going green
 			// after it, turn the whole bar yellow
-			head(p, at, FLAGS[flying], `Lap ${lap}/${LAPS}`, false, flying);
+			head(p, at, FLAGS[flying], `Lap ${lap}/${replay!.laps}`, false, flying);
 		else if (phase === 'racing') head(p, at, 'On the grid', `Race ${room.round}`);
 		else if (phase === 'results') head(p, at, 'Result', clock(left), false, 'checkered');
 		else head(p, at, 'Waiting', '');
@@ -516,19 +521,34 @@ export function createHud() {
 			p.text(x + 5, ry + 3, String(place + 1), place === 0 ? PAPER : DIM);
 			tile(p, x + 14, ry + 2, id);
 			p.text(x + 30, ry + 3, entry(id).name, car?.retired ? DIM : PAPER);
+			if (car && replay?.pits && phase === 'racing' && !car.retired) {
+				// under the name, what is left in the tank and of the tyres:
+				// each bar runs down, and turns red when there is little left
+				[car.fuel, 1 - car.wear].forEach((share, which) => {
+					const bx = x + 30 + which * 16;
+					const full = Math.round(clamp01(share) * 14);
+					p.fill(bx, ry + 11, 14, 1, FAINT);
+					p.fill(bx, ry + 11, full, 1, share < 0.2 ? BAD : which ? GOOD : GOLD);
+				});
+			}
 			if (car && top) {
 				// the gap to the leader in seconds: how long ago the leader was
 				// here, and at the flag the difference in their times
 				const behind = gaps.get(id) ?? null;
 				const [gap, colour] = car.retired
 					? ['Out', BAD]
-					: car === top
-						? car.finishTime
-							? [(car.finishTime - LIGHTS).toFixed(2), PAPER]
-							: ['Leader', DIM]
-						: car.finishTime && top.finishTime
-							? [`+${(car.finishTime - top.finishTime).toFixed(2)}`, PAPER]
-							: [behind === null ? '' : `+${behind.toFixed(1)}`, DIM];
+					: car.lane === LANE.box && car.stop
+						? // standing in its box: what for, and for how long so far
+							[`${STOPS[car.stop.service]} ${car.stop.seconds.toFixed(1)}`, GOLD]
+						: car.lane >= LANE.in && !car.finishTime
+							? ['Pit', GOLD]
+							: car === top
+								? car.finishTime
+									? [(car.finishTime - LIGHTS).toFixed(2), PAPER]
+									: ['Leader', DIM]
+								: car.finishTime && top.finishTime
+									? [`+${(car.finishTime - top.finishTime).toFixed(2)}`, PAPER]
+									: [behind === null ? '' : `+${behind.toFixed(1)}`, DIM];
 				p.right(x + w - 4, ry + 3, gap, colour);
 			} else if (room && pools && phase === 'betting') {
 				// before the race: how each car turned up, and what it pays
@@ -714,9 +734,9 @@ export function createHud() {
 
 		const [first, second] = picked?.split('>') ?? [];
 		p.text(x + 6, y + 48, 'Cars', DIM);
-		p.text(x + 213, y + 48, 'SGAR', legend ? PAPER : DIM);
+		p.text(x + 213, y + 48, 'SGARC', legend ? PAPER : DIM);
 		// dotted under, as a word with more to say
-		for (let dot = 0; dot < 23; dot += 2) p.fill(x + 213 + dot, y + 56, 1, 1, DIM);
+		for (let dot = 0; dot < 29; dot += 2) p.fill(x + 213 + dot, y + 56, 1, 1, DIM);
 		p.right(x + w - 6, y + 48, market === 'exacta' ? 'Pick' : 'Pays', DIM);
 		room.grid.forEach((id, place) => {
 			const row = at.cars[place];
@@ -803,7 +823,7 @@ export function createHud() {
 			note ? (note.bad ? BAD : GOOD) : DIM
 		);
 
-		// what the four bars are, where the layout leaves room for it
+		// what the five bars are, where the layout leaves room for it
 		if (legend) {
 			const { x: lx, y: ly, w: lw, h: lh } = at.key;
 			p.fill(lx - 1, ly - 1, lw + 2, lh + 2, INK, 0.5);
@@ -940,3 +960,5 @@ export function createHud() {
 		}
 	};
 }
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));

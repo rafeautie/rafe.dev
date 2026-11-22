@@ -2,7 +2,8 @@
 // asks for (settings.ts), so a field may be smaller than this. Each stat runs from 0 to 1 and none is
 // simply better: speed is engine power, grip is cornering, aggression is how
 // near the limit the driver runs (quicker, with more mistakes), and
-// reliability is how much of a beating the car takes before it retires.
+// reliability is how much of a beating the car takes before it retires. Crew
+// is not the car's at all: it is how quick and how sure its pit crew is.
 
 export type Entry = {
 	id: string;
@@ -15,6 +16,7 @@ export type Entry = {
 	grip: number;
 	aggression: number;
 	reliability: number;
+	crew: number;
 };
 
 export const ROSTER: Entry[] = [
@@ -27,7 +29,8 @@ export const ROSTER: Entry[] = [
 		speed: 0.9,
 		grip: 0.5,
 		aggression: 0.7,
-		reliability: 0.3
+		reliability: 0.3,
+		crew: 0.5
 	},
 	{
 		id: 'brick',
@@ -38,7 +41,8 @@ export const ROSTER: Entry[] = [
 		speed: 0.3,
 		grip: 0.6,
 		aggression: 0.4,
-		reliability: 0.95
+		reliability: 0.95,
+		crew: 0.85
 	},
 	{
 		id: 'wasp',
@@ -49,7 +53,8 @@ export const ROSTER: Entry[] = [
 		speed: 0.5,
 		grip: 0.9,
 		aggression: 0.9,
-		reliability: 0.4
+		reliability: 0.4,
+		crew: 0.6
 	},
 	{
 		id: 'duke',
@@ -60,7 +65,8 @@ export const ROSTER: Entry[] = [
 		speed: 0.6,
 		grip: 0.6,
 		aggression: 0.5,
-		reliability: 0.6
+		reliability: 0.6,
+		crew: 0.7
 	},
 	{
 		id: 'comet',
@@ -71,7 +77,8 @@ export const ROSTER: Entry[] = [
 		speed: 0.95,
 		grip: 0.3,
 		aggression: 0.85,
-		reliability: 0.5
+		reliability: 0.5,
+		crew: 0.3
 	},
 	{
 		id: 'moss',
@@ -82,7 +89,8 @@ export const ROSTER: Entry[] = [
 		speed: 0.45,
 		grip: 0.75,
 		aggression: 0.15,
-		reliability: 0.8
+		reliability: 0.8,
+		crew: 0.75
 	},
 	{
 		id: 'jinx',
@@ -93,7 +101,8 @@ export const ROSTER: Entry[] = [
 		speed: 0.75,
 		grip: 0.4,
 		aggression: 0.6,
-		reliability: 0.65
+		reliability: 0.65,
+		crew: 0.4
 	},
 	{
 		id: 'frost',
@@ -104,7 +113,8 @@ export const ROSTER: Entry[] = [
 		speed: 0.55,
 		grip: 0.75,
 		aggression: 0.25,
-		reliability: 0.45
+		reliability: 0.45,
+		crew: 0.65
 	}
 ];
 
@@ -114,7 +124,7 @@ export const ROSTER: Entry[] = [
 
 export type Condition = {
 	label: string;
-	stat?: 'speed' | 'grip' | 'aggression' | 'reliability';
+	stat?: 'speed' | 'grip' | 'aggression' | 'reliability' | 'crew';
 	by: number;
 };
 
@@ -127,7 +137,9 @@ export const CONDITIONS: Record<string, Condition> = {
 	fired: { label: 'Driver fired up', stat: 'aggression', by: 0.25 },
 	wary: { label: 'Driver wary', stat: 'aggression', by: -0.25 },
 	braced: { label: 'Bodywork braced', stat: 'reliability', by: 0.25 },
-	patched: { label: 'Patched up', stat: 'reliability', by: -0.25 }
+	patched: { label: 'Patched up', stat: 'reliability', by: -0.25 },
+	drilled: { label: 'Crew drilled', stat: 'crew', by: 0.25 },
+	short: { label: 'Crew a man short', stat: 'crew', by: -0.25 }
 };
 
 /** A condition for each of `count` cars: half the time nothing special. */
