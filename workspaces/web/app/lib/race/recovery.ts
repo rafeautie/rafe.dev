@@ -1055,8 +1055,9 @@ function createTruck(
 	let noBackUntil = 0;
 	/** Seconds in the crane's step, for the ones that are waits. */
 	let timer = 0;
-	/** Seconds it has been waiting behind a car on the track, or for something behind it to get out of the way. */
+	/** Seconds it has been waiting behind a car on the track, or for something behind it to get out of the way; and with a car up against its front. */
 	let waited = 0;
+	let pinned = 0;
 	/** Hauling: how far along the way the truck and all it carries are through the wall, and the last of it it could still turn off for another wreck. */
 	let door = 0;
 	let turnOff = 0;
@@ -1349,8 +1350,14 @@ function createTruck(
 		// never so slow that the last of the way is not covered
 		const cap = Math.min(limit, Math.max(0.6, caps[at] + (caps[at + 1] - caps[at]) * t));
 		pace += clamp(cap - pace, -1.5 * BRAKE * dt, pull * dt);
-		// (edging past a car that will not move, it may push it)
-		if (limit > NUDGE && pace > 0 && bumped()) pace = 0;
+		// (edging past a car that will not move, it may push it; and one up
+		// against its front that has not moved for as long as it would wait
+		// for one, it edges on past too, or the two of them would wait for
+		// each other for good)
+		if (pace > 0 && bumped()) {
+			pinned += dt;
+			pace = limit > NUDGE && pinned < FORBEARANCE ? 0 : Math.min(pace, NUDGE);
+		} else pinned = 0;
 		// The point it is steered by is taken along the way, and back onto it
 		// if it is off it: the wheel is turned for whichever way that is to go,
 		// a little way on, and the truck goes round to it as fast as it does.
@@ -1840,10 +1847,13 @@ function createTruck(
 		// as far ahead as it would take to stop, and a little more
 		const stopping = pace ** 2 / (3 * BRAKE);
 		const probe = (far: number) => [x + Math.cos(angle) * far, y + Math.sin(angle) * far];
+		// straight ahead, and where the way takes it, but no further than it goes
+		const looks = (far: number) =>
+			gone + far <= way!.length ? [probe(far), wayAt(gone + far)] : [probe(far)];
 		const off = truck.across < -HALF_CORRIDOR;
 		for (let far = BUMPER + 0.5; off && far <= BUMPER + 3 + stopping; far += 2.5) {
 			// straight ahead, and where the way it is steering along takes it
-			for (const [px, py] of [probe(far), wayAt(Math.min(way!.length, gone + far))]) {
+			for (const [px, py] of looks(far)) {
 				for (const car of cars) {
 					if (car.lane < LANE.in) continue;
 					const at = car.body.getPosition();
@@ -1860,7 +1870,7 @@ function createTruck(
 			// (one standing in the yard just ahead of where it stops is no matter)
 			const past = far - BUMPER > way!.length - gone + 0.3;
 			// straight ahead, and round the bend the way takes it
-			for (const [px, py] of [probe(far), wayAt(Math.min(way!.length, gone + far))]) {
+			for (const [px, py] of looks(far)) {
 				for (const other of yard.trucks) {
 					if (other === truck || (past && other.doing === 'parked')) continue;
 					if (onTruck(other, px, py, SHY_TRUCK)) return 0;

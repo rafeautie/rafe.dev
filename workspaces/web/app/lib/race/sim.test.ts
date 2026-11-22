@@ -287,10 +287,17 @@ describe.each(TRACK_IDS)('the wheels on the %s', (id) => {
 		let driving = 0;
 		for (let seed = 1; seed <= 12; seed++) {
 			const race = createRace(seed, drawGrid(seed, ROSTER), track, [], CLASSIC);
+			// where each truck last stood to lift a wreck, which it pulls away from as it pulled up to it
+			const lifted = race.trucks.map(() => ({ x: Infinity, y: Infinity }));
 			while (!race.done) {
 				race.step();
-				for (const truck of race.trucks) {
+				race.trucks.forEach((truck, index) => {
+					if (truck.doing === 'lift') lifted[index] = { x: truck.x, y: truck.y };
+				});
+				for (const [index, truck] of race.trucks.entries()) {
 					if (!truck.busy || truck.doing === 'lift') continue;
+					const left = lifted[index];
+					if (Math.hypot(truck.x - left.x, truck.y - left.y) < 32) continue;
 					const { x, y, sample, angle } = truck;
 					// on the track, and not still on the way on to it: its back axles
 					// come on from the pits a good way behind its front one
