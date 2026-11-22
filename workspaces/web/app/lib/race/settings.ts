@@ -2,7 +2,7 @@ import { DEBT_CAP, SEED, START } from './betting';
 import { BETTING_MS, RESULTS_MS } from './room';
 import { ROSTER, type Entry } from './roster';
 import { RULES, type Rules } from './sim';
-import { isTrackId, type TrackId } from './track';
+import { isTrackId, MPH, type TrackId } from './track';
 
 // The numbers /admin/race can change without a deploy. The room keeps the
 // admin's choice in storage, and every race takes a copy of them when it
@@ -21,14 +21,14 @@ export type Settings = {
 	cars: Record<string, CarStats>;
 	/** How many laps a race is. */
 	laps: number;
-	/** Whether the cars burn fuel, wear their tyres and pit for more. */
+	/** Whether the cars burn fuel, wear their tires and pit for more. */
 	pits: boolean;
 	/** How much a full tank holds, in tenths of a lap of hard running. */
 	tank: number;
 	/** How fast tyres wear, as a percentage of the usual. */
 	tyreWear: number;
-	/** The pit lane's speed limit, m/s. */
-	pitSpeed: number;
+	/** The pit lane's speed limit, in whole miles an hour. */
+	pitMph: number;
 	/** Chips the house spreads over each market's outcomes. */
 	seed: number;
 	/** Chips a new player starts with, and a bankrupt one is put back to. */
@@ -54,7 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	pits: RULES.pits,
 	tank: Math.round(RULES.tank * 10),
 	tyreWear: Math.round(RULES.wear * 100),
-	pitSpeed: RULES.limit,
+	pitMph: Math.round(RULES.limit * MPH),
 	seed: SEED,
 	start: START,
 	debtCap: DEBT_CAP,
@@ -71,7 +71,7 @@ export const LIMITS = {
 	laps: [2, 5],
 	tank: [10, 80],
 	tyreWear: [0, 300],
-	pitSpeed: [6, 25],
+	pitMph: [13, 56],
 	seed: [100, 100_000],
 	start: [1, 1_000_000],
 	debtCap: [0, 1_000_000],
@@ -84,8 +84,8 @@ const NAMES: Record<keyof typeof LIMITS, string> = {
 	count: 'Cars per race',
 	laps: 'Laps',
 	tank: 'Fuel tank',
-	tyreWear: 'Tyre wear',
-	pitSpeed: 'Pit lane speed limit',
+	tyreWear: 'Tire wear',
+	pitMph: 'Pit lane speed limit',
 	seed: 'Pool seed',
 	start: 'Starting chips',
 	debtCap: 'Debt cap',
@@ -136,7 +136,9 @@ export const rulesOf = (settings: Settings): Rules => ({
 	pits: settings.pits,
 	tank: settings.tank / 10,
 	wear: settings.tyreWear / 100,
-	limit: settings.pitSpeed
+	// to the half metre a second, so 27 mph is the 12 the pits are tuned to, and
+	// any whole number of metres a second kept from before is what it was
+	limit: Math.round((settings.pitMph / MPH) * 2) / 2
 });
 
 /**
@@ -144,9 +146,12 @@ export const rulesOf = (settings: Settings): Rules => ({
  * they have not got: every car has every stat, and every number is there.
  */
 export function complete(saved: Partial<Settings>, base: Settings = DEFAULT_SETTINGS): Settings {
+	// the pit lane's limit was kept in whole metres a second before it was in miles an hour
+	const { pitSpeed, ...kept } = saved as Partial<Settings> & { pitSpeed?: number };
 	return {
 		...base,
-		...saved,
+		...(pitSpeed !== undefined && { pitMph: Math.round(pitSpeed * MPH) }),
+		...kept,
 		cars: Object.fromEntries(
 			Object.entries(base.cars).map(([id, stats]) => [id, { ...stats, ...saved.cars?.[id] }])
 		)

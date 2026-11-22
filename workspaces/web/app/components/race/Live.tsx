@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Pools } from '~/lib/race/betting';
-import { Game, type Paint } from './Game';
+import { Game, type Aim, type Paint } from './Game';
 import { MIN_H, MIN_W, fit, layout } from './hud';
 import { entry, type Running, type Tick } from './shared';
 import { createReplay, unpack, type Replay } from '~/lib/race/recording';
@@ -28,6 +28,11 @@ export default function Live() {
 	const paint = useRef<Paint | null>(null);
 	const setPaint = useCallback((next: Paint) => {
 		paint.current = next;
+	}, []);
+	// where this viewer's camera looks, which the page works out each frame
+	const aim = useRef<Aim | null>(null);
+	const setAim = useCallback((next: Aim) => {
+		aim.current = next;
 	}, []);
 	const [room, setRoom] = useState<RoomState | null>(null);
 	/** Seconds left in the phase, by the room's clock. */
@@ -230,6 +235,7 @@ export default function Live() {
 			const now = performance.now();
 			const dt = Math.min(0.1, (now - drawn) / 1000);
 			drawn = now;
+			renderer.setCamera(aim.current?.(showing, dt) ?? null);
 			renderer.draw(cars, moved, { line: false, hulls: false }, showing ?? undefined, (painter) =>
 				paint.current?.(painter, cars, showing, dt)
 			);
@@ -263,6 +269,7 @@ export default function Live() {
 			view={view}
 			stage={stage}
 			setPaint={setPaint}
+			setAim={setAim}
 		>
 			<canvas ref={canvas} className="block size-full" />
 		</Game>

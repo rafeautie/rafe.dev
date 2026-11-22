@@ -92,7 +92,7 @@ export function label(market: string, outcome: string) {
  * when the keyboard is on it.
  */
 export const hit =
-	'absolute cursor-pointer hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white disabled:cursor-default disabled:hover:bg-transparent';
+	'pointer-events-auto absolute cursor-pointer hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white disabled:cursor-default disabled:hover:bg-transparent';
 
 /**
  * The same for a text field: what is typed is drawn under it, so its own
