@@ -71,7 +71,9 @@ function AdminLayout() {
 
 function AdminError({ error, reset }: ErrorComponentProps) {
 	const router = useRouter();
-	const signedOut = error.message === 'Not signed in';
+	// The router types a thrown value as unknown: it need not be an Error.
+	const message = error instanceof Error ? error.message : String(error);
+	const signedOut = message === 'Not signed in';
 	return (
 		<div className="min-h-dvh bg-background px-6 py-8 text-base text-foreground sm:px-8">
 			<div className="mx-auto flex max-w-4xl flex-col items-start gap-4 pt-24">
@@ -81,7 +83,7 @@ function AdminError({ error, reset }: ErrorComponentProps) {
 				<p className="text-foreground/60">
 					{signedOut
 						? 'Sign in again to carry on. Unsaved edits are kept in this browser.'
-						: error.message}
+						: message}
 				</p>
 				{signedOut ? (
 					<Button render={<a href="/admin/login" />}>Sign in again</Button>

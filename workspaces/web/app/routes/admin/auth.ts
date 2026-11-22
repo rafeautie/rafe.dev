@@ -15,8 +15,8 @@ export const Route = createFileRoute('/admin/auth')({
 
 				const code = url.searchParams.get('code');
 				const state = url.searchParams.get('state');
-				if (!code || !state || state !== session.data.state) {
-					await session.clear();
+				if (!code || !state || state !== session.state) {
+					session.destroy();
 					markSignedIn(false);
 					return back('?signin=failed');
 				}
@@ -33,7 +33,7 @@ export const Route = createFileRoute('/admin/auth')({
 				});
 				const { access_token: token } = (await exchange.json()) as { access_token?: string };
 				if (!token) {
-					await session.clear();
+					session.destroy();
 					markSignedIn(false);
 					return back('?signin=failed');
 				}
@@ -51,12 +51,14 @@ export const Route = createFileRoute('/admin/auth')({
 					avatar_url?: string;
 				};
 				if (id !== ADMIN_GITHUB_ID || !login) {
-					await session.clear();
+					session.destroy();
 					markSignedIn(false);
 					return back('?signin=denied');
 				}
 
-				await session.update({ token, userId: id, login, avatarUrl: avatar_url, state: undefined });
+				Object.assign(session, { token, userId: id, login, avatarUrl: avatar_url });
+				delete session.state;
+				await session.save();
 				markSignedIn(true);
 				return back();
 			}

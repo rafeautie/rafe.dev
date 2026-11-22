@@ -41,7 +41,7 @@ function Calendar({
 					defaults.month_caption
 				),
 				caption_label: cn('text-sm font-medium select-none', defaults.caption_label),
-				table: 'w-full border-collapse',
+				month_grid: 'w-full border-collapse',
 				weekdays: cn('flex', defaults.weekdays),
 				weekday: cn(
 					'flex-1 rounded-md text-[0.8rem] font-normal text-muted-foreground select-none',

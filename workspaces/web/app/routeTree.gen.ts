@@ -9,58 +9,33 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
-import { Route as ShmoneyRouteImport } from './routes/shmoney'
-import { Route as SeenRouteImport } from './routes/seen'
-import { Route as PhotographyRouteImport } from './routes/photography'
-import { Route as DevelopmentRouteImport } from './routes/development'
-import { Route as ChessRouteImport } from './routes/chess'
-import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as WritingIndexRouteImport } from './routes/writing/index'
-import { Route as RaceIndexRouteImport } from './routes/race/index'
+import { Route as AdminRouteRouteImport } from './routes/admin/route'
+import { Route as ChessRouteImport } from './routes/chess'
+import { Route as DevelopmentRouteImport } from './routes/development'
+import { Route as PhotographyRouteImport } from './routes/photography'
+import { Route as SeenRouteImport } from './routes/seen'
+import { Route as ShmoneyRouteImport } from './routes/shmoney'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
-import { Route as WritingFeedDotxmlRouteImport } from './routes/writing/feed[.]xml'
-import { Route as WritingSlugRouteImport } from './routes/writing/$slug'
-import { Route as RaceSandboxRouteImport } from './routes/race/sandbox'
-import { Route as AdminRaceRouteImport } from './routes/admin/race'
-import { Route as AdminPhotosRouteImport } from './routes/admin/photos'
-import { Route as AdminLogoutRouteImport } from './routes/admin/logout'
-import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminAuthRouteImport } from './routes/admin/auth'
-import { Route as AdminWritingIndexRouteImport } from './routes/admin/writing/index'
+import { Route as AdminLoginRouteImport } from './routes/admin/login'
+import { Route as AdminLogoutRouteImport } from './routes/admin/logout'
+import { Route as AdminPhotosRouteImport } from './routes/admin/photos'
+import { Route as AdminRaceRouteImport } from './routes/admin/race'
+import { Route as RaceIndexRouteImport } from './routes/race/index'
+import { Route as RaceSandboxRouteImport } from './routes/race/sandbox'
+import { Route as WritingIndexRouteImport } from './routes/writing/index'
+import { Route as WritingSlugRouteImport } from './routes/writing/$slug'
+import { Route as WritingFeedDotxmlRouteImport } from './routes/writing/feed[.]xml'
 import { Route as AdminStatsIndexRouteImport } from './routes/admin/stats/index'
+import { Route as AdminWritingIndexRouteImport } from './routes/admin/writing/index'
 import { Route as AdminWritingSlugRouteImport } from './routes/admin/writing/$slug'
 import { Route as AdminStatsVisitorsIdRouteImport } from './routes/admin/stats/visitors/$id'
 
-const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
-  id: '/sitemap.xml',
-  path: '/sitemap.xml',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ShmoneyRoute = ShmoneyRouteImport.update({
-  id: '/shmoney',
-  path: '/shmoney',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SeenRoute = SeenRouteImport.update({
-  id: '/seen',
-  path: '/seen',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PhotographyRoute = PhotographyRouteImport.update({
-  id: '/photography',
-  path: '/photography',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DevelopmentRoute = DevelopmentRouteImport.update({
-  id: '/development',
-  path: '/development',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChessRoute = ChessRouteImport.update({
-  id: '/chess',
-  path: '/chess',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRouteRoute = AdminRouteRouteImport.update({
@@ -68,19 +43,34 @@ const AdminRouteRoute = AdminRouteRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ChessRoute = ChessRouteImport.update({
+  id: '/chess',
+  path: '/chess',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WritingIndexRoute = WritingIndexRouteImport.update({
-  id: '/writing/',
-  path: '/writing/',
+const DevelopmentRoute = DevelopmentRouteImport.update({
+  id: '/development',
+  path: '/development',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RaceIndexRoute = RaceIndexRouteImport.update({
-  id: '/race/',
-  path: '/race/',
+const PhotographyRoute = PhotographyRouteImport.update({
+  id: '/photography',
+  path: '/photography',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SeenRoute = SeenRouteImport.update({
+  id: '/seen',
+  path: '/seen',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShmoneyRoute = ShmoneyRouteImport.update({
+  id: '/shmoney',
+  path: '/shmoney',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -88,34 +78,9 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRouteRoute,
 } as any)
-const WritingFeedDotxmlRoute = WritingFeedDotxmlRouteImport.update({
-  id: '/writing/feed.xml',
-  path: '/writing/feed.xml',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const WritingSlugRoute = WritingSlugRouteImport.update({
-  id: '/writing/$slug',
-  path: '/writing/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RaceSandboxRoute = RaceSandboxRouteImport.update({
-  id: '/race/sandbox',
-  path: '/race/sandbox',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminRaceRoute = AdminRaceRouteImport.update({
-  id: '/race',
-  path: '/race',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminPhotosRoute = AdminPhotosRouteImport.update({
-  id: '/photos',
-  path: '/photos',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminLogoutRoute = AdminLogoutRouteImport.update({
-  id: '/logout',
-  path: '/logout',
+const AdminAuthRoute = AdminAuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminLoginRoute = AdminLoginRouteImport.update({
@@ -123,19 +88,54 @@ const AdminLoginRoute = AdminLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => AdminRouteRoute,
 } as any)
-const AdminAuthRoute = AdminAuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
+const AdminLogoutRoute = AdminLogoutRouteImport.update({
+  id: '/logout',
+  path: '/logout',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminPhotosRoute = AdminPhotosRouteImport.update({
+  id: '/photos',
+  path: '/photos',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminRaceRoute = AdminRaceRouteImport.update({
+  id: '/race',
+  path: '/race',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const RaceIndexRoute = RaceIndexRouteImport.update({
+  id: '/race/',
+  path: '/race/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RaceSandboxRoute = RaceSandboxRouteImport.update({
+  id: '/race/sandbox',
+  path: '/race/sandbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WritingIndexRoute = WritingIndexRouteImport.update({
+  id: '/writing/',
+  path: '/writing/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WritingSlugRoute = WritingSlugRouteImport.update({
+  id: '/writing/$slug',
+  path: '/writing/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WritingFeedDotxmlRoute = WritingFeedDotxmlRouteImport.update({
+  id: '/writing/feed.xml',
+  path: '/writing/feed.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminStatsIndexRoute = AdminStatsIndexRouteImport.update({
+  id: '/stats/',
+  path: '/stats/',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminWritingIndexRoute = AdminWritingIndexRouteImport.update({
   id: '/writing/',
   path: '/writing/',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminStatsIndexRoute = AdminStatsIndexRouteImport.update({
-  id: '/stats/',
-  path: '/stats/',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminWritingSlugRoute = AdminWritingSlugRouteImport.update({
@@ -319,46 +319,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/sitemap.xml': {
-      id: '/sitemap.xml'
-      path: '/sitemap.xml'
-      fullPath: '/sitemap.xml'
-      preLoaderRoute: typeof SitemapDotxmlRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/shmoney': {
-      id: '/shmoney'
-      path: '/shmoney'
-      fullPath: '/shmoney'
-      preLoaderRoute: typeof ShmoneyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/seen': {
-      id: '/seen'
-      path: '/seen'
-      fullPath: '/seen'
-      preLoaderRoute: typeof SeenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/photography': {
-      id: '/photography'
-      path: '/photography'
-      fullPath: '/photography'
-      preLoaderRoute: typeof PhotographyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/development': {
-      id: '/development'
-      path: '/development'
-      fullPath: '/development'
-      preLoaderRoute: typeof DevelopmentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/chess': {
-      id: '/chess'
-      path: '/chess'
-      fullPath: '/chess'
-      preLoaderRoute: typeof ChessRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -368,25 +333,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/chess': {
+      id: '/chess'
+      path: '/chess'
+      fullPath: '/chess'
+      preLoaderRoute: typeof ChessRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/writing/': {
-      id: '/writing/'
-      path: '/writing'
-      fullPath: '/writing/'
-      preLoaderRoute: typeof WritingIndexRouteImport
+    '/development': {
+      id: '/development'
+      path: '/development'
+      fullPath: '/development'
+      preLoaderRoute: typeof DevelopmentRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/race/': {
-      id: '/race/'
-      path: '/race'
-      fullPath: '/race/'
-      preLoaderRoute: typeof RaceIndexRouteImport
+    '/photography': {
+      id: '/photography'
+      path: '/photography'
+      fullPath: '/photography'
+      preLoaderRoute: typeof PhotographyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seen': {
+      id: '/seen'
+      path: '/seen'
+      fullPath: '/seen'
+      preLoaderRoute: typeof SeenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shmoney': {
+      id: '/shmoney'
+      path: '/shmoney'
+      fullPath: '/shmoney'
+      preLoaderRoute: typeof ShmoneyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -396,46 +382,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRouteRoute
     }
-    '/writing/feed.xml': {
-      id: '/writing/feed.xml'
-      path: '/writing/feed.xml'
-      fullPath: '/writing/feed.xml'
-      preLoaderRoute: typeof WritingFeedDotxmlRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/writing/$slug': {
-      id: '/writing/$slug'
-      path: '/writing/$slug'
-      fullPath: '/writing/$slug'
-      preLoaderRoute: typeof WritingSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/race/sandbox': {
-      id: '/race/sandbox'
-      path: '/race/sandbox'
-      fullPath: '/race/sandbox'
-      preLoaderRoute: typeof RaceSandboxRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/race': {
-      id: '/admin/race'
-      path: '/race'
-      fullPath: '/admin/race'
-      preLoaderRoute: typeof AdminRaceRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/photos': {
-      id: '/admin/photos'
-      path: '/photos'
-      fullPath: '/admin/photos'
-      preLoaderRoute: typeof AdminPhotosRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/logout': {
-      id: '/admin/logout'
-      path: '/logout'
-      fullPath: '/admin/logout'
-      preLoaderRoute: typeof AdminLogoutRouteImport
+    '/admin/auth': {
+      id: '/admin/auth'
+      path: '/auth'
+      fullPath: '/admin/auth'
+      preLoaderRoute: typeof AdminAuthRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/admin/login': {
@@ -445,11 +396,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLoginRouteImport
       parentRoute: typeof AdminRouteRoute
     }
-    '/admin/auth': {
-      id: '/admin/auth'
-      path: '/auth'
-      fullPath: '/admin/auth'
-      preLoaderRoute: typeof AdminAuthRouteImport
+    '/admin/logout': {
+      id: '/admin/logout'
+      path: '/logout'
+      fullPath: '/admin/logout'
+      preLoaderRoute: typeof AdminLogoutRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/photos': {
+      id: '/admin/photos'
+      path: '/photos'
+      fullPath: '/admin/photos'
+      preLoaderRoute: typeof AdminPhotosRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/race': {
+      id: '/admin/race'
+      path: '/race'
+      fullPath: '/admin/race'
+      preLoaderRoute: typeof AdminRaceRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/race/': {
+      id: '/race/'
+      path: '/race'
+      fullPath: '/race/'
+      preLoaderRoute: typeof RaceIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/race/sandbox': {
+      id: '/race/sandbox'
+      path: '/race/sandbox'
+      fullPath: '/race/sandbox'
+      preLoaderRoute: typeof RaceSandboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/writing/': {
+      id: '/writing/'
+      path: '/writing'
+      fullPath: '/writing/'
+      preLoaderRoute: typeof WritingIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/writing/$slug': {
+      id: '/writing/$slug'
+      path: '/writing/$slug'
+      fullPath: '/writing/$slug'
+      preLoaderRoute: typeof WritingSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/writing/feed.xml': {
+      id: '/writing/feed.xml'
+      path: '/writing/feed.xml'
+      fullPath: '/writing/feed.xml'
+      preLoaderRoute: typeof WritingFeedDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/stats/': {
+      id: '/admin/stats/'
+      path: '/stats'
+      fullPath: '/admin/stats/'
+      preLoaderRoute: typeof AdminStatsIndexRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/admin/writing/': {
@@ -457,13 +464,6 @@ declare module '@tanstack/react-router' {
       path: '/writing'
       fullPath: '/admin/writing/'
       preLoaderRoute: typeof AdminWritingIndexRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/stats/': {
-      id: '/admin/stats/'
-      path: '/stats'
-      fullPath: '/admin/stats/'
-      preLoaderRoute: typeof AdminStatsIndexRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/admin/writing/$slug': {
