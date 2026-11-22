@@ -63,8 +63,11 @@ export type Aim = { x: number; y: number; zoom: number };
  */
 export type Lens = { from: Box; to: Box };
 
-/** Where the track is in the frame and how big the frame is, in its pixels. */
-export type Frame = { width: number; height: number; ox: number; oy: number };
+/**
+ * Where the track is in the frame and how big the frame is, in its pixels,
+ * and how many of them to the metre the track is drawn at (render.ts).
+ */
+export type Frame = { width: number; height: number; ox: number; oy: number; scale: number };
 
 /** The car at the head of the race, as the running order has it. */
 const leader = <T extends Body>(cars: T[]): T | null => rank(cars)[0] ?? null;
@@ -131,35 +134,37 @@ export function focus<T extends Body>(follow: Follow, picked: T[]): T | null {
  * car close up, a little ahead of it, or a group all in view with room round
  * it. Nothing to follow is null: the whole track.
  */
-export function aim(bodies: Body[], to: Box): Aim | null {
+export function aim(bodies: Body[], to: Box, scale = SCALE): Aim | null {
 	if (!bodies.length) return null;
+	// a track drawn smaller is looked at closer, so a car is as big as on any other
+	const closest = (ZOOM_MAX * SCALE) / scale;
 	if (bodies.length === 1) {
 		const [car] = bodies;
 		const ahead = car.retired ? 0 : car.speed * LEAD;
 		return {
 			x: car.x + Math.cos(car.angle) * ahead,
 			y: car.y + Math.sin(car.angle) * ahead,
-			zoom: ZOOM_MAX
+			zoom: closest
 		};
 	}
 	const xs = bodies.map((car) => car.x);
 	const ys = bodies.map((car) => car.y);
 	const [left, right] = [Math.min(...xs) - MARGIN, Math.max(...xs) + MARGIN];
 	const [top, bottom] = [Math.min(...ys) - MARGIN, Math.max(...ys) + MARGIN];
-	const fits = Math.min(to.w / ((right - left) * SCALE), to.h / ((bottom - top) * SCALE));
+	const fits = Math.min(to.w / ((right - left) * scale), to.h / ((bottom - top) * scale));
 	// in quarter steps, so a group spreading a little does not keep the camera breathing
 	return {
 		x: (left + right) / 2,
 		y: (top + bottom) / 2,
-		zoom: clamp(Math.floor(fits * 4) / 4, ZOOM_MIN, ZOOM_MAX)
+		zoom: clamp(Math.floor(fits * 4) / 4, ZOOM_MIN, closest)
 	};
 }
 
 /** The camera's rest: the part of the frame the race has, as it is, unmagnified. */
-export function home(to: Box, { ox, oy }: Frame): Aim {
+export function home(to: Box, { ox, oy, scale }: Frame): Aim {
 	return {
-		x: (to.x + to.w / 2 - ox) / SCALE,
-		y: (to.y + to.h / 2 - oy) / SCALE,
+		x: (to.x + to.w / 2 - ox) / scale,
+		y: (to.y + to.h / 2 - oy) / scale,
 		zoom: 1
 	};
 }
@@ -172,8 +177,8 @@ export function home(to: Box, { ox, oy }: Frame): Aim {
 export function framing(aim: Aim, to: Box, frame: Frame): Box {
 	const w = Math.min(frame.width, to.w / aim.zoom);
 	const h = Math.min(frame.height, to.h / aim.zoom);
-	const cx = frame.ox + aim.x * SCALE;
-	const cy = frame.oy + aim.y * SCALE;
+	const cx = frame.ox + aim.x * frame.scale;
+	const cy = frame.oy + aim.y * frame.scale;
 	return {
 		x: clamp(cx - w / 2, 0, frame.width - w),
 		y: clamp(cy - h / 2, 0, frame.height - h),
@@ -185,16 +190,16 @@ export function framing(aim: Aim, to: Box, frame: Frame): Box {
 /** Where a point of the track (metres) is on the frame once it is magnified, in the frame's pixels. */
 export function toFrame({ from, to }: Lens, frame: Frame, x: number, y: number) {
 	return {
-		x: to.x + ((frame.ox + x * SCALE - from.x) * to.w) / from.w,
-		y: to.y + ((frame.oy + y * SCALE - from.y) * to.h) / from.h
+		x: to.x + ((frame.ox + x * frame.scale - from.x) * to.w) / from.w,
+		y: to.y + ((frame.oy + y * frame.scale - from.y) * to.h) / from.h
 	};
 }
 
 /** Where a pixel of the magnified frame is on the track, in metres. */
 export function toWorld({ from, to }: Lens, frame: Frame, px: number, py: number) {
 	return {
-		x: (from.x + ((px - to.x) * from.w) / to.w - frame.ox) / SCALE,
-		y: (from.y + ((py - to.y) * from.h) / to.h - frame.oy) / SCALE
+		x: (from.x + ((px - to.x) * from.w) / to.w - frame.ox) / frame.scale,
+		y: (from.y + ((py - to.y) * from.h) / to.h - frame.oy) / frame.scale
 	};
 }
 

@@ -182,7 +182,10 @@ export function record(
 	const race = createRace(seed, grid, track, flags, rules);
 	const longest = Math.ceil((LIGHTS + timeCap(rules.laps)) / DT / EVERY) + 2;
 	const pose = POSE + (rules.pits ? PITS : 0);
-	const per = rules.laps > CLASSIC.laps ? COARSE : FINE;
+	// fine, unless the race is long or the track is, and the distance it could
+	// run to (the laps, and one more after the flag) would not fit
+	const far = (rules.laps + 1) * track.length + 100;
+	const per = rules.laps > CLASSIC.laps || far * FINE > 65535 ? COARSE : FINE;
 	const moment = grid.length * pose + race.trucks.length * TRUCK;
 	const view = new DataView(new ArrayBuffer(longest * moment));
 	const heading = (angle: number) => {

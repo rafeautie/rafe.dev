@@ -485,8 +485,8 @@ export function createRace(
 		// the bend a little ahead, as far as the steering takes to wind on
 		const lead = sample + Math.round((1 + Math.abs(car.speed) * 0.08) / spacing);
 		const bend = curvature(...held(lead - SPAN), ...held(lead), ...held(lead + SPAN));
-		// how far the car is to one side of the line (+ the side the track's
-		// normal points to), and how far it is heading off it
+		// how far the car is to the right of the line, as it is driven, and how
+		// far it is heading off it
 		const [bx, by] = held(sample - 1);
 		const [fx, fy] = held(sample + 1);
 		const way = Math.atan2(fy - by, fx - bx);
@@ -499,7 +499,9 @@ export function createRace(
 				: car.angle + Math.atan(Math.tan(car.steer) / 2) + (car.speed < 0 ? Math.PI : 0);
 		const off = Math.atan2(Math.sin(going - way), Math.cos(going - way));
 		const [hx, hy] = held(sample);
-		const wide = (car.x - hx) * track.nx[sample] + (car.y - hy) * track.ny[sample];
+		// (the track's normal points to the driver's right on a track driven
+		// anticlockwise on screen, and to the left on one driven clockwise)
+		const wide = ((car.x - hx) * track.nx[sample] + (car.y - hy) * track.ny[sample]) * track.hand;
 		const want = bend - clamp(wide, -3, 3) / HOLD ** 2 - (1.8 * off) / HOLD;
 		return Math.atan(2 * AXLE * want);
 	}
@@ -967,6 +969,7 @@ export function createRace(
 			// through rather than be squeezed onto the verge. (Under caution,
 			// where two may be all but stopped dead level, only one of them
 			// does, or neither would ever go: the one further down the grid.)
+			let waiting = false;
 			for (const other of cars) {
 				if (other === car || other.retired) continue;
 				const ahead = along(car.sample, other.sample);
@@ -978,8 +981,14 @@ export function createRace(
 						? Math.max(offset, room - track.line[car.sample])
 						: Math.min(offset, room - track.line[car.sample]);
 				const yields = ahead > 0 || (ahead === 0 && (!caution || cars.indexOf(other) < index));
-				if (Math.abs(room) > MAX_OFFSET + 0.3 && yields)
+				if (Math.abs(room) > MAX_OFFSET + 0.3 && yields) {
 					limit = Math.min(limit, Math.max(0, other.speed) - 1);
+					// (under green, a car stopped there is not coming through: one
+					// stopped waiting for it is as stuck as one stopped against a
+					// wall, or two tangled against the wall would wait on each other
+					// for ever)
+					if (!caution && Math.abs(other.speed) < 1) waiting = true;
+				}
 			}
 			car.offset += clamp(offset - car.offset, -4 * DT, 4 * DT);
 
@@ -1034,7 +1043,9 @@ export function createRace(
 			// accelerate or brake with. Into a corner too fast, a driver still
 			// brakes a little even with nothing left, giving up some line to
 			// scrub off speed rather than run on into the wall.
-			const cornering = Math.min(1, (car.speed ** 2 * track.bend[car.sample]) / (grip * G));
+			// (a banked bend holds the car up with more than the tyres' grip)
+			const banked = grip * track.bank[car.sample];
+			const cornering = Math.min(1, (car.speed ** 2 * track.bend[car.sample]) / (banked * G));
 			const spare = Math.sqrt(1 - cornering ** 2) * car.nerve;
 			let throttle = 0;
 			let brake = 0;
@@ -1067,7 +1078,7 @@ export function createRace(
 					// (a wreck, that is, not a truck)
 					'body' in blocker;
 				const stalled = Math.abs(car.speed) < 1 || shoving;
-				car.stuck = stalled && want > 1 ? car.stuck + DT : 0;
+				car.stuck = stalled && (want > 1 || waiting) ? car.stuck + DT : 0;
 				if (car.stuck > 1) {
 					car.stuck = 0;
 					car.reverseUntil = race.time + 1.4;
@@ -1081,7 +1092,7 @@ export function createRace(
 
 			// the engine pushes the rear axle, as hard as its power allows at
 			// this speed and no harder than the rear tyres can take
-			const most = (grip * G * MASS) / 2;
+			const most = (banked * G * MASS) / 2;
 			// with nothing in the tank there is no engine to speak of
 			const engine =
 				car.fuel > 0 ? Math.min(11000, car.power / Math.max(Math.abs(car.speed), 8)) : 0;
@@ -1162,15 +1173,19 @@ export function createRace(
  * (m/s²) allows round each bend, slowing early enough to make the next one.
  */
 function paceFor(track: Track, limit: number) {
-	const { n, step, bend } = track;
+	const { n, step, bend, bank } = track;
 	const pace = new Float32Array(n);
-	for (let i = 0; i < n; i++) pace[i] = Math.min(60, Math.sqrt(limit / Math.max(bend[i], 1e-4)));
+	// a banked bend can be taken faster, for the grip its banking adds
+	for (let i = 0; i < n; i++) {
+		pace[i] = Math.min(60, Math.sqrt((limit * bank[i]) / Math.max(bend[i], 1e-4)));
+	}
 	// backwards round the lap, twice so the limit carries across the line
 	for (let k = 2 * n - 1; k >= 0; k--) {
 		const i = k % n;
 		const next = pace[(i + 1) % n];
 		// braking has only the grip that cornering is not using
-		const braking = 0.9 * Math.sqrt(Math.max(0, limit ** 2 - (next ** 2 * bend[i]) ** 2));
+		const most = limit * bank[i];
+		const braking = 0.9 * Math.sqrt(Math.max(0, most ** 2 - (next ** 2 * bend[i]) ** 2));
 		pace[i] = Math.min(pace[i], Math.sqrt(next ** 2 + 2 * braking * step));
 	}
 	return pace;

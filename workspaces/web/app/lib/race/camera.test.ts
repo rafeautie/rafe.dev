@@ -36,7 +36,7 @@ const car = (id: string, over: Partial<Body> = {}): Body => ({
 });
 
 // a desktop frame: the track in the middle with grass all round
-const frame: Frame = { width: 1200, height: 600, ox: 280, oy: 120 };
+const frame: Frame = { width: 1200, height: 600, ox: 280, oy: 120, scale: SCALE };
 const whole = { x: 0, y: 0, w: frame.width, h: frame.height };
 
 describe('choosing cars', () => {
@@ -125,7 +125,7 @@ describe('framing', () => {
 		expect(framing(rest, whole, frame)).toEqual(whole);
 		// on a phone, the strip at the top the track is in
 		const strip = { x: 0, y: 0, w: WIDTH, h: HEIGHT };
-		const phone = { width: WIDTH, height: 1300, ox: 0, oy: 0 };
+		const phone = { width: WIDTH, height: 1300, ox: 0, oy: 0, scale: SCALE };
 		expect(framing(home(strip, phone), strip, phone)).toEqual(strip);
 	});
 

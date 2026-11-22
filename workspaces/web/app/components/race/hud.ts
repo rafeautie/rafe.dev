@@ -2,7 +2,7 @@ import { MAX_BETS, MARKETS, pays, type Market, type Pools } from '~/lib/race/bet
 import { inside, toFrame, zoomOf, type Box, type Follow, type Lens } from '~/lib/race/camera';
 import { ADVANCE, clip, enlarge, hex, measure, wrap, type Painter } from '~/lib/race/pixels';
 import type { Replay } from '~/lib/race/recording';
-import { HEIGHT, WIDTH, type CarView } from '~/lib/race/render';
+import { HEIGHT, SCALE, WIDTH, type CarView } from '~/lib/race/render';
 import type { Bet, RoomState, Standing } from '~/lib/race/room';
 import { CONDITIONS, ROSTER, inCondition } from '~/lib/race/roster';
 import { DEFAULT_SETTINGS, STATS } from '~/lib/race/settings';
@@ -183,7 +183,8 @@ export function layout(
 	{ width, height, stacked }: View,
 	betting = false,
 	count = DEFAULT_SETTINGS.count,
-	watching = false
+	watching = false,
+	scale = SCALE
 ) {
 	const unit = stacked ? UNIT : 1;
 	const [towerH, slipH] = [towerHeight(count), slipHeight(count)];
@@ -287,8 +288,9 @@ export function layout(
 			cancel: box(mx + 150, my + 138, 50, 15)
 		},
 		track,
-		// where the track is in the frame and how big the frame is, for the camera
-		frame: { width, height, ox: track.x, oy: track.y },
+		// where the track is in the frame and how big the frame is, and how big
+		// it is drawn, for the camera
+		frame: { width, height, ox: track.x, oy: track.y, scale },
 		stage,
 		views,
 		chip,

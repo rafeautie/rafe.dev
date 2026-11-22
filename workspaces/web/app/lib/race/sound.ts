@@ -1,5 +1,5 @@
 import type { RecordedEvent, ReplayCar } from './recording';
-import { HALF_ROAD, WORLD_W, lateral, nearest, type Track } from './track';
+import { HALF_ROAD, lateral, nearest, type Track } from './track';
 
 // The sound of the race, made up on the spot from what the replay shows:
 // an engine and a set of tyres for every car, and a crunch for each knock.
@@ -31,7 +31,9 @@ export function createSound(cars: number) {
 	const grains = hiss.getChannelData(0);
 	for (let i = 0; i < grains.length; i++) grains[i] = Math.random() * 2 - 1;
 
-	const side = (x: number) => (x / WORLD_W) * 1.6 - 0.8;
+	// how wide the world of the track last heard is, for panning across it
+	let wide = 160;
+	const side = (x: number) => (x / wide) * 1.6 - 0.8;
 
 	// What tyres are made of. On tarmac, sliding rubber hisses: pink noise,
 	// kept to the middle of its range. Slide faster and it screeches, which
@@ -114,6 +116,7 @@ export function createSound(cars: number) {
 	return {
 		/** Follows the cars as they are now on `track`, `dt` race seconds on from last time; 0 while paused. */
 		update(shown: ReplayCar[], track: Track, dt: number) {
+			wide = track.width;
 			const now = context.currentTime;
 			master.gain.setTargetAtTime(dt > 0 ? 1 : 0, now, 0.05);
 			if (dt <= 0) return;

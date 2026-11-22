@@ -72,26 +72,6 @@ export const STAND = {
 /** How many tow trucks there are. */
 const TRUCKS = 2;
 
-/**
- * Where the pits are on each track: the sample the way in leaves the track
- * at, and how long it is. It leaves in the bend before the straight the
- * start line is on, where a car is on the inside anyway and need give
- * nothing up to stay there; the boxes are on that straight. The way out
- * joins the track in the bend after it, or with `away`, runs on round the
- * infield of that bend in line with the lane and leaves it at the first of
- * those samples, to join the track at the second: on the oval, on the back
- * straight. `thirst` is how much fuel a metre of the track takes next to the
- * next: more where there is less of it flat out, so that a lap raced burns a
- * lap's worth of fuel whichever track it is.
- */
-const LAYOUTS: Record<
-	TrackId,
-	{ from: number; slip: number; thirst: number; away?: [number, number] }
-> = {
-	circuit: { from: 308, slip: 30, thirst: 1.23 },
-	oval: { from: 258, slip: 40, thirst: 1.06, away: [136, 180] }
-};
-
 /** What is done at a stop. */
 export type Stop = 'fuel' | 'tyres' | 'both';
 
@@ -118,7 +98,7 @@ export function pitsFor(track: Track): PitLane {
 function build(track: Track) {
 	const { n } = track;
 	const { place } = serviceFor(track);
-	const { from, slip, thirst, away } = LAYOUTS[track.id];
+	const { from, slip, thirst, away } = track.pits;
 	// Samples here count on past the line without starting again, so the way
 	// through is always forwards: in from the track between in0 and in1, past
 	// the boxes and the trucks' stand to the end of the lane at out0, on in

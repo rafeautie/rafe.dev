@@ -5,14 +5,14 @@ import { getTrack, HALF_CAR, HALF_ROAD, MAX_OFFSET, TRACK_IDS, triangle } from '
 describe.each(TRACK_IDS)('the racing line on the %s', (id) => {
 	const track = getTrack(id);
 	const { n, x, y, nx, ny, step, line } = track;
-	const lap = lapTime(x, y, nx, ny, step);
+	const lap = lapTime(x, y, nx, ny, step, track.bank);
 	const best = lap(Float64Array.from(line));
 	const wrap = (i: number) => ((i % n) + n) % n;
 
 	/**
 	 * The track's corners: each stretch where its middle bends one way more
-	 * tightly than 40 m, as first and last sample and which way, 1 or -1, is
-	 * the inside. Bends the same way with no more than 30 m between them are
+	 * tightly than 40 m, as first and last sample and which way across, 1 or
+	 * -1, is the inside. Bends the same way with no more than 30 m between them are
 	 * one corner, which is how a driver takes them.
 	 */
 	const corners: [number, number, number][] = [];
@@ -20,7 +20,7 @@ describe.each(TRACK_IDS)('the racing line on the %s', (id) => {
 		const bends = (i: number) => {
 			const [a, b, c] = [i - 4, i, i + 4].map(wrap);
 			const [cross, sides] = triangle(x[a], y[a], x[b], y[b], x[c], y[c]);
-			return Math.abs((2 * cross) / sides) > 1 / 40 ? Math.sign(cross) : 0;
+			return Math.abs((2 * cross) / sides) > 1 / 40 ? Math.sign(cross) * track.hand : 0;
 		};
 		let start = 0;
 		while (bends(start)) start++;
@@ -40,7 +40,7 @@ describe.each(TRACK_IDS)('the racing line on the %s', (id) => {
 	}
 
 	it('is the one kept for it, worked out afresh', { timeout: 60_000 }, () => {
-		const fresh = racingLine(x, y, nx, ny, step, MAX_OFFSET);
+		const fresh = racingLine(x, y, nx, ny, step, MAX_OFFSET, track.bank);
 		for (let i = 0; i < n; i++) expect(Math.abs(line[i] - fresh[i])).toBeLessThan(0.006);
 	});
 

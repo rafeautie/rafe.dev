@@ -35,7 +35,8 @@ export const SPAN = 4;
 /**
  * Where the racing line runs across the road at each sample of a closed
  * centre line (`x`, `y`, sampled `step` metres apart, with `nx`, `ny` the
- * normal across it), no further than `limit` to either side.
+ * normal across it), no further than `limit` to either side. `bank` is how
+ * many times a flat road's grip each sample has, for its banking.
  */
 export function racingLine(
 	x: Float32Array,
@@ -43,9 +44,12 @@ export function racingLine(
 	nx: Float32Array,
 	ny: Float32Array,
 	step: number,
-	limit: number
+	limit: number,
+	bank?: Float32Array
 ): Float32Array {
-	return Float32Array.from(quicker(x, y, nx, ny, step, limit, leastBend(x, y, nx, ny, limit)));
+	return Float32Array.from(
+		quicker(x, y, nx, ny, step, limit, leastBend(x, y, nx, ny, limit), bank)
+	);
 }
 
 /**
@@ -94,11 +98,12 @@ function quicker(
 	ny: Float32Array,
 	step: number,
 	limit: number,
-	start: Float64Array
+	start: Float64Array,
+	bank?: Float32Array
 ) {
 	const n = x.length;
 	const line = start.slice();
-	const lap = lapTime(x, y, nx, ny, step);
+	const lap = lapTime(x, y, nx, ny, step, bank);
 	let best = lap(line);
 	const tried = new Float64Array(n);
 	for (const [width, nudge] of [
@@ -138,14 +143,15 @@ function quicker(
  * How long a lap takes along a line, as the middling car would drive it:
  * as fast round each bend as its grip allows, braking for the next one as
  * late as it can and pulling away as hard as it can, with whatever grip the
- * bend is not using.
+ * bend is not using. Banking (`bank`, as in `racingLine`) adds to the grip.
  */
 export function lapTime(
 	x: Float32Array,
 	y: Float32Array,
 	nx: Float32Array,
 	ny: Float32Array,
-	step: number
+	step: number,
+	bank?: Float32Array
 ) {
 	const n = x.length;
 	const px = new Float64Array(n);
@@ -155,8 +161,11 @@ export function lapTime(
 	const top = new Float64Array(n);
 	const v = new Float64Array(n);
 	const { grip, mass, power, push, roll, air } = CAR;
-	/** What is left of the grip, as m/s², with `side` of it taken going round the bend. */
-	const spare = (side: number) => Math.sqrt(Math.max(0, grip * grip - side * side));
+	/** The grip at each sample, m/s², with its banking. */
+	const held = Float64Array.from({ length: n }, (_, i) => grip * (bank?.[i] ?? 1));
+	/** What is left of the grip at sample i, as m/s², with `side` of it taken going round the bend. */
+	const spare = (i: number, side: number) =>
+		Math.sqrt(Math.max(0, held[i] * held[i] - side * side));
 	return (line: Float64Array) => {
 		for (let i = 0; i < n; i++) {
 			px[i] = x[i] + nx[i] * line[i];
@@ -168,7 +177,7 @@ export function lapTime(
 			bend[i] = Math.abs(curvature(px[a], py[a], px[i], py[i], px[b], py[b]));
 			const j = (i + 1) % n;
 			gap[i] = Math.hypot(px[j] - px[i], py[j] - py[i]) || step;
-			top[i] = Math.min(60, Math.sqrt(grip / Math.max(bend[i], 1e-4)));
+			top[i] = Math.min(60, Math.sqrt(held[i] / Math.max(bend[i], 1e-4)));
 		}
 		// pulling away, round the lap twice so it carries across the line,
 		// then braking, backwards round it twice
@@ -179,7 +188,7 @@ export function lapTime(
 			const s = v[i];
 			const drive = Math.min(push, power / Math.max(s, 8)) / mass;
 			const drag = (roll * s + air * s * s) / mass;
-			const most = Math.min(drive, spare(s * s * bend[i]) / 2) - drag;
+			const most = Math.min(drive, spare(i, s * s * bend[i]) / 2) - drag;
 			v[j] = Math.min(v[j], Math.sqrt(Math.max(0, s * s + 2 * most * gap[i])));
 		}
 		for (let k = 2 * n - 1; k >= 0; k--) {
@@ -187,7 +196,7 @@ export function lapTime(
 			const j = (i + 1) % n;
 			const s = v[j];
 			const drag = (roll * s + air * s * s) / mass;
-			const most = 0.9 * spare(s * s * bend[j]) + drag;
+			const most = 0.9 * spare(j, s * s * bend[j]) + drag;
 			v[i] = Math.min(v[i], Math.sqrt(s * s + 2 * most * gap[i]));
 		}
 		let time = 0;

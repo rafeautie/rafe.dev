@@ -1,14 +1,14 @@
 import { racingLine, SPAN } from './line';
 import LINES from './lines.json';
+import { LAYOUTS, type Layout, type Point } from './tracks';
 
-// The tracks: each a closed centre line through its control points,
-// resampled about every metre, and the line the drivers aim for. Distances
-// are metres. Every track fits the same 160 x 90 world so it can be watched
-// from one fixed overhead view, like a slot car layout on a table. Which one
-// a race runs on is the admin's choice (settings.ts).
+// The tracks (tracks.ts): each a closed centre line through its control
+// points, resampled about every metre, and the line the drivers aim for.
+// Distances are metres. Each track sits in a world of its own size, always
+// 16:9, which is drawn whole in the same frame from one fixed overhead view,
+// like a slot car layout on a table: a bigger world is drawn smaller. Which
+// one a race runs on is the admin's choice (settings.ts).
 
-export const WORLD_W = 160;
-export const WORLD_H = 90;
 /** Half the tarmac's width. */
 export const HALF_ROAD = 4.5;
 /** Centre line to wall: the tarmac plus a strip of low-grip verge. */
@@ -25,92 +25,31 @@ export const WALLS = 0x0002;
  * way a car going round a bend sweeps out wider than it is, front and back.
  */
 export const MAX_OFFSET = HALF_ROAD - HALF_CAR - 0.35;
-
-// Each track is its control points, driven in order. The first point is the
-// start line, on the bottom straight; the grid forms up behind it.
-
-/** The winding circuit /race ran on first. */
-const CIRCUIT: [number, number][] = [
-	[80, 77],
-	[130, 75],
-	[148, 60],
-	[146, 38],
-	[132, 22],
-	[108, 16],
-	[90, 26],
-	[84, 42],
-	[68, 49],
-	[54, 40],
-	[52, 24],
-	[36, 13],
-	[16, 22],
-	[12, 44],
-	[14, 60],
-	[24, 71],
-	[44, 76]
-];
-
 /**
- * An oval: a bend round each end, (x, radius) of its centre, joined by two
- * straights, as points about every `spacing` metres. Driven anticlockwise on
- * screen, so every bend is a left; `start` is how far along the bottom
- * straight the line is, as a share of it.
+ * How much more grip a banked bend gives than a flat one, for each unit of
+ * the tangent of its angle: the road leans into the turn, so some of what
+ * holds a car on it is the road pushing up under it, not the tyres' grip.
  */
-function oval(left: [number, number], right: [number, number], start: number, spacing = 8) {
-	const cy = WORLD_H / 2;
-	const [lx, lr] = left;
-	const [rx, rr] = right;
-	// where the straights touch each bend, as the angle round its centre
-	const touch = Math.acos((lr - rr) / (rx - lx));
-	const at = (cx: number, r: number, a: number): [number, number] => [
-		cx + r * Math.cos(a),
-		cy + r * Math.sin(a)
-	];
-	const pieces: ((t: number) => [number, number])[] = [];
-	const lengths: number[] = [];
-	const straight = (a: [number, number], b: [number, number]) => {
-		pieces.push((t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
-		lengths.push(Math.hypot(b[0] - a[0], b[1] - a[1]));
-	};
-	const bend = (cx: number, r: number, from: number, to: number) => {
-		pieces.push((t) => at(cx, r, from + (to - from) * t));
-		lengths.push(Math.abs(to - from) * r);
-	};
-	const bottomL = at(lx, lr, touch);
-	const bottomR = at(rx, rr, touch);
-	const line: [number, number] = [
-		bottomL[0] + (bottomR[0] - bottomL[0]) * start,
-		bottomL[1] + (bottomR[1] - bottomL[1]) * start
-	];
-	straight(line, bottomR);
-	bend(rx, rr, touch, -touch);
-	straight(at(rx, rr, -touch), at(lx, lr, -touch));
-	bend(lx, lr, -touch, touch - 2 * Math.PI);
-	straight(bottomL, line);
-	const points: [number, number][] = [];
-	pieces.forEach((piece, k) => {
-		const count = Math.max(1, Math.round(lengths[k] / spacing));
-		for (let j = 0; j < count; j++) points.push(piece(j / count));
-	});
-	return points;
-}
+const BANKING = 1.2;
 
-// A regular oval filling the world: two matching bends as wide as its
-// height allows, and a straight of about 70 m between them on each side.
-const OVAL = oval([44, 32], [116, 32], 0.5);
-
-/** The tracks there are, by id. */
-const TRACKS = {
-	oval: { name: 'Oval', control: OVAL },
-	circuit: { name: 'Circuit', control: CIRCUIT }
-};
-
-export type TrackId = keyof typeof TRACKS;
+export type TrackId = keyof typeof LAYOUTS;
 export type Track = ReturnType<typeof build>;
 
-export const TRACK_IDS = Object.keys(TRACKS) as TrackId[];
+const TRACKS: Record<TrackId, Layout> = LAYOUTS;
+
+/** Every track, ovals first, then road courses, each in the order tracks.ts lists them. */
+export const TRACK_IDS = (Object.keys(TRACKS) as TrackId[]).sort(
+	(a, b) => Number(TRACKS[a].kind === 'road') - Number(TRACKS[b].kind === 'road')
+);
 
 export const trackName = (id: TrackId) => TRACKS[id].name;
+export const trackKind = (id: TrackId) => TRACKS[id].kind;
+
+/** How big a track's world is, in metres. */
+export const worldOf = (id: TrackId) => ({
+	width: TRACKS[id].world,
+	height: (TRACKS[id].world * 9) / 16
+});
 
 export const isTrackId = (id: unknown): id is TrackId =>
 	typeof id === 'string' && Object.hasOwn(TRACKS, id);
@@ -121,7 +60,7 @@ const built = new Map<TrackId, Track>();
 export function getTrack(id: TrackId): Track {
 	let track = built.get(id);
 	if (!track) {
-		track = build(id, TRACKS[id].control);
+		track = build(id, TRACKS[id]);
 		built.set(id, track);
 	}
 	return track;
@@ -129,13 +68,17 @@ export function getTrack(id: TrackId): Track {
 
 /**
  * A track's centre line, sampled about every metre, with the direction of
- * travel at each sample and the normal across the track.
+ * travel at each sample and the normal across the track, and how much grip
+ * its banking adds at each.
  */
-export const centreOf = (id: TrackId) => centre(TRACKS[id].control);
+export const centreOf = (id: TrackId) => {
+	const line = centre(TRACKS[id].control);
+	return { ...line, bank: banked(line, TRACKS[id].banking) };
+};
 
-function centre(control: [number, number][]) {
+function centre(control: Point[]) {
 	// a Catmull-Rom spline through the control points, as a fine polyline
-	const fine: [number, number][] = [];
+	const fine: Point[] = [];
 	const count = control.length;
 	for (let c = 0; c < count; c++) {
 		const [p0, p1, p2, p3] = [-1, 0, 1, 2].map((d) => control[(c + d + count) % count]);
@@ -172,6 +115,21 @@ function centre(control: [number, number][]) {
 		x[i] = ax + (bx - ax) * t;
 		y[i] = ay + (by - ay) * t;
 	}
+	/** The sample each control point is at. */
+	const knots = control.map((_, c) => Math.round(along[c * 64] / step) % n);
+
+	// Which way round it goes. The infield, where the pits are, is on the side
+	// it turns towards on the whole, and everything off the track is placed
+	// from the centre line with negative `across` there (service.ts). So the
+	// normal across the track points away from the infield: to the right of
+	// the way it is driven on one driven anticlockwise on screen, as the first
+	// tracks were, and to the left on one driven clockwise.
+	let area = 0;
+	for (let i = 0; i < n; i++) {
+		const j = (i + 1) % n;
+		area += x[i] * y[j] - x[j] * y[i];
+	}
+	const hand = area < 0 ? 1 : -1;
 
 	// the direction of travel at each sample, and the normal across the track
 	const tx = new Float32Array(n);
@@ -183,13 +141,37 @@ function centre(control: [number, number][]) {
 		tx[i] = (x[b] - x[a]) / d;
 		ty[i] = (y[b] - y[a]) / d;
 	}
-	const nx = ty.map((v) => -v);
-	const ny = tx.slice();
-	return { n, step, length, x, y, tx, ty, nx, ny };
+	const nx = ty.map((v) => -v * hand);
+	const ny = tx.map((v) => v * hand);
+	return { n, step, length, x, y, tx, ty, nx, ny, hand, knots };
 }
 
-function build(id: TrackId, control: [number, number][]) {
-	const { n, step, length, x, y, tx, ty, nx, ny } = centre(control);
+/** How many times the grip of a flat road each sample has, for its banking. */
+function banked(
+	{ n, knots }: { n: number; knots: number[] },
+	banking: Layout['banking'] = []
+): Float32Array {
+	const degrees = new Float32Array(n);
+	for (const [from, to, angle] of banking) {
+		const [a, b] = [knots[from], knots[to]];
+		for (let i = a; i !== b; i = (i + 1) % n) degrees[i] = angle;
+	}
+	// eased in and out of over a few metres, as a banked bend is
+	const reach = 8;
+	const bank = new Float32Array(n);
+	for (let i = 0; i < n; i++) {
+		let sum = 0;
+		for (let d = -reach; d <= reach; d++) sum += degrees[(i + d + n) % n];
+		bank[i] = 1 + BANKING * Math.tan(((sum / (2 * reach + 1)) * Math.PI) / 180);
+	}
+	return bank;
+}
+
+function build(id: TrackId, layout: Layout) {
+	const centred = centre(layout.control);
+	const { n, step, length, x, y, tx, ty, nx, ny, hand, knots } = centred;
+	const bank = banked(centred, layout.banking);
+	const { width, height } = worldOf(id);
 
 	// The racing line, as an offset along the normal (line.ts). It takes a
 	// while to work out, so it is worked out ahead of time and kept, in
@@ -198,7 +180,7 @@ function build(id: TrackId, control: [number, number][]) {
 	const line =
 		kept?.length === n
 			? Float32Array.from(kept, (cm) => cm / 100)
-			: racingLine(x, y, nx, ny, step, MAX_OFFSET);
+			: racingLine(x, y, nx, ny, step, MAX_OFFSET, bank);
 	const at = (i: number): [number, number] => {
 		const j = ((i % n) + n) % n;
 		return [x[j] + nx[j] * line[j], y[j] + ny[j] * line[j]];
@@ -208,14 +190,37 @@ function build(id: TrackId, control: [number, number][]) {
 	const bend = new Float32Array(n);
 	for (let i = 0; i < n; i++) bend[i] = Math.abs(curve(at(i - SPAN), at(i), at(i + SPAN)));
 
-	// which way the track bends at each sample: 1 to the left, -1 to the right
+	// which way the track bends at each sample: 1 towards the normal, -1 away from it
 	const turn = new Int8Array(n);
 	for (let i = 0; i < n; i++) {
 		const j = (i + 1) % n;
-		turn[i] = Math.sign(tx[i] * ty[j] - ty[i] * tx[j]);
+		turn[i] = Math.sign(tx[i] * ty[j] - ty[i] * tx[j]) * hand;
 	}
 
-	return { id, n, step, length, x, y, tx, ty, nx, ny, line, bend, turn };
+	return {
+		id,
+		n,
+		step,
+		length,
+		x,
+		y,
+		tx,
+		ty,
+		nx,
+		ny,
+		line,
+		bend,
+		turn,
+		/** Which way round it is driven: 1 anticlockwise on screen, -1 clockwise. */
+		hand,
+		bank,
+		knots,
+		/** Its world, in metres. */
+		width,
+		height,
+		/** Where its pits are (pits.ts). */
+		pits: layout.pits
+	};
 }
 
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));

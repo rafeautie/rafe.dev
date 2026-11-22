@@ -195,14 +195,15 @@ function build(track: Track) {
 				ry[i] = (ay[a] + 2 * ay[i] + ay[b]) / 4;
 			}
 		}
-		// which way is further into the infield from each point of it
+		// which way is further into the infield from each point of it: square to
+		// it, on the side the track turns towards on the whole
 		const ix = new Float64Array(n);
 		const iy = new Float64Array(n);
 		for (let i = 0; i < n; i++) {
 			const [a, b] = [(i + n - 1) % n, (i + 1) % n];
 			const d = Math.hypot(rx[b] - rx[a], ry[b] - ry[a]);
-			ix[i] = (ry[b] - ry[a]) / d;
-			iy[i] = -(rx[b] - rx[a]) / d;
+			ix[i] = ((ry[b] - ry[a]) / d) * track.hand;
+			iy[i] = (-(rx[b] - rx[a]) / d) * track.hand;
 		}
 		return { x: rx, y: ry, ix, iy };
 	})();

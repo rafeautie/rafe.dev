@@ -34,7 +34,8 @@ import {
 } from '~/lib/race/camera';
 import type { Painter } from '~/lib/race/pixels';
 import type { Replay } from '~/lib/race/recording';
-import { SCALE, type CarView } from '~/lib/race/render';
+import { scaleOf, type CarView } from '~/lib/race/render';
+import { worldOf } from '~/lib/race/track';
 import type { Bet, RoomState, Standing, ToRoom } from '~/lib/race/room';
 import { describeRow } from '~/lib/race/status';
 import { CONDITIONS } from '~/lib/race/roster';
@@ -286,9 +287,11 @@ export function Game({
 	const watching = racing && follow.mode !== 'track';
 	// a row in the tower and on the slip for each car in the race, or that the next will have
 	const count = room?.grid.length || room?.settings.count;
+	// how many pixels to the metre the race's track is drawn at
+	const scale = scaleOf(worldOf(room?.settings.track ?? DEFAULT_SETTINGS.track));
 	const at = useMemo(
-		() => layout(view, betting, count, watching),
-		[view, betting, count, watching]
+		() => layout(view, betting, count, watching, scale),
+		[view, betting, count, watching, scale]
 	);
 	const backed = useMemo(() => new Set(bets.flatMap((bet) => bet.outcome.split('>'))), [bets]);
 
@@ -396,7 +399,12 @@ export function Game({
 				followed: new Set(bodies.map((car) => car.entry.id)),
 				focus: focusOf(follow, bodies)?.entry.id ?? null
 			};
-			const where = camera.update(aim(bodies, at.stage), home(at.stage, at.frame), dt, still);
+			const where = camera.update(
+				aim(bodies, at.stage, at.frame.scale),
+				home(at.stage, at.frame),
+				dt,
+				still
+			);
 			lens.current = { from: framing(where, at.stage, at.frame), to: at.stage };
 			return lens.current;
 		});
@@ -465,7 +473,7 @@ export function Game({
 		if (!inside(at.stage, px, py)) return;
 		const spot = toWorld(lens.current, at.frame, px, py);
 		// a finger needs more room than a pointer: about this many CSS pixels either way
-		const reach = Math.max(3, 16 / (view.scale * SCALE * zoomOf(lens.current)));
+		const reach = Math.max(3, 16 / (view.scale * at.frame.scale * zoomOf(lens.current)));
 		const car = pick(replay.cars, spot.x, spot.y, reach);
 		if (car) follows(car.entry.id, event.shiftKey || event.ctrlKey || event.metaKey);
 	}

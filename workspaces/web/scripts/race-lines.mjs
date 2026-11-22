@@ -21,7 +21,9 @@ const { centreOf, MAX_OFFSET, TRACK_IDS } = await load('../app/lib/race/track.ts
 
 const lines = {};
 for (const id of TRACK_IDS) {
-	const { x, y, nx, ny, step } = centreOf(id);
-	lines[id] = Array.from(racingLine(x, y, nx, ny, step, MAX_OFFSET), (m) => Math.round(m * 100));
+	const { x, y, nx, ny, step, bank } = centreOf(id);
+	lines[id] = Array.from(racingLine(x, y, nx, ny, step, MAX_OFFSET, bank), (m) =>
+		Math.round(m * 100)
+	);
 }
 writeFileSync(OUT, JSON.stringify(lines) + '\n');
