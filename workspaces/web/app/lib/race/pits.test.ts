@@ -19,7 +19,15 @@ import {
 	type RaceEvent,
 	type Rules
 } from './sim';
-import { getTrack, HALF_CORRIDOR, lateral, nearest, TRACK_IDS, type TrackId } from './track';
+import {
+	getTrack,
+	HALF_CORRIDOR,
+	HALF_ROAD,
+	lateral,
+	nearest,
+	TRACK_IDS,
+	type TrackId
+} from './track';
 
 /** A stop as the test saw it: who, when it pulled up and when it left, what was done, and what it did to the car. */
 type Stopped = {
@@ -137,6 +145,28 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 	const track = getTrack(id);
 	const { n } = track;
 	const lane = pitsFor(track);
+
+	it('is paved, as the track is, while the verge and the grass are not', () => {
+		/** How many points the given distance either side of the centre line are off the road, as a share of them. */
+		const rough = (across: number) => {
+			let off = 0;
+			for (let i = 0; i < n; i++) {
+				for (const side of [-1, 1]) {
+					const x = track.x[i] - track.ty[i] * across * side;
+					const y = track.y[i] + track.tx[i] * across * side;
+					if (offRoadAt(track, x, y)) off++;
+				}
+			}
+			return off / (2 * n);
+		};
+		expect(rough(0)).toBe(0);
+		expect(rough(HALF_ROAD - 0.6)).toBe(0);
+		// (less where the ways to and from the pits are paved through it)
+		expect(rough(HALF_ROAD + 0.4)).toBeGreaterThan(0.9);
+		// (and the grass inside, along the pit lane)
+		expect(rough(HALF_CORRIDOR + 3)).toBeGreaterThan(0.6);
+		for (const box of lane.boxes) expect(offRoadAt(track, box.x, box.y)).toBe(false);
+	});
 
 	it('has a box for every car, each clear of the next', () => {
 		expect(lane.boxes).toHaveLength(ROSTER.length);
