@@ -823,7 +823,7 @@ export function createHud() {
 		// how fast, and the pedals, which are told from how the speed is changing
 		const speed = String(Math.round(glide('tele speed', r.speed, dt)));
 		const end = p.text(x + 5, y + 19, speed, PAPER, 2);
-		p.text(end + 2, y + 26, 'km/h', DIM);
+		p.text(end + 2, y + 26, 'mph', DIM);
 		const pedals: [string, number, number][] = [
 			['Thr', glide('tele throttle', r.throttle, dt), GOOD],
 			['Brk', glide('tele brake', r.brake, dt), BAD]

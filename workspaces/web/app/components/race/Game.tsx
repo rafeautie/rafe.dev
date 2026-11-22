@@ -780,7 +780,7 @@ export function Game({
 					<section aria-label={`Following ${entry(readout.id).name}`}>
 						<p>
 							{readout.place} of {readout.of}, lap {readout.lap} of {readout.laps},{' '}
-							{Math.round(readout.speed)} km/h.
+							{Math.round(readout.speed)} mph.
 							{readout.ahead &&
 								readout.ahead.gap !== null &&
 								` ${readout.ahead.gap.toFixed(1)} s behind ${entry(readout.ahead.id).name}.`}

@@ -111,5 +111,7 @@ describe('reading a car', () => {
 		expect(reading.throttle).toBe(0);
 		expect(reading.brake).toBe(0);
 		expect(reading.retired).toBe(true);
+		// 20 m/s is about 45 mph
+		expect(reading.speed).toBeCloseTo(44.74, 1);
 	});
 });

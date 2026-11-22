@@ -16,6 +16,8 @@ import { clamp } from './track';
 
 /** How far back, in seconds, the speed is looked at to tell what the pedals are doing. */
 const PEDAL_WINDOW = 0.25;
+/** Metres a second, as miles an hour. */
+const MPH = 3600 / 1609.344;
 /** About what full throttle and full braking do to a car, in m/s². */
 const FULL_THROTTLE = 6;
 const FULL_BRAKE = 12;
@@ -43,7 +45,7 @@ export type Readout = {
 	/** Place in the race, of how many. */
 	place: number;
 	of: number;
-	/** km/h. */
+	/** Miles an hour. */
 	speed: number;
 	/** 0 to 1 each, estimated. */
 	throttle: number;
@@ -129,7 +131,7 @@ export function createTelemetry() {
 				id: car.entry.id,
 				place: place + 1,
 				of: source.cars.length,
-				speed: Math.abs(car.speed) * 3.6,
+				speed: Math.abs(car.speed) * MPH,
 				throttle: car.retired ? 0 : throttle,
 				brake: car.retired ? 0 : brake,
 				ahead: above && { id: above.entry.id, gap: gaps.ahead },
