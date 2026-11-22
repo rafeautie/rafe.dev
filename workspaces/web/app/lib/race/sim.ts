@@ -412,26 +412,32 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 	const along = (from: number, to: number) => (((to - from + n * 1.5) % n) - n / 2) * spacing;
 
 	/**
-	 * How fast to go in a queue behind something going at `speed`, `gap`
-	 * metres ahead, to close up to `keep` metres behind it. Under caution,
-	 * where what is ahead may have all but stopped, no faster than can be
-	 * braked down to its speed in time, braking at half what the tyres can
-	 * take. The queue creeps up at walking pace rather than stall, but not
-	 * right up to something that has stopped, which a car would only nose
-	 * into (a wreck on the winch cannot be pushed out of the way), nor towards
-	 * something coming back down it: for those it stops. A car level with
-	 * this one is no such thing: stopping for it while it gives way to this
-	 * one would hold the two of them there for good. A truck backing up is,
-	 * even level with it: it gives way to nobody, and swings about.
+	 * How fast to go behind something `gap` metres ahead, to close up to
+	 * `keep` metres behind it: and no faster than can be braked down to its
+	 * speed in time, braking at `brake` (m/s², doubled). It creeps up at
+	 * walking pace rather than stall, but not right up to something that has
+	 * stopped, which a car would only nose into (a wreck on the winch cannot
+	 * be pushed out of the way), nor towards something coming back down the
+	 * road: for those it stops. A car level with this one is no such thing:
+	 * stopping for it while it gives way to this one would hold the two of
+	 * them there for good. A truck backing up is, even level with it: it
+	 * gives way to nobody, and swings about.
 	 */
-	const queueing = ({ speed, backing }: Obstacle, gap: number, keep = QUEUE) => {
+	function approach({ speed, backing }: Obstacle, gap: number, keep: number, brake: number) {
 		const slower = Math.max(0, speed);
-		const stopping = caution
-			? Math.sqrt(slower ** 2 + QUEUE_BRAKE * Math.max(0, gap - keep))
-			: Infinity;
+		const stopping = gap > keep ? Math.sqrt(slower ** 2 + brake * (gap - keep)) : slower;
 		const crawl = backing || speed < -1 || (gap > 2 && gap < keep - 2) ? 0 : 3;
 		return Math.max(crawl, Math.min(slower + (gap - keep) * 1.5, stopping));
-	};
+	}
+
+	/**
+	 * How fast to go in a queue behind something, `gap` metres ahead, to close
+	 * up to `keep` metres behind it. Under caution, where what is ahead may
+	 * have all but stopped, braking for it at half what the tyres can take;
+	 * racing, the queue is only ever a line of cars at speed.
+	 */
+	const queueing = (ahead: Obstacle, gap: number, keep = QUEUE) =>
+		approach(ahead, gap, keep, caution ? QUEUE_BRAKE : Infinity);
 
 	/**
 	 * Going green, how far behind the leader each place in the lineup is: the
@@ -709,12 +715,11 @@ export function createRace(seed: number, grid: Entry[], track: Track, flags: num
 				// And hold back while tucked in behind it, slowing in time to be
 				// no faster than it by the following distance, which matters most
 				// when it is a wreck. A car most of the way out to one side goes
-				// for the gap: it may rub, but it does not sit and wait.
-				if (gap > 0 && Math.abs(apart) < (blocker.retired ? room : 1.5)) {
-					const slower = Math.max(0, blocker.speed);
-					const stopping = Math.sqrt(slower ** 2 + grip * G * Math.max(0, gap - car.follow));
-					limit = Math.max(3, Math.min(slower + (gap - car.follow) * 1.5, stopping));
-				}
+				// for the gap: it may rub, but it does not sit and wait. Nor does
+				// one tucked in behind a wreck stop as a queue would: creeping on
+				// is how it gets round, as a stopped car cannot steer.
+				if (gap > 0 && Math.abs(apart) < (blocker.retired ? room : 1.5))
+					limit = Math.max(3, approach(blocker, gap, car.follow, grip * G));
 			}
 			// and in the queue behind whatever is being followed, if anything is
 			if (place < 0 && queued && queue < reach) limit = Math.min(limit, queueing(queued, queue));
