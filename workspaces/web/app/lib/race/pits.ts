@@ -1,15 +1,7 @@
 import { ROSTER } from './roster';
 import { HALF_LANE, RING, TRUCK, curve, serviceFor, type Route } from './service';
 import type { Car, Flag, Rules } from './sim';
-import {
-	HALF_CORRIDOR,
-	MAX_OFFSET,
-	clamp,
-	lateral,
-	nearest,
-	type Track,
-	type TrackId
-} from './track';
+import { HALF_CORRIDOR, MAX_OFFSET, clamp, type Track, type TrackId } from './track';
 
 // The pits. Beside the start line a lane runs along the infield side of the
 // wall, with a way in from the track at one end and a way out at the other.
@@ -50,15 +42,18 @@ const STEP = 0.5;
  * at racing speed and does its braking on the way in, and is back up to
  * speed on the way out before it joins.
  */
-export const RAMP = 30;
+export const RAMP = 24;
 /**
- * The tow truck's stand, in line with the boxes and, like them, a good deal
- * bigger than what stands on it: how far past the middle of the last box the
- * middle of the truck stands, how long and wide the stand is painted, and
- * how far past it the lane ends, which is what the truck needs to steer out
- * into it.
+ * The tow trucks' stands, in line with the boxes, one behind the other, and
+ * like the boxes a good deal bigger than what stands on them: how far past
+ * the middle of the last box the middle of the first is, how far it is from
+ * one to the next, how long and wide each is painted, and how far past the
+ * last of them the lane ends, which is what a truck needs to steer out into
+ * it.
  */
-export const STAND = { after: 8, long: 7.6, wide: 4, run: 12 };
+export const STAND = { after: 8, pitch: 8.4, long: 7.6, wide: 4, run: 12 };
+/** How many tow trucks there are. */
+const TRUCKS = 2;
 
 /**
  * Where the pits are on each track: the sample the way in leaves the track
@@ -184,10 +179,15 @@ function build(track: Track) {
 		boxes.push(standing(on(boxes[boxes.length - 1].sample, BOX.pitch), -BOX_ACROSS));
 	}
 	const last = boxes[BOXES - 1].sample;
-	const stand = on(last, STAND.after);
-	/** Where the tow truck stands when it is not out: one of them, but recorded and drawn as however many there are. */
-	const stands = [standing(stand, -BOX_ACROSS)];
-	const out0 = Math.ceil(stand + TRUCK.axle + STAND.run);
+	// The trucks' stands, the front one first: it is the one nearest the way
+	// out. Each is where a truck's front axle is level with a whole sample,
+	// since a truck's way to it is worked out in whole samples.
+	const whole = (sample: number) => Math.round(sample + TRUCK.axle) - TRUCK.axle;
+	const spots = [whole(on(last, STAND.after))];
+	while (spots.length < TRUCKS) spots.unshift(whole(on(spots[0], STAND.pitch)));
+	/** Where the tow trucks stand when they are not out, the front one first. */
+	const stands = spots.map((sample) => standing(sample, -BOX_ACROSS));
+	const out0 = Math.ceil(spots[0] + TRUCK.axle + STAND.run);
 	const out1 = out0 + RAMP;
 
 	const paths = new Map<number, { way: Route; line: number; stop: number; end: number }>();
@@ -362,8 +362,16 @@ type Meeting = {
 	) => void;
 	/** Puts a car out of the race where it is. */
 	retire: (car: Car) => void;
-	/** The tow trucks, which use the lane too, and whether each has a wreck on its hook. */
-	trucks: { x: number; y: number; busy: boolean; speed?: number; towing: number }[];
+	/** The tow trucks, which use the lane too: where each is, in the world and by the track's count, and whether it has a wreck on its hook. */
+	trucks: {
+		x: number;
+		y: number;
+		sample: number;
+		across: number;
+		busy: boolean;
+		speed: number;
+		towing: number;
+	}[];
 };
 
 /** How a way through the pits is followed: its points, how far along each is, and where on it things are. */
@@ -572,6 +580,18 @@ export function createPits(
 		race.note(car, { kind: 'pit', service: crew.service });
 	}
 
+	/**
+	 * How far ahead of a car something off the track is, in metres as the
+	 * crow flies, which is what counts where the lane bends: negative if it
+	 * is behind. Of two level by the track's count, `first` says whether the
+	 * other is the one ahead.
+	 */
+	const aheadOf = (car: Car, other: { x: number; y: number; sample: number }, first = false) => {
+		const way = along(car.sample, other.sample);
+		const far = Math.hypot(other.x - car.x, other.y - car.y);
+		return way > 0 || (way === 0 && first) ? far : -far;
+	};
+
 	/** Whether a car is on the move in the pits: on its way to its box or away from it, not standing in it. */
 	const moving = (car: Car) => car.lane === LANE.in || car.lane === LANE.out;
 
@@ -581,11 +601,11 @@ export function createPits(
 			if (other === car || !moving(other)) continue;
 			// one that is turning into a box before this one never gets here
 			if (other.lane === LANE.in && crews[cars.indexOf(other)].box < crew.box) continue;
-			const gap = along(car.sample, other.sample);
+			const gap = aheadOf(car, other, cars.indexOf(other) < cars.indexOf(car));
 			if (gap > -16 && gap < 7) return false;
 		}
 		return lorries.every((lorry) => {
-			const gap = along(car.sample, lorry.sample);
+			const gap = aheadOf(car, lorry);
 			// one stopped behind is waiting for this very car to go
 			return gap <= -22 || gap >= lorry.keep || (gap < 0 && lorry.speed < 0.5);
 		});
@@ -633,9 +653,8 @@ export function createPits(
 			if (other.retired && here(other.sample, other.across)) return true;
 		}
 		for (const truck of race.trucks) {
-			if (!truck.busy || Math.abs(truck.speed ?? 0) >= 6) continue;
-			const sample = nearest(track, truck.x, truck.y, lane.merge);
-			if (here(sample, lateral(track, truck.x, truck.y, sample))) return true;
+			if (!truck.busy || Math.abs(truck.speed) >= 6) continue;
+			if (here(truck.sample, truck.across)) return true;
 		}
 		return false;
 	}
@@ -696,7 +715,7 @@ export function createPits(
 		if (car.lane !== LANE.box) {
 			for (const other of cars) {
 				if (other === car || !moving(other)) continue;
-				const space = along(car.sample, other.sample);
+				const space = aheadOf(car, other, cars.indexOf(other) < cars.indexOf(car));
 				if (space > LEVEL && space < 25) {
 					target = Math.min(
 						target,
@@ -707,7 +726,7 @@ export function createPits(
 				}
 			}
 			for (const lorry of lorries) {
-				const space = along(car.sample, lorry.sample);
+				const space = aheadOf(car, lorry);
 				if (space > 0 && space < 28) {
 					target = Math.min(
 						target,
@@ -746,18 +765,20 @@ export function createPits(
 	}
 
 	/** A truck that is in the lane, or crossing it, as the cars there see it. */
-	type Lorry = { sample: number; speed: number; keep: number };
+	type Lorry = { x: number; y: number; sample: number; speed: number; keep: number };
 	function inTheLane(): Lorry[] {
 		const found: Lorry[] = [];
 		for (const truck of race.trucks) {
 			if (!truck.busy) continue;
-			const sample = nearest(track, truck.x, truck.y);
-			const across = lateral(track, truck.x, truck.y, sample);
+			// where it is by its own count: off the track it may be as near another stretch of it as its own
+			const { sample, across } = truck;
 			// in the lane, on its way through the wall, or in among the boxes
 			if (across < -HALF_CORRIDOR + 0.5 && across > -BOX_ACROSS - 1.5) {
 				found.push({
+					x: truck.x,
+					y: truck.y,
 					sample,
-					speed: Math.max(0, truck.speed ?? 0),
+					speed: Math.max(0, truck.speed),
 					keep: KEEP_TRUCK + (truck.towing >= 0 ? TRAILER : 0)
 				});
 			}

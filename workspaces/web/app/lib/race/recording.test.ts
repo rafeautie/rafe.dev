@@ -125,7 +125,7 @@ describe('a recording', () => {
 		const cars = SIX.length * 10;
 		expect(quiet.trucks).toBe(0);
 		expect(quiet.poses.length).toBe(quiet.frames * cars);
-		expect(busy.trucks).toBe(1);
+		expect(busy.trucks).toBe(2);
 		expect(busy.poses.length).toBeGreaterThan(busy.frames * cars);
 		const replay = createReplay(quiet, ROSTER);
 		replay.seek(30);

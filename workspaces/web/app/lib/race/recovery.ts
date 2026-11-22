@@ -4,10 +4,13 @@ import { NEARSIDE, RING, TRUCK, curve, serviceFor, type Pose, type Route } from 
 import type { Car } from './sim';
 import { HALF_CORRIDOR, clamp, lateral, nearest, triangle, type Track } from './track';
 
-// The tow truck and the job it does. It stands at the end of the pit lane,
-// past the last box (pits.ts), and the pit lane is its way onto the track and
-// off it. Called for a wreck, it pulls out to the end of the lane and holds
-// there until the cars have gone by. Then it goes out onto the track, drives
+// The tow trucks and the job they do. They stand at the end of the pit lane,
+// past the last box (pits.ts), one behind the other, and the pit lane is
+// their way onto the track and off it. The one in front goes first, and the
+// one behind moves up; one coming back takes the stand in front if it is
+// empty and the one behind if it is not, so neither ever has to get past the
+// other. Called for a wreck, a truck pulls out to the end of the lane and
+// holds there until the cars have gone by. Then it goes out onto the track, drives
 // round to the wreck and past it, and backs up to it the way a car is backed
 // into a space, until its hook is a little short of the end of the wreck that
 // points down the track. The crew run the cable out, the winch draws that end
@@ -64,6 +67,8 @@ const SWING = 12;
 const STRAIGHT = 2;
 /** In the pits, the truck stops for a car this near the road just ahead of it (m). */
 const SHY = 2.6;
+/** And for the other truck this near it (m), which is nearer than one standing beside the lane is to one going down it. */
+const SHY_TRUCK = 3.2;
 /** How hard the truck brakes, and pulls away, light and loaded, m/s². */
 const BRAKE = 5;
 const PULL = 8;
@@ -72,6 +77,8 @@ const HAUL = 6;
 const LANE_PACE = 11;
 /** How fast it backs up, m/s. */
 const BACKING = 4.5;
+/** On the track, a truck stops this far short of another that is going for a wreck or at work on one (m). */
+const STAND_OFF = 34;
 /** On the track, it waits this long behind a car that is all but stopped in its way before it goes on regardless. */
 const FORBEARANCE = 6;
 /** After this long held at the end of the lane, the truck goes whoever is coming. */
@@ -82,9 +89,19 @@ const turn = (angle: number) => Math.atan2(Math.sin(angle), Math.cos(angle));
 
 export type Truck = ReturnType<typeof createTruck>['truck'];
 
-/** The crew: sends the truck for each wreck, and steps it. */
+/**
+ * What the trucks share: which of them has each stand, the front one first,
+ * whether it is standing on it or on its way to it (null while nobody has);
+ * and where they all are, so they keep out of each other's way.
+ */
+type Yard = { stands: (number | null)[]; trucks: Truck[] };
+
+/** The crews: send a truck for each wreck, and step them all. */
 export function createRecovery(world: World, cars: Car[], track: Track) {
-	const crews = pitsFor(track).stands.map((_, index) => createTruck(world, cars, track, index));
+	const { stands } = pitsFor(track);
+	const yard: Yard = { stands: stands.map((_, index) => index), trucks: [] };
+	const crews = stands.map((_, index) => createTruck(world, cars, track, index, yard));
+	yard.trucks = crews.map((crew) => crew.truck);
 	return {
 		trucks: crews.map((crew) => crew.truck),
 		/** Whether the track is clear: no wreck waiting, and none on a hook still on it. */
@@ -99,9 +116,11 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 		get onTrack() {
 			return crews.filter((crew) => crew.onTrack).map((crew) => crew.truck);
 		},
-		/** Sends a truck for a wreck: the one with the fewest to fetch first. */
+		/** Sends a truck for a wreck: the one with the fewest to fetch first, and of two with none, the one on the front stand. */
 		call(car: Car, time: number) {
-			const nearest = crews.reduce((best, crew) => (crew.jobs < best.jobs ? crew : best));
+			const nearest = crews.reduce((best, crew) =>
+				(crew.jobs - best.jobs || crew.stand - best.stand) < 0 ? crew : best
+			);
 			nearest.call(car, time);
 		},
 		/** One step of every job. Call before the world is stepped. */
@@ -115,14 +134,23 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 	};
 }
 
-function createTruck(world: World, cars: Car[], track: Track, index: number) {
+function createTruck(world: World, cars: Car[], track: Track, index: number, yard: Yard) {
 	const { n } = track;
 	const { ahead, drive, trace } = serviceFor(track);
 	const lane = pitsFor(track);
-	const stand = lane.stands[index];
+	/** The stand the truck has, standing on it or on its way to it, the front one being 0; -1 while it has none. */
+	let slot = index;
+	/** The stand it is pulling out of, which is kept for it until it is clear, or -1. */
+	let vacating = -1;
+	/** Whether it is only moving up from the stand behind to the one in front. */
+	let shuffling = false;
+	/** Whether no other truck is on its way to a wreck or at work on one, as of this step. */
+	let alone = true;
+	const stand = lane.stands[slot];
 	const stall = { x: stand.x, y: stand.y, angle: stand.angle };
-	/** As the track counts its samples: where the truck's front axle is on its stand, and where it holds at the end of the lane. */
-	const home = ((Math.round(stand.sample + TRUCK.axle) % n) + n) % n;
+	/** As the track counts its samples: where the truck's front axle is on a stand, and where it holds at the end of the lane. */
+	const homeOf = (which: number) =>
+		((Math.round(lane.stands[which].sample + TRUCK.axle) % n) + n) % n;
 	const exit = (((lane.out0 - HOLD) % n) + n) % n;
 	const body = world.createBody({
 		type: 'kinematic',
@@ -154,7 +182,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number) {
 		/** Always -1: there are no gates of its own for it to have opened, now that it uses the pits'. */
 		gate: -1,
 		/** Where on the lap the axle it is steering by is, as a car's place is kept. */
-		sample: home,
+		sample: homeOf(slot),
 		across: stand.across,
 		// To a driver it is one more wreck to go round, and with a car on its
 		// hook, one that is being towed.
@@ -165,6 +193,16 @@ function createTruck(world: World, cars: Car[], track: Track, index: number) {
 		/** Backing up to a wreck, a stop for the cable included: it may swing back across the road at any moment. */
 		get backing(): boolean {
 			return stage === 'back';
+		},
+		/** On its way to a wreck or at work on one, with nothing on its hook yet. */
+		get fetching(): boolean {
+			return (
+				stage === 'out' ||
+				stage === 'held' ||
+				stage === 'approach' ||
+				stage === 'back' ||
+				stage === 'hook'
+			);
 		}
 	};
 
@@ -317,6 +355,11 @@ function createTruck(world: World, cars: Car[], track: Track, index: number) {
 
 	/** Makes for the end of the lane, to hold there. */
 	function head() {
+		// The stand it is leaving is kept until it is out of the way; one it
+		// was only on its way to is given up at once.
+		if (slot >= 0 && stage === 'parked') vacating = slot;
+		else if (slot >= 0) yard.stands[slot] = null;
+		slot = -1;
 		const from = truck.sample;
 		const hold = from + ahead(from, exit);
 		take(
@@ -346,6 +389,16 @@ function createTruck(world: World, cars: Car[], track: Track, index: number) {
 				// a car in the pits is not coming
 				car.lane >= LANE.in ||
 				(ahead(car.sample, gate) >= Math.max(14, car.speed * 2.5) && ahead(gate, car.sample) >= 12)
+		);
+	}
+
+	/** Whether the other truck is coming by on the track, or has just gone by, where this one comes out: with a wreck behind it, as like as not. */
+	function passing() {
+		return yard.trucks.some(
+			(other) =>
+				other !== truck &&
+				other.across > -HALF_CORRIDOR &&
+				(ahead(other.sample, gate) < 60 || ahead(gate, other.sample) < 25)
 		);
 	}
 
@@ -481,10 +534,17 @@ function createTruck(world: World, cars: Car[], track: Track, index: number) {
 		stage = 'tow';
 	}
 
-	/** Back to its stand: out into the lane and along it, or straight on if the stand is just ahead. */
+	/**
+	 * Back to a stand: the front one if nobody has it, and if not the one
+	 * behind, which is reached without passing the truck in front. Out into
+	 * the lane and along it, or straight on if the stand is just ahead.
+	 */
 	function goHome() {
+		if (slot >= 0) yard.stands[slot] = null;
+		slot = yard.stands.findIndex((holder) => holder === null);
+		yard.stands[slot] = index;
 		const { sample, across } = truck;
-		const to = sample + ahead(sample, home);
+		const to = sample + ahead(sample, homeOf(slot));
 		if (to - sample < 1) {
 			stage = 'parked';
 			return;
@@ -532,6 +592,23 @@ function createTruck(world: World, cars: Car[], track: Track, index: number) {
 			limit = Math.min(limit, Math.max(0, car.speed - 1));
 		}
 		waited = stopped ? waited + dt : 0;
+		// Nor into the other truck, if it comes up behind it: no faster than
+		// it is going, from as far back as it takes to slow to that.
+		const { x, y, angle } = axleAt(TRUCK.axle);
+		for (const other of yard.trucks) {
+			if (other === truck) continue;
+			const fore = (other.x - x) * Math.cos(angle) + (other.y - y) * Math.sin(angle);
+			const side = (other.y - y) * Math.cos(angle) - (other.x - x) * Math.sin(angle);
+			const stopping = pace ** 2 / (2 * BRAKE);
+			if (other.fetching && other.across > -HALF_CORRIDOR) {
+				// One that is at a wreck, or about to be, is not gone by at all,
+				// wherever across the road it is: it will be backing up across
+				// it. This one stands well off until the wreck is on its hook.
+				if (fore > -6 && fore < STAND_OFF + stopping && Math.abs(side) < 9) limit = 0;
+			} else if (fore > 0 && fore < 12 + stopping && Math.abs(side) < 3.4) {
+				limit = Math.min(limit, Math.max(0, other.speed - 1));
+			}
+		}
 		return limit;
 	}
 
@@ -543,12 +620,24 @@ function createTruck(world: World, cars: Car[], track: Track, index: number) {
 	function pitTraffic() {
 		if (truck.across > -HALF_CORRIDOR) return Infinity;
 		const { x, y, angle } = axleAt(TRUCK.axle);
-		for (const car of cars) {
-			if (car.lane < LANE.in) continue;
-			const at = car.body.getPosition();
-			for (const far of [2.5, 5]) {
-				const [px, py] = [x + Math.cos(angle) * far, y + Math.sin(angle) * far];
+		// as far ahead as it would take to stop, and a little more
+		const stopping = pace ** 2 / (3 * BRAKE);
+		const probe = (far: number) => [x + Math.cos(angle) * far, y + Math.sin(angle) * far];
+		for (let far = 2.5; far <= 5 + stopping; far += 2.5) {
+			const [px, py] = probe(far);
+			for (const car of cars) {
+				if (car.lane < LANE.in) continue;
+				const at = car.body.getPosition();
 				if (Math.hypot(at.x - px, at.y - py) < SHY) return 0;
+			}
+		}
+		// Nor into the other truck, which may be held at the end of the lane
+		// ahead of it. (No further ahead than it must look for this: the
+		// other may be on the stand in front of the one it is pulling up on.)
+		for (let far = 2.5; far <= 2.5 + stopping; far += 2.5) {
+			const [px, py] = probe(far);
+			for (const other of yard.trucks) {
+				if (other !== truck && Math.hypot(other.x - px, other.y - py) < SHY_TRUCK) return 0;
 			}
 		}
 		return Infinity;
@@ -560,6 +649,11 @@ function createTruck(world: World, cars: Car[], track: Track, index: number) {
 		/** How many wrecks the truck has still to see to. */
 		get jobs() {
 			return waiting.length + (wreck ? 1 : 0);
+		},
+
+		/** Which stand it has, the front one being 0; more than any, while it has none. */
+		get stand() {
+			return slot < 0 ? yard.stands.length : slot;
 		},
 
 		/** Whether this truck leaves the track clear: no wreck waiting, and none on the hook still on it. */
@@ -595,9 +689,21 @@ function createTruck(world: World, cars: Car[], track: Track, index: number) {
 
 		/** One step of the job. Call before the world is stepped. */
 		step(time: number, dt: number) {
-			if (stage === 'parked' && waiting.length && time >= ready) fetch();
+			// One truck at a time goes for a wreck: the next sets off once the
+			// one before has its wreck on the hook and is on its way in, so two
+			// are never at work on the same piece of track, where wrecks often
+			// lie together. Nor does the truck behind set off until the one in
+			// front has gone; with nothing to fetch, it moves up when it has.
+			alone = yard.trucks.every((other) => other === truck || !other.fetching);
+			const front = yard.stands[0];
+			const freed = slot === 0 || front === null;
+			if (stage === 'parked' && waiting.length && time >= ready && freed && alone) fetch();
+			else if (stage === 'parked' && slot > 0 && front === null) {
+				goHome();
+				shuffling = true;
+			}
 			// a call on the way home is answered from where the truck is
-			if (stage === 'home' && waiting.length) fetch();
+			if (stage === 'home' && waiting.length && alone) fetch();
 
 			if (stage === 'parked') {
 				rest(body);
@@ -605,13 +711,16 @@ function createTruck(world: World, cars: Car[], track: Track, index: number) {
 				if (advance(dt, pitTraffic())) {
 					stage = 'held';
 					timer = 0;
+					// out of the way of its stand, which is anybody's now
+					if (vacating >= 0) yard.stands[vacating] = null;
+					vacating = -1;
 				}
 			} else if (stage === 'held') {
 				rest(body);
 				timer += dt;
 				const rolling = wreck!.body.getLinearVelocity();
 				const still = Math.hypot(rolling.x, rolling.y) < 0.5;
-				if (still && timer > 0.3 && (open() || timer > PATIENCE)) approach();
+				if (still && timer > 0.3 && !passing() && (open() || timer > PATIENCE)) approach();
 			} else if (stage === 'approach') {
 				if (advance(dt, traffic(dt))) back();
 			} else if (stage === 'back') {
@@ -658,14 +767,16 @@ function createTruck(world: World, cars: Car[], track: Track, index: number) {
 					rest(wreck!.body);
 					wreck = null;
 					truck.towing = -1;
-					if (waiting.length) fetch();
+					if (waiting.length && alone) fetch();
 					else goHome();
 				}
 			} else if (stage === 'home') {
 				if (advance(dt, pitTraffic())) stage = 'parked';
 			}
 
-			truck.busy = stage !== 'parked';
+			// moving up a stand is not being out on a job
+			if (stage !== 'home') shuffling = false;
+			truck.busy = stage !== 'parked' && !shuffling;
 
 			// A wreck on the cable follows like a trailer. The end the cable is
 			// on is drawn after the hook, as far behind it as there is cable out,

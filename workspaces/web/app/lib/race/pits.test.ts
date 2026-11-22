@@ -133,7 +133,7 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 		});
 	});
 
-	it('has boxes bigger than the cars, and a stand bigger than the tow truck past the last of them', () => {
+	it('has boxes bigger than the cars, and stands bigger than the tow trucks past the last of them', () => {
 		// a car with its wheels, which stand a little proud of the bodywork, and a truck with its own
 		const long = Math.max(...HULL.filter((_, k) => k % 2 === 0)) * 2;
 		const wide = Math.max(...HULL.filter((_, k) => k % 2 === 1)) * 2 + 0.3;
@@ -142,16 +142,19 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 		expect(BOX.pitch).toBeGreaterThan(BOX.long);
 		expect(STAND.long).toBeGreaterThan(TRUCK.long * 2 + 1);
 		expect(STAND.wide).toBeGreaterThan(TRUCK.wide * 2 + 0.44 + 0.7);
-		expect(lane.stands).toHaveLength(1);
-		const [stand] = lane.stands;
+		expect(lane.stands).toHaveLength(2);
+		// one behind the other, the front one first, in line with the boxes
+		const [front, rear] = lane.stands;
 		const last = lane.boxes[lane.boxes.length - 1];
-		// clear of the last box, in line with the boxes, and short of the end of the lane
-		expect(stand.sample - STAND.long / 2).toBeGreaterThan(last.sample + BOX.long / 2);
-		expect(stand.across).toBe(last.across);
-		expect(stand.sample + STAND.long / 2).toBeLessThan(lane.out0);
-		// and all of it on the straight the start line is on, more or less
-		for (const thing of [...lane.boxes, stand]) {
-			expect(track.bend[((Math.round(thing.sample) % n) + n) % n]).toBeLessThan(1 / 60);
+		expect(Math.hypot(front.x - rear.x, front.y - rear.y)).toBeGreaterThan(STAND.long);
+		expect(front.sample).toBeGreaterThan(rear.sample);
+		// clear of the last box, and short of the end of the lane
+		expect(rear.sample - STAND.long / 2).toBeGreaterThan(last.sample + BOX.long / 2);
+		expect(front.sample + STAND.long / 2).toBeLessThan(lane.out0);
+		for (const stand of lane.stands) expect(stand.across).toBe(last.across);
+		// and all of it on the straight the start line is on, or all but
+		for (const thing of [...lane.boxes, ...lane.stands]) {
+			expect(track.bend[((Math.round(thing.sample) % n) + n) % n]).toBeLessThan(1 / 50);
 		}
 	});
 
@@ -347,60 +350,107 @@ describe('the pits', () => {
 	});
 });
 
-describe.each(TRACK_IDS)('the tow truck on the %s', (id) => {
+describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 	const track = getTrack(id);
 	const { n } = track;
 	const lane = pitsFor(track);
-	const [stand] = lane.stands;
 	/** Whether a sample is beside the pits: between where the way in leaves the track and where the way out joins it. */
 	const beside = (sample: number) => (sample - lane.in0 + 2 * n) % n <= lane.out1 - lane.in0;
 
-	/** A race, watched for where the truck goes while it is out, and which cars it is out for. */
-	function watched(seed: number) {
-		const race = createRace(seed, drawGrid(seed, ROSTER, 6), track);
-		const seen = { race, out: 0, onTrack: 0, elsewhere: 0, retired: [] as number[] };
+	/**
+	 * A race, watched for where the trucks go while they are out, which cars
+	 * they are out for, whether they are ever both out, and how near each
+	 * other they ever come.
+	 */
+	function watched(seed: number, count: number) {
+		const race = createRace(seed, drawGrid(seed, ROSTER, count), track);
+		const seen = { race, out: 0, onTrack: 0, elsewhere: 0, both: 0, nearest: Infinity };
+		const retired: number[] = [];
 		while (!race.done) {
 			race.step();
-			for (const event of race.events) if (event.kind === 'retire') seen.retired.push(event.car);
+			for (const event of race.events) if (event.kind === 'retire') retired.push(event.car);
 			race.events.length = 0;
-			const [truck] = race.trucks;
-			if (!truck.busy) continue;
-			seen.out++;
-			// where it is by its own count, since the boxes are as near another stretch of the circuit as their own
-			if (truck.across > -HALF_CORRIDOR) seen.onTrack++;
-			// off the track it is in the pits, and nowhere else
-			else if (!beside(truck.sample)) seen.elsewhere++;
+			const [one, other] = race.trucks;
+			seen.nearest = Math.min(seen.nearest, Math.hypot(one.x - other.x, one.y - other.y));
+			if (one.busy && other.busy) seen.both++;
+			for (const truck of race.trucks) {
+				if (!truck.busy) continue;
+				seen.out++;
+				// where it is by its own count, since the boxes are as near another stretch of the circuit as their own
+				if (truck.across > -HALF_CORRIDOR) seen.onTrack++;
+				// off the track it is in the pits, and nowhere else
+				else if (!beside(truck.sample)) seen.elsewhere++;
+			}
 		}
+		return { ...seen, retired };
+	}
+
+	/** The first race of those seeds that is what is wanted. */
+	function find(count: number, wanted: (seen: ReturnType<typeof watched>) => boolean) {
+		let seen = watched(1, count);
+		for (let seed = 2; !wanted(seen) && seed <= 60; seed++) seen = watched(seed, count);
+		expect(wanted(seen)).toBe(true);
 		return seen;
 	}
-	// the first race that loses one car, out on the track, while it is still being raced
-	let found = watched(1);
-	for (let seed = 2; (found.retired.length !== 1 || !found.out) && seed <= 40; seed++) {
-		found = watched(seed);
+
+	/** Both trucks on a stand, and not the same one. */
+	function home({ race }: ReturnType<typeof watched>) {
+		const on = race.trucks.map((truck) => {
+			expect(truck).toMatchObject({ busy: false, towing: -1 });
+			return lane.stands.findIndex(
+				(stand) => Math.hypot(truck.x - stand.x, truck.y - stand.y) < 0.6
+			);
+		});
+		expect([...on].sort()).toEqual([0, 1]);
 	}
-	const { race, out, onTrack, elsewhere, retired } = found;
 
-	it('stands at the end of the pit lane, and is back there when the job is done', () => {
-		expect(race.trucks).toHaveLength(1);
-		const [truck] = race.trucks;
-		expect(out).toBeGreaterThan(0);
-		expect(truck).toMatchObject({ busy: false, towing: -1 });
-		expect(Math.hypot(truck.x - stand.x, truck.y - stand.y)).toBeLessThan(0.5);
+	/** Every wreck the trucks went for, in its own box. */
+	function boxed({ race, retired }: ReturnType<typeof watched>) {
+		for (const index of retired) {
+			const wreck = race.cars[index];
+			const box = lane.boxes[index];
+			expect(wreck.towed).toBe(true);
+			expect(Math.hypot(wreck.x - box.x, wreck.y - box.y)).toBeLessThan(1);
+			// straight in it, one way round or the other
+			expect(Math.abs(Math.sin(wreck.angle - box.angle))).toBeLessThan(0.2);
+		}
+	}
+
+	// a race that loses one car, out on the track, while it is still being raced
+	const single = find(6, (seen) => seen.retired.length === 1 && seen.out > 0);
+	// and one that loses several at once, in a full field, and is raced to the end all the same:
+	// the second truck sets off as soon as the first has its wreck on the hook
+	const several = find(
+		ROSTER.length,
+		(seen) => seen.both > 0 && seen.race.cars.some((car) => car.finishTime > 0)
+	);
+
+	it('stand at the end of the pit lane, and are back there when the job is done', () => {
+		expect(single.race.trucks).toHaveLength(2);
+		expect(single.out).toBeGreaterThan(0);
+		home(single);
 	});
 
-	it('goes out to the wreck by the way out of the pits and brings it back by the way in', () => {
-		expect(onTrack).toBeGreaterThan(0);
-		expect(elsewhere).toBe(0);
+	it('go out to a wreck by the way out of the pits and bring it back by the way in', () => {
+		expect(single.onTrack).toBeGreaterThan(0);
+		expect(single.elsewhere).toBe(0);
+		expect(several.elsewhere).toBe(0);
 	});
 
-	it('leaves the wreck in its own pit box', () => {
-		expect(retired).toHaveLength(1);
-		const wreck = race.cars[retired[0]];
-		const box = lane.boxes[retired[0]];
-		expect(wreck.towed).toBe(true);
-		expect(Math.hypot(wreck.x - box.x, wreck.y - box.y)).toBeLessThan(1);
-		// straight in it, one way round or the other
-		expect(Math.abs(Math.sin(wreck.angle - box.angle))).toBeLessThan(0.2);
+	it('leave the wreck in its own pit box', () => {
+		expect(single.retired).toHaveLength(1);
+		boxed(single);
+	});
+
+	it("both go out when there is more than one wreck, and keep out of each other's way", () => {
+		expect(several.retired.length).toBeGreaterThan(1);
+		expect(several.both).toBeGreaterThan(0);
+		// Never one through the other. The nearest they come is one going
+		// down the lane past the other on its stand, with a truck's width
+		// and more between their middles.
+		expect(several.nearest).toBeGreaterThan(3.3);
+		boxed(several);
+		home(several);
 	});
 });
 

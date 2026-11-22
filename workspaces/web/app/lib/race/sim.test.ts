@@ -162,8 +162,7 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 				if (!car.towed) expect(Math.abs(across)).toBeLessThan(HALF_CORRIDOR + 0.5);
 			}
 		}
-		// one truck fetches every wreck, a lap of the track each, so a pile-up in a field this size can use the race's time up
-		expect(won).toBeGreaterThanOrEqual(50);
+		expect(won).toBeGreaterThanOrEqual(54);
 	});
 
 	it('reaches a result with the smallest field, cautions and all', { timeout: 60_000 }, () => {
