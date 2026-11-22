@@ -79,11 +79,11 @@ describe('a recording', () => {
 	});
 
 	it('plays back the caution and the truck that fetched the wreck', () => {
-		// seed 7 loses a car a quarter of a minute in
-		const grid = drawGrid(7, SIX);
-		const recording = record(7, grid, track, [], CLASSIC);
+		// seed 20 loses a car a quarter of a minute in
+		const grid = drawGrid(20, SIX);
+		const recording = record(20, grid, track, [], CLASSIC);
 		const replay = createReplay(recording, ROSTER);
-		const race = createRace(7, grid, track, [], CLASSIC);
+		const race = createRace(20, grid, track, [], CLASSIC);
 		let cautions = 0;
 		let again = 0;
 		let towed = 0;
@@ -119,9 +119,9 @@ describe('a recording', () => {
 	});
 
 	it('leaves the trucks out of a race none went out in, and shows them parked', () => {
-		// seed 5 is a clean race; seed 7 loses a car, and a truck goes for it
+		// seed 5 is a clean race; seed 20 loses a car, and a truck goes for it
 		const quiet = record(5, drawGrid(5, SIX), track, [], CLASSIC);
-		const busy = record(7, drawGrid(7, SIX), track, [], CLASSIC);
+		const busy = record(20, drawGrid(20, SIX), track, [], CLASSIC);
 		const cars = SIX.length * 10;
 		expect(quiet.trucks).toBe(0);
 		expect(quiet.poses.length).toBe(quiet.frames * cars);
@@ -133,7 +133,7 @@ describe('a recording', () => {
 	});
 
 	it('still plays a recording made before there were trucks', () => {
-		const { trucks: _, ...recording } = record(7, drawGrid(7, SIX), track, [], CLASSIC);
+		const { trucks: _, ...recording } = record(20, drawGrid(20, SIX), track, [], CLASSIC);
 		const cars = SIX.length * 10;
 		// the same race with the trucks' bytes taken out of every moment
 		const moment = recording.poses.length / recording.frames;
@@ -142,7 +142,7 @@ describe('a recording', () => {
 			poses.set(recording.poses.subarray(frame * moment, frame * moment + cars), frame * cars);
 		}
 		const old = createReplay({ ...recording, poses }, ROSTER);
-		const now = createReplay(record(7, drawGrid(7, SIX), track, [], CLASSIC), ROSTER);
+		const now = createReplay(record(20, drawGrid(20, SIX), track, [], CLASSIC), ROSTER);
 		old.seek(40);
 		now.seek(40);
 		expect(old.cars).toEqual(now.cars);
