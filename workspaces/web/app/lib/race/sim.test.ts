@@ -590,6 +590,41 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 		}
 	);
 
+	it.each(FIELDS.map((field) => [field.length, field] as const))(
+		'keeps %i cars at pace across the line at the green, and lets them go',
+		(_, cars) => {
+			const race = createRace(clean, drawGrid(clean, cars), track, [LIGHTS + 20], CLASSIC);
+			while (!race.done && race.flag !== 'restart') {
+				race.step();
+				race.events.length = 0;
+			}
+			// a moment before the green, the field as it comes to the line
+			let green = 0;
+			let field: typeof race.cars = [];
+			let before: number[] = [];
+			while (!race.done && !green) {
+				race.step();
+				for (const event of race.events) if (event.kind === 'green') green = race.time;
+				race.events.length = 0;
+				if (green) break;
+				field = rank(race.cars.filter((car) => !car.retired && car.lane === LANE.racing));
+				before = field.map((car) => car.speed);
+			}
+			expect(green).toBeGreaterThan(0);
+			// no row brakes as it crosses the line, and each is soon quicker than it was
+			const slowest = before.slice();
+			for (let step = 0; step < 3 / DT; step++) {
+				race.step();
+				race.events.length = 0;
+				field.forEach((car, place) => (slowest[place] = Math.min(slowest[place], car.speed)));
+			}
+			field.forEach((car, place) => {
+				expect(slowest[place], car.entry.id).toBeGreaterThan(before[place] - 0.5);
+				expect(car.speed, car.entry.id).toBeGreaterThan(before[place] + 2);
+			});
+		}
+	);
+
 	it('is held under yellow again if there is trouble while the field is going green', () => {
 		const going = run(clean, track, [LIGHTS + 20]).all.find((event) => event.kind === 'restart')!;
 		const race = run(clean, track, [LIGHTS + 20, going.time + 1]);
