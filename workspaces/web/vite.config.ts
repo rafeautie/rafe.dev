@@ -40,6 +40,10 @@ const chessRuntimeFromCdn: Plugin = {
 };
 
 export default defineConfig({
+	// Local /admin sign-in and .claude/launch.json expect port 3000
+	server: {
+		port: 3000
+	},
 	resolve: {
 		tsconfigPaths: true
 	},

@@ -10,7 +10,7 @@
 		"preview": "vite preview",
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
-		"gen": "wrangler types",
+		"gen": "wrangler types --env-file=.dev.vars.example",
 		"add-photo": "node scripts/add-photo.mjs",
 		"world-map": "node scripts/world-map.mjs",
 		"test": "vitest run --passWithNoTests"
@@ -57,8 +57,8 @@
 		"yaml": "^2.9.1"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "^1.37.3",
-		"@cloudflare/vitest-pool-workers": "^0.16.8",
+		"@cloudflare/vite-plugin": "^1.67.0",
+		"@cloudflare/vitest-plugin": "^1.5.0",
 		"@eslint/compat": "^2.1.0",
 		"@eslint/js": "^10.0.1",
 		"@shikijs/rehype": "^4.4.3",
@@ -101,6 +101,6 @@
 		"vite-imagetools": "^12.0.1",
 		"vitest": "^4.1.7",
 		"world-atlas": "^2.0.2",
-		"wrangler": "^4.105.0"
+		"wrangler": "^4.156.2"
 	}
 }
