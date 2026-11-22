@@ -1,13 +1,4 @@
-import {
-	HALF_CORRIDOR,
-	HALF_ROAD,
-	clamp,
-	lateral,
-	nearest,
-	triangle,
-	type Track,
-	type TrackId
-} from './track';
+import { HALF_CORRIDOR, HALF_ROAD, clamp, triangle, type Track, type TrackId } from './track';
 
 // What is off the track on its infield side, and the ways there are to drive
 // about it: the pit lane and all that is on it (pits.ts), which the tow
@@ -24,10 +15,35 @@ export const RING = 10;
 /** Half the pit lane's width: it runs from the wall to the boxes. */
 export const HALF_LANE = 2.2;
 /**
- * The truck from above, x forward: half its length and width, how far behind
- * its middle the hook is, and how far either side of it the axles are.
+ * The truck from above, x forward: a flatbed with a crane between the cab and
+ * the bed. Half its length and width; how far either side of its middle the
+ * axles it is steered by are; how far forward of its middle the crane turns;
+ * where the middle of each of the two cars it carries goes on the bed, the
+ * back one first, which is the one it loads first; and where its wheels are:
+ * one axle under the cab and two under the back of the bed.
  */
-export const TRUCK = { long: 3, wide: 1.2, hook: 3.2, axle: 1.8 };
+export const TRUCK = {
+	long: 5.6,
+	wide: 1.25,
+	axle: 3.6,
+	pivot: 3.4,
+	bed: [-3.45, 0.85],
+	wheels: [4.6, -2.4, -3.6]
+};
+
+/** Where a truck at `x`, `y` facing `angle` has its crane's hook, with the crane swung and run out as it is. */
+export function hookOf(
+	x: number,
+	y: number,
+	angle: number,
+	{ swing, reach }: { swing: number; reach: number }
+): [number, number] {
+	const toward = angle + swing;
+	return [
+		x + Math.cos(angle) * TRUCK.pivot + Math.cos(toward) * reach,
+		y + Math.sin(angle) * TRUCK.pivot + Math.sin(toward) * reach
+	];
+}
 /** Half the truck's width over its tyres. */
 export const TRUCK_HALF = TRUCK.wide + 0.22;
 /**
@@ -35,12 +51,12 @@ export const TRUCK_HALF = TRUCK.wide + 0.22;
  * runs if all of it is to stay on the tarmac, with some to spare: round a
  * bend its back wheels follow a little inside its front ones.
  */
-export const KERBSIDE = HALF_ROAD - TRUCK_HALF - 0.45;
+export const KERBSIDE = HALF_ROAD - TRUCK_HALF - 0.6;
 /** Where across the track a truck runs when it has just come on, or is about to go off: on the infield side, all of it on the tarmac. */
 export const NEARSIDE = -KERBSIDE;
 /** The tightest the line the pit lane is on bends, as a radius in metres, and the tightest any way worked out for a truck does. */
 export const TIGHTEST = 9;
-const STEER = 6.5;
+const STEER = 10;
 
 export type Service = ReturnType<typeof build>;
 
@@ -244,23 +260,12 @@ function build(track: Track) {
 		return measure(out);
 	}
 
-	/** A way to drive made of points on the track, each put at the sample it is nearest. */
-	function trace(points: [number, number][], hint: number): Route {
-		const out = blank(points.length);
-		points.forEach(([px, py], k) => {
-			[out.x[k], out.y[k]] = [px, py];
-			hint = out.sample[k] = nearest(track, px, py, hint);
-			out.across[k] = lateral(track, px, py, hint);
-		});
-		return measure(out);
-	}
-
 	/**
 	 * The way through `keys` for a truck that is at `from`, which may be a little
 	 * off it or not facing along it: it curves onto the way over the first
 	 * `joining` metres, and is on it from there.
 	 */
-	function drive(from: Pose, keys: [number, number][], joining = 9): Route {
+	function drive(from: Pose, keys: [number, number][], joining = 12): Route {
 		const way = route(keys);
 		let join = 1;
 		while (join + 1 < way.count && way.along[join] < joining) join++;
@@ -277,5 +282,5 @@ function build(track: Track) {
 		return measure(out);
 	}
 
-	return { ahead, place, route, trace, drive };
+	return { ahead, place, route, drive };
 }

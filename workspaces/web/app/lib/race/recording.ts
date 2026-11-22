@@ -1,4 +1,5 @@
 import { pitsFor, type Stop } from './pits';
+import { LOAD, STOWED, type Crane } from './recovery';
 import type { Entry } from './roster';
 import {
 	CLASSIC,
@@ -29,10 +30,20 @@ const PITS = 3;
 /** Progress is written down in whole numbers of this many to the metre: fewer in a longer race, so it still fits. */
 const FINE = 20;
 const COARSE = 10;
-/** Bytes for one truck at one moment: x, y and angle as 16 bits each, what it is doing, and a byte that said which gate it had open when there were gates. */
-const TRUCK = 8;
-/** What a truck is doing: the car on its hook, counted from 1, in the low bits, and this one set while it is out. */
+/**
+ * Bytes for one truck at one moment: x, y and angle as 16 bits each, what it
+ * is doing, the car on each place on its bed (counted from 1, 0 for none),
+ * and its crane: which way it points, how far out, and how high it has lifted
+ * what is on it. A recording from before the trucks had beds and cranes has
+ * only the first and a byte that said which gate it had open, when there
+ * were gates.
+ */
+const TRUCK = 7 + LOAD + 3;
+const OLD_TRUCK = 8;
+/** What a truck is doing: the car on its crane (its hook, in an old recording), counted from 1, in the low bits, and this one set while it is out. */
 const BUSY = 128;
+/** The crane's boom is written down in whole numbers of this many to the metre. */
+const BOOM = 24;
 /** Recorded dents are whole numbers of this many metres. */
 const DENT = 0.005;
 
@@ -57,7 +68,9 @@ export type Recording = {
 	events: RecordedEvent[];
 	/** How many tow trucks are recorded. A recording from before there were any has none. */
 	trucks?: number;
-	/** `frames` moments, each `grid.length` cars of POSE bytes and then the trucks, of TRUCK bytes. */
+	/** Whether the trucks are recorded with their beds and cranes, as they all are now. */
+	cranes?: true;
+	/** `frames` moments, each `grid.length` cars of POSE bytes and then the trucks, of TRUCK bytes (OLD_TRUCK without `cranes`). */
 	poses: Uint8Array;
 };
 
@@ -68,10 +81,11 @@ export type ReplayTruck = {
 	angle: number;
 	/** Out on a job, rather than on its stand at the end of the pit lane. */
 	busy: boolean;
-	/** The car on its hook, as an index into the cars, or -1. */
+	/** The car on its crane, as an index into the cars, or -1. */
 	towing: number;
-	/** Always -1 now. When trucks had gates of their own to go through, the one open for it. */
-	gate: number;
+	/** The cars on its bed, by their places on it, as indices into the cars: -1 where there is room. */
+	load: number[];
+	crane: Crane;
 };
 
 /** A car as it is at the moment the replay is showing. */
@@ -99,7 +113,7 @@ export type ReplayCar = {
 
 export type Replay = ReturnType<typeof createReplay>;
 
-/** The trucks as they stand when none is out: each on its stand at the end of the pit lane. */
+/** The trucks as they stand when none is out: each on its stand at the end of the pit lane, with nothing on. */
 export function standing(track: Track): ReplayTruck[] {
 	return pitsFor(track).stands.map(({ x, y, angle }) => ({
 		x,
@@ -107,7 +121,8 @@ export function standing(track: Track): ReplayTruck[] {
 		angle,
 		busy: false,
 		towing: -1,
-		gate: -1
+		load: Array.from({ length: LOAD }, () => -1),
+		crane: { ...STOWED }
 	}));
 }
 
@@ -161,7 +176,11 @@ export function record(
 			view.setUint16(at + 2, truck.y * 256, true);
 			view.setUint16(at + 4, heading(truck.angle), true);
 			view.setUint8(at + 6, (truck.busy ? BUSY : 0) | (truck.towing + 1));
-			view.setUint8(at + 7, truck.gate + 1);
+			truck.load.forEach((car, place) => view.setUint8(at + 7 + place, car + 1));
+			const { swing, reach, raise } = truck.crane;
+			view.setUint8(at + 7 + LOAD, Math.round(heading(swing) / 256) & 255);
+			view.setUint8(at + 8 + LOAD, Math.min(255, Math.round(reach * BOOM)));
+			view.setUint8(at + 9 + LOAD, Math.round(raise * 255));
 			called ||= truck.busy;
 		});
 		frames++;
@@ -210,6 +229,7 @@ export function record(
 		...(per !== FINE && { per }),
 		events,
 		trucks: called ? race.trucks.length : 0,
+		...(called ? { cranes: true as const } : {}),
 		poses
 	};
 }
@@ -276,7 +296,9 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 	// only as many as there are now are shown.
 	const trucks = standing(track);
 	const recorded = recording.trucks ?? 0;
-	const moment = grid.length * pose + recorded * TRUCK;
+	const cranes = recording.cranes ?? false;
+	const size = cranes ? TRUCK : OLD_TRUCK;
+	const moment = grid.length * pose + recorded * size;
 	const duration = (frames - 1) / rate;
 	let flag: Flag = 'green';
 	/** Laps ended under caution so far, which the race is longer by. */
@@ -336,11 +358,15 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		/** The 16 bits at byte `a` of this moment, on their way to those of the next. */
 		const between = (a: number) =>
 			view.getUint16(a, true) * (1 - t) + view.getUint16(a + moment, true) * t;
-		/** The same for a heading, the short way round from the one to the next. */
-		const facing = (a: number) => {
-			const heading = view.getUint16(a, true);
-			const turned = ((view.getUint16(a + moment, true) - heading + 98304) % 65536) - 32768;
-			return ((heading + turned * t) / 65536) * 2 * Math.PI;
+		/** The 8 bits at byte `a`, the same way. */
+		const byte = (a: number) => view.getUint8(a) * (1 - t) + view.getUint8(a + moment) * t;
+		/** A heading, 16 bits or 8, the short way round from the one moment to the next. */
+		const facing = (a: number, bits = 16) => {
+			const read = (at: number) => (bits === 16 ? view.getUint16(at, true) : view.getUint8(at));
+			const full = 2 ** bits;
+			const heading = read(a);
+			const turned = ((read(a + moment) - heading + full * 1.5) % full) - full / 2;
+			return ((heading + turned * t) / full) * 2 * Math.PI;
 		};
 		cars.forEach((car, index) => {
 			const a = frame * moment + index * pose;
@@ -361,7 +387,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		});
 		for (let index = 0; index < Math.min(recorded, trucks.length); index++) {
 			const truck = trucks[index];
-			const a = frame * moment + grid.length * pose + index * TRUCK;
+			const a = frame * moment + grid.length * pose + index * size;
 			truck.x = between(a) / 256;
 			truck.y = between(a + 2) / 256;
 			truck.angle = facing(a + 4);
@@ -370,7 +396,14 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			const doing = view.getUint8(nearer + 6);
 			truck.busy = doing >= BUSY;
 			truck.towing = (doing & (BUSY - 1)) - 1;
-			truck.gate = view.getUint8(nearer + 7) - 1;
+			// one recorded before there were cranes is shown with its folded, and nothing on its bed
+			if (!cranes) continue;
+			for (let place = 0; place < LOAD; place++) {
+				truck.load[place] = view.getUint8(nearer + 7 + place) - 1;
+			}
+			truck.crane.swing = facing(a + 7 + LOAD, 8);
+			truck.crane.reach = byte(a + 8 + LOAD) / BOOM;
+			truck.crane.raise = byte(a + 9 + LOAD) / 255;
 		}
 		return passed;
 	}

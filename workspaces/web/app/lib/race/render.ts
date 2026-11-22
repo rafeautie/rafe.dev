@@ -56,6 +56,16 @@ const LAMPS_EVERY = 45;
 const WAIT = 0.45;
 /** A stop's time stays up over its box until the car is this far away (m). */
 const TIME_NEAR = 16;
+/**
+ * The truck, x forward of its middle: where the cab begins, and the deck the
+ * crane stands on, between it and the bed.
+ */
+const CAB = TRUCK.long - 1.8;
+const DECK = TRUCK.long - 2.6;
+const [FRONT_WHEEL, MID_WHEEL, BACK_WHEEL] = TRUCK.wheels;
+/** A car lifted all the way up by a crane is drawn this much bigger, and its shadow this many pixels further off. */
+const LIFTED_GROWS = 0.12;
+const LIFTED_SHADOW = 2.5;
 
 /** A pixel of the track's own picture, and the colour something drawn over the ground has there. */
 type Dab = { x: number; y: number; colour: number };
@@ -99,7 +109,6 @@ const CONCRETE = [hex('#85867f'), hex('#8e8f88')];
 const AMBER = hex('#f2b320');
 const AMBER_SHADE = hex('#a8760c');
 const STEEL = hex('#4a4e57');
-const BOOM = hex('#878d97');
 const LAMP = hex('#ffc21a');
 const LAMP_OUT = hex('#4d3f1c');
 const PAD = [hex('#5b5d63'), hex('#62646a')];
@@ -461,20 +470,28 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		});
 	}
 
-	/** Plots one car, or with `shadow` just darkens the ground beside it. */
-	function plot(car: CarView, shadow: boolean) {
+	/**
+	 * Plots one car, or with `shadow` just darkens the ground beside it. One
+	 * `lifted` off the ground by a crane, 0 to 1 of the way up, is that much
+	 * nearer and a little bigger, and its shadow falls further from it.
+	 */
+	function plot(car: CarView, shadow: boolean, lifted = 0) {
 		const cos = Math.cos(car.angle);
 		const sin = Math.sin(car.angle);
 		const body = hex(car.entry.color);
 		const shade = hex(car.entry.shade);
 		const cx = Math.floor(car.x * SCALE) + ox;
 		const cy = Math.floor(car.y * SCALE) + oy;
-		for (let py = Math.max(0, cy - 12); py < Math.min(height, cy + 13); py++) {
-			for (let px = Math.max(0, cx - 12); px < Math.min(width, cx + 13); px++) {
+		const grown = 1 + LIFTED_GROWS * lifted;
+		const fall = 0.5 + LIFTED_SHADOW * lifted;
+		// as far out as a corner of it can be, and its shadow
+		const reach = Math.ceil(2.8 * SCALE * grown + fall);
+		for (let py = Math.max(0, cy - reach); py <= Math.min(height - 1, cy + reach); py++) {
+			for (let px = Math.max(0, cx - reach); px <= Math.min(width - 1, cx + reach); px++) {
 				// this pixel in the car's own metres; the shadow falls a pixel
-				// down and to the right
-				const wx = (px - ox + (shadow ? -0.5 : 0.5)) / SCALE - car.x;
-				const wy = (py - oy + (shadow ? -0.5 : 0.5)) / SCALE - car.y;
+				// down and to the right, or further for one lifted
+				const wx = ((px - ox + (shadow ? -fall : 0.5)) / SCALE - car.x) / grown;
+				const wy = ((py - oy + (shadow ? -fall : 0.5)) / SCALE - car.y) / grown;
 				const x = wx * cos + wy * sin;
 				const y = wy * cos - wx * sin;
 				const k = py * width + px;
@@ -510,7 +527,11 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		if (px >= 0 && py >= 0 && px < width && py < height) frame[py * width + px] = colour;
 	}
 
-	/** Plots one truck, or with `shadow` just darkens the ground beside it. */
+	/**
+	 * Plots one truck, or with `shadow` just darkens the ground beside it: a
+	 * flatbed, the cab in front with its lamps on the roof, the crane's turret
+	 * behind it, and the bed, slatted, with a striped tail board.
+	 */
 	function haul(truck: ReplayTruck, shadow: boolean) {
 		const cos = Math.cos(truck.angle);
 		const sin = Math.sin(truck.angle);
@@ -518,16 +539,25 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		const cy = Math.floor(truck.y * SCALE) + oy;
 		// its two lamps flash turn about while it is out
 		const flash = truck.busy ? 1 + (Math.floor(performance.now() / 180) & 1) : 0;
-		for (let py = Math.max(0, cy - 15); py < Math.min(height, cy + 16); py++) {
-			for (let px = Math.max(0, cx - 15); px < Math.min(width, cx + 16); px++) {
+		// the box round it, turned as it is, with its tyres
+		const half = TRUCK.wide + 0.22;
+		const ex = Math.ceil((Math.abs(cos) * TRUCK.long + Math.abs(sin) * half) * SCALE) + 2;
+		const ey = Math.ceil((Math.abs(sin) * TRUCK.long + Math.abs(cos) * half) * SCALE) + 2;
+		for (let py = Math.max(0, cy - ey); py <= Math.min(height - 1, cy + ey); py++) {
+			for (let px = Math.max(0, cx - ex); px <= Math.min(width - 1, cx + ex); px++) {
 				const wx = (px - ox + (shadow ? -0.5 : 0.5)) / SCALE - truck.x;
 				const wy = (py - oy + (shadow ? -0.5 : 0.5)) / SCALE - truck.y;
 				const x = wx * cos + wy * sin;
 				const y = wy * cos - wx * sin;
 				const k = py * width + px;
-				const [fore, side] = [Math.abs(x), Math.abs(y)];
-				if (fore > TRUCK.long || side > TRUCK.wide) {
-					const wheel = Math.abs(side - TRUCK.wide) < 0.22 && Math.abs(fore - 1.9) < 0.55;
+				const side = Math.abs(y);
+				if (Math.abs(x) > TRUCK.long || side > TRUCK.wide) {
+					// the tyres stand a little proud of it: one axle under the cab, two under the back of the bed
+					const wheel =
+						Math.abs(side - TRUCK.wide) < 0.22 &&
+						(Math.abs(x - FRONT_WHEEL) < 0.5 ||
+							Math.abs(x - MID_WHEEL) < 0.5 ||
+							Math.abs(x - BACK_WHEEL) < 0.5);
 					if (wheel) frame[k] = shadow ? mix(frame[k], BLACK, 0.4) : TYRE;
 					continue;
 				}
@@ -536,40 +566,58 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 					continue;
 				}
 				let colour = AMBER;
-				if (x > 1) {
-					// the cab: a windscreen, and the lamp bar on its roof
-					if (x > 2.85 || side > 1) colour = AMBER_SHADE;
-					else if (x > 2 && x < 2.6) colour = y > 0.4 ? GLINT : GLASS;
-					else if (x > 1.25 && x < 1.7 && side < 0.9) {
+				if (x > CAB) {
+					// the cab: its bumper, the lamp bar on its roof, and the windscreen
+					if (x > TRUCK.long - 0.22 || side > TRUCK.wide - 0.2) colour = AMBER_SHADE;
+					else if (x > CAB + 1 && x < TRUCK.long - 0.4 && side < 1) {
+						colour = y > 0.45 ? GLINT : GLASS;
+					} else if (x > CAB + 0.25 && x < CAB + 0.65 && side < 0.95) {
 						colour = flash === (y > 0 ? 1 : 2) ? LAMP : flash ? AMBER_SHADE : LAMP_OUT;
 					}
-				} else if (x < -2.55) {
+				} else if (x > DECK) {
+					// the crane's turret, on the chassis between the cab and the bed
+					const round = Math.hypot(x - TRUCK.pivot, y);
+					colour = round < 0.3 ? AMBER_SHADE : round < 0.5 ? AMBER : BLACK;
+				} else if (x < -TRUCK.long + 0.3) {
 					// the tail board, striped
 					colour = Math.floor((y + 3) * 2) & 1 ? AMBER : BLACK;
-				} else if (side > 0.95) {
+				} else if (side > TRUCK.wide - 0.2) {
 					colour = AMBER_SHADE;
 				} else {
-					// the bed, with the boom lying down the middle of it
-					colour = side < 0.25 && x < 0.3 ? BOOM : STEEL;
+					// the bed, slatted crosswise
+					colour = (x + 20) % 1 < 0.25 ? mix(STEEL, BLACK, 0.3) : STEEL;
 				}
 				frame[k] = colour;
 			}
 		}
 	}
 
-	/** The cable from a truck's hook to the end of the car on it, whichever end that is. */
-	function cable(truck: ReplayTruck, car: CarView) {
-		const hx = truck.x - Math.cos(truck.angle) * TRUCK.hook;
-		const hy = truck.y - Math.sin(truck.angle) * TRUCK.hook;
-		// the bodywork ends about two metres out from the car's middle
-		const [ex, ey] = [-1, 1]
-			.map((end) => [car.x + Math.cos(car.angle) * 2 * end, car.y + Math.sin(car.angle) * 2 * end])
-			.sort((a, b) => Math.hypot(a[0] - hx, a[1] - hy) - Math.hypot(b[0] - hx, b[1] - hy))[0];
-		const run = Math.hypot(ex - hx, ey - hy) || 1;
-		for (let d = 0; d <= run; d += 0.2) {
-			const k = pixel(hx + ((ex - hx) * d) / run, hy + ((ey - hy) * d) / run);
-			if (k >= 0) frame[k] = BLACK;
+	/**
+	 * A truck's crane: its boom, from the turret out to the hook, with its
+	 * shadow, longer the higher the boom is holding what is on it. Drawn over
+	 * the cars, since a car on it hangs under it.
+	 */
+	function boom(truck: ReplayTruck) {
+		const { swing, reach, raise } = truck.crane;
+		const [cos, sin] = [Math.cos(truck.angle), Math.sin(truck.angle)];
+		const [px, py] = [truck.x + cos * TRUCK.pivot, truck.y + sin * TRUCK.pivot];
+		const [dx, dy] = [Math.cos(truck.angle + swing), Math.sin(truck.angle + swing)];
+		const fall = (1 + 2 * raise) / SCALE;
+		for (const shadow of [true, false]) {
+			// a pixel at a time along it
+			for (let d = 0.2; d <= reach; d += 1 / SCALE) {
+				for (const off of [-0.14, 0.1]) {
+					const x = px + dx * d - dy * off + (shadow ? fall : 0);
+					const y = py + dy * d + dx * off + (shadow ? fall : 0);
+					const k = pixel(x, y);
+					if (k < 0) continue;
+					frame[k] = shadow ? mix(frame[k], BLACK, 0.3) : off < 0 ? AMBER : AMBER_SHADE;
+				}
+			}
 		}
+		// the hook block at its end
+		const k = pixel(px + dx * reach, py + dy * reach);
+		if (k >= 0) frame[k] = BLACK;
 	}
 
 	type PitBox = Painting['boxes'][number];
@@ -742,11 +790,13 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 				});
 			}
 			const { trucks } = service;
+			// a car on a crane is off the ground, as far as it has been lifted
+			const lifted = new Map(trucks.map((truck) => [truck.towing, truck.crane.raise]));
 			for (const truck of trucks) haul(truck, true);
-			for (const car of cars) plot(car, true);
+			cars.forEach((car, index) => plot(car, true, lifted.get(index)));
 			for (const truck of trucks) haul(truck, false);
-			for (const car of cars) plot(car, false);
-			for (const truck of trucks) if (cars[truck.towing]) cable(truck, cars[truck.towing]);
+			cars.forEach((car, index) => plot(car, false, lifted.get(index)));
+			for (const truck of trucks) boom(truck);
 			if (pits) {
 				const now = performance.now();
 				cars.forEach(
