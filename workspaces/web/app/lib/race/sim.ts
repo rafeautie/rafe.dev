@@ -1,10 +1,11 @@
 import { ChainShape, PolygonShape, World, type Body, type Fixture } from 'planck';
-import { createPits, LANE as PIT, tyreGrip, type Stop } from './pits';
+import type { Plan } from './crew';
+import { createPits, LANE as PIT, tyreGrip } from './pits';
 import { curvature, SPAN } from './line';
 import { createRecovery } from './recovery';
 import type { Entry } from './roster';
 import { serviceFor } from './service';
-import { clamp, MPH, HALF_CORRIDOR, HALF_ROAD, lateral, MAX_OFFSET, nearest, type Track } from './track';
+import { clamp, HALF_CORRIDOR, HALF_ROAD, lateral, MAX_OFFSET, nearest, type Track } from './track';
 
 // One race, start to finish. Each car is a rigid body pushed around by its
 // two axles' tyres, which grip up to a limit and slide past it, and steered
@@ -31,7 +32,7 @@ export const LIGHTS = 2;
  * tyres wear as a share of the usual, and the pit lane's speed limit in m/s.
  */
 export type Rules = { laps: number; pits: boolean; tank: number; wear: number; limit: number };
-export const RULES: Rules = { laps: 4, pits: true, tank: 3.3, wear: 1, limit: 27 / MPH };
+export const RULES: Rules = { laps: 4, pits: true, tank: 3.3, wear: 1, limit: 12 };
 /** The race as it was before there were pits: three laps, flat out all the way. */
 export const CLASSIC: Rules = { ...RULES, laps: 3, pits: false };
 
@@ -123,7 +124,7 @@ export type Car = {
 	/** 0 when new; the car retires at 1. */
 	damage: number;
 	retired: boolean;
-	/** A wreck the truck has hold of, or has taken away. */
+	/** A wreck a truck has lifted, or has taken away. */
 	towed: boolean;
 	/** Metres driven from the start line; negative on the grid. */
 	progress: number;
@@ -173,7 +174,7 @@ type Happening =
 	 * stood this long, longer if the crew fumbled it. And out on the track,
 	 * a car runs out of fuel, which retires it.
 	 */
-	| { kind: 'pit'; service: Stop }
+	| ({ kind: 'pit' } & Omit<Plan, 'seconds'>)
 	| { kind: 'away'; seconds: number; slow: boolean }
 	| { kind: 'dry' }
 	/**
@@ -216,13 +217,13 @@ export const flown = (flag: Flag, kind: RaceEvent['kind']): Flag => FLIES[kind] 
 
 /**
  * Something on the road, as a driver sees it: where it is, how fast it is
- * going, whether it is a wreck, and whether it is on a truck's cable. A truck
- * out on the track is one, and is gone round like a wreck, except while it
- * is backing up to one.
+ * going, whether it is a wreck, and whether it is on a truck. A truck out on
+ * the track is one at either end of it, and is gone round like a wreck.
  */
 type Obstacle = Pick<Car, 'sample' | 'across' | 'speed' | 'retired' | 'towed'> & {
-	backing?: boolean;
 	lane?: number;
+	/** How much further it reaches to either side than a wreck does: a truck beside the wreck it is lifting, as the two of them are gone round. */
+	wide?: number;
 };
 
 export type Race = ReturnType<typeof createRace>;
@@ -383,7 +384,7 @@ export function createRace(
 	});
 
 	const recovery = createRecovery(world, cars, track);
-	// A truck, and a wreck on its hook, cannot be pushed, so a car they bore
+	// A truck, and a wreck it has lifted, cannot be pushed, so a car they bore
 	// down on would be crushed against the wall. A car that drives into them
 	// hits them; one they are the ones closing on, they pass over, and go on
 	// passing over until they are clear of it, or it would be thrown out from
@@ -432,19 +433,20 @@ export function createRace(
 	/**
 	 * Whether something is to be waited behind and not passed. Under caution
 	 * that is a car still running, wherever across the road it is. It is also
-	 * a truck on the move, a wreck that is, and the two of them once the cable
-	 * is on, until they have stopped or are off the track. A truck backing up
-	 * to a wreck is waited for from the moment it stops to find reverse until
-	 * it is at the wreck, however slowly it is going, since it swings its front
-	 * across the road as it backs.
+	 * a truck on the move, and a wreck that is, until they have stopped or are
+	 * off the track; and a truck with a wreck on board or on its crane, and
+	 * that wreck, stopped or not. A truck that has stopped beside a wreck it
+	 * has yet to lift is gone round, as the wreck is.
 	 */
 	const followed = (other: Obstacle) =>
 		caution !== null &&
 		// a car in the pits is not on the road at all
 		!(other.lane! >= PIT.in) &&
 		(!other.retired ||
-			(Math.abs(other.across) < HALF_CORRIDOR &&
-				(Math.abs(other.speed) > 1 || other.towed || !!other.backing)));
+			(Math.abs(other.across) < HALF_CORRIDOR && (Math.abs(other.speed) > 1 || other.towed)));
+
+	/** How far from the middle of something a car going by it keeps: more for a wreck, which may be lying across the road, and more again for a truck at work on one. */
+	const clearOf = (other: Obstacle) => CLEAR + (other.retired ? WRECK + (other.wide ?? 0) : 0);
 
 	/**
 	 * How far from the middle of something a car can get going by it on one
@@ -502,17 +504,16 @@ export function createRace(
 	 * `keep` metres behind it: and no faster than can be braked down to its
 	 * speed in time, braking at `brake` (m/s², doubled). It creeps up at
 	 * walking pace rather than stall, but not right up to something that has
-	 * stopped, which a car would only nose into (a wreck on the winch cannot
-	 * be pushed out of the way), nor towards something coming back down the
-	 * road: for those it stops. A car level with this one is no such thing:
-	 * stopping for it while it gives way to this one would hold the two of
-	 * them there for good. A truck backing up is, even level with it: it
-	 * gives way to nobody, and swings about.
+	 * stopped, which a car would only nose into (a truck cannot be pushed out
+	 * of the way), nor towards something coming back down the road: for
+	 * those it stops. A car level with this one is no such thing: stopping
+	 * for it while it gives way to this one would hold the two of them there
+	 * for good.
 	 */
-	function approach({ speed, backing }: Obstacle, gap: number, keep: number, brake: number) {
+	function approach({ speed }: Obstacle, gap: number, keep: number, brake: number) {
 		const slower = Math.max(0, speed);
 		const stopping = gap > keep ? Math.sqrt(slower ** 2 + brake * (gap - keep)) : slower;
-		const crawl = backing || speed < -1 || (gap > 2 && gap < keep - 2) ? 0 : 3;
+		const crawl = speed < -1 || (gap > 2 && gap < keep - 2) ? 0 : 3;
 		return Math.max(crawl, Math.min(slower + (gap - keep) * 1.5, stopping));
 	}
 
@@ -576,7 +577,8 @@ export function createRace(
 		for (const car of cars) locate(car);
 		marshal();
 		// the trucks do not move until the drivers have had their turn
-		road = [...cars, ...recovery.onTrack];
+		// (a wreck a truck has stopped beside to lift is part of the truck, to a driver)
+		road = [...cars.filter((car) => !recovery.covers(car)), ...recovery.onTrack];
 		for (const car of cars) drive(car);
 		pits.step(race.time, race.time >= LIGHTS, DT);
 		recovery.step(race.time, DT);
@@ -652,8 +654,8 @@ export function createRace(
 		// Going green once the track is clear and the field is together, and
 		// from then on unless there is another wreck (which brings the yellow
 		// back): the queue strings out a little as the leader picks up speed.
-		// It starts lining up as soon as the last wreck is on the hook, the
-		// truck having a lap of the track to tow it yet, but is not given the
+		// It starts lining up as soon as the last wreck is lifted, the truck
+		// having a lap of the track to take it round yet, but is not given the
 		// green until that is off the track too.
 		if (!caution.going && recovery.away && out >= CAUTION_MIN && (closed || out >= CAUTION_MAX)) {
 			caution.going = race.time;
@@ -694,7 +696,7 @@ export function createRace(
 		if (moved < -n / 2) moved += n;
 		car.sample = sample;
 		car.across = lateral(track, at.x, at.y, sample);
-		// a wreck on the hook is not driving anywhere
+		// a wreck on a truck is not driving anywhere
 		if (!car.towed) car.progress += moved * spacing;
 
 		const laps = Math.floor(car.progress / length);
@@ -732,7 +734,7 @@ export function createRace(
 		const velocity = body.getLinearVelocity();
 		const heading = body.getWorldVector({ x: 1, y: 0 });
 		car.speed = velocity.x * heading.x + velocity.y * heading.y;
-		// a wreck on the hook goes where the truck draws it, and a car in the pits where its crew sends it
+		// a wreck on a truck goes where the truck takes it, and a car in the pits where its crew sends it
 		if (car.towed || car.lane >= PIT.in) return;
 
 		const offRoad = Math.abs(car.across) > HALF_ROAD;
@@ -772,7 +774,7 @@ export function createRace(
 					queue = ahead;
 				}
 				if (ahead < -5 || Math.abs(ahead) >= Math.abs(gap)) continue;
-				const room = CLEAR + (other.retired ? WRECK : 0);
+				const room = clearOf(other);
 				const line = track.line[other.sample];
 				if (
 					waits
@@ -812,7 +814,7 @@ export function createRace(
 				}
 			} else if (blocker && !followed(blocker)) {
 				// go round it on whichever side is nearer the line already held
-				const room = CLEAR + (blocker.retired ? WRECK : 0);
+				const room = clearOf(blocker);
 				const line = track.line[blocker.sample];
 				const sides = [blocker.across + room - line, blocker.across - room - line]
 					.filter((o) => Math.abs(line + o) <= MAX_OFFSET)
@@ -851,11 +853,12 @@ export function createRace(
 			// Under caution the tow truck is let by: with it coming up behind,
 			// or alongside, a car keeps to the outside until it has gone, even
 			// one that was making for the pits, which will come round again.
+			// One that has stopped beside a wreck is gone round, either side.
 			const letBy =
 				caution !== null &&
 				recovery.onTrack.some((truck) => {
 					const clear = along(truck.sample, car.sample);
-					return !truck.backing && clear > -8 && clear < GIVE_WAY;
+					return truck.speed > 1 && clear > -8 && clear < GIVE_WAY;
 				});
 			if (letBy) offset = MAX_OFFSET - track.line[aimed(car)];
 			else if (bound && bound.across !== null) offset = bound.across - track.line[aimed(car)];

@@ -136,7 +136,9 @@ export const rulesOf = (settings: Settings): Rules => ({
 	pits: settings.pits,
 	tank: settings.tank / 10,
 	wear: settings.tyreWear / 100,
-	limit: settings.pitMph / MPH
+	// to the half metre a second, so 27 mph is the 12 the pits are tuned to, and
+	// any whole number of metres a second kept from before is what it was
+	limit: Math.round((settings.pitMph / MPH) * 2) / 2
 });
 
 /**
