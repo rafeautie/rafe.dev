@@ -15,6 +15,10 @@ export const HALF_ROAD = 4.5;
 export const HALF_CORRIDOR = 7;
 /** Half a car's width, over its tyres. */
 export const HALF_CAR = 1.07;
+/** From the middle of a car to either end of it. */
+export const NOSE = 2.1;
+/** The track's walls, as the physics tells what touches what: the tow trucks go through them. */
+export const WALLS = 0x0002;
 /**
  * How far from the centre line a driver will place the middle of the car:
  * as far as keeps all of it on the tarmac, with a little to spare for the

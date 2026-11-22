@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ROSTER } from './roster';
 import { LIMITS } from './settings';
 import { LANE, pitsFor } from './pits';
+import { onTruck } from './recovery';
 import {
 	KERBSIDE,
 	RING,
@@ -21,6 +22,7 @@ import {
 	LIGHTS,
 	neutral,
 	rank,
+	RULES,
 	timeCap,
 	type Flag,
 	type RaceEvent
@@ -342,7 +344,7 @@ describe.each(TRACK_IDS)('the line the pit lane is on, on the %s', (id) => {
  * when a caution is thrown by hand twenty seconds in.
  */
 const SEEDS: Record<TrackId, { wreck: number; clean: number }> = {
-	circuit: { wreck: 20, clean: 8 },
+	circuit: { wreck: 59, clean: 8 },
 	oval: { wreck: 3, clean: 5 }
 };
 
@@ -407,8 +409,16 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 		let cars = race.cars.map(({ x, y, angle, towed }) => ({ x, y, angle, towed }));
 		let lifted = 0;
 		let carried = 0;
+		/** When a car last ran into each truck, which nudges it, for a step, until it is back on its way. */
+		const knocked = race.trucks.map(() => -1);
 		while (!race.done) {
 			race.step();
+			for (const event of race.events) {
+				if (event.kind !== 'hit') continue;
+				race.trucks.forEach((truck, index) => {
+					if (onTruck(truck, event.x, event.y, 0.5)) knocked[index] = race.time;
+				});
+			}
 			race.events.length = 0;
 			race.trucks.forEach((truck, index) => {
 				const was = trucks[index];
@@ -423,7 +433,10 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 				// all but straight on the stand.
 				expect(Math.abs(truck.steer)).toBeLessThanOrEqual(TRUCK.lock + 1e-9);
 				expect(Math.abs(truck.steer - was.steer)).toBeLessThan(TRUCK.steering * DT + 1e-9);
-				if (truck.doing !== 'park' && was.doing !== 'park') {
+				if (race.time - knocked[index] < 2.5 * DT || truck.touched || was.touched) {
+					// (knocked by a car, or leant on by one, it is barely turned, and is straight back on its way)
+					expect(turned(was.angle, truck.angle)).toBeLessThan(0.02);
+				} else if (truck.doing !== 'park' && was.doing !== 'park') {
 					const [back, before] = [truck, was].map(({ x, y, angle }) => [
 						x + Math.cos(angle) * TRUCK.rear,
 						y + Math.sin(angle) * TRUCK.rear
@@ -666,4 +679,39 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 		expect(flown.slice(0, 5)).toEqual(['caution', 'restart', 'caution', 'restart', 'green']);
 		expect(race.flag).toBe('checkered');
 	});
+});
+
+/**
+ * Races run as the site runs them, pits and all, in each of which a car
+ * used to be driven hard into a tow truck at work under caution, or the
+ * truck into a car, before the trucks were solid and the drivers gave them
+ * room: the track, how many cars, and the seed.
+ */
+const TRUCK_HITS: [TrackId, number, number][] = [
+	['circuit', 6, 199],
+	['oval', 6, 13],
+	['oval', 6, 171],
+	['oval', 8, 19]
+];
+
+describe('the tow trucks out on the track', () => {
+	it.each(TRUCK_HITS)(
+		'are given room by the cars on the %s, %i of them, seed %i',
+		{ timeout: 60_000 },
+		(id, count, seed) => {
+			const race = createRace(seed, drawGrid(seed, ROSTER, count), getTrack(id), [], RULES);
+			const knocks: RaceEvent[] = [];
+			while (!race.done) {
+				race.step();
+				for (const event of race.events) {
+					if (event.kind !== 'hit') continue;
+					// a knock on a truck is one that lands on its outline
+					if (race.trucks.some((truck) => truck.busy && onTruck(truck, event.x, event.y, 0.5)))
+						knocks.push(event);
+				}
+				race.events.length = 0;
+			}
+			expect(knocks).toEqual([]);
+		}
+	);
 });
