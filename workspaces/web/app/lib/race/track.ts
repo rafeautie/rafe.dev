@@ -216,6 +216,10 @@ function build(id: TrackId, control: [number, number][]) {
 
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+/** The race is worked out in metres and seconds; it is shown in miles an hour and feet. */
+export const MPH = 3600 / 1609.344;
+export const FEET = 1 / 0.3048;
+
 /**
  * The triangle three points make, as what says how sharply the circle through
  * them bends: twice its area, signed by which way it turns, and its three

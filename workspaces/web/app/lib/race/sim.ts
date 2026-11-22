@@ -4,7 +4,7 @@ import { curvature, SPAN } from './line';
 import { createRecovery } from './recovery';
 import type { Entry } from './roster';
 import { serviceFor } from './service';
-import { clamp, HALF_CORRIDOR, HALF_ROAD, lateral, MAX_OFFSET, nearest, type Track } from './track';
+import { clamp, MPH, HALF_CORRIDOR, HALF_ROAD, lateral, MAX_OFFSET, nearest, type Track } from './track';
 
 // One race, start to finish. Each car is a rigid body pushed around by its
 // two axles' tyres, which grip up to a limit and slide past it, and steered
@@ -31,7 +31,7 @@ export const LIGHTS = 2;
  * tyres wear as a share of the usual, and the pit lane's speed limit in m/s.
  */
 export type Rules = { laps: number; pits: boolean; tank: number; wear: number; limit: number };
-export const RULES: Rules = { laps: 4, pits: true, tank: 3.3, wear: 1, limit: 12 };
+export const RULES: Rules = { laps: 4, pits: true, tank: 3.3, wear: 1, limit: 27 / MPH };
 /** The race as it was before there were pits: three laps, flat out all the way. */
 export const CLASSIC: Rules = { ...RULES, laps: 3, pits: false };
 

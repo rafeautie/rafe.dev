@@ -1,7 +1,7 @@
 import { LANE } from './pits';
 import type { ReplayCar } from './recording';
 import { neutral, rank, type Flag } from './sim';
-import { clamp } from './track';
+import { clamp, MPH } from './track';
 
 // The numbers for one car, live, as a race engineer would want them: how fast
 // it is going and whether it is on the throttle or the brake, where it is
@@ -16,8 +16,6 @@ import { clamp } from './track';
 
 /** How far back, in seconds, the speed is looked at to tell what the pedals are doing. */
 const PEDAL_WINDOW = 0.25;
-/** Metres a second, as miles an hour. */
-const MPH = 3600 / 1609.344;
 /** About what full throttle and full braking do to a car, in m/s². */
 const FULL_THROTTLE = 6;
 const FULL_BRAKE = 12;

@@ -16,7 +16,7 @@ import { LANE } from '~/lib/race/pits';
 import { CLASSIC, drawGrid, LIGHTS, rank, RULES, type Flag } from '~/lib/race/sim';
 import { FLAGS } from './shared';
 import { createSound, type Sound } from '~/lib/race/sound';
-import { getTrack, trackName, TRACK_IDS, type TrackId } from '~/lib/race/track';
+import { FEET, getTrack, MPH, trackName, TRACK_IDS, type TrackId } from '~/lib/race/track';
 
 // The race on its own, with nothing networked: pick a seed, and the whole
 // race is run and recorded at once, then played back here the way everyone
@@ -28,8 +28,8 @@ type Row = {
 	grid: number;
 	lap: number;
 	gap: string;
-	kmh: number;
-	/** How fast the tyres are sliding sideways, m/s. */
+	mph: number;
+	/** How fast the tires are sliding sideways, mph. */
 	slide: number;
 	damage: number;
 	best: number;
@@ -67,9 +67,9 @@ function describe(event: RecordedEvent, replay: Replay) {
 	if (event.kind === 'green') return `${when} green flag`;
 	if (event.kind === 'again') return `${when} lap ended under caution, to be run again`;
 	const at = `${when} ${replay.cars[event.car].entry.name}`;
-	if (event.kind === 'hit') return `${at} hit at ${(event.force * 3.6).toFixed(0)} km/h`;
+	if (event.kind === 'hit') return `${at} hit at ${(event.force * MPH).toFixed(0)} mph`;
 	if (event.kind === 'pit') {
-		return `${at} in its box for ${event.service === 'both' ? 'fuel and tyres' : event.service}`;
+		return `${at} in its box for ${event.service === 'both' ? 'fuel and tires' : event.service === 'tyres' ? 'tires' : 'fuel'}`;
 	}
 	if (event.kind === 'away') {
 		return `${at} away after ${event.seconds.toFixed(1)} s${event.slow ? ', fumbled' : ''}`;
@@ -101,9 +101,9 @@ function read(recording: Recording, replay: Replay, time: number, size: number):
 					? ''
 					: car.finishTime && leader.finishTime
 						? `+${(car.finishTime - leader.finishTime).toFixed(2)} s`
-						: `+${Math.max(0, leader.progress - car.progress).toFixed(0)} m`,
-			kmh: Math.round(Math.abs(car.speed) * 3.6),
-			slide: car.slip,
+						: `+${(Math.max(0, leader.progress - car.progress) * FEET).toFixed(0)} ft`,
+			mph: Math.round(Math.abs(car.speed) * MPH),
+			slide: car.slip * MPH,
 			damage: Math.round(car.damage * 100),
 			best: car.bestLap,
 			fuel: Math.round(car.fuel * 100),
@@ -370,12 +370,12 @@ export default function Sandbox() {
 								<th className="font-normal">Grid</th>
 								<th className="font-normal">Lap</th>
 								<th className="font-normal">Gap</th>
-								<th className="font-normal">km/h</th>
-								<th className="font-normal">Slide m/s</th>
+								<th className="font-normal">mph</th>
+								<th className="font-normal">Slide mph</th>
 								<th className="font-normal">Damage</th>
 								<th className="font-normal">Best lap</th>
 								{view.pits && <th className="font-normal">Fuel</th>}
-								{view.pits && <th className="font-normal">Tyre wear</th>}
+								{view.pits && <th className="font-normal">Tire wear</th>}
 								<th className="font-normal">Spd / Grip / Aggr / Rel / Crew</th>
 								<th className="font-normal">Status</th>
 							</tr>
@@ -397,7 +397,7 @@ export default function Sandbox() {
 										{row.lap}/{view.laps}
 									</td>
 									<td>{row.gap}</td>
-									<td>{row.kmh}</td>
+									<td>{row.mph}</td>
 									<td>{row.slide.toFixed(1)}</td>
 									<td>{row.damage}%</td>
 									<td>{row.best ? `${row.best.toFixed(2)} s` : ''}</td>

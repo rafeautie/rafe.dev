@@ -147,7 +147,7 @@ export const LEGEND = [
 ];
 
 /** What a pit stop is for, as the tower has room to say it. */
-const STOPS = { fuel: 'Fuel', tyres: 'Tyres', both: 'F+T' };
+const STOPS = { fuel: 'Fuel', tyres: 'Tires', both: 'F+T' };
 
 /**
  * How far ahead, in metres, a car must get before the tower moves it up a
@@ -872,7 +872,7 @@ export function createHud() {
 			p.fill(x + 5, y + 85, w - 10, 1, FAINT);
 			const shares: [string, number][] = [
 				['Fuel', r.fuel!],
-				['Tyre', r.tyres!]
+				['Tire', r.tyres!]
 			];
 			shares.forEach(([name, share], which) => {
 				const bx = x + 5 + which * 47;

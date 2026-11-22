@@ -45,8 +45,8 @@ const outlineOf = (id: TrackId) => {
 /** What the pits run on, each a whole number. */
 const PITS: [Key, string][] = [
 	['tank', 'fuel tank, tenths of a lap'],
-	['tyreWear', 'tyre wear, % of the usual'],
-	['pitSpeed', 'pit lane limit, m/s']
+	['tyreWear', 'tire wear, % of the usual'],
+	['pitMph', 'pit lane limit, mph']
 ];
 
 const GROUPS: { title: string; description: string; fields: [Key, string][] }[] = [
@@ -153,7 +153,7 @@ export const Tuning = memo(function Tuning({
 								checked={draft.pits}
 								onChange={(event) => setDraft({ ...draft, pits: event.target.checked })}
 							/>
-							{draft.pits ? 'fuel, tyres and stops' : 'off: flat out all the way'}
+							{draft.pits ? 'fuel, tires and stops' : 'off: flat out all the way'}
 						</span>
 						<span className="text-foreground/50">
 							<span className={cn(draft.pits !== DEFAULT_SETTINGS.pits && 'text-foreground')}>

@@ -28,8 +28,8 @@ export type Follow =
 
 export const TRACK: Follow = { mode: 'track' };
 
-/** The closest the camera goes, which is where one car is followed: the race's pixels at three times their size. */
-export const ZOOM_MAX = 3;
+/** The closest the camera goes, which is where one car is followed: the race's pixels at two and a half times their size. */
+export const ZOOM_MAX = 2.5;
 /** A group is followed no further out than the whole track. */
 export const ZOOM_MIN = 1;
 /** Room kept round a group, in metres. */

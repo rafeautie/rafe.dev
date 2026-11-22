@@ -107,7 +107,7 @@ describe('aiming', () => {
 		}
 	});
 
-	it('keeps the zoom between the whole track and three times', () => {
+	it('keeps the zoom between the whole track and the closest it goes', () => {
 		const close = aim([car('a', { x: 50 }), car('b', { x: 50.5 })], whole)!;
 		expect(close.zoom).toBe(ZOOM_MAX);
 		const strip = { x: 0, y: 0, w: WIDTH, h: HEIGHT };

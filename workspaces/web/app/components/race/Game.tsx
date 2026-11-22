@@ -788,7 +788,7 @@ export function Game({
 								readout.behind.gap !== null &&
 								` ${readout.behind.gap.toFixed(1)} s ahead of ${entry(readout.behind.id).name}.`}
 							{readout.fuel !== null && ` Fuel ${Math.round(readout.fuel * 100)}%.`}
-							{readout.tyres !== null && ` Tyres ${Math.round(readout.tyres * 100)}%.`}
+							{readout.tyres !== null && ` Tires ${Math.round(readout.tyres * 100)}%.`}
 							{readout.pit === 'box' && ' In its pit box.'}
 							{readout.pit === 'lane' && ' In the pit lane.'}
 							{readout.caution && ' Under caution.'}

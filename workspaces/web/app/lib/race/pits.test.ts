@@ -526,7 +526,7 @@ describe('the settings for the pits', () => {
 
 	it('are checked', () => {
 		expect(checkSettings({ ...DEFAULT_SETTINGS, laps: 9 })).toMatch(/Laps/);
-		expect(checkSettings({ ...DEFAULT_SETTINGS, pitSpeed: 2 })).toMatch(/Pit lane/);
+		expect(checkSettings({ ...DEFAULT_SETTINGS, pitMph: 5 })).toMatch(/Pit lane/);
 		expect(checkSettings({ ...DEFAULT_SETTINGS, pits: 'yes' })).toMatch(/Pits/);
 		const { crew: _, ...old } = DEFAULT_SETTINGS.cars.vixen;
 		expect(
@@ -535,7 +535,7 @@ describe('the settings for the pits', () => {
 	});
 
 	it('are filled in for settings saved before there were any', () => {
-		const { laps: _l, pits: _p, tank: _t, tyreWear: _w, pitSpeed: _s, ...old } = DEFAULT_SETTINGS;
+		const { laps: _l, pits: _p, tank: _t, tyreWear: _w, pitMph: _s, ...old } = DEFAULT_SETTINGS;
 		const cars = Object.fromEntries(
 			Object.entries(old.cars).map(([car, { crew: _, ...stats }]) => [
 				car,
@@ -545,6 +545,14 @@ describe('the settings for the pits', () => {
 		const filled = complete({ ...old, cars } as unknown as Partial<typeof DEFAULT_SETTINGS>);
 		expect(rulesOf(filled)).toEqual(RULES);
 		expect(filled.cars.vixen).toEqual({ ...DEFAULT_SETTINGS.cars.vixen, speed: 0.1 });
+		expect(checkSettings(filled)).toEqual(filled);
+	});
+
+	it('take a pit lane limit kept in metres a second as miles an hour', () => {
+		const { pitMph: _, ...old } = DEFAULT_SETTINGS;
+		const filled = complete({ ...old, pitSpeed: 12 } as Partial<typeof DEFAULT_SETTINGS>);
+		expect(filled.pitMph).toBe(27);
+		expect(filled).not.toHaveProperty('pitSpeed');
 		expect(checkSettings(filled)).toEqual(filled);
 	});
 });
