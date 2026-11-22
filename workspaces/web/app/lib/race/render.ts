@@ -1,3 +1,4 @@
+import type { Lens } from './camera';
 import { BOX, LANE, STAND, pitsFor } from './pits';
 import { createPainter, hex, measure, mix, type Painter } from './pixels';
 import { standing, type ReplayCar, type ReplayTruck } from './recording';
@@ -372,6 +373,10 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 	let particles: Particle[] = [];
 	// whether there are crews at the boxes when nothing says: there are unless the pits are shut
 	let crewed = true;
+	// the part of the frame a viewer's camera shows magnified (camera.ts), if any
+	let lens: Lens | null = null;
+	// the frame as drawn, for magnifying from
+	let unmagnified = new Uint32Array(0);
 	// the frame at its own size, and at the next whole size up, on the way to the screen
 	const small = document.createElement('canvas');
 	const large = document.createElement('canvas');
@@ -419,6 +424,39 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		ground.set(clean);
 		worn.fill(0);
 		particles = [];
+	}
+
+	/**
+	 * Shows the part of the frame the camera is on magnified over the part the
+	 * race has, a pixel at a time with hard edges, like everything else.
+	 */
+	function magnify() {
+		if (!lens) return;
+		const { from, to } = lens;
+		const [x0, y0] = [Math.max(0, Math.round(to.x)), Math.max(0, Math.round(to.y))];
+		const x1 = Math.min(width, Math.round(to.x + to.w));
+		const y1 = Math.min(height, Math.round(to.y + to.h));
+		const same =
+			Math.abs(from.w - to.w) < 0.01 &&
+			Math.abs(from.x - to.x) < 0.5 &&
+			Math.abs(from.y - to.y) < 0.5;
+		if (same || x1 <= x0 || y1 <= y0) return;
+		if (unmagnified.length !== frame.length) unmagnified = new Uint32Array(frame.length);
+		unmagnified.set(frame);
+		const [kx, ky] = [from.w / to.w, from.h / to.h];
+		const columns = new Int32Array(x1 - x0);
+		for (let px = x0; px < x1; px++) {
+			columns[px - x0] = Math.min(
+				width - 1,
+				Math.max(0, Math.floor(from.x + (px - to.x + 0.5) * kx))
+			);
+		}
+		for (let py = y0; py < y1; py++) {
+			const sy = Math.min(height - 1, Math.max(0, Math.floor(from.y + (py - to.y + 0.5) * ky)));
+			const row = sy * width;
+			const out = py * width;
+			for (let px = x0; px < x1; px++) frame[out + px] = unmagnified[row + columns[px - x0]];
+		}
 	}
 
 	/** Puts the finished frame on the screen. */
@@ -662,6 +700,11 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		/** Wipes the marks and litter of the last race. */
 		reset,
 
+		/** Shows part of the frame magnified, as a viewer's camera has it (camera.ts), or with null all of it as it is. */
+		setCamera(next: Lens | null) {
+			lens = next;
+		},
+
 		/** Shows another track, clean. */
 		setTrack(next: Track) {
 			if (next === track) return;
@@ -798,6 +841,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 			if (pits) {
 				cars.forEach((car, index) => painting.boxes[index] && clock(painting.boxes[index], car));
 			}
+			magnify();
 			over?.(painter);
 			present();
 		}

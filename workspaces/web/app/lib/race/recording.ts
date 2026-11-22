@@ -88,6 +88,8 @@ export type ReplayCar = {
 	progress: number;
 	laps: number;
 	bestLap: number;
+	/** Its last lap's time, or 0 before it has ended one. */
+	lastLap: number;
 	finishTime: number;
 	/** Fuel as a share of a full tank and tyre wear, 0 to 1 (a race with no pits has a full tank and new tyres throughout), and where the car is with the pits (LANE in pits.ts). */
 	fuel: number;
@@ -260,6 +262,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			progress: 0,
 			laps: -1,
 			bestLap: 0,
+			lastLap: 0,
 			finishTime: 0,
 			fuel: 1,
 			wear: 0,
@@ -290,7 +293,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			// start over, and say nothing of what is passed on the way back
 			for (const car of cars) {
 				car.hull.set(HULL);
-				car.damage = car.bestLap = car.finishTime = 0;
+				car.damage = car.bestLap = car.lastLap = car.finishTime = 0;
 				car.retired = false;
 				car.stop = null;
 			}
@@ -311,6 +314,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 				event.hull?.forEach((moved, k) => (car.hull[k] = HULL[k] + moved * DENT));
 			} else if (event.kind === 'lap') {
 				if (!car.bestLap || event.lap < car.bestLap) car.bestLap = event.lap;
+				car.lastLap = event.lap;
 			} else if (event.kind === 'finish') {
 				car.finishTime = event.time;
 			} else if (event.kind === 'retire') {

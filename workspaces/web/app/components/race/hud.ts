@@ -1,4 +1,5 @@
 import { MAX_BETS, MARKETS, pays, type Market, type Pools } from '~/lib/race/betting';
+import { toFrame, type Follow, type Frame, type Lens } from '~/lib/race/camera';
 import { LANE } from '~/lib/race/pits';
 import { ADVANCE, clip, enlarge, hex, measure, wrap, type Painter } from '~/lib/race/pixels';
 import type { Replay } from '~/lib/race/recording';
@@ -7,6 +8,7 @@ import type { Bet, RoomState, Standing } from '~/lib/race/room';
 import { CONDITIONS, ROSTER, inCondition } from '~/lib/race/roster';
 import { DEFAULT_SETTINGS, STATS } from '~/lib/race/settings';
 import { LIGHTS, neutral, rank, type Flag } from '~/lib/race/sim';
+import { createTelemetry, type Readout } from '~/lib/race/telemetry';
 import { ASKS, FLAGS, SHORT, chips, entry, holding, label, signed } from './shared';
 import type { Running, Selection, Tick } from './shared';
 
@@ -110,6 +112,17 @@ const SLIP_FOOT = 76;
 const slipHeight = (count: number) => SLIP_HEAD + count * CAR + SLIP_FOOT;
 /** How tall the tower is for a field of `count` cars, the leaderboard and everybody's bets. */
 const towerHeight = (count: number) => 35 + count * ROW;
+/** How tall the live numbers for a followed car are, and how high the camera's buttons over the track are. */
+const TELE_H = 112;
+const STRIP_H = 13;
+/** The buttons over the track that choose what the camera follows, and how wide each is. */
+export const VIEWS = [
+	['track', 'Track', 34],
+	['battle', 'Battle', 40],
+	['mine', 'My cars', 46]
+] as const;
+/** How wide the box beside them saying what is followed is. */
+const CHIP = 120;
 const BOARD_H = 18 + BOARD_ROWS * LINE;
 const TICKER_H = 17 + TICKS * TICK;
 
@@ -163,7 +176,8 @@ export type Layout = ReturnType<typeof layout>;
 export function layout(
 	{ width, height, stacked }: View,
 	betting = false,
-	count = DEFAULT_SETTINGS.count
+	count = DEFAULT_SETTINGS.count,
+	watching = false
 ) {
 	const unit = stacked ? UNIT : 1;
 	const [towerH, slipH] = [towerHeight(count), slipHeight(count)];
@@ -182,7 +196,13 @@ export function layout(
 			? { x: across * unit, y: Math.floor((height - HEIGHT) / 2) }
 			: { x: Math.floor((width - WIDTH) / 2), y: 0 };
 	const [tx, ty] = [track.x / unit, track.y / unit];
-	let tower: Box, board: Box, ticker: Box, wallet: Box, bets: Box, key: Box, pane: Box;
+	let tower: Box, board: Box, ticker: Box, wallet: Box, bets: Box, key: Box, pane: Box, tele: Box;
+	// The part of the frame the race has, which a viewer's camera magnifies
+	// (camera.ts), in the frame's pixels; and the top of it in the graphics'
+	// pixels, where the camera's buttons go.
+	let stage: Box, top: number;
+	// and the middle of the row they are in
+	let middle = fw >> 1;
 	let x: number, y: number;
 	if (!stacked) {
 		pane = box(0, 0, fw, fh);
@@ -191,6 +211,10 @@ export function layout(
 		ticker = box(4, board.y + board.h + 4, LEFT, TICKER_H);
 		wallet = box(fw - 148, 4, 144, 24);
 		bets = box(fw - 148, 32, 144, 0);
+		// a followed car's numbers at the foot of the column on the right
+		tele = box(fw - 148, fh - 4 - TELE_H, 144, TELE_H);
+		stage = box(0, 0, width, height);
+		top = 4;
 		// the slip is in the middle of the track, both ways
 		x = tx + (tw - SLIP) / 2;
 		y = ty + (th - slipH) / 2;
@@ -204,17 +228,38 @@ export function layout(
 		const column = stacked === 'beside' ? box(across + tw, 0, SIDE, fh) : box(0, th, fw, fh - th);
 		x = column.x + ((column.w - SLIP) >> 1);
 		y = column.y + column.h - slipH - 4;
-		pane = box(column.x, column.y, column.w, (betting ? y - 4 : column.y + column.h) - column.y);
+		// the camera's buttons go across the top of the column, where they hide none of the track
+		const under = column.y + STRIP_H + 6;
+		pane = box(column.x, under, column.w, (betting ? y - 4 : column.y + column.h) - under);
 		const left = column.x + ((column.w - COLUMN) >> 1);
-		const top = column.y + 4;
-		tower = box(left, top, HALF, towerH);
+		const head = under + 4;
+		tower = box(left, head, HALF, towerH);
 		board = box(left, tower.y + tower.h + 4, HALF, BOARD_H);
 		ticker = box(left, board.y + board.h + 4, HALF, TICKER_H);
-		wallet = box(left + HALF + 4, top, HALF, 24);
-		bets = box(wallet.x, top + 28, HALF, 0);
+		// a followed car's numbers at the top on the right, so they are in view
+		// without scrolling, and your chips and bets under them
+		tele = box(left + HALF + 4, head, HALF, TELE_H);
+		const right = watching ? head + TELE_H + 4 : head;
+		wallet = box(left + HALF + 4, right, HALF, 24);
+		bets = box(wallet.x, right + 28, HALF, 0);
+		stage =
+			stacked === 'beside'
+				? box(0, 0, (across + tw) * unit, height)
+				: box(0, 0, width, HEIGHT + track.y);
+		top = column.y + 4;
+		middle = column.x + (column.w >> 1);
 		// over the panels, above the stat bars it is about
 		key = box(x + SLIP - KEY_W, y - KEY_H - 4, KEY_W, KEY_H);
 	}
+	// the camera's buttons, in a row across the top of the race, with what is followed beside them
+	const strip = VIEWS.reduce((sum, [, , w]) => sum + w + 2, 0) + 2 + CHIP;
+	let vx = middle - (strip >> 1);
+	const views = VIEWS.map(([, , w]) => {
+		const at = box(vx, top, w, STRIP_H);
+		vx += w + 2;
+		return at;
+	});
+	const chip = box(vx + 2, top, CHIP, STRIP_H);
 	// the settings open over the middle of everything
 	const mx = (fw - MENU) >> 1;
 	const my = (fh - 170) >> 1;
@@ -236,7 +281,14 @@ export function layout(
 			cancel: box(mx + 150, my + 138, 50, 15)
 		},
 		track,
+		stage,
+		views,
+		chip,
+		unfollow: box(chip.x + chip.w - STRIP_H, chip.y, STRIP_H, STRIP_H),
+		tele,
 		tower,
+		// each row of the tower, which can be clicked to follow its car
+		towerRows: rows(count, (row) => box(tower.x, tower.y + 34 + row * ROW, tower.w, ROW - 1)),
 		board,
 		ticker,
 		// the lists inside those two, which scroll
@@ -319,6 +371,20 @@ export type Scene = {
 	/** The cars where they are drawn, and, once there is a race, the replay showing it. */
 	cars: CarView[];
 	replay: Replay | null;
+	/** What this viewer's camera is following, and where it is looking. */
+	watch: Watch;
+};
+
+/** A viewer's camera, for the graphics: what it follows, and where it is looking. */
+export type Watch = {
+	follow: Follow;
+	lens: Lens | null;
+	frame: Frame;
+	/** The cars it has in view because they are followed, and the one whose numbers are shown. */
+	followed: Set<string>;
+	focus: string | null;
+	/** That car's crew, 0 to 1, as the room has it. */
+	crew: number | null;
 };
 
 const INK = hex('#0f1115');
@@ -517,6 +583,10 @@ export function createHud() {
 		order.forEach((id, place) => {
 			const ry = y + 34 + Math.round(glide(`row ${id}`, place * ROW, dt));
 			const car = field?.find((car) => car.entry.id === id);
+			// the cars being followed are picked out
+			if (field && scene.watch.followed.has(id)) {
+				p.fill(x + 2, ry, w - 2, ROW - 1, PAPER, id === scene.watch.focus ? 0.16 : 0.08);
+			}
 			if (backed.has(id)) p.fill(x, ry, 2, ROW - 1, GOLD);
 			p.text(x + 5, ry + 3, String(place + 1), place === 0 ? PAPER : DIM);
 			tile(p, x + 14, ry + 2, id);
@@ -674,21 +744,188 @@ export function createHud() {
 		});
 	}
 
-	/** A small arrow over each car you have a bet on, so you can find it in the pack. */
+	/**
+	 * A small arrow over each car you have a bet on, so you can find it in the
+	 * pack, in gold; and over the car whose numbers are shown, in white. They
+	 * are wherever the camera shows the cars.
+	 */
 	function markers(p: Painter, at: Layout, scene: Scene) {
 		const backed = new Set(scene.bets.flatMap((bet) => bet.outcome.split('>')));
+		const { lens, frame, focus } = scene.watch;
+		// how many times bigger the cars are shown, so the arrow clears the roof
+		const zoom = lens ? lens.to.w / lens.from.w : 1;
 		for (const car of scene.cars) {
-			if (!backed.has(car.entry.id)) continue;
-			const x = Math.round((at.track.x + car.x * SCALE) / at.unit);
-			const y = Math.round((at.track.y + car.y * SCALE) / at.unit) - 15;
+			const mine = backed.has(car.entry.id);
+			const shown =
+				scene.room?.phase === 'racing' && scene.replay !== null && car.entry.id === focus;
+			if (!mine && !shown) continue;
+			const on = lens
+				? toFrame(lens, frame, car.x, car.y)
+				: { x: at.track.x + car.x * SCALE, y: at.track.y + car.y * SCALE };
+			const { stage } = at;
+			const outside =
+				on.x < stage.x || on.y < stage.y || on.x >= stage.x + stage.w || on.y >= stage.y + stage.h;
+			if (outside) continue;
+			const colour = mine ? GOLD : PAPER;
+			const x = Math.round(on.x / at.unit);
+			const y = Math.round(on.y / at.unit) - 12 - Math.round(3 * zoom);
 			p.fill(x - 4, y - 1, 9, 3, INK);
 			p.fill(x - 3, y + 2, 7, 1, INK);
 			p.fill(x - 2, y + 3, 5, 1, INK);
 			p.fill(x - 1, y + 4, 3, 1, INK);
-			p.fill(x - 3, y, 7, 1, GOLD);
-			p.fill(x - 2, y + 1, 5, 1, GOLD);
-			p.fill(x - 1, y + 2, 3, 1, GOLD);
-			p.fill(x, y + 3, 1, 1, GOLD);
+			p.fill(x - 3, y, 7, 1, colour);
+			p.fill(x - 2, y + 1, 5, 1, colour);
+			p.fill(x - 1, y + 2, 3, 1, colour);
+			p.fill(x, y + 3, 1, 1, colour);
+		}
+	}
+
+	/**
+	 * The camera's buttons across the top of the race: the whole track, the
+	 * battle, the cars you have bet on; and what is being followed, with a
+	 * cross to go back to the whole track.
+	 */
+	function views(p: Painter, at: Layout, scene: Scene) {
+		const { follow, focus } = scene.watch;
+		const mine = scene.bets.length > 0;
+		VIEWS.forEach(([mode, name], index) => {
+			button(p, at.views[index], name, follow.mode === mode, mode === 'mine' && !mine);
+		});
+		const { x, y, w, h } = at.chip;
+		const following = follow.mode !== 'track';
+		p.fill(x, y, w, h, INK, 0.85);
+		const named = focus ? entry(focus).name : null;
+		const [text, colour] = !following
+			? ['Tap a car to follow', DIM]
+			: !named
+				? [follow.mode === 'mine' ? 'No bets to follow' : 'Nobody', DIM]
+				: follow.mode === 'group'
+					? [`${follow.ids.length} cars`, PAPER]
+					: follow.mode === 'mine'
+						? [`Yours: ${named}`, PAPER]
+						: follow.mode === 'battle'
+							? [`Battle: ${named}`, PAPER]
+							: [named, PAPER];
+		const from = following && focus ? tile(p, x + 2, y + 2, focus) : x + 3;
+		p.text(from, y + 3, clip(text, x + w - (following ? 15 : 3) - from), colour);
+		if (following) p.centre(at.unfollow.x + 7, y + 3, '×', PAPER);
+	}
+
+	// The numbers for the car being followed: its speed and pedals, where it
+	// is running and how far the cars either side are, its laps, its tank, its
+	// tyres and its crew, and anything going on with the pits or the flag.
+	const telemetry = createTelemetry();
+	let readout: Readout | null = null;
+	function live(p: Painter, at: Box, scene: Scene, dt: number) {
+		const { replay, watch } = scene;
+		const index =
+			replay && watch.focus ? replay.cars.findIndex((car) => car.entry.id === watch.focus) : -1;
+		readout = replay && index >= 0 ? telemetry.read(replay, index, running) : null;
+		const { x, y, w } = at;
+		if (!readout) {
+			panel(p, { ...at, h: 32 });
+			head(p, at, 'Following', '');
+			const none = watch.follow.mode === 'mine' ? 'Bet on a car to follow it' : 'Nobody';
+			p.text(x + 5, y + 20, none, DIM);
+			return;
+		}
+		const r = readout;
+		const pits = r.fuel !== null && r.tyres !== null;
+		panel(p, { ...at, h: pits ? TELE_H : TELE_H - 12 });
+		// yellow across the top under caution, like the tower
+		p.fill(x, y, w, 15, r.caution ? FLAG : PAPER);
+		const named = tile(p, x + 3, y + 3, r.id);
+		p.text(named, y + 4, clip(entry(r.id).name, x + w - 34 - named), INK);
+		p.right(x + w - 4, y + 4, `P${r.place}/${r.of}`, INK);
+
+		// how fast, and the pedals, which are told from how the speed is changing
+		const speed = String(Math.round(glide('tele speed', r.speed, dt)));
+		const end = p.text(x + 5, y + 19, speed, PAPER, 2);
+		p.text(end + 2, y + 26, 'km/h', DIM);
+		const pedals: [string, number, number][] = [
+			['Thr', glide('tele throttle', r.throttle, dt), GOOD],
+			['Brk', glide('tele brake', r.brake, dt), BAD]
+		];
+		pedals.forEach(([name, share, colour], row) => {
+			const by = y + 19 + row * 9;
+			const bx = x + 72;
+			const bw = x + w - 5 - (bx + 20);
+			p.text(bx, by, name, DIM);
+			p.fill(bx + 20, by + 2, bw, 3, FAINT);
+			p.fill(bx + 20, by + 2, Math.round(bw * clamp01(share)), 3, colour);
+		});
+
+		// the cars either side, and how many seconds there are to each
+		p.fill(x + 5, y + 37, w - 10, 1, FAINT);
+		const sides: [string, Readout['ahead']][] = [
+			['Ahead', r.ahead],
+			['Behind', r.behind]
+		];
+		sides.forEach(([name, other], row) => {
+			const ry = y + 41 + row * 10;
+			p.text(x + 5, ry, name, DIM);
+			if (!other) {
+				p.text(x + 45, ry, row ? '--' : 'Leading', DIM);
+				return;
+			}
+			const after = tile(p, x + 45, ry - 1, other.id);
+			const gap = other.gap === null ? '--' : `${other.gap.toFixed(1)}s`;
+			p.text(after, ry, clip(entry(other.id).name, x + w - 8 - measure(gap) - after), PAPER);
+			p.right(x + w - 5, ry, gap, PAPER);
+		});
+
+		// the laps: this one, its last and best, and the best of anyone's, in gold when that is its own
+		p.fill(x + 5, y + 61, w - 10, 1, FAINT);
+		const time = (seconds: number) => (seconds > 0 ? seconds.toFixed(2) : '--');
+		p.text(x + 5, y + 65, 'Lap', DIM);
+		p.text(x + 32, y + 65, `${r.lap}/${r.laps}`, PAPER);
+		p.text(x + 72, y + 65, 'Last', DIM);
+		p.right(x + w - 5, y + 65, time(r.last), PAPER);
+		p.text(x + 5, y + 75, 'Best', DIM);
+		p.text(x + 32, y + 75, time(r.best), r.best > 0 && r.best === r.fastest ? GOLD : PAPER);
+		p.text(x + 72, y + 75, 'Field', DIM);
+		p.right(x + w - 5, y + 75, time(r.fastest), PAPER);
+
+		let sy = y + 87;
+		if (pits) {
+			// what is left in the tank and of the tyres, red when there is little; and how good the crew is
+			p.fill(x + 5, y + 85, w - 10, 1, FAINT);
+			const shares: [string, number][] = [
+				['Fuel', r.fuel!],
+				['Tyre', r.tyres!]
+			];
+			shares.forEach(([name, share], which) => {
+				const bx = x + 5 + which * 47;
+				p.text(bx, y + 89, name, DIM);
+				p.fill(bx + 26, y + 91, 16, 3, FAINT);
+				const colour = share < 0.2 ? BAD : which ? GOOD : GOLD;
+				p.fill(bx + 26, y + 91, Math.round(16 * clamp01(share)), 3, colour);
+			});
+			const crew = watch.crew === null ? '--' : String(Math.round(watch.crew * 100));
+			p.text(x + w - 44, y + 89, 'Crew', DIM);
+			p.right(x + w - 5, y + 89, crew, PAPER);
+			sy = y + 99;
+		}
+
+		// what is going on: out, home, in the pits, under caution; or else the last stop's time
+		const badges: [string, number, number][] = [];
+		if (r.retired) badges.push(['Out', ALARM, PAPER]);
+		else if (r.finished) badges.push(['Home', PAPER, INK]);
+		else if (r.pit === 'box' && r.stop) {
+			badges.push([`In box ${STOPS[r.stop.service]} ${r.stop.seconds.toFixed(1)}`, GOLD, INK]);
+		} else if (r.pit === 'lane') badges.push(['Pit lane', GOLD, INK]);
+		if (r.caution && !r.finished && replay) badges.push([FLAGS[replay.flag], FLAG, INK]);
+		let bx = x + 5;
+		for (const [text, fill, colour] of badges) {
+			const bw = measure(text) + 6;
+			p.fill(bx, sy, bw, 10, fill);
+			p.text(bx + 3, sy + 2, text, colour);
+			bx += bw + 3;
+		}
+		if (!badges.length && r.stop?.over) {
+			p.text(x + 5, sy + 2, 'Last stop', DIM);
+			const took = `${STOPS[r.stop.service]} ${r.stop.seconds.toFixed(1)}s`;
+			p.right(x + w - 5, sy + 2, took, r.stop.slow ? BAD : GOOD);
 		}
 	}
 
@@ -921,6 +1158,11 @@ export function createHud() {
 
 	return {
 		/** Draws everything over the race, `dt` seconds after the last time. */
+		/** The tower's running order as it is showing it, top first. */
+		order: () => running,
+		/** The followed car's numbers as last drawn, for the page to say as text. */
+		readout: () => readout,
+
 		draw(frame: Painter, at: Layout, scene: Scene, dt: number) {
 			const p = enlarge(frame, at.unit);
 			const { room } = scene;
@@ -943,7 +1185,11 @@ export function createHud() {
 			ticker(p, up(at.ticker), scene);
 			wallet(p, up(at.wallet), scene, dt);
 			yours(p, up(at.bets), scene);
+			const racing = room?.phase === 'racing' && scene.replay !== null;
+			if (racing && scene.watch.follow.mode !== 'track') live(p, up(at.tele), scene, dt);
+			else readout = null;
 			p.clip(null);
+			if (racing) views(p, at, scene);
 			if (room?.phase === 'betting') slip(p, at, scene, dt);
 			else if (room?.phase === 'results') result(p, at.card, scene, dt);
 			else if (room?.phase !== 'racing') {
