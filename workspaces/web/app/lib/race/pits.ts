@@ -203,15 +203,18 @@ function build(track: Track) {
 		boxes.push(standing(on(boxes[boxes.length - 1].sample, BOX.pitch), -BOX_ACROSS));
 	}
 	const last = boxes[BOXES - 1].sample;
-	// The trucks' stands, the front one first: it is the one nearest the way
-	// out. A truck stands with both its axles on the line the boxes are on,
-	// its front one level with a whole sample, since a truck's way to it is
-	// worked out in whole samples. Where that line bends, as it does on into
-	// a turn, the truck stands straight across the bend, between the two.
+	// The trucks' yard: one stretch of paving past the last box, long enough
+	// for them all one behind the other, on which a truck stands wherever
+	// there is room for it (recovery.ts). It stands with both its axles on the
+	// line the boxes are on, its front one level with a whole sample, since a
+	// truck's way to it is worked out in whole samples. Where that line bends,
+	// as it does on into a turn, the truck stands straight across the bend,
+	// between the two. At the start they stand one behind the other from the
+	// front of it, the front one being the one nearest the way out.
 	const fronts = [Math.round(on(on(last, STAND.after), TRUCK.axle))];
 	while (fronts.length < TRUCKS) fronts.unshift(Math.round(on(fronts[0], STAND.pitch)));
-	/** Where the tow trucks stand when they are not out, the front one first: where the middle of one is and which way it faces, and the samples its axles are level with. */
-	const stands = fronts.map((front) => {
+	/** A truck standing in the yard with its front axle level with `front`: where its middle is and which way it faces, and the samples its axles are level with. */
+	const spot = (front: number) => {
 		const back = on(front, -2 * TRUCK.axle);
 		const [fx, fy] = at(front, -BOX_ACROSS);
 		const [bx, by] = at(back, -BOX_ACROSS);
@@ -224,7 +227,11 @@ function build(track: Track) {
 			front,
 			back
 		};
-	});
+	};
+	/** Where the tow trucks stand at the start, the front one first. */
+	const stands = fronts.map(spot);
+	/** The yard: the furthest back and the furthest forward a truck's front axle is standing in it, and where one stands with it level with a sample between. */
+	const yard = { back: fronts[TRUCKS - 1], front: fronts[0], spot };
 	const out0 = Math.ceil(fronts[0] + STAND.run);
 	/** The first sample at or after `after` that is `sample` as the track counts them. */
 	const past = (after: number, sample: number) => after + ((((sample - after) % n) + n) % n);
@@ -323,6 +330,7 @@ function build(track: Track) {
 		merge: ((out1 % n) + n) % n,
 		boxes,
 		stands,
+		yard,
 		path,
 		thirst,
 		/** The way in through the wall, the lane, and the way out through the wall, to be paved. */
