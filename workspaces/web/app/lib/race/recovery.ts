@@ -1,6 +1,6 @@
 import { PolygonShape, type World } from 'planck';
 import { LANE, pitsFor } from './pits';
-import { NEARSIDE, RING, TRUCK, serviceFor, type Pose, type Route } from './service';
+import { NEARSIDE, RING, TRUCK, TRUCK_HALF, serviceFor, type Pose, type Route } from './service';
 import type { Car } from './sim';
 import { HALF_CORRIDOR, clamp, lateral, nearest, triangle, type Track } from './track';
 
@@ -38,11 +38,12 @@ const HOLD = 2;
 const THROUGH = 4;
 /** Along the track, the most it takes the truck to get across to the side it pulls up beside a wreck on, and how far it then runs straight there, so that all of it is in line before it stops. */
 const DRIFT = 14;
-const STRAIGHT_ON = 10;
-/** How near the wall the truck will go. */
+const STRAIGHT_ON = 8;
+/** The furthest to one side the truck pulls up beside a wreck, middle to middle, and how near the wall it will go if it has to. */
+const PASS = 4;
 const EDGE = 5.4;
-/** How much room it leaves between its side and a wreck it pulls up beside. */
-const GAP = 0.7;
+/** How much room it leaves between its tyres and a wreck it pulls up beside. */
+const GAP = 0.5;
 /** From the middle of a car to either end of it, and to either side. */
 const NOSE = 2.1;
 const FLANK = 0.95;
@@ -225,6 +226,18 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		get fetching(): boolean {
 			return stage === 'out' || stage === 'held' || stage === 'approach' || stage === 'lift';
 		}
+	};
+	/**
+	 * The front of the truck, as the drivers see it: where the truck is, but
+	 * for one stopped beside a wreck to lift it, which is the two of them
+	 * together, to be gone round as one, the same side all the way by.
+	 */
+	const nose = {
+		sample: homeOf(slot),
+		across: stand.across,
+		speed: 0,
+		retired: true as const,
+		towed: false
 	};
 	/** The back of the truck, as the drivers see it. */
 	const tail = {
@@ -466,14 +479,14 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 
 	/**
 	 * Where across the track the truck pulls up beside a wreck: far enough to
-	 * one side of it to clear it, the way it is lying, on whichever side that
-	 * keeps the truck nearer the middle of the road, and no nearer the wall
-	 * than it will go.
+	 * one side of it to clear it, the way it is lying, and on the tarmac if
+	 * there is room for that either side of it. If there is not, it goes the
+	 * side that takes it least far onto the verge, and as far as it has to.
 	 */
 	function beside(car: Car) {
 		const skew = car.body.getAngle() - Math.atan2(track.ty[car.sample], track.tx[car.sample]);
 		const wide = Math.abs(Math.sin(skew)) * NOSE + Math.abs(Math.cos(skew)) * FLANK;
-		const clear = wide + TRUCK.wide + GAP;
+		const clear = Math.min(PASS, wide + TRUCK_HALF + GAP);
 		const sides = [car.across - clear, car.across + clear].sort(
 			(a, b) => Math.abs(a) - Math.abs(b)
 		);
@@ -507,15 +520,19 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 
 	/**
 	 * How far on round the lap from a start a wreck is, as the truck goes to
-	 * it: at least as far as it takes to get across to the side it pulls up
-	 * on and in line there; one nearer than that is gone round the lap for.
-	 * One that has been knocked on a little way up the road from a truck
-	 * that pulled up for it is only crept up to.
+	 * it, and how far along it takes to get across to the side it pulls up on.
+	 * That is gently, if there is room, and if not as sharply as a truck can,
+	 * slowly; one nearer than that is gone round the lap for. One that has
+	 * been knocked on a little way up the road from a truck that pulled up
+	 * for it is only crept up to.
 	 */
 	function lying(car: Car, from: number, across: number, creep = false) {
-		const drift = clamp(Math.abs(beside(car) - across) * 4, 2, DRIFT);
-		const least = from + (creep ? 2 : drift + STRAIGHT_ON);
-		return { at: least + ahead(least, car.sample), drift };
+		const over = Math.abs(beside(car) - across);
+		const gentle = clamp(over * 4, 2, DRIFT);
+		const sharp = clamp(over * 2, 2, DRIFT);
+		const least = from + (creep ? 2 : sharp + STRAIGHT_ON);
+		const at = least + ahead(least, car.sample);
+		return { at, drift: creep ? 0 : Math.min(gentle, at - from - STRAIGHT_ON) };
 	}
 
 	/** Of the wrecks waiting, the one the truck comes to first from a start. */
@@ -561,15 +578,19 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	/**
 	 * Whether the wreck the truck is on its way to has been knocked well away
 	 * from where it was when it set out, with room yet to set out for it
-	 * again from here.
+	 * again from here, and lying far enough on up the road that doing so does
+	 * not take it round the lap. (One knocked nearer than that it goes on to
+	 * where it was for, and creeps up to it from there.)
 	 */
 	function moved() {
 		const { x, y } = wreck!.body.getPosition();
-		const left = way!.length - gone - pace ** 2 / (2 * BRAKE);
+		const room = DRIFT + STRAIGHT_ON + 4 + pace ** 2 / (2 * BRAKE);
 		return (
 			truck.across > -HALF_CORRIDOR + 1 &&
 			Math.hypot(x - sighted.x, y - sighted.y) > 1.5 &&
-			left > DRIFT + STRAIGHT_ON + 4
+			way!.length - gone > room &&
+			ahead(truck.sample, wreck!.sample) > room &&
+			ahead(truck.sample, wreck!.sample) < n / 2
 		);
 	}
 
@@ -790,6 +811,8 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 				if (slew(aim(x, y), dt)) [job, timer] = ['sling', 0];
 			} else if (slew(overBed(drops()[0]), dt)) [job, timer] = ['sling', 0];
 		} else if (job === 'sling') {
+			// (over a wreck that is nudged as the slings go on, the hook follows it)
+			if (loading) slew(aim(wreck!.body.getPosition().x, wreck!.body.getPosition().y), dt);
 			timer += dt;
 			if (timer < SLING) return;
 			// The slings are on: from here the car goes where the crane takes it.
@@ -899,7 +922,7 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		/** Where the drivers see the truck, while it is out on the track: one marker at the front of it, and one at the back. */
 		get markers(): Marker[] {
 			if (!truck.busy) return [];
-			return [truck, tail].filter((end) => end.across > -HALF_CORRIDOR - 1);
+			return [nose, tail].filter((end) => end.across > -HALF_CORRIDOR - 1);
 		},
 
 		/** How many wrecks the truck has still to see to. */
@@ -1040,9 +1063,15 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			truck.x = x;
 			truck.y = y;
 			truck.angle = body.getAngle();
+			const lifting = stage === 'lift' ? (wreck ?? carried?.car) : null;
+			nose.sample = truck.sample;
+			nose.across = lifting ? (truck.across + lifting.across) / 2 : truck.across;
+			nose.speed = truck.speed;
+			nose.towed = truck.towed;
 			const back = on(-TRUCK.long);
 			tail.sample = nearest(track, back.x, back.y, tail.sample);
-			tail.across = lateral(track, back.x, back.y, tail.sample);
+			// (and the back of it too: the way by is the way by the two of them)
+			tail.across = lifting ? nose.across : lateral(track, back.x, back.y, tail.sample);
 			tail.speed = truck.speed;
 			tail.towed = truck.towed;
 		}

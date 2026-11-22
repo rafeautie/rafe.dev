@@ -1,5 +1,6 @@
 import { ChainShape, PolygonShape, World, type Body, type Fixture } from 'planck';
 import { createPits, LANE as PIT, tyreGrip, type Stop } from './pits';
+import { curvature, SPAN } from './line';
 import { createRecovery } from './recovery';
 import type { Entry } from './roster';
 import { serviceFor } from './service';
@@ -49,6 +50,14 @@ const INERTIA = 1800;
 /** Centre of the car to each axle. */
 const AXLE = 1.3;
 const MAX_STEER = 0.55;
+/**
+ * How far down the road, in metres, a driver steering back onto the line
+ * takes to get there: firmly, since a car off the line in a bend is a car
+ * heading for the edge of the road, but not so hard that it swings past.
+ */
+const HOLD = 3.5;
+/** Seconds a driver brakes ahead of where the speed has to be down. */
+const BEAT = 0.2;
 /** Grip on the verge, as a share of grip on tarmac. */
 const VERGE_GRIP = 0.6;
 /** How hard a wreck's wheels drag, bent and flat as they are, as a share of the grip it has. */
@@ -445,6 +454,42 @@ export function createRace(
 	const aimed = (car: Car) =>
 		(car.sample + Math.round((5 + Math.abs(car.speed) * 0.3) / spacing)) % n;
 
+	/**
+	 * The steering that keeps a car on the line it is taking, `held` (where
+	 * that is at each sample). Steering for a point on it some way ahead, as
+	 * a driver finding their way would, cuts the inside of every bend, and the
+	 * faster the car the further ahead the point and the more it cuts. So it
+	 * is steered the way the bend just ahead takes, with as much lock as that
+	 * bends by, and corrected for how far it is to one side of the line and
+	 * how far it is heading off it, enough to bring it back on within a few
+	 * metres (HOLD) without swinging past. A car's tyres do not slide until
+	 * they are asked for more than they have, so the lock a bend takes is
+	 * simply the one that turns the car on an arc as tight as the bend.
+	 */
+	function hold(car: Car, held: (i: number) => [number, number]) {
+		const { sample } = car;
+		// the bend a little ahead, as far as the steering takes to wind on
+		const lead = sample + Math.round((1 + Math.abs(car.speed) * 0.08) / spacing);
+		const bend = curvature(...held(lead - SPAN), ...held(lead), ...held(lead + SPAN));
+		// how far the car is to one side of the line (+ the side the track's
+		// normal points to), and how far it is heading off it
+		const [bx, by] = held(sample - 1);
+		const [fx, fy] = held(sample + 1);
+		const way = Math.atan2(fy - by, fx - bx);
+		const { x: vx, y: vy } = car.body.getLinearVelocity();
+		// which way the car is going: where it is heading, as the wheels
+		// would take it, until it is going fast enough to tell by that
+		const going =
+			Math.hypot(vx, vy) > 2
+				? Math.atan2(vy, vx)
+				: car.angle + Math.atan(Math.tan(car.steer) / 2) + (car.speed < 0 ? Math.PI : 0);
+		const off = Math.atan2(Math.sin(going - way), Math.cos(going - way));
+		const [hx, hy] = held(sample);
+		const wide = (car.x - hx) * track.nx[sample] + (car.y - hy) * track.ny[sample];
+		const want = bend - clamp(wide, -3, 3) / HOLD ** 2 - (1.8 * off) / HOLD;
+		return Math.atan(2 * AXLE * want);
+	}
+
 	/** Metres from one track sample forward to another, the short way round: negative if it is behind. */
 	const along = (from: number, to: number) => (((to - from + n * 1.5) % n) - n / 2) * spacing;
 
@@ -829,24 +874,34 @@ export function createRace(
 			}
 			car.offset += clamp(offset - car.offset, -4 * DT, 4 * DT);
 
-			// steer for a point on the line a little way ahead
+			// where the line, or the line this car is taking, is at a sample
+			const held = (i: number): [number, number] => {
+				const k = ((i % n) + n) % n;
+				const across = clamp(track.line[k] + car.offset, -MAX_OFFSET, MAX_OFFSET);
+				return [track.x[k] + track.nx[k] * across, track.y[k] + track.ny[k] * across];
+			};
+			// Which way to go, roughly: for a point on it a little way ahead.
+			// That is how a car facing the wrong way, or backing off something,
+			// finds its way; one on its way round follows the line itself.
 			const ahead = aimed(car);
-			const across = clamp(track.line[ahead] + car.offset, -MAX_OFFSET, MAX_OFFSET);
-			const aim = body.getLocalPoint({
-				x: track.x[ahead] + track.nx[ahead] * across,
-				y: track.y[ahead] + track.ny[ahead] * across
-			});
+			const [aimX, aimY] = held(ahead);
+			const aim = body.getLocalPoint({ x: aimX, y: aimY });
 			const bearing = Math.atan2(aim.y, aim.x);
 			let steer = Math.atan2(4 * AXLE * Math.sin(bearing), Math.hypot(aim.x, aim.y));
+			if (Math.abs(bearing) < 1.2 && race.time >= car.reverseUntil) steer = hold(car, held);
 
 			// Off the line, the arc through a bend is tighter on the inside and
 			// wider on the outside, and so is the speed it can be taken at.
 			const inside = (car.across - track.line[car.sample]) * track.turn[car.sample];
 			const arc = Math.sqrt(clamp(1 - track.bend[car.sample] * inside, 0.5, 1.5));
+			// The speed for here, or for a moment from now if that is less: a
+			// driver starts braking a beat before the braking point, since the
+			// car takes that long to slow once they do.
+			const soon = (car.sample + Math.round((Math.abs(car.speed) * BEAT) / spacing)) % n;
+			let want = Math.min(car.pace[car.sample], car.pace[soon]) * Math.sqrt(grip / car.grip) * arc;
 			// A mistake: once one is due, the driver misjudges the next braking
 			// point and arrives at the corner too fast, by a few per cent most
 			// times and by a quarter now and then.
-			let want = car.pace[car.sample] * Math.sqrt(grip / car.grip) * arc;
 			if (race.time >= car.errorAt && car.speed > want + 0.5) {
 				car.errorUntil = race.time + 0.3 + rand() ** 2 * 0.7;
 				car.errorBy = 1.06 + rand() ** 3 * 0.22;

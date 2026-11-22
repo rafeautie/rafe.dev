@@ -264,7 +264,12 @@ describe.each(TRACK_IDS)('pit stops on the %s', (id) => {
 	it('are made under caution too, but not once the field is lining up to go green', () => {
 		let under = 0;
 		for (let seed = 1; seed <= 18; seed++) {
-			const race = seed <= SEEDS.length ? races[seed - 1] : run(seed, id);
+			// a wreck is rare enough that some of them have a caution thrown by
+			// hand, at about the time the cars are getting low on fuel
+			const race =
+				seed <= SEEDS.length
+					? races[seed - 1]
+					: run(seed, id, RULES, { flags: seed % 2 ? [] : [LIGHTS + 45] });
 			under += race.stops.filter((stop) => stop.flag === 'yellow').length;
 			// The pits shut as the field lines up: whoever was already on the
 			// way in is in its box soon after, and nobody follows. (The time

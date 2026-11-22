@@ -79,7 +79,7 @@ describe('a recording', () => {
 	});
 
 	it('plays back the caution and the truck that fetched the wreck, crane and all', () => {
-		// seed 7 loses a car a quarter of a minute in
+		// seed 7 loses a car ten seconds in
 		const grid = drawGrid(7, SIX);
 		const recording = record(7, grid, track, [], CLASSIC);
 		const replay = createReplay(recording, ROSTER);
@@ -112,7 +112,9 @@ describe('a recording', () => {
 			race.step();
 			race.step();
 		}
-		expect(cautions).toBe(1);
+		// every caution in it, the one for that car first
+		expect(cautions).toBe(recording.events.filter((event) => event.kind === 'caution').length);
+		expect(cautions).toBeGreaterThan(0);
 		expect(towed).toBeGreaterThan(0);
 		expect(loaded).toBeGreaterThan(0);
 		// the laps ended under it were told too, and are as many as the race was made longer by

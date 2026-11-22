@@ -109,7 +109,6 @@ const CONCRETE = [hex('#85867f'), hex('#8e8f88')];
 const AMBER = hex('#f2b320');
 const AMBER_SHADE = hex('#a8760c');
 const STEEL = hex('#4a4e57');
-const BOOM = hex('#878d97');
 const LAMP = hex('#ffc21a');
 const LAMP_OUT = hex('#4d3f1c');
 const PAD = [hex('#5b5d63'), hex('#62646a')];
