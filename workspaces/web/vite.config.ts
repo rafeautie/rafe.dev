@@ -4,7 +4,7 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 import viteReact from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { imagetools } from 'vite-imagetools';
-import { markdown } from './plugins/markdown';
+import { markdown } from './plugins/markdown.ts';
 
 // Vite emits every worker it has built into each environment's output, so the
 // server build would carry the chess worker and its model runtime
@@ -40,6 +40,10 @@ const chessRuntimeFromCdn: Plugin = {
 };
 
 export default defineConfig({
+	// Local /admin sign-in and .claude/launch.json expect port 3000
+	server: {
+		port: 3000
+	},
 	resolve: {
 		tsconfigPaths: true
 	},

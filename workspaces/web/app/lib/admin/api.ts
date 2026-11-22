@@ -173,7 +173,7 @@ export const getOverview = createServerFn({ method: 'GET' }).handler(async () =>
 });
 
 export const getBuild = createServerFn({ method: 'GET' })
-	.inputValidator((input: unknown) => ({ sha: blobSha(object(input).sha, 'sha') ?? '' }))
+	.validator((input: unknown) => ({ sha: blobSha(object(input).sha, 'sha') ?? '' }))
 	.handler(async ({ data }) => gitHub(await requireToken()).build(data.sha));
 
 // ---------------------------------------------------------------- writing
@@ -184,7 +184,7 @@ const postPath = (name: string) => `${postDir(name)}/index.md`;
 // A post as it stands now, or as it was at an older commit. `sha` is always the
 // file's blob on the branch today, since publishing replaces that.
 export const getPost = createServerFn({ method: 'GET' })
-	.inputValidator((input: unknown) => {
+	.validator((input: unknown) => {
 		const data = object(input);
 		return { slug: slug(data.slug), ref: ref(data.ref) };
 	})
@@ -208,7 +208,7 @@ export const getPost = createServerFn({ method: 'GET' })
 	});
 
 export const getPostVersions = createServerFn({ method: 'GET' })
-	.inputValidator((input: unknown) => ({ slug: slug(object(input).slug) }))
+	.validator((input: unknown) => ({ slug: slug(object(input).slug) }))
 	.handler(async ({ data }) => gitHub(await requireToken()).history(postDir(data.slug)));
 
 // Files a post's markdown names, among those in its folder: images, video.
@@ -260,7 +260,7 @@ function checkPost(source: string, folder: Set<string>) {
 }
 
 export const savePost = createServerFn({ method: 'POST' })
-	.inputValidator((input: unknown) => {
+	.validator((input: unknown) => {
 		const data = object(input);
 		return {
 			slug: slug(data.slug),
@@ -325,7 +325,7 @@ export const savePost = createServerFn({ method: 'POST' })
 	);
 
 export const deletePost = createServerFn({ method: 'POST' })
-	.inputValidator((input: unknown) => {
+	.validator((input: unknown) => {
 		const data = object(input);
 		return { slug: slug(data.slug), expected: blobSha(data.expected, 'expected') };
 	})
@@ -355,7 +355,7 @@ async function readManifest(github: GitHub, files: Map<string, string>) {
 }
 
 export const getPhotos = createServerFn({ method: 'GET' })
-	.inputValidator((input: unknown) => ({ ref: ref(object(input ?? {}).ref) }))
+	.validator((input: unknown) => ({ ref: ref(object(input ?? {}).ref) }))
 	.handler(async ({ data }) => {
 		const github = gitHub(await requireToken());
 		const head = await github.head();
@@ -373,7 +373,7 @@ export const getPhotoVersions = createServerFn({ method: 'GET' }).handler(async 
 );
 
 export const savePhotos = createServerFn({ method: 'POST' })
-	.inputValidator((input: unknown) => {
+	.validator((input: unknown) => {
 		const data = object(input);
 		return {
 			photos: photoEntries(data.photos),
