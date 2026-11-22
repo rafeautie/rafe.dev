@@ -1,4 +1,4 @@
-import { PolygonShape, type World } from 'planck';
+import { PolygonShape, type Contact, type World } from 'planck';
 import { LANE, pitsFor } from './pits';
 import {
 	KERBSIDE,
@@ -13,7 +13,17 @@ import {
 	type Route
 } from './service';
 import type { Car } from './sim';
-import { HALF_CORRIDOR, HALF_ROAD, clamp, lateral, nearest, triangle, type Track } from './track';
+import {
+	HALF_CORRIDOR,
+	HALF_ROAD,
+	NOSE,
+	WALLS,
+	clamp,
+	lateral,
+	nearest,
+	triangle,
+	type Track
+} from './track';
 
 // The tow trucks and the job they do. Each is a flatbed with room on its bed
 // for two cars, one behind the other, and a crane between the cab and the
@@ -40,8 +50,11 @@ import { HALF_CORRIDOR, HALF_ROAD, clamp, lateral, nearest, triangle, type Track
 // can be turned, and the truck goes round about its back axles, so it turns
 // only as it moves, and those cut a little inside the way its front takes.
 // What is on the crane or the bed goes where the truck takes it, off the
-// ground, where no car can touch it. The cars can run into the truck, but it
-// cannot be pushed about.
+// ground, where no car can touch it. The truck itself is solid, and as heavy
+// as a loaded flatbed is: a car that runs into it takes the knock, and hardly
+// moves it, and the truck is straight back on its way. It drives through the
+// track's walls, where the pit lane meets the track, as a car in the pits
+// does. It does not drive on over a car it bumps into.
 
 /** Seconds from the call to the truck leaving its stand. */
 const SCRAMBLE = 0.6;
@@ -57,8 +70,7 @@ const PASS = 4;
 const EDGE = 5.4;
 /** How much room it leaves between its tyres and a wreck it pulls up beside. */
 const GAP = 0.5;
-/** From the middle of a car to either end of it, and to either side. */
-const NOSE = 2.1;
+/** From the middle of a car to either side of it. */
 const FLANK = 0.95;
 /** How far forward of the axle it is steered by the crane is: the truck stops with that axle this far past what it is to lift. */
 const LEAD = TRUCK.axle - TRUCK.pivot;
@@ -102,10 +114,17 @@ const ROADSIDE = HALF_ROAD - 0.2;
 const LANE_PACE = 11;
 /** On the track, a truck stops this far short of another that is going for a wreck or at work on one (m). */
 const STAND_OFF = 40;
-/** On the track, it waits this long behind a car that is all but stopped in its way before it goes on regardless. */
+/** On the track, it waits this long behind a car that is all but stopped in its way before it edges on by, at this speed (m/s), pushing it aside if it must. */
 const FORBEARANCE = 6;
+const NUDGE = 1;
+/** Held at the end of the lane, the truck waits for a car this many seconds from where it comes out. */
+const CLEAR_FOR = 4;
 /** After this long held at the end of the lane, the truck goes whoever is coming. */
 const PATIENCE = 8;
+/** What the truck weighs (kg): nine of the cars. */
+const MASS = 9000;
+/** A car a truck has lifted, as the physics tells what touches what: the trucks never touch one. */
+const TOWED = 0x0004;
 
 /** How many cars a truck's bed holds. */
 export const LOAD = TRUCK.bed.length;
@@ -122,6 +141,21 @@ function toward(value: number, to: number, step: number): [number, boolean] {
 }
 
 export type Truck = ReturnType<typeof createTruck>['truck'];
+
+/** Whether a place is on a truck, or within `margin` of it. */
+export function onTruck(
+	truck: { x: number; y: number; angle: number },
+	px: number,
+	py: number,
+	margin: number
+) {
+	const [cos, sin] = [Math.cos(truck.angle), Math.sin(truck.angle)];
+	const [dx, dy] = [px - truck.x, py - truck.y];
+	return (
+		Math.abs(dx * cos + dy * sin) < TRUCK.long + margin &&
+		Math.abs(dy * cos - dx * sin) < TRUCK.wide + margin
+	);
+}
 
 /** The crane: which way it points from straight ahead (radians, towards the truck's left positive), how far out its hook is from where it turns, and how high it has lifted what is on it, 0 to 1. */
 export type Crane = { swing: number; reach: number; raise: number };
@@ -220,9 +254,10 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	const homeOf = (which: number) => ((lane.stands[which].front % n) + n) % n;
 	const exit = (((lane.leave - HOLD) % n) + n) % n;
 	const body = world.createBody({
-		type: 'kinematic',
+		type: 'dynamic',
 		position: stall,
 		angle: stall.angle,
+		allowSleep: false,
 		userData: 'truck'
 	});
 	body.createFixture({
@@ -235,7 +270,14 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			].map(([fore, side]) => ({ x: fore * TRUCK.long, y: side * TRUCK.wide }))
 		),
 		friction: 0.3,
-		restitution: 0.1
+		restitution: 0.1,
+		filterMaskBits: 0xffff & ~WALLS & ~TOWED
+	});
+	// a box, as heavy as the truck and its load, all of it about its middle
+	body.setMassData({
+		mass: MASS,
+		center: { x: 0, y: 0 },
+		I: (MASS * ((2 * TRUCK.long) ** 2 + (2 * TRUCK.wide) ** 2)) / 12
 	});
 
 	const truck = {
@@ -265,6 +307,10 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		/** On its way to a wreck or at work on one. */
 		get fetching(): boolean {
 			return stage === 'out' || stage === 'held' || stage === 'approach' || stage === 'lift';
+		},
+		/** Whether a car on its wheels, wrecked or not, is up against it, which may have nudged it. */
+		get touched(): boolean {
+			return against(() => true);
 		}
 	};
 	/**
@@ -339,6 +385,31 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		body.setLinearVelocity({ x: 0, y: 0 });
 		body.setAngularVelocity(0);
 	}
+
+	/** Where the truck is standing, while it stands: a car that knocks it, it is back there the next step. */
+	let standing: Pose | null = null;
+
+	/** Whether any car on its wheels, wrecked or not, up against the truck is `one`, by where it touches it. */
+	function against(one: (contact: Contact, car: Car) => boolean) {
+		for (let edge = body.getContactList(); edge; edge = edge.next) {
+			const index = edge.other?.getUserData();
+			if (typeof index !== 'number' || !edge.contact.isTouching()) continue;
+			if (one(edge.contact, cars[index])) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Whether the truck has bumped into a car in front of it, one still on
+	 * its wheels: it stops at once, rather than drive on over it or shove it
+	 * along the road.
+	 */
+	const bumped = () =>
+		against((contact, car) => {
+			const manifold = contact.getWorldManifold(null);
+			if (car.retired || !manifold?.pointCount) return false;
+			return body.getLocalPoint(manifold.points[0]).x > TRUCK.long - 2.5;
+		});
 
 	/** Whether a car can be touched by anything: not while it is up on the crane or the bed. */
 	function solid(car: Car, is: boolean) {
@@ -537,6 +608,8 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		// never so slow that the last of the way is not covered
 		const cap = Math.min(limit, Math.max(0.6, caps[at] + (caps[at + 1] - caps[at]) * t));
 		pace += clamp(cap - pace, -1.5 * BRAKE * dt, pull * dt);
+		// (edging past a car that will not move, it may push it)
+		if (limit > NUDGE && pace > 0 && bumped()) pace = 0;
 		// The point it is steered by is taken along the way, and back onto it
 		// if it is off it: the wheel is turned for whichever way that is to go,
 		// a little way on, and the truck goes round to it as fast as it does.
@@ -593,7 +666,8 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 				car.retired ||
 				// a car in the pits is not coming
 				car.lane >= LANE.in ||
-				(ahead(car.sample, gate) >= Math.max(14, car.speed * 2.5) && ahead(gate, car.sample) >= 12)
+				(ahead(car.sample, gate) >= Math.max(20, car.speed * CLEAR_FOR) &&
+					ahead(gate, car.sample) >= 12)
 		);
 	}
 
@@ -847,24 +921,36 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 
 	/**
 	 * On the track, the truck does not drive into the back of a car that is in
-	 * its way: it goes no faster than one that is moving, and waits for one
-	 * that is all but stopped, though not for ever, or one that is stuck
-	 * there would hold it up for good.
+	 * its way: it keeps far enough back from one that is moving to stop if it
+	 * has to, and waits for one that is all but stopped, though not for ever,
+	 * or one that is stuck there would hold it up for good: then it edges by
+	 * at walking pace.
 	 */
 	function traffic(dt: number) {
 		if (truck.across < -HALF_CORRIDOR) return Infinity;
 		let limit = Infinity;
 		let stopped = false;
+		const stopping = pace ** 2 / (2 * BRAKE);
+		const look = BUMPER + NOSE + 8 + stopping;
 		for (const car of cars) {
 			const before = ahead(truck.sample, car.sample);
-			if (car.retired || car.lane >= LANE.in || before === 0 || before > 8 + pace) continue;
-			if (Math.abs(car.across - truck.across) >= 3.2) continue;
+			// (a car coming out of the pits is in its way as soon as it is on the track)
+			const off = car.lane >= LANE.in && !(car.lane === LANE.out && car.across > -HALF_CORRIDOR);
+			if (car.retired || off || before === 0 || before > look) continue;
+			if (Math.abs(car.across - truck.across) >= TRUCK_HALF + FLANK + 1) continue;
 			if (car.speed < 2) {
-				// all but stopped: waited for, until it has been waited for long enough
+				// all but stopped: waited for, until it has been waited for long
+				// enough, and then edged past, pushing it aside if it has to
 				stopped = true;
-				if (waited > FORBEARANCE) continue;
+				if (waited > FORBEARANCE) {
+					limit = Math.min(limit, NUDGE);
+					continue;
+				}
 			}
-			limit = Math.min(limit, Math.max(0, car.speed - 1));
+			// (from its front bumper to the back of the car, less a little to spare)
+			const room = Math.max(0, before - BUMPER - NOSE - 2);
+			const slower = Math.max(0, car.speed - 1);
+			limit = Math.min(limit, Math.sqrt(slower ** 2 + 2 * BRAKE * room));
 		}
 		waited = stopped ? waited + dt : 0;
 		// Nor into the other truck, if it comes up behind it: no faster than
@@ -874,7 +960,6 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			if (other === truck) continue;
 			const fore = (other.x - x) * Math.cos(angle) + (other.y - y) * Math.sin(angle);
 			const side = (other.y - y) * Math.cos(angle) - (other.x - x) * Math.sin(angle);
-			const stopping = pace ** 2 / (2 * BRAKE);
 			if (other.fetching && other.across > -HALF_CORRIDOR) {
 				// One that is at a wreck, or about to be, is not gone by at all,
 				// wherever across the road it is: it will be swinging its crane
@@ -885,16 +970,6 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			}
 		}
 		return limit;
-	}
-
-	/** Whether a place is on another truck, or within `margin` of it. */
-	function onTruck(other: Truck, px: number, py: number, margin: number) {
-		const [cos, sin] = [Math.cos(other.angle), Math.sin(other.angle)];
-		const [dx, dy] = [px - other.x, py - other.y];
-		return (
-			Math.abs(dx * cos + dy * sin) < TRUCK.long + margin &&
-			Math.abs(dy * cos - dx * sin) < TRUCK.wide + margin
-		);
 	}
 
 	/**
@@ -965,6 +1040,9 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 				car.towed = true;
 				car.body.setKinematic();
 				solid(car, false);
+				for (let fixture = car.body.getFixtureList(); fixture; fixture = fixture.getNext()) {
+					fixture.setFilterData({ groupIndex: 0, categoryBits: TOWED, maskBits: 0xffff });
+				}
 				// it goes on the bed lying whichever way round is the nearer
 				const lie = turn(car.body.getAngle() - body.getAngle() - truck.crane.swing);
 				carried = { car, place: truck.load.indexOf(-1), lie };
@@ -1117,9 +1195,12 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 			// a call on the way home is answered from where the truck is
 			if ((stage === 'home' || stage === 'park') && waiting.length && alone) fetch();
 
-			if (stage === 'parked') {
-				rest(body);
-			} else if (stage === 'out') {
+			// Standing, it is kept where it stopped, however a car knocks it.
+			if (stage === 'parked' || stage === 'held' || stage === 'lift' || stage === 'drop') {
+				standing ??= on(0);
+				move(body, standing.x, standing.y, standing.angle, dt);
+			} else standing = null;
+			if (stage === 'out') {
 				if (advance(dt, pitTraffic())) {
 					stage = 'held';
 					timer = 0;
@@ -1128,7 +1209,6 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 					vacating = -1;
 				}
 			} else if (stage === 'held') {
-				rest(body);
 				timer += dt;
 				const { from, across } = start();
 				const rolling = next(from, across)!.body.getLinearVelocity();
@@ -1149,7 +1229,6 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 					slew({ swing, reach: STOWED.reach + 1 }, dt);
 				} else slew(STOWED, dt);
 			} else if (stage === 'lift' || stage === 'drop') {
-				rest(body);
 				work(dt);
 			} else if (stage === 'haul') {
 				if (advance(dt, Math.min(traffic(dt), pitTraffic()), HAUL)) craneAt('drop');
