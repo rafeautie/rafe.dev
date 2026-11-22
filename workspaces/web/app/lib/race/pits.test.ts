@@ -152,10 +152,11 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 		expect(rear.sample - STAND.long / 2).toBeGreaterThan(last.sample + BOX.long / 2);
 		expect(front.sample + STAND.long / 2).toBeLessThan(lane.out0);
 		for (const stand of lane.stands) expect(stand.across).toBe(last.across);
-		// and all of it on the straight the start line is on, or all but
-		for (const thing of [...lane.boxes, ...lane.stands]) {
-			expect(track.bend[((Math.round(thing.sample) % n) + n) % n]).toBeLessThan(1 / 50);
-		}
+		// and all of it on the straight the start line is on, or all but: on
+		// the oval the front stand runs on a little way into the first turn
+		const bend = (sample: number) => track.bend[((Math.round(sample) % n) + n) % n];
+		for (const box of lane.boxes) expect(bend(box.sample)).toBeLessThan(1 / 50);
+		for (const stand of lane.stands) expect(bend(stand.sample)).toBeLessThan(1 / 45);
 	});
 
 	it('leads from the track through every box and back to the track', () => {

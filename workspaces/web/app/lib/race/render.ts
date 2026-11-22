@@ -1,4 +1,5 @@
-import { BOX, LANE, STAND, pitsFor } from './pits';
+import { crewAt, HOMEWARD, KIT, nearing, type Scene } from './crew';
+import { APRON, BOX, BOX_EDGE, LANE, STAND, pitsFor } from './pits';
 import { createPainter, hex, measure, mix, type Painter } from './pixels';
 import { standing, type ReplayCar, type ReplayTruck } from './recording';
 import { HALF_LANE, RING, TRUCK, serviceFor, type Route } from './service';
@@ -8,6 +9,7 @@ import {
 	HALF_ROAD,
 	WORLD_H,
 	WORLD_W,
+	clamp,
 	lateral,
 	nearest,
 	type Track,
@@ -38,22 +40,23 @@ const SMOKE_FROM = 9;
 export type CarView = Pick<
 	Car,
 	'entry' | 'x' | 'y' | 'angle' | 'speed' | 'slip' | 'hull' | 'retired'
-> & { lane?: number; stop?: ReplayCar['stop'] };
+> & { lane?: number; stop?: ReplayCar['stop']; coming?: ReplayCar['coming'] };
 
 /**
  * What the renderer needs to know besides the cars: the trucks, the flag
- * that is flying, and whether the cars pit, which is whether there are crews
- * at the boxes. A replay is one.
+ * that is flying, whether the cars pit, which is whether there are crews at
+ * the boxes, and the race time, which says how far through its work a crew
+ * still busy after its car has gone is. A replay is one.
  */
-export type Service = { trucks: ReplayTruck[]; flag: Flag; pits?: boolean };
+export type Service = { trucks: ReplayTruck[]; flag: Flag; pits?: boolean; time?: number };
 
 /** Nothing happening on a track: every truck on its stand, no caution. */
 const standingBy = (track: Track): Service => ({ trucks: standing(track), flag: 'green' });
 
 /** There is a caution lamp on the infield wall about this often round the lap (m). */
 const LAMPS_EVERY = 45;
-/** A box's crew wait along its infield edge, this far inside it. */
-const WAIT = 0.45;
+/** The pit apron eases out from the lane to its full depth over this far (m), before the first box and after the last stand. */
+const TAPER = 7;
 /** A stop's time stays up over its box until the car is this far away (m). */
 const TIME_NEAR = 16;
 
@@ -102,9 +105,15 @@ const STEEL = hex('#4a4e57');
 const BOOM = hex('#878d97');
 const LAMP = hex('#ffc21a');
 const LAMP_OUT = hex('#4d3f1c');
-const PAD = [hex('#5b5d63'), hex('#62646a')];
 const SUIT = hex('#f2efe6');
 const HOSE = hex('#17181c');
+const RIG = hex('#b8322a');
+const RIG_TOP = hex('#e0604c');
+const JACK = hex('#d0412f');
+const HUB = hex('#7a7d86');
+const FUEL = hex('#d8b452');
+const ALARM = hex('#ff3b30');
+const OVERALLS = hex('#c9c5ba');
 const INK = hex('#0f1115');
 const QUICK = hex('#6fdc7a');
 const SLOW = hex('#ff6b61');
@@ -165,7 +174,7 @@ function paint(track: Track) {
 
 	const ground = new Uint32Array(WIDTH * HEIGHT);
 	// what each pixel is, for laying the pit lane over it: grass, wall, verge or tarmac
-	const [GRASS_, WALL_, VERGE_, TARMAC_] = [0, 1, 2, 3];
+	const [GRASS_, WALL_, VERGE_, TARMAC_, APRON_] = [0, 1, 2, 3, 4];
 	const surface = new Uint8Array(WIDTH * HEIGHT);
 	for (let py = 0; py < HEIGHT; py++) {
 		for (let px = 0; px < WIDTH; px++) {
@@ -236,11 +245,12 @@ function paint(track: Track) {
 		return gap;
 	}
 
-	// The pits (pits.ts). The lane runs along the wall past the boxes, with
-	// a line across it where its speed limit begins and ends. The ways in and
-	// out go through the wall, which is left open there, with a line painted
-	// where it was. Each box is a pad on the infield side of the lane, and
-	// past the last of them is the tow truck's stand, hatched.
+	// The pits (pits.ts). The lane runs along the wall, with a line across it
+	// where its speed limit begins and ends. The ways in and out go through
+	// the wall, which is left open there, with a line painted where it was.
+	// Beside the lane, on the same paving and with a line between, are the
+	// boxes, painted on, and past the last of them the tow trucks' stands,
+	// hatched; and behind all of it, a low wall.
 	const pit = pitsFor(track);
 	pave(pit.ways[1]);
 	for (const way of [pit.ways[0], pit.ways[2]]) {
@@ -250,6 +260,34 @@ function paint(track: Track) {
 			const i = which[k];
 			const far = lateral(track, (x + 0.5) / SCALE, (y + 0.5) / SCALE, i);
 			if (far > -HALF_CORRIDOR - 0.3 && (i & 1) === 0) ground[k] = PAINT;
+		}
+	}
+	/** The frame pixel of a point that is `across` from the centre line at a sample, if it is in the frame. */
+	const at = (sample: number, across: number) => {
+		const [wx, wy] = pit.at(sample, -across);
+		const [px, py] = [Math.floor(wx * SCALE), Math.floor(wy * SCALE)];
+		return px >= 0 && py >= 0 && px < WIDTH && py < HEIGHT ? py * WIDTH + px : -1;
+	};
+	const begin = pit.boxes[0].sample - BOX.long / 2 - 2;
+	const end = pit.stands[0].sample + STAND.long / 2 + 1;
+	for (let s = begin - TAPER; s <= end + TAPER; s += 0.2) {
+		// all the way back between the first box and the last stand, easing in to the lane either side
+		const ease = clamp(Math.min(s - begin + TAPER, end + TAPER - s) / TAPER, 0, 1);
+		const deep = BOX_EDGE + (APRON - BOX_EDGE) * ease * ease * (3 - 2 * ease);
+		for (let across = BOX_EDGE - 0.6; across <= deep + 0.5; across += 0.2) {
+			const k = at(s, across);
+			if (k < 0 || (surface[k] !== GRASS_ && surface[k] !== APRON_)) continue;
+			if (across <= deep) {
+				surface[k] = APRON_;
+				ground[k] = CONCRETE[grain(k % WIDTH, Math.floor(k / WIDTH))];
+			} else if (across > BOX_EDGE + 0.1) {
+				ground[k] = across - deep < 0.3 ? WALL : WALL_SHADOW;
+			}
+		}
+		// the line between the lane and the boxes
+		if (s >= begin && s <= end) {
+			const k = at(s, BOX_EDGE);
+			if (k >= 0 && surface[k] === APRON_) ground[k] = PAINT;
 		}
 	}
 	for (const stand of pit.stands) {
@@ -263,12 +301,13 @@ function paint(track: Track) {
 				const side = wy * cos - wx * sin;
 				if (Math.abs(along) > STAND.long / 2 || Math.abs(side) > STAND.wide / 2) continue;
 				const k = py * WIDTH + px;
-				if (surface[k] !== GRASS_) continue;
+				if (surface[k] !== APRON_) continue;
 				const edge =
 					STAND.long / 2 - Math.abs(along) < 0.25 || STAND.wide / 2 - Math.abs(side) < 0.25;
 				// hatched in the trucks' own amber
 				const hatch = Math.floor((along + side) * 1.4) & 1;
-				ground[k] = edge ? AMBER : hatch ? mix(PAD[0], AMBER, 0.35) : PAD[grain(px, py)];
+				if (edge) ground[k] = AMBER;
+				else if (hatch) ground[k] = mix(ground[k], AMBER, 0.3);
 			}
 		}
 	}
@@ -281,25 +320,23 @@ function paint(track: Track) {
 	}
 	const boxes = pit.boxes.map((box) => {
 		const [cos, sin] = [Math.cos(box.angle), Math.sin(box.angle)];
-		const reach = Math.ceil((BOX.pitch + BOX.wide) * SCALE);
+		const reach = Math.ceil((BOX.long + BOX.wide) * SCALE);
 		/** The box's painted edge, to be done over each race in the colour of the car whose box it is. */
 		const edge: { x: number; y: number }[] = [];
 		const [cx, cy] = [Math.floor(box.x * SCALE), Math.floor(box.y * SCALE)];
 		for (let py = Math.max(0, cy - reach); py < Math.min(HEIGHT, cy + reach); py++) {
 			for (let px = Math.max(0, cx - reach); px < Math.min(WIDTH, cx + reach); px++) {
 				const [wx, wy] = [(px + 0.5) / SCALE - box.x, (py + 0.5) / SCALE - box.y];
-				// along the lane from the middle of the box, and across it: towards the track is positive
+				// along the lane from where the car stands in it, and across it: towards the track is positive
 				const along = wx * cos + wy * sin;
 				const side = wy * cos - wx * sin;
-				if (Math.abs(along) > BOX.pitch / 2 || side > BOX.wide / 2 + 0.1) continue;
-				if (side < -BOX.wide / 2) continue;
+				const [front, back] = [BOX.front, BOX.front - BOX.wide];
+				if (Math.abs(along) > BOX.long / 2 || side > front || side < back) continue;
 				const k = py * WIDTH + px;
-				const inside = Math.abs(along) <= BOX.long / 2 && Math.abs(side) <= BOX.wide / 2;
+				if (surface[k] !== APRON_) continue;
 				const border =
-					inside && (BOX.long / 2 - Math.abs(along) < 0.25 || BOX.wide / 2 - Math.abs(side) < 0.25);
-				if (surface[k] === GRASS_) ground[k] = PAD[grain(px, py)];
-				else if (!border) continue;
-				if (border && surface[k] !== WALL_ && surface[k] !== TARMAC_) {
+					BOX.long / 2 - Math.abs(along) < 0.25 || front - side < 0.25 || side - back < 0.25;
+				if (border) {
 					ground[k] = PAINT;
 					edge.push({ x: px, y: py });
 				}
@@ -580,57 +617,134 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		y: Math.floor((box.y + along * box.sin + side * box.cos) * SCALE) + oy
 	});
 
-	/** One of a crew, from above: shoulders in the team's overalls and a helmet in the car's colour, with a shadow. */
-	function person(box: PitBox, along: number, side: number, colour: number) {
-		const { x, y } = spot(box, along, side);
-		if (x < 1 || y < 0 || x + 2 >= width || y + 1 >= height) return;
+	/** Sets a frame pixel, if it is in the frame; with `alpha`, over what is there. */
+	function put(x: number, y: number, colour: number, alpha = 1) {
+		if (x < 0 || y < 0 || x >= width || y >= height) return;
 		const k = y * width + x;
-		for (const d of [-1, 0, 1])
-			frame[k + width + d + 1] = mix(frame[k + width + d + 1], BLACK, 0.4);
-		frame[k - 1] = frame[k + 1] = SUIT;
-		frame[k] = colour;
+		frame[k] = alpha < 1 ? mix(frame[k], colour, alpha) : colour;
+	}
+
+	/** A line between two points in a box's own metres. */
+	function rule(
+		box: PitBox,
+		a: { x: number; y: number },
+		b: { x: number; y: number },
+		colour: number
+	) {
+		const run = Math.hypot(b.x - a.x, b.y - a.y);
+		for (let d = 0; d <= run; d += 0.15) {
+			const { x, y } = spot(
+				box,
+				a.x + ((b.x - a.x) * d) / (run || 1),
+				a.y + ((b.y - a.y) * d) / (run || 1)
+			);
+			put(x, y, colour);
+		}
+	}
+
+	/** A tyre lying flat, from above: a ring round its hub. */
+	function tyre(box: PitBox, at: { x: number; y: number }) {
+		const { x, y } = spot(box, at.x, at.y);
+		for (const [dx, dy] of [
+			[-1, -1],
+			[1, -1],
+			[-1, 1],
+			[1, 1]
+		]) {
+			put(x + dx, y + dy, TYRE, 0.6);
+		}
+		for (const [dx, dy] of [
+			[-1, 0],
+			[1, 0],
+			[0, -1],
+			[0, 1]
+		]) {
+			put(x + dx, y + dy, TYRE);
+		}
+		put(x, y, HUB);
 	}
 
 	/**
-	 * A box's crew, who have room in it to work all round the car. They wait
-	 * in a row along the back of the box. When their car is on its way one of
-	 * them stands at the front of the box to show it where to stop. While it
-	 * stands there, the tyre changers work at its wheels and the fueller at
-	 * its tail, the hose running to the back of the box.
+	 * A box's kit, on the ground under its car: the fuel rig at the back with
+	 * its hose out to wherever the nozzle is, the new tyres racked beside it
+	 * and the old ones put down, the jacks, and any fuel spilt.
 	 */
-	function crew(box: PitBox, car: CarView, now: number) {
-		const colour = hex(car.entry.color);
-		const behind = -BOX.wide / 2 + WAIT;
-		const lane = car.retired ? LANE.racing : (car.lane ?? LANE.racing);
-		const stopped = lane === LANE.box;
-		const tyres = stopped && car.stop?.service !== 'fuel';
-		const fuel = stopped && car.stop?.service !== 'tyres';
-		// the four at the wheels, the one who fuels, and the one who shows the car in
-		[-1.6, -0.8, 0.8, 1.6].forEach((along, wheel) => {
-			if (!tyres) return person(box, along, behind, colour);
-			// each steps in to the wheel and back out with the old tyre, turn about
-			const busy = (Math.floor(now / 220) + wheel) & 1 ? 0 : 0.3;
-			const at = wheel < 2 ? -1.3 : 1.3;
-			const to = wheel & 1 ? 1.4 + busy : -1.4 - busy;
-			person(box, at, to, colour);
-		});
-		if (fuel) {
-			const from = spot(box, -2.55, behind);
-			const to = spot(box, -2.55, -0.6);
-			for (let y = Math.min(from.y, to.y); y <= Math.max(from.y, to.y); y++) {
-				for (let x = Math.min(from.x, to.x); x <= Math.max(from.x, to.x); x++) {
-					if (x >= 0 && y >= 0 && x < width && y < height) frame[y * width + x] = HOSE;
+	function kit(box: PitBox, scene: Scene) {
+		if (scene.spill > 0) {
+			const r = 0.35 + 0.75 * scene.spill;
+			const [cx, cy] = [KIT.inlet.x, KIT.inlet.y - 0.55];
+			for (let dx = -r; dx <= r; dx += 0.2) {
+				for (let dy = -r; dy <= r; dy += 0.2) {
+					if (dx * dx + dy * dy > r * r) continue;
+					const { x, y } = spot(box, cx + dx, cy + dy);
+					put(x, y, FUEL, (x + y) & 1 ? 0.55 : 0.35);
 				}
 			}
-			person(box, -2.55, -0.5, colour);
-		} else {
-			person(box, -2.4, behind, colour);
 		}
-		if (lane === LANE.called || lane === LANE.in || stopped) {
-			person(box, BOX.long / 2 - 0.45, 0, colour);
-		} else {
-			person(box, 2.4, behind, colour);
+		const { rig } = KIT;
+		for (let dx = -rig.half; dx <= rig.half; dx += 0.2) {
+			for (let dy = -0.3; dy <= 0.3; dy += 0.2) {
+				const { x, y } = spot(box, rig.x + dx, rig.y + dy);
+				put(x, y, Math.abs(dx) < rig.half - 0.15 && dy > 0 ? RIG_TOP : RIG);
+			}
 		}
+		rule(box, { x: rig.x + rig.half, y: rig.y }, scene.nozzle, HOSE);
+		for (const at of scene.tyres) tyre(box, at);
+		for (const { pad, grip } of scene.jacks) {
+			rule(box, pad, grip, JACK);
+			const { x, y } = spot(box, pad.x, pad.y);
+			put(x, y, STEEL);
+		}
+	}
+
+	/**
+	 * A box's crew, from above: shoulders in the team's overalls and a helmet
+	 * in the car's colour, with a shadow. A tyre in someone's hands is held
+	 * out in front of them; the guns flash at the wheel nuts, and anyone in
+	 * trouble has a red mark over them.
+	 */
+	function people(box: PitBox, scene: Scene, colour: number, now: number) {
+		const flash = Math.floor(now / 90) & 1;
+		for (const one of scene.people) {
+			const toward = one.y < 0 ? 1 : -1;
+			if (one.holding === 'tyre') tyre(box, { x: one.x, y: one.y + toward * 0.55 });
+			const { x, y } = spot(box, one.x, one.y);
+			for (const d of [0, 1, 2]) put(x + d, y + 2, BLACK, 0.4);
+			put(x + 2, y + 1, BLACK, 0.4);
+			for (const d of [-1, 0, 1]) put(x + d, y + 1, OVERALLS);
+			put(x - 1, y, SUIT);
+			put(x + 1, y, SUIT);
+			put(x, y, colour);
+			if (one.working && one.role !== 'jack') {
+				const gun = spot(box, one.x, one.y + toward * 0.4);
+				put(gun.x, gun.y, flash ? SPARK : STEEL);
+			}
+			if (one.fumbling && Math.floor(now / 200) & 1) {
+				for (const dy of [-6, -5, -4, -2]) put(x, y + dy, ALARM);
+			}
+		}
+	}
+
+	/**
+	 * What is going on in a car's box: its crew waiting along the back of it;
+	 * getting ready as their car comes in, those who will work on it; at it
+	 * while it stands there, each at their job for as long as it takes; and
+	 * going back once they are done (crew.ts).
+	 */
+	function scene(box: PitBox, car: CarView, time: number | undefined): Scene {
+		const lane = car.retired ? LANE.racing : (car.lane ?? LANE.racing);
+		if ((lane === LANE.called || lane === LANE.in) && car.coming) {
+			return crewAt(car.coming, -1, nearing(Math.hypot(car.x - box.x, car.y - box.y)));
+		}
+		const stop = car.stop;
+		if (stop?.plan && !car.retired) {
+			const t =
+				lane === LANE.box ? stop.seconds : time === undefined ? Infinity : time - stop.since;
+			if (t >= 0 && t < Math.max(stop.seconds, stop.plan.seconds) + HOMEWARD + 0.5) {
+				return crewAt(stop.plan, t);
+			}
+		}
+		return crewAt(null, 0);
 	}
 
 	/** How long a stop has taken, over the box: counting while the car stands there, and for a moment after it has gone, green or red. */
@@ -641,7 +755,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		const near = Math.hypot(car.x - box.x, car.y - box.y) < TIME_NEAR;
 		if (!here && !(stop.over && car.lane === LANE.out && near)) return;
 		const figure = stop.seconds.toFixed(1);
-		const { x, y } = spot(box, 0, -BOX.wide / 2 - 1.6);
+		const { x, y } = spot(box, 0, BOX.front - BOX.wide - 1.3);
 		const wide = measure(figure) + 3;
 		painter.fill(x - (wide >> 1), y - 5, wide, 10, INK, 0.85);
 		painter.centre(x + 1, y - 3, figure, here ? SUIT : stop.slow ? SLOW : QUICK);
@@ -741,6 +855,11 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 					for (const at of painting.boxes[index]?.edge ?? []) dab({ ...at, colour });
 				});
 			}
+			// each box's crew and kit, the kit on the ground under everything else
+			const scenes = cars.map((car, index) =>
+				pits && painting.boxes[index] ? scene(painting.boxes[index], car, service.time) : null
+			);
+			scenes.forEach((one, index) => one && kit(painting.boxes[index], one));
 			const { trucks } = service;
 			for (const truck of trucks) haul(truck, true);
 			for (const car of cars) plot(car, true);
@@ -749,8 +868,9 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 			for (const truck of trucks) if (cars[truck.towing]) cable(truck, cars[truck.towing]);
 			if (pits) {
 				const now = performance.now();
-				cars.forEach(
-					(car, index) => painting.boxes[index] && crew(painting.boxes[index], car, now)
+				scenes.forEach(
+					(one, index) =>
+						one && people(painting.boxes[index], one, hex(cars[index].entry.color), now)
 				);
 			}
 

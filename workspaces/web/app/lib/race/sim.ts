@@ -1,5 +1,6 @@
 import { ChainShape, PolygonShape, World, type Body, type Fixture } from 'planck';
-import { createPits, LANE as PIT, tyreGrip, type Stop } from './pits';
+import type { Plan } from './crew';
+import { createPits, LANE as PIT, tyreGrip } from './pits';
 import { curvature, SPAN } from './line';
 import { createRecovery } from './recovery';
 import type { Entry } from './roster';
@@ -173,7 +174,7 @@ type Happening =
 	 * stood this long, longer if the crew fumbled it. And out on the track,
 	 * a car runs out of fuel, which retires it.
 	 */
-	| { kind: 'pit'; service: Stop }
+	| ({ kind: 'pit' } & Omit<Plan, 'seconds'>)
 	| { kind: 'away'; seconds: number; slow: boolean }
 	| { kind: 'dry' }
 	/**
