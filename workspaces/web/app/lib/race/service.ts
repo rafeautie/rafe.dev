@@ -1,5 +1,6 @@
 import {
 	HALF_CORRIDOR,
+	HALF_ROAD,
 	clamp,
 	lateral,
 	nearest,
@@ -22,14 +23,21 @@ import {
 export const RING = 10;
 /** Half the pit lane's width: it runs from the wall to the boxes. */
 export const HALF_LANE = 2.2;
-/** Where across the track a truck runs when it has just come on, or is about to go off. */
-export const NEARSIDE = -3.8;
-
 /**
  * The truck from above, x forward: half its length and width, how far behind
  * its middle the hook is, and how far either side of it the axles are.
  */
 export const TRUCK = { long: 3, wide: 1.2, hook: 3.2, axle: 1.8 };
+/** Half the truck's width over its tyres. */
+export const TRUCK_HALF = TRUCK.wide + 0.22;
+/**
+ * The furthest from the centre line the middle of a truck out on the track
+ * runs if all of it is to stay on the tarmac, with some to spare: round a
+ * bend its back wheels follow a little inside its front ones.
+ */
+export const KERBSIDE = HALF_ROAD - TRUCK_HALF - 0.45;
+/** Where across the track a truck runs when it has just come on, or is about to go off: on the infield side, all of it on the tarmac. */
+export const NEARSIDE = -KERBSIDE;
 /** The tightest the line the pit lane is on bends, as a radius in metres, and the tightest any way worked out for a truck does. */
 export const TIGHTEST = 9;
 const STEER = 6.5;
