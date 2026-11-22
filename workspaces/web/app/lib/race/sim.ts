@@ -734,8 +734,12 @@ export function createRace(
 		const velocity = body.getLinearVelocity();
 		const heading = body.getWorldVector({ x: 1, y: 0 });
 		car.speed = velocity.x * heading.x + velocity.y * heading.y;
-		// a wreck on a truck goes where the truck takes it, and a car in the pits where its crew sends it
-		if (car.towed || car.lane >= PIT.in) return;
+		// A wreck on a truck goes where the truck takes it, and a car in the
+		// pits where its crew sends it, with nothing sliding.
+		if (car.towed || car.lane >= PIT.in) {
+			car.slip = 0;
+			return;
+		}
 
 		const offRoad = Math.abs(car.across) > HALF_ROAD;
 		const grip = car.grip * (offRoad ? VERGE_GRIP : 1) * (1 - 0.2 * car.damage) * tyreGrip(car);

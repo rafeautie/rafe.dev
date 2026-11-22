@@ -12,7 +12,6 @@ import {
 	WORLD_W,
 	clamp,
 	lateral,
-	nearest,
 	type Track,
 	type TrackId
 } from './track';
@@ -183,8 +182,8 @@ function paint(track: Track) {
 	}
 
 	const ground = new Uint32Array(WIDTH * HEIGHT);
-	// what each pixel is, for laying the pit lane over it: grass, wall, verge or tarmac
-	const [GRASS_, WALL_, VERGE_, TARMAC_, APRON_] = [0, 1, 2, 3, 4];
+	// what each pixel is, for laying the pit lane over it and for what a tyre
+	// throws up there: grass, wall, verge, tarmac, the apron or the lane's concrete
 	const surface = new Uint8Array(WIDTH * HEIGHT);
 	for (let py = 0; py < HEIGHT; py++) {
 		for (let px = 0; px < WIDTH; px++) {
@@ -243,11 +242,12 @@ function paint(track: Track) {
 					if (px < 0 || py < 0 || px >= WIDTH || py >= HEIGHT) continue;
 					if ((px + 0.5 - cx) ** 2 + (py + 0.5 - cy) ** 2 > half ** 2) continue;
 					const k = py * WIDTH + px;
-					if (surface[k] === TARMAC_ || (surface[k] !== GRASS_ && !through)) continue;
-					if (surface[k] === WALL_) {
+					const was = surface[k];
+					if (was === TARMAC_ || (was !== GRASS_ && was !== PAVED_ && !through)) continue;
+					if (was === WALL_) {
 						gap.push({ x: px, y: py });
 						surface[k] = TARMAC_;
-					}
+					} else surface[k] = PAVED_;
 					ground[k] = CONCRETE[grain(px, py)];
 				}
 			}
@@ -286,7 +286,8 @@ function paint(track: Track) {
 		const deep = BOX_EDGE + (APRON - BOX_EDGE) * ease * ease * (3 - 2 * ease);
 		for (let across = BOX_EDGE - 0.6; across <= deep + 0.5; across += 0.2) {
 			const k = at(s, across);
-			if (k < 0 || (surface[k] !== GRASS_ && surface[k] !== APRON_)) continue;
+			if (k < 0 || (surface[k] !== GRASS_ && surface[k] !== APRON_ && surface[k] !== PAVED_))
+				continue;
 			if (across <= deep) {
 				surface[k] = APRON_;
 				ground[k] = CONCRETE[grain(k % WIDTH, Math.floor(k / WIDTH))];
@@ -363,7 +364,23 @@ function paint(track: Track) {
 		);
 		return [0, 1, 2, 3].map((corner) => ({ x: lx + (corner & 1), y: ly + (corner >> 1) }));
 	}).flat();
-	return { ground, lamps, boxes };
+	return { ground, surface, lamps, boxes };
+}
+
+/** What each pixel of a painted track is (`paint`). */
+const [GRASS_, WALL_, VERGE_, TARMAC_, APRON_, PAVED_] = [0, 1, 2, 3, 4, 5];
+
+/**
+ * Whether a tyre at a point (in metres) is off the road: on the grass or the
+ * verge, where it throws up dust, rather than on the track's tarmac or the
+ * concrete of the pits. Off the painted area altogether is grass.
+ */
+export function offRoadAt(track: Track, x: number, y: number) {
+	const { surface } = paintTrack(track);
+	const [px, py] = [Math.floor(x * SCALE), Math.floor(y * SCALE)];
+	if (px < 0 || py < 0 || px >= WIDTH || py >= HEIGHT) return true;
+	const here = surface[py * WIDTH + px];
+	return here !== TARMAC_ && here !== APRON_ && here !== PAVED_;
 }
 
 /** Whether a point (in the car's own metres) is inside its outline. */
@@ -914,30 +931,30 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 			for (const car of dt > 0 ? cars : []) {
 				const cos = Math.cos(car.angle);
 				const sin = Math.sin(car.angle);
-				const offRoad =
-					Math.abs(lateral(track, car.x, car.y, nearest(track, car.x, car.y))) > HALF_ROAD;
-				// where the two rear tyres meet the road
-				const rear = [-0.85, 0.85].map((side) => ({
-					x: car.x - 1.3 * cos - side * sin,
-					y: car.y - 1.3 * sin + side * cos
-				}));
-				if (car.slip > MARKS_FROM) {
-					// rubber laid down by them, and smoke off each once they
-					// slide fast enough to burn; on the verge, dust
-					const thick = offRoad ? 0.5 : Math.min(1, (car.slip - SMOKE_FROM) / 8 + 0.25) * 0.6;
-					for (const tyre of rear) {
+				// where the two rear tyres meet the ground, and whether that is
+				// the road (the track, or the concrete of the pits) or the verge
+				const rear = [-0.85, 0.85].map((side) => {
+					const x = car.x - 1.3 * cos - side * sin;
+					const y = car.y - 1.3 * sin + side * cos;
+					return { x, y, offRoad: offRoadAt(track, x, y) };
+				});
+				for (const tyre of rear) {
+					if (car.slip > MARKS_FROM) {
+						// rubber laid down, and smoke once it slides fast enough
+						// to burn; on the verge, dust
+						const thick = tyre.offRoad
+							? 0.5
+							: Math.min(1, (car.slip - SMOKE_FROM) / 8 + 0.25) * 0.6;
 						const k = pixel(tyre.x, tyre.y);
 						if (k >= 0 && worn[k] < 3) {
 							worn[k]++;
 							ground[k] = mix(ground[k], BLACK, 0.3);
 						}
-						if ((offRoad || car.slip > SMOKE_FROM) && Math.random() < thick) {
-							puff(tyre.x, tyre.y, 1.5, 0.5, offRoad ? DUST : SMOKE, true);
+						if ((tyre.offRoad || car.slip > SMOKE_FROM) && Math.random() < thick) {
+							puff(tyre.x, tyre.y, 1.5, 0.5, tyre.offRoad ? DUST : SMOKE, true);
 						}
-					}
-				} else if (offRoad && Math.abs(car.speed) > 6) {
-					for (const tyre of rear) {
-						if (Math.random() < 0.5) puff(tyre.x, tyre.y, 1, 0.4, DUST, true);
+					} else if (tyre.offRoad && Math.abs(car.speed) > 6 && Math.random() < 0.5) {
+						puff(tyre.x, tyre.y, 1, 0.4, DUST, true);
 					}
 				}
 				if (car.retired && Math.random() < 0.25) {

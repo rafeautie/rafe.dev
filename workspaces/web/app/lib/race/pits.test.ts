@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BOX, BOX_ACROSS, LANE, STAND, pitsFor } from './pits';
 import { LOAD } from './recovery';
 import { createReplay, pack, record, unpack } from './recording';
+import { offRoadAt } from './render';
 import { ROSTER, type Entry } from './roster';
 import { TRUCK } from './service';
 import { HULL } from './sim';
@@ -53,6 +54,9 @@ function run(
 	const joined: number[] = [];
 	let nearest2 = Infinity;
 	let least = Infinity;
+	// the most any car off the track slid, and how often one of its rear tyres was off the road
+	let slid = 0;
+	let rough = 0;
 	for (let step = 0; step < (LIGHTS + timeCap(rules.laps) + 1) / DT && !race.done; step++) {
 		const before = race.cars.map((car) => ({ fuel: car.fuel, wear: car.wear, lane: car.lane }));
 		race.step();
@@ -101,6 +105,17 @@ function run(
 			}
 		}
 		for (const car of race.cars) least = Math.min(least, car.fuel);
+		for (const car of race.cars) {
+			if (car.retired || car.lane < LANE.in) continue;
+			slid = Math.max(slid, car.slip);
+			const [cos, sin] = [Math.cos(car.angle), Math.sin(car.angle)];
+			for (const side of [-0.85, 0.85]) {
+				// where the renderer has a rear tyre (render.ts)
+				const x = car.x - 1.3 * cos - side * sin;
+				const y = car.y - 1.3 * sin + side * cos;
+				if (offRoadAt(track, x, y)) rough++;
+			}
+		}
 	}
 	return Object.assign(race, {
 		all: events,
@@ -110,7 +125,9 @@ function run(
 		entered,
 		joined,
 		nearest: nearest2,
-		least
+		least,
+		slid,
+		rough
 	});
 }
 
@@ -244,6 +261,14 @@ describe.each(TRACK_IDS)('pit stops on the %s', (id) => {
 		for (const race of races) {
 			expect(race.fastest).toBeLessThanOrEqual(RULES.limit + 0.01);
 			expect(race.nearest).toBeGreaterThan(3.5);
+		}
+	});
+
+	it('throw up nothing on the way: no sliding, and never a tyre off the paving', () => {
+		for (const race of races) {
+			expect(race.stops.length).toBeGreaterThan(0);
+			expect(race.slid).toBe(0);
+			expect(race.rough).toBe(0);
 		}
 	});
 
