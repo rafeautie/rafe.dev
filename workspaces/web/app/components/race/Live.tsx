@@ -151,6 +151,7 @@ export default function Live() {
 				setPools(message.pools);
 				track = getTrack(state.settings.track);
 				renderer.setTrack(track);
+				renderer.setPits(state.settings.pits);
 				if (state.phase === 'betting') {
 					replay = null;
 					setRunning(null);

@@ -447,7 +447,7 @@ export function Game({
 							{/* the stat bars' heading says what they are, under the pointer or the keyboard */}
 							<button
 								type="button"
-								aria-label={`The four bars: ${LEGEND.map(([name, meaning]) => `${name}, ${meaning.toLowerCase()}`).join('; ')}`}
+								aria-label={`The five bars: ${LEGEND.map(([name, meaning]) => `${name}, ${meaning.toLowerCase()}`).join('; ')}`}
 								onPointerEnter={(event) => event.pointerType === 'mouse' && setLegend(true)}
 								onPointerLeave={(event) => event.pointerType === 'mouse' && setLegend(false)}
 								// a finger has no hover, and Safari does not focus what is tapped

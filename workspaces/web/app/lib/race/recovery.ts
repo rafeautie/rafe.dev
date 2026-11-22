@@ -1,35 +1,19 @@
 import { PolygonShape, type World } from 'planck';
-import {
-	BAY,
-	BAY_IN,
-	BAY_OUT,
-	NEARSIDE,
-	LAYBY,
-	LAYBY_IN,
-	LAYBY_OUT,
-	RING,
-	SLIP,
-	STALL,
-	TRUCK,
-	curve,
-	serviceFor,
-	type Pose,
-	type Route,
-	type Service
-} from './service';
+import { BOX_ACROSS, LANE, RAMP, pitsFor } from './pits';
+import { NEARSIDE, RING, TRUCK, curve, serviceFor, type Pose, type Route } from './service';
 import type { Car } from './sim';
 import { HALF_CORRIDOR, clamp, lateral, nearest, triangle, type Track } from './track';
 
-// The tow trucks and the job they do. Called for a wreck, a truck leaves its
-// garage along the service road, which only runs the way the race does, and
-// holds at the last gate before the wreck until the cars have gone by. Then
-// it comes out onto the track, drives past the wreck, and backs up to it the
-// way a car is backed into a space, until its hook is a little short of the
-// end of the wreck that points down the track. The crew run the cable out,
-// the winch draws that end up to the hook, and the truck tows the wreck out
-// at the next gate and on to a bay on the grass. It goes home the same way
-// round, or straight to the next wreck. Whichever truck can be at the gate
-// soonest is the one sent.
+// The tow truck and the job it does. It stands at the end of the pit lane,
+// past the last box (pits.ts), and the pit lane is its way onto the track and
+// off it. Called for a wreck, it pulls out to the end of the lane and holds
+// there until the cars have gone by. Then it goes out onto the track, drives
+// round to the wreck and past it, and backs up to it the way a car is backed
+// into a space, until its hook is a little short of the end of the wreck that
+// points down the track. The crew run the cable out, the winch draws that end
+// up to the hook, and the truck tows the wreck on round the lap, in at the
+// way into the pits, and down the lane to the wreck's own box, where it is
+// left. Then it goes back to its stand, or straight out for the next wreck.
 //
 // The truck is not driven like a car. It follows a way worked out for each
 // part of the job (service.ts), with one axle on the way and the other
@@ -38,19 +22,19 @@ import { HALF_CORRIDOR, clamp, lateral, nearest, triangle, type Track } from './
 // hook and the wheels still on the ground follow that, without sliding
 // sideways. The cars can run into either, but neither can be pushed about.
 
-/** Seconds from the call to the truck leaving its garage. */
+/** Seconds from the call to the truck leaving its stand. */
 const SCRAMBLE = 0.6;
-/** A truck holds at a gate with its front axle this far short of where the way through it begins. */
+/** The truck holds at the end of the lane with its front axle this far short of where the way out begins. */
 const HOLD = 2;
-/** With its front axle this far past a gate, a truck and anything on its hook are through the wall. */
-const THROUGH = SLIP + 3;
+/** With its front axle this far past the end of the way in, the truck and anything on its hook are through the wall. */
+const THROUGH = 4;
 /** Along the track, how far it takes the truck to get across to the side it passes the wreck on. */
 const DRIFT = 14;
 /** It is across by this far before the wreck, and stops with its front axle this far past it. */
 const BEFORE = 7;
 const PAST = 21;
-/** The gate a truck comes out of is no nearer the wreck than this, so there is room for all that. */
-const REACH = SLIP + DRIFT + BEFORE;
+/** Held at the end of the lane, the truck needs a wreck this far ahead to have room for all that; one that is nearer, it goes round the lap for. */
+const REACH = HOLD + RAMP + DRIFT + BEFORE;
 /** How far to one side the truck passes a wreck, middle to middle, and how near the wall it will go. */
 const PASS = 3.7;
 const EDGE = 5.4;
@@ -68,20 +52,29 @@ const CREW = 0.9;
 /** How fast the winch draws the wreck in, m/s, and how much cable is left when it is up on the hook. */
 const WINCH = 0.8;
 const LIFTED = 0.5;
-/** Seconds stopped at the bay to let the wreck down. */
+/** Seconds stopped at the box to let the wreck down. */
 const UNHOOK = 1.2;
 /** From the middle of a wreck to the end that is hooked, and to the axle left on the ground. */
 const NOSE = 2.1;
 const WHEELS = 1.3;
-/** How far past the bay's sample the truck's front axle stops, to leave the wreck in it. */
-const BEYOND = 8;
+/** How far behind the truck's front axle the middle of a wreck on its hook trails. */
+const TRAIL = TRUCK.axle + TRUCK.hook + LIFTED + NOSE;
+/** How far along the lane the truck takes to swing into a box with a wreck, and how far short of the middle of the box it is straight again. */
+const SWING = 12;
+const STRAIGHT = 2;
+/** In the pits, the truck stops for a car this near the road just ahead of it (m). */
+const SHY = 2.6;
 /** How hard the truck brakes, and pulls away, light and loaded, m/s². */
 const BRAKE = 5;
-const PULL = 6;
-const HAUL = 3;
+const PULL = 8;
+const HAUL = 6;
+/** How fast it goes down the pit lane, m/s. */
+const LANE_PACE = 11;
 /** How fast it backs up, m/s. */
 const BACKING = 4.5;
-/** After this long held at a gate, the truck goes whoever is coming. */
+/** On the track, it waits this long behind a car that is all but stopped in its way before it goes on regardless. */
+const FORBEARANCE = 6;
+/** After this long held at the end of the lane, the truck goes whoever is coming. */
 const PATIENCE = 8;
 
 /** An angle as the short way round, -π to π. */
@@ -89,31 +82,26 @@ const turn = (angle: number) => Math.atan2(Math.sin(angle), Math.cos(angle));
 
 export type Truck = ReturnType<typeof createTruck>['truck'];
 
-/** The gate a truck comes out of for a wreck: the one that leaves the least of the track to drive. */
-const gateFor = ({ gates, ahead }: Service, wreck: Car) =>
-	gates.reduce((best, sample) =>
-		ahead(sample + REACH, wreck.sample) < ahead(best + REACH, wreck.sample) ? sample : best
-	);
-
-/** The crews: sends a truck for each wreck, and steps them all. */
+/** The crew: sends the truck for each wreck, and steps it. */
 export function createRecovery(world: World, cars: Car[], track: Track) {
-	const { homes } = serviceFor(track);
-	/** Bays with a wreck in them. */
-	const taken = new Set<number>();
-	const crews = homes.map((home) => createTruck(world, cars, track, home, taken));
+	const crews = pitsFor(track).stands.map((_, index) => createTruck(world, cars, track, index));
 	return {
 		trucks: crews.map((crew) => crew.truck),
 		/** Whether the track is clear: no wreck waiting, and none on a hook still on it. */
 		get clear() {
 			return crews.every((crew) => crew.clear);
 		},
+		/** Whether every wreck is on its way off: none waiting, and none lying where it stopped. The last may be on a hook still on the track. */
+		get away() {
+			return crews.every((crew) => crew.away);
+		},
 		/** The trucks out on the track, for the cars to go round. */
 		get onTrack() {
 			return crews.filter((crew) => crew.onTrack).map((crew) => crew.truck);
 		},
-		/** Sends a truck for a wreck: the one with the least of the service road to cover first. */
+		/** Sends a truck for a wreck: the one with the fewest to fetch first. */
 		call(car: Car, time: number) {
-			const nearest = crews.reduce((best, crew) => (crew.away(car) < best.away(car) ? crew : best));
+			const nearest = crews.reduce((best, crew) => (crew.jobs < best.jobs ? crew : best));
 			nearest.call(car, time);
 		},
 		/** One step of every job. Call before the world is stepped. */
@@ -127,10 +115,15 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 	};
 }
 
-function createTruck(world: World, cars: Car[], track: Track, home: number, taken: Set<number>) {
-	const service = serviceFor(track);
-	const { gates, bays, ahead, drive, parked, trace } = service;
-	const stall = parked(home);
+function createTruck(world: World, cars: Car[], track: Track, index: number) {
+	const { n } = track;
+	const { ahead, drive, trace } = serviceFor(track);
+	const lane = pitsFor(track);
+	const stand = lane.stands[index];
+	const stall = { x: stand.x, y: stand.y, angle: stand.angle };
+	/** As the track counts its samples: where the truck's front axle is on its stand, and where it holds at the end of the lane. */
+	const home = ((Math.round(stand.sample + TRUCK.axle) % n) + n) % n;
+	const exit = (((lane.out0 - HOLD) % n) + n) % n;
 	const body = world.createBody({
 		type: 'kinematic',
 		position: stall,
@@ -154,15 +147,15 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 		...stall,
 		/** Forward speed, m/s: negative while it backs up. */
 		speed: 0,
-		/** Out on a job, lights going, rather than parked in its garage. */
+		/** Out on a job, lights going, rather than on its stand. */
 		busy: false,
 		/** The car on the hook, as an index into the race's cars, or -1. */
 		towing: -1,
-		/** The gate it has had opened to go through, as an index into the gates, or -1. */
+		/** Always -1: there are no gates of its own for it to have opened, now that it uses the pits'. */
 		gate: -1,
 		/** Where on the lap the axle it is steering by is, as a car's place is kept. */
-		sample: home + STALL.stop,
-		across: -RING - LAYBY,
+		sample: home,
+		across: stand.across,
 		// To a driver it is one more wreck to go round, and with a car on its
 		// hook, one that is being towed.
 		retired: true as const,
@@ -179,10 +172,10 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 	const waiting: Car[] = [];
 	let stage: 'parked' | 'out' | 'held' | 'approach' | 'back' | 'hook' | 'tow' | 'drop' | 'home' =
 		'parked';
-	/** The wreck being fetched, and the gate the truck goes in by. */
+	/** The wreck being fetched, and where the truck comes out onto the track, which is where it looks for a gap. */
 	let wreck: Car | null = null;
-	let gate = 0;
-	/** When the truck may leave its garage. */
+	const gate = (((lane.out0 + RAMP / 2) % n) + n) % n;
+	/** When the truck may leave its stand. */
 	let ready = 0;
 	/**
 	 * The way being driven, how fast each point of it may be passed, how far
@@ -200,6 +193,8 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 	let setOff = 0;
 	/** Seconds in the stage, for the ones that are waits. */
 	let timer = 0;
+	/** Seconds it has been waiting behind a car on the track. */
+	let waited = 0;
 	/** How many times it has driven further on for more room to back up in. */
 	let tries = 0;
 	/**
@@ -210,8 +205,8 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 	let axle = { x: 0, y: 0 };
 	let cable = 0;
 	let tail = false;
-	/** The gate open for this way, and from how far along it to how far. */
-	let door: { gate: number; from: number; to: number } | null = null;
+	/** Towing: how far along the way the truck and the wreck behind it are through the wall. */
+	let door: { to: number } | null = null;
 
 	/** Sets a body moving so that the next step leaves it here. */
 	function move(body: Car['body'], x: number, y: number, angle: number, dt: number) {
@@ -242,15 +237,16 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 		const { count, x, y, along } = next;
 		caps = new Float64Array(count);
 		for (let k = 0; k + 1 < count; k++) {
-			const road = next.across[k] <= -RING + 0.5;
-			caps[k] = reverse ? BACKING : road ? (loaded ? 12 : 24) : loaded ? 11 : 18;
+			// in the pits no faster than the cars go there; on the track, as fast as it can with what it has on
+			const pits = next.across[k] <= -RING + 0.5;
+			caps[k] = reverse ? BACKING : pits ? LANE_PACE : loaded ? 18 : 28;
 			// No faster round a bend than the truck can hold, less with a car
 			// behind. It is taken gently where it is tight and the truck has to
 			// swing right round, and more briskly where it is only a curve.
 			const [a, b] = [Math.max(0, k - 3), Math.min(count - 1, k + 3)];
 			const [cross, sides] = triangle(x[a], y[a], x[k], y[k], x[b], y[b]);
 			const bend = sides ? Math.abs(2 * cross) / sides : 0;
-			const hold = clamp(7 + (1 / Math.max(bend, 1e-3) - 10) * 0.4, 7, 11) * (loaded ? 0.5 : 1);
+			const hold = clamp(7 + (1 / Math.max(bend, 1e-3) - 10) * 0.4, 7, 14) * (loaded ? 0.8 : 1);
 			if (bend > 1e-3) caps[k] = Math.min(caps[k], Math.sqrt(hold / bend));
 		}
 		// slowing in time for each bend, and for the stop at the end
@@ -313,63 +309,60 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 		return arrived;
 	}
 
-	/** The nearest of some samples that is at least `least` on round the lap from `from`. */
-	function next(samples: number[], from: number, least: number) {
-		return samples.reduce((best, sample) =>
-			ahead(from + least, sample) < ahead(from + least, best) ? sample : best
-		);
-	}
-
 	/** Sets off for the next wreck, from wherever the truck is. */
 	function fetch() {
 		wreck = waiting.shift()!;
-		head(gateFor(service, wreck));
+		head();
 	}
 
-	/**
-	 * From wherever the truck is, it is back on the service road this far on:
-	 * as far as it takes to come out of a lay-by, which is the most there is.
-	 */
-	const rejoin = () => truck.sample + LAYBY_OUT - STALL.stop;
-	/** How far round the road it then has to go to hold at a gate. */
-	const toHold = (gate: number) => ahead(rejoin(), gate - SLIP - HOLD);
-
-	/** Makes for a gate along the service road, to hold just short of it. */
-	function head(to: number) {
-		gate = to;
+	/** Makes for the end of the lane, to hold there. */
+	function head() {
+		const from = truck.sample;
+		const hold = from + ahead(from, exit);
 		take(
-			drive(axleAt(TRUCK.axle), [
-				[truck.sample, truck.across],
-				[rejoin(), -RING],
-				[rejoin() + toHold(gate), -RING]
-			]),
+			drive(
+				axleAt(TRUCK.axle),
+				hold - from > 20
+					? [
+							[from, truck.across],
+							[from + 10, -RING],
+							[hold, -RING]
+						]
+					: [
+							[from, truck.across],
+							[hold, -RING]
+						]
+			),
 			false
 		);
 		stage = 'out';
 	}
 
-	/** Whether a truck held at the gate may come out: nobody about to arrive, nobody just gone by. */
+	/** Whether the truck, held at the end of the lane, may come out: nobody about to arrive, nobody just gone by. */
 	function open() {
 		return cars.every(
 			(car) =>
 				car.retired ||
-				(ahead(car.sample, gate) >= Math.max(30, car.speed * 4) && ahead(gate, car.sample) >= 18)
+				// a car in the pits is not coming
+				car.lane >= LANE.in ||
+				(ahead(car.sample, gate) >= Math.max(14, car.speed * 2.5) && ahead(gate, car.sample) >= 12)
 		);
 	}
 
 	/**
-	 * Out through the gate and along the track, across to the side of the
-	 * wreck with more room, and past it far enough to back up to it.
+	 * Out the way out of the pits and along the track, across to the side of
+	 * the wreck with more room, and past it far enough to back up to it. A
+	 * wreck too near the way out to line up on is gone round the lap for.
 	 */
 	function approach() {
 		const from = truck.sample;
-		const lying = from + ahead(from, wreck!.sample);
+		const lying = from + REACH + ahead(from + REACH, wreck!.sample);
 		const side = clamp(
 			wreck!.across >= PASS - EDGE ? wreck!.across - PASS : wreck!.across + PASS,
 			-EDGE,
 			EDGE
 		);
-		const on = from + HOLD + 2 * SLIP;
+		const on = from + HOLD + RAMP;
 		take(
 			drive(axleAt(TRUCK.axle), [
 				[from, -RING],
@@ -381,8 +374,6 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 			]),
 			false
 		);
-		// the gate is open from the word to go until the truck is through it
-		door = { gate: gates.indexOf(gate), from: 0, to: reach(gate + THROUGH) };
 		stage = 'approach';
 	}
 
@@ -457,81 +448,118 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 		stage = 'approach';
 	}
 
-	/** Off with the wreck: out at the next gate with room before it, and on to the next empty bay. */
+	/**
+	 * Off with the wreck: on round the lap to the way into the pits, down the
+	 * lane, and into the wreck's own box, far enough through it to leave the
+	 * wreck in it.
+	 */
 	function tow() {
 		const front = axleAt(TRUCK.axle);
 		const from = nearest(track, front.x, front.y, truck.sample);
 		const across = lateral(track, front.x, front.y, from);
 		// far enough to be back at the kerb without swinging the wreck about
 		const run = Math.ceil(Math.max(10, Math.sqrt(42 * Math.abs(across - NEARSIDE))));
-		const out = from + run + SLIP + ahead(from + run + SLIP, next(gates, from, run + SLIP));
-		const free = bays.filter((bay) => !taken.has(bay));
-		const bay = next(free.length ? free : bays, out + SLIP, BAY_IN);
-		taken.add(bay);
-		const stop = out + SLIP + BAY_IN + ahead(out + SLIP + BAY_IN, bay);
-		take(
-			drive(
-				front,
-				[
-					[from, across],
-					[from + run, NEARSIDE],
-					[out - SLIP, NEARSIDE],
-					[out + SLIP, -RING],
-					[stop - BAY_IN, -RING],
-					[stop, -RING - BAY],
-					[stop + BEYOND, -RING - BAY]
-				],
-				// it may be standing well askew, with a wreck to bring round behind it
-				14
-			),
-			true
-		);
-		// the gate is opened as the truck comes up to it, and shut once the wreck is behind the wall
-		door = {
-			gate: gates.indexOf(ahead(0, out)),
-			from: reach(out - SLIP - 12),
-			to: reach(out + THROUGH)
-		};
+		const into = from + run + ahead(from + run, lane.entry);
+		// how long the way in is, from the track to the lane
+		const slip = lane.in1 - lane.in0;
+		// the box, counted as this way counts its samples
+		const box = lane.boxes[cars.indexOf(wreck!)].sample - lane.in0 + into;
+		const keys: [number, number][] = [
+			[from, across],
+			[from + run, NEARSIDE],
+			[into, NEARSIDE]
+		];
+		// down the lane first, unless the box is so near the way in that the one runs into the other
+		if (box - STRAIGHT - SWING > into + slip + 1) {
+			keys.push([into + slip, -RING], [box - STRAIGHT - SWING, -RING]);
+		}
+		keys.push([box - STRAIGHT, -BOX_ACROSS], [box + TRAIL, -BOX_ACROSS]);
+		// it may be standing well askew, with a wreck to bring round behind it
+		take(drive(front, keys, 14), true);
+		// the track is clear once the wreck is behind the wall
+		door = { to: reach(into + slip + THROUGH) };
 		stage = 'tow';
 	}
 
-	/** Back round to the lay-by and into the garage. */
+	/** Back to its stand: out into the lane and along it, or straight on if the stand is just ahead. */
 	function goHome() {
 		const { sample, across } = truck;
-		const on = sample + BAY_OUT - BEYOND;
-		const turnIn = on + ahead(on, home - LAYBY_IN);
+		const to = sample + ahead(sample, home);
+		if (to - sample < 1) {
+			stage = 'parked';
+			return;
+		}
 		take(
-			drive(axleAt(TRUCK.axle), [
-				[sample, across],
-				[on, -RING],
-				[turnIn, -RING],
-				[turnIn + LAYBY_IN - STALL.before, -RING - LAYBY],
-				[turnIn + LAYBY_IN + STALL.stop, -RING - LAYBY]
-			]),
+			drive(
+				axleAt(TRUCK.axle),
+				to - sample > 24
+					? [
+							[sample, across],
+							[sample + 9, -RING],
+							[to - 11, -RING],
+							[to - 1, stand.across],
+							[to, stand.across]
+						]
+					: [
+							[sample, across],
+							[to, stand.across]
+						]
+			),
 			false
 		);
 		stage = 'home';
 	}
 
-	/** On the track, the truck does not drive into the back of a car that is moving. */
-	function traffic() {
+	/**
+	 * On the track, the truck does not drive into the back of a car that is in
+	 * its way: it goes no faster than one that is moving, and waits for one
+	 * that is all but stopped, though not for ever, or one that is stuck
+	 * there would hold it up for good.
+	 */
+	function traffic(dt: number) {
 		if (truck.across < -HALF_CORRIDOR) return Infinity;
 		let limit = Infinity;
+		let stopped = false;
 		for (const car of cars) {
 			const before = ahead(truck.sample, car.sample);
-			if (car.retired || car.speed < 2 || before === 0 || before > 8 + pace) continue;
-			if (Math.abs(car.across - truck.across) < 3) limit = Math.min(limit, car.speed - 1);
+			if (car.retired || car.lane >= LANE.in || before === 0 || before > 8 + pace) continue;
+			if (Math.abs(car.across - truck.across) >= 3) continue;
+			if (car.speed < 2) {
+				// all but stopped: waited for, until it has been waited for long enough
+				stopped = true;
+				if (waited > FORBEARANCE) continue;
+			}
+			limit = Math.min(limit, Math.max(0, car.speed - 1));
 		}
+		waited = stopped ? waited + dt : 0;
 		return limit;
+	}
+
+	/**
+	 * Off the track, the truck does not drive into a car that is in the pits:
+	 * one stopped in the lane ahead of it, or standing in a box it has to go
+	 * through. It waits for it.
+	 */
+	function pitTraffic() {
+		if (truck.across > -HALF_CORRIDOR) return Infinity;
+		const { x, y, angle } = axleAt(TRUCK.axle);
+		for (const car of cars) {
+			if (car.lane < LANE.in) continue;
+			const at = car.body.getPosition();
+			for (const far of [2.5, 5]) {
+				const [px, py] = [x + Math.cos(angle) * far, y + Math.sin(angle) * far];
+				if (Math.hypot(at.x - px, at.y - py) < SHY) return 0;
+			}
+		}
+		return Infinity;
 	}
 
 	return {
 		truck,
 
-		/** How far round the service road the truck has to go to be at the gate for a wreck, and a lap more for each job it has first. */
-		away(car: Car) {
-			const jobs = waiting.length + (wreck ? 1 : 0);
-			return toHold(gateFor(service, car)) + jobs * 1000;
+		/** How many wrecks the truck has still to see to. */
+		get jobs() {
+			return waiting.length + (wreck ? 1 : 0);
 		},
 
 		/** Whether this truck leaves the track clear: no wreck waiting, and none on the hook still on it. */
@@ -541,8 +569,16 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 				(stage === 'parked' ||
 					stage === 'home' ||
 					stage === 'drop' ||
-					// with a wreck in tow, once it is behind the wall and the gate shut on it
+					// with a wreck in tow, once it is behind the wall
 					(stage === 'tow' && gone >= door!.to))
+			);
+		},
+
+		/** Whether this truck has every wreck of its own on its way off: none waiting, and none it has yet to pick up. */
+		get away() {
+			return (
+				waiting.length === 0 &&
+				(stage === 'parked' || stage === 'home' || stage === 'drop' || stage === 'tow')
 			);
 		},
 
@@ -566,10 +602,7 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 			if (stage === 'parked') {
 				rest(body);
 			} else if (stage === 'out') {
-				// a wreck still rolling when the truck set off may have gone on past a later gate
-				const nearer = gateFor(service, wreck!);
-				if (nearer !== gate && toHold(nearer) < 150) head(nearer);
-				if (advance(dt)) {
+				if (advance(dt, pitTraffic())) {
 					stage = 'held';
 					timer = 0;
 				}
@@ -580,7 +613,7 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 				const still = Math.hypot(rolling.x, rolling.y) < 0.5;
 				if (still && timer > 0.3 && (open() || timer > PATIENCE)) approach();
 			} else if (stage === 'approach') {
-				if (advance(dt, traffic())) back();
+				if (advance(dt, traffic(dt))) back();
 			} else if (stage === 'back') {
 				// a moment to find reverse, then back to the wreck
 				timer += dt;
@@ -614,7 +647,7 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 					else tow();
 				}
 			} else if (stage === 'tow') {
-				if (advance(dt, traffic(), HAUL)) {
+				if (advance(dt, Math.min(traffic(dt), pitTraffic()), HAUL)) {
 					stage = 'drop';
 					timer = 0;
 				}
@@ -629,12 +662,10 @@ function createTruck(world: World, cars: Car[], track: Track, home: number, take
 					else goHome();
 				}
 			} else if (stage === 'home') {
-				if (advance(dt)) stage = 'parked';
+				if (advance(dt, pitTraffic())) stage = 'parked';
 			}
 
 			truck.busy = stage !== 'parked';
-			// a gate is opened for the truck that is going through it, and shut behind it
-			truck.gate = door && gone >= door.from && gone < door.to ? door.gate : -1;
 
 			// A wreck on the cable follows like a trailer. The end the cable is
 			// on is drawn after the hook, as far behind it as there is cable out,

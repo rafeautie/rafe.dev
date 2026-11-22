@@ -1,6 +1,7 @@
 import { DEBT_CAP, SEED, START } from './betting';
 import { BETTING_MS, RESULTS_MS } from './room';
 import { ROSTER, type Entry } from './roster';
+import { RULES, type Rules } from './sim';
 import { isTrackId, type TrackId } from './track';
 
 // The numbers /admin/race can change without a deploy. The room keeps the
@@ -8,7 +9,7 @@ import { isTrackId, type TrackId } from './track';
 // opens, so a change applies from the next race and one in progress keeps the
 // rules it started with. Unset, they are the constants in the code.
 
-export const STATS = ['speed', 'grip', 'aggression', 'reliability'] as const;
+export const STATS = ['speed', 'grip', 'aggression', 'reliability', 'crew'] as const;
 export type CarStats = Pick<Entry, (typeof STATS)[number]>;
 
 export type Settings = {
@@ -18,6 +19,16 @@ export type Settings = {
 	count: number;
 	/** Each car's stats by id, 0 to 1. */
 	cars: Record<string, CarStats>;
+	/** How many laps a race is. */
+	laps: number;
+	/** Whether the cars burn fuel, wear their tyres and pit for more. */
+	pits: boolean;
+	/** How much a full tank holds, in tenths of a lap of hard running. */
+	tank: number;
+	/** How fast tyres wear, as a percentage of the usual. */
+	tyreWear: number;
+	/** The pit lane's speed limit, m/s. */
+	pitSpeed: number;
 	/** Chips the house spreads over each market's outcomes. */
 	seed: number;
 	/** Chips a new player starts with, and a bankrupt one is put back to. */
@@ -34,11 +45,16 @@ export const DEFAULT_SETTINGS: Settings = {
 	track: 'oval',
 	count: 6,
 	cars: Object.fromEntries(
-		ROSTER.map(({ id, speed, grip, aggression, reliability }) => [
+		ROSTER.map(({ id, speed, grip, aggression, reliability, crew }) => [
 			id,
-			{ speed, grip, aggression, reliability }
+			{ speed, grip, aggression, reliability, crew }
 		])
 	),
+	laps: RULES.laps,
+	pits: RULES.pits,
+	tank: Math.round(RULES.tank * 10),
+	tyreWear: Math.round(RULES.wear * 100),
+	pitSpeed: RULES.limit,
 	seed: SEED,
 	start: START,
 	debtCap: DEBT_CAP,
@@ -51,6 +67,11 @@ export const DEFAULT_SETTINGS: Settings = {
 export const LIMITS = {
 	// three at least, for the top three market; at most the whole roster
 	count: [3, ROSTER.length],
+	// a recording of a longer race than this would not fit where it is kept
+	laps: [2, 5],
+	tank: [10, 80],
+	tyreWear: [0, 300],
+	pitSpeed: [6, 25],
 	seed: [100, 100_000],
 	start: [1, 1_000_000],
 	debtCap: [0, 1_000_000],
@@ -61,6 +82,10 @@ export const LIMITS = {
 
 const NAMES: Record<keyof typeof LIMITS, string> = {
 	count: 'Cars per race',
+	laps: 'Laps',
+	tank: 'Fuel tank',
+	tyreWear: 'Tyre wear',
+	pitSpeed: 'Pit lane speed limit',
 	seed: 'Pool seed',
 	start: 'Starting chips',
 	debtCap: 'Debt cap',
@@ -88,7 +113,8 @@ export function checkSettings(input: unknown): Settings | string {
 		}
 		cars[id] = stats;
 	}
-	const settings = { track: given.track, cars } as Settings;
+	if (typeof given.pits !== 'boolean') return 'Pits must be on or off';
+	const settings = { track: given.track, cars, pits: given.pits } as Settings;
 	for (const key of Object.keys(LIMITS) as (keyof typeof LIMITS)[]) {
 		const [low, high] = LIMITS[key];
 		const value = given[key];
@@ -103,3 +129,26 @@ export function checkSettings(input: unknown): Settings | string {
 /** The roster as the settings have it. */
 export const tuned = (settings: Settings): Entry[] =>
 	ROSTER.map((entry) => ({ ...entry, ...settings.cars[entry.id] }));
+
+/** The rules of a race run to these settings. */
+export const rulesOf = (settings: Settings): Rules => ({
+	laps: settings.laps,
+	pits: settings.pits,
+	tank: settings.tank / 10,
+	wear: settings.tyreWear / 100,
+	limit: settings.pitSpeed
+});
+
+/**
+ * Settings kept from before one of them existed, with `base` for whatever
+ * they have not got: every car has every stat, and every number is there.
+ */
+export function complete(saved: Partial<Settings>, base: Settings = DEFAULT_SETTINGS): Settings {
+	return {
+		...base,
+		...saved,
+		cars: Object.fromEntries(
+			Object.entries(base.cars).map(([id, stats]) => [id, { ...stats, ...saved.cars?.[id] }])
+		)
+	};
+}

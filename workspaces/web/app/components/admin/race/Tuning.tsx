@@ -15,8 +15,9 @@ import { NUMBER, PERCENT } from '~/lib/admin/format';
 import { cell, type Act, type View } from './format';
 
 // The numbers the game runs on, edited here and saved together, from the
-// next race on, and the track it is run on. They come in three kinds: the
-// cars (how many race, and how each goes), which decide who wins;
+// next race on, and the track it is run on. They come in four kinds: the
+// race (how long it is, and its pits); the cars (how many race, and how each
+// goes), which decide who wins;
 // the money, which decides what winning is worth; and the timing of the loop.
 // Each car's record sits beside its stats, since that is what a change to
 // them is meant to move. The room checks everything again and says what is
@@ -40,6 +41,13 @@ const outlineOf = (id: TrackId) => {
 	if (!OUTLINES.has(id)) OUTLINES.set(id, outline(id));
 	return OUTLINES.get(id)!;
 };
+
+/** What the pits run on, each a whole number. */
+const PITS: [Key, string][] = [
+	['tank', 'fuel tank, tenths of a lap'],
+	['tyreWear', 'tyre wear, % of the usual'],
+	['pitSpeed', 'pit lane limit, m/s']
+];
 
 const GROUPS: { title: string; description: string; fields: [Key, string][] }[] = [
 	{
@@ -126,6 +134,50 @@ export const Tuning = memo(function Tuning({
 						);
 					})}
 				</div>
+			</Panel>
+			<Panel title="race" description="how long it is, and the pits">
+				<div className="flex flex-wrap items-start gap-x-6 gap-y-4">
+					<Whole
+						name="laps"
+						label="laps"
+						draft={draft}
+						settings={settings}
+						onChange={setDraft}
+						className="w-40"
+					/>
+					<label className="flex w-40 flex-col gap-1.5">
+						<span>pits</span>
+						<span className="flex h-8 items-center gap-2">
+							<input
+								type="checkbox"
+								checked={draft.pits}
+								onChange={(event) => setDraft({ ...draft, pits: event.target.checked })}
+							/>
+							{draft.pits ? 'fuel, tyres and stops' : 'off: flat out all the way'}
+						</span>
+						<span className="text-foreground/50">
+							<span className={cn(draft.pits !== DEFAULT_SETTINGS.pits && 'text-foreground')}>
+								default {DEFAULT_SETTINGS.pits ? 'on' : 'off'}
+							</span>
+						</span>
+					</label>
+					{PITS.map(([name, label]) => (
+						<Whole
+							key={name}
+							name={name}
+							label={label}
+							draft={draft}
+							settings={settings}
+							onChange={setDraft}
+							disabled={!draft.pits}
+							className="w-44"
+						/>
+					))}
+				</div>
+				<p className="mt-4 max-w-2xl text-foreground/50">
+					A lap raced burns about one lap of fuel, so a tank smaller than the race means a stop.
+					Each crew&rsquo;s speed is its car&rsquo;s crew stat, below.
+				</p>
 			</Panel>
 			<Panel title="cars" description="stats from 0 to 1, and how each car has done" flush>
 				<div className="flex flex-wrap items-end gap-x-6 gap-y-2 border-b border-foreground/10 p-4">
@@ -278,6 +330,7 @@ function Whole({
 	draft,
 	settings,
 	onChange,
+	disabled,
 	className
 }: {
 	name: Key;
@@ -285,6 +338,7 @@ function Whole({
 	draft: Settings;
 	settings: Settings;
 	onChange: (draft: Settings) => void;
+	disabled?: boolean;
 	className?: string;
 }) {
 	const [low, high] = LIMITS[name];
@@ -296,6 +350,7 @@ function Whole({
 				min={low}
 				max={high}
 				step={1}
+				disabled={disabled}
 				value={shown(draft[name])}
 				onChange={(event) => onChange({ ...draft, [name]: read(event.target.value) })}
 				className={cn(draft[name] !== settings[name] && 'border-foreground/50')}

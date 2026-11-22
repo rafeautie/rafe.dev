@@ -1,0 +1,884 @@
+import { ROSTER } from './roster';
+import { HALF_LANE, RING, TRUCK, curve, serviceFor, type Route } from './service';
+import type { Car, Flag, Rules } from './sim';
+import {
+	HALF_CORRIDOR,
+	MAX_OFFSET,
+	clamp,
+	lateral,
+	nearest,
+	type Track,
+	type TrackId
+} from './track';
+
+// The pits. Beside the start line a lane runs along the infield side of the
+// wall, with a way in from the track at one end and a way out at the other.
+// On the infield side of it every car has a box with its crew, and past the
+// last box, at the end of the lane, the tow trucks stand (recovery.ts): the
+// lane is their way onto the track and off it as well. A car burns fuel and
+// wears its tyres as it races; its crew decides when it comes in, and what
+// for: fuel, tyres or both.
+//
+// A car called in keeps to the inside and slows for the way in. From there it
+// is off the track and no longer driven like a car: it follows a way through
+// the wall, down the lane to its box and out again, no faster than the lane's
+// speed limit, queueing behind whatever is ahead of it, and nothing can run
+// into it. It is let back onto the track when there is a gap to join in.
+//
+// All of it is placed by track sample, like the rest of the infield
+// (service.ts).
+
+/**
+ * A box, which is a good deal bigger than a car, with room for its crew to
+ * work all round one: how far it is from one to the next along the lane, and
+ * how long and wide one is painted.
+ */
+export const BOX = { pitch: 6.6, long: 6.2, wide: 4 };
+/** There is a box for every car there is, whether it is racing or not. */
+const BOXES = ROSTER.length;
+/** Centre line to the middle of a box, which is hard against the lane. */
+export const BOX_ACROSS = RING + HALF_LANE + BOX.wide / 2 + 0.05;
+/** Where across the track a car leaves it for the pits, and comes back on. */
+const INSIDE = -MAX_OFFSET;
+/** How far along the lane it takes a car to turn into its box, and out of it. */
+const PULL = 10;
+/** The ways through the pits are worked out at points this far apart, in samples. */
+const STEP = 0.5;
+/**
+ * How long the way out is, from the lane to the track; the way in is as long
+ * as each track's layout says. They are slip roads: a car leaves the track
+ * at racing speed and does its braking on the way in, and is back up to
+ * speed on the way out before it joins.
+ */
+export const RAMP = 30;
+/**
+ * The tow truck's stand, in line with the boxes and, like them, a good deal
+ * bigger than what stands on it: how far past the middle of the last box the
+ * middle of the truck stands, how long and wide the stand is painted, and
+ * how far past it the lane ends, which is what the truck needs to steer out
+ * into it.
+ */
+export const STAND = { after: 8, long: 7.6, wide: 4, run: 12 };
+
+/**
+ * Where the pits are on each track: the sample the way in leaves the track
+ * at, and how long it is. It leaves in the bend before the straight the
+ * start line is on, where a car is on the inside anyway and need give
+ * nothing up to stay there; the boxes are on that straight, and the way out
+ * joins the track in the bend after it. `thirst` is how much fuel a metre of the track takes next to the next:
+ * more where there is less of it flat out, so that a lap raced burns a lap's
+ * worth of fuel whichever track it is.
+ */
+const LAYOUTS: Record<TrackId, { from: number; slip: number; thirst: number }> = {
+	circuit: { from: 313, slip: 30, thirst: 1.23 },
+	oval: { from: 258, slip: 49, thirst: 1.06 }
+};
+
+/** What is done at a stop. */
+export type Stop = 'fuel' | 'tyres' | 'both';
+
+/**
+ * Where a car is with the pits: racing; called in, and making for the way
+ * in; off the track on its way to its box; standing in it; on its way out.
+ */
+export const LANE = { racing: 0, called: 1, in: 2, box: 3, out: 4 } as const;
+
+export type PitLane = ReturnType<typeof build>;
+
+const built = new Map<TrackId, PitLane>();
+
+/** The pit lane of a track, worked out the first time it is asked for. */
+export function pitsFor(track: Track): PitLane {
+	let lane = built.get(track.id);
+	if (!lane) {
+		lane = build(track);
+		built.set(track.id, lane);
+	}
+	return lane;
+}
+
+function build(track: Track) {
+	const { n } = track;
+	const { place } = serviceFor(track);
+	const { from, slip, thirst } = LAYOUTS[track.id];
+	// Samples here count on past the line without starting again, so the way
+	// through is always forwards: in from the track between in0 and in1, past
+	// the boxes and the trucks' stand, out to the track between out0 and out1.
+	const in0 = from;
+	const in1 = in0 + slip;
+	const first = in1 + PULL;
+	/** Where in the world a sample, which need not be a whole one, is `across` from the centre line. */
+	const at = (sample: number, across: number): [number, number] => {
+		const whole = Math.floor(sample);
+		const t = sample - whole;
+		const [ax, ay] = place(whole, across);
+		const [bx, by] = place(whole + 1, across);
+		return [ax + (bx - ax) * t, ay + (by - ay) * t];
+	};
+
+	/** Something standing at a sample, `across` from the centre line: where its middle is and which way it faces. */
+	const standing = (sample: number, across: number) => {
+		const [x, y] = at(sample, across);
+		const [ax, ay] = at(sample - 1, across);
+		const [bx, by] = at(sample + 1, across);
+		return { sample, across, x, y, angle: Math.atan2(by - ay, bx - ax) };
+	};
+
+	/** A way through each `[sample, across]` in turn, easing across between one and the next. */
+	function way(keys: [number, number][]): Route {
+		const from = keys[0][0];
+		const count = Math.round((keys[keys.length - 1][0] - from) / STEP) + 1;
+		const out: Route = {
+			count,
+			x: new Float64Array(count),
+			y: new Float64Array(count),
+			sample: new Int32Array(count),
+			across: new Float64Array(count),
+			along: new Float64Array(count),
+			length: 0
+		};
+		let key = 0;
+		for (let k = 0; k < count; k++) {
+			const s = from + k * STEP;
+			while (key + 2 < keys.length && s >= keys[key + 1][0]) key++;
+			const [[s0, a0], [s1, a1]] = [keys[key], keys[key + 1]];
+			const t = clamp((s - s0) / Math.max(STEP, s1 - s0), 0, 1);
+			out.sample[k] = ((Math.round(s) % n) + n) % n;
+			out.across[k] = a0 + (a1 - a0) * t * t * (3 - 2 * t);
+			[out.x[k], out.y[k]] = at(s, out.across[k]);
+		}
+		// the corners taken off, both ends left where they are
+		for (let pass = 0; pass < 3; pass++) {
+			const [ax, ay] = [out.x.slice(), out.y.slice()];
+			for (let k = 1; k + 1 < count; k++) {
+				out.x[k] = (ax[k - 1] + 2 * ax[k] + ax[k + 1]) / 4;
+				out.y[k] = (ay[k - 1] + 2 * ay[k] + ay[k + 1]) / 4;
+			}
+		}
+		for (let k = 1; k < count; k++) {
+			out.along[k] =
+				out.along[k - 1] + Math.hypot(out.x[k] - out.x[k - 1], out.y[k] - out.y[k - 1]);
+		}
+		out.length = out.along[count - 1];
+		return out;
+	}
+
+	/**
+	 * The sample that is `far` metres on from another along the line the
+	 * boxes are on. Where the track bends a little, a sample is less than a
+	 * metre there.
+	 */
+	function on(sample: number, far: number) {
+		const [x, y] = at(sample, -BOX_ACROSS);
+		let next = sample + far;
+		for (let pass = 0; pass < 6; pass++) {
+			const [nx, ny] = at(next, -BOX_ACROSS);
+			next += far - Math.hypot(nx - x, ny - y);
+		}
+		return next;
+	}
+
+	/** Each box: the sample it is level with, where its middle is and which way a car in it faces. */
+	const boxes = [standing(first, -BOX_ACROSS)];
+	while (boxes.length < BOXES) {
+		boxes.push(standing(on(boxes[boxes.length - 1].sample, BOX.pitch), -BOX_ACROSS));
+	}
+	const last = boxes[BOXES - 1].sample;
+	const stand = on(last, STAND.after);
+	/** Where the tow truck stands when it is not out: one of them, but recorded and drawn as however many there are. */
+	const stands = [standing(stand, -BOX_ACROSS)];
+	const out0 = Math.ceil(stand + TRUCK.axle + STAND.run);
+	const out1 = out0 + RAMP;
+
+	const paths = new Map<number, { way: Route; line: number; stop: number; end: number }>();
+
+	/**
+	 * The way through the pits for the car whose box is `box`: in from the
+	 * track, down the lane, into the box and out of it, down the rest of the
+	 * lane and out onto the track. `line` is how far along it the lane, and
+	 * its speed limit, begins; `stop` how far along the box is; and `end` how
+	 * far along the lane ends and the way out begins.
+	 */
+	function path(box: number) {
+		let made = paths.get(box);
+		if (!made) {
+			const { sample } = boxes[box];
+			const through = way([
+				[in0, INSIDE],
+				[in1, -RING],
+				[sample - PULL, -RING],
+				[sample - 0.5, -BOX_ACROSS],
+				[sample + 0.5, -BOX_ACROSS],
+				[sample + PULL, -RING],
+				[out0, -RING],
+				[out1, INSIDE]
+			]);
+			made = {
+				way: through,
+				line: through.along[Math.round((in1 - in0) / STEP)],
+				stop: through.along[Math.round((sample - in0) / STEP)],
+				end: through.along[Math.round((out0 - in0) / STEP)]
+			};
+			paths.set(box, made);
+		}
+		return made;
+	}
+
+	return {
+		/** The samples the way in starts and ends at, and the way out, counted on past the line. */
+		in0,
+		in1,
+		out0,
+		out1,
+		/** The samples a car leaves the track at and rejoins it at, as the track counts them. */
+		entry: ((in0 % n) + n) % n,
+		merge: ((out1 % n) + n) % n,
+		boxes,
+		stands,
+		path,
+		thirst,
+		/** The way in through the wall, the lane, and the way out through the wall, to be paved. */
+		ways: [
+			way([
+				[in0, INSIDE - 0.6],
+				[in1, -RING]
+			]),
+			way([
+				[in1, -RING],
+				[out0, -RING]
+			]),
+			way([
+				[out0, -RING],
+				[out1, INSIDE - 0.6]
+			])
+		],
+		at
+	};
+}
+
+/**
+ * A lap flat out burns about this much fuel, which is measured in such laps,
+ * and the crews count on this much until a car has shown what it burns.
+ */
+const BURN = 1;
+/** Fuel is burnt by the metre: this much just to be moving, and this much more at full throttle. */
+const IDLE = 0.3;
+const FULL = 1.2;
+/**
+ * A crew puts in this much more than it reckons the car needs to finish, and
+ * under caution this many laps' worth on top, since the caution may go on
+ * for longer than the lap it is on.
+ */
+const MARGIN = 1.1;
+const SPARE = 0.3;
+/** A driver saving fuel lifts to this much throttle, which stretches a tank by about this much. */
+const LIFT = 0.7;
+const STRETCH = 0.92;
+/** How much grip tyres worn right out have lost. */
+const WORN = 0.15;
+/** Tyres wear by the metre: this much rolling straight, this much more cornering on the limit, and this much for each m/s they slide. */
+const ROLL = 0.08;
+const CORNER = 0.42;
+const SLIDE = 0.012;
+/** A lap behind the leader under caution burns about this much of what a lap raced does. */
+const IDLING = 0.6;
+/** A car out of fuel is out of the race once it has coasted down to this (m/s). */
+const DRY = 4;
+
+/** A crew calls its car in from this far before the way in, and under green no later than this (m); under caution, when nobody is going fast, this late. */
+const CALL_FAR = 170;
+const CALL_NEAR = 85;
+const CALL_LATE = 35;
+/** A car called in moves to the inside this far before the way in, and takes that much of the track at this share of its usual speed to hold it. */
+const MOVE_IN = 70;
+const TIGHT = 0.9;
+/**
+ * On the way in a car brakes this hard (m/s²) to be down to the lane's limit
+ * by the line where it begins. It is not slowed on the track at all, unless
+ * it is going faster than that braking could bring down in the room there
+ * is, and then only at this rate.
+ */
+const SLOW = 11;
+const EASE = 6;
+/** Cars coming in together leave this much room between them (m). */
+const QUEUE = 11;
+/** The way through the pits is joined this far along it. */
+const JOIN = 9;
+/**
+ * In the lane a car brakes and pulls away this hard (m/s²). On the way out it
+ * pulls away this hard, up to this share of the speed the track is taken at
+ * where it joins it, so it is in nobody's way when it does.
+ */
+const BRAKE = 8;
+const PULL_AWAY = 5;
+const GO = 8;
+const EXIT = 0.95;
+/** How fast a car joins the track when there is a wreck lying near where it does (m/s). */
+const CRAWL = 7;
+/** How far behind another car in the lane one stops, and behind a truck; nearer than this, two cars are level. */
+const KEEP = 6;
+const KEEP_TRUCK = 9;
+/** And how much further behind one with a wreck on its hook, which trails it. */
+const TRAILER = 6;
+const LEVEL = 3;
+/** A car looks for a gap on the track from this far before the end of the lane. Held there this long, it goes whoever is coming. */
+const LOOK = 12;
+const PATIENCE = 8;
+
+/** Seconds to put fuel in: the hose on and off, and each lap's worth. */
+const HOSE = 1.2;
+const PER_LAP = 1.6;
+/** Seconds to change four tyres, and how much longer the two jobs take together than the longer of them. */
+const TYRES = 4;
+const TOGETHER = 1;
+/** A stop takes the slowest crew and the quickest this much of those times. */
+const SLOWEST = 1.25;
+const QUICKEST = 0.8;
+/** How often the worst crew and the best fumble a stop, and the seconds it costs: at least this, and up to this much more. */
+const FUMBLES = [0.22, 0.03];
+const FUMBLE = 2;
+const FUMBLE_MORE = 2;
+/**
+ * New tyres are reckoned worth this many seconds for each lap left to run,
+ * for each lap's worth of wear on the old ones... as a crew judges it. Under
+ * caution the seconds a change costs count for this much.
+ */
+const WORTH = 2.5;
+const CHEAP = 0.35;
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** What the pits need to know of the race, and may do to it. */
+type Meeting = {
+	flag: () => Flag;
+	/** How many laps the race is, as it stands. */
+	laps: () => number;
+	note: (
+		car: Car,
+		what:
+			| { kind: 'pit'; service: Stop }
+			| { kind: 'away'; seconds: number; slow: boolean }
+			| { kind: 'dry' }
+	) => void;
+	/** Puts a car out of the race where it is. */
+	retire: (car: Car) => void;
+	/** The tow trucks, which use the lane too, and whether each has a wreck on its hook. */
+	trucks: { x: number; y: number; busy: boolean; speed?: number; towing: number }[];
+};
+
+/** How a way through the pits is followed: its points, how far along each is, and where on it things are. */
+type Rail = {
+	x: number[];
+	y: number[];
+	along: number[];
+	length: number;
+	line: number;
+	stop: number;
+	end: number;
+};
+
+/** How much grip a car's tyres have left, as a share of what they had new. */
+export const tyreGrip = (car: Pick<Car, 'wear'>) => 1 - WORN * car.wear;
+
+export type Pits = ReturnType<typeof createPits>;
+
+/**
+ * The crews of a race: they keep count of each car's fuel and tyres, call
+ * the cars in, and see them through the lane. `rand` is theirs alone. With
+ * the rules' `pits` off there are none: no car burns or wears anything, or
+ * ever comes in.
+ */
+export function createPits(
+	cars: Car[],
+	track: Track,
+	rules: Rules,
+	rand: () => number,
+	race: Meeting
+) {
+	const { n, step: spacing, length } = track;
+	const lane = pitsFor(track);
+	const on = rules.pits;
+	/** Metres from one sample forward round the lap to another. */
+	const ahead = (from: number, to: number) => ((((to - from) % n) + n) % n) * spacing;
+	/** The same the short way round: negative if it is behind. */
+	const along = (from: number, to: number) => (((to - from + n * 1.5) % n) - n / 2) * spacing;
+
+	// How many laps before the end each crew means to stop, if nothing forces
+	// its hand: any that a full tank would see out.
+	const most = clamp(
+		Math.floor(rules.tank / (BURN * MARGIN) - 0.05),
+		1,
+		Math.max(1, rules.laps - 1)
+	);
+	const crews = cars.map((car, box) => ({
+		box,
+		plan: on ? 1 + Math.floor(rand() * most) : 0,
+		/** How much this crew thinks of new tyres. */
+		appetite: on ? lerp(0.6, 1.4, rand()) : 1,
+		/** Fuel burnt and metres run under green, by which the crew judges what the car needs. */
+		used: 0,
+		driven: 0,
+		saving: false,
+		stops: 0,
+		// through the pits
+		rail: null as Rail | null,
+		at: 0,
+		s: 0,
+		v: 0,
+		/** Standing in the box: since when, until when at the soonest, and what is being done. */
+		since: 0,
+		until: 0,
+		service: 'fuel' as Stop,
+		slow: false,
+		/** Fuel going in, each second. */
+		flow: 0,
+		tyres: false,
+		/** Since when it has been held at the end of the lane, or 0, and whether it has been let go. */
+		held: 0,
+		go: false
+	}));
+	type Crew = (typeof crews)[number];
+
+	/** What a car burns in a lap, as far as its crew can tell. */
+	const rate = (crew: Crew) => (crew.driven > 200 ? (crew.used / crew.driven) * length : BURN);
+	/**
+	 * Laps a car has still to run. Under caution the lap the leader is on is
+	 * to be run again, so there is that much more of the race than it looks:
+	 * as much of a lap as the leader has done of this one.
+	 */
+	const left = (car: Car) => {
+		const flag = race.flag();
+		let again = 0;
+		if (flag === 'yellow' || flag === 'restart') {
+			const lead = Math.max(...cars.map((other) => (other.retired ? 0 : other.progress)));
+			again = Math.max(0, lead / length - Math.floor(lead / length));
+		}
+		return (race.laps() * length - car.progress) / length + again;
+	};
+
+	/**
+	 * Whether this is a car's last chance to stop, `far` metres from the way
+	 * in: it has not the fuel to come round again, at the pace it is going,
+	 * which under caution takes a good deal less.
+	 */
+	const last = (car: Car, crew: Crew, far: number) =>
+		car.fuel / (rate(crew) * (race.flag() === 'green' ? 1 : IDLING)) < far / length + 1.15;
+
+	/** Whether a crew wants its car in, `far` metres from the way in. */
+	function wants(car: Car, crew: Crew, far: number, flag: Flag) {
+		const before = far / length;
+		const after = left(car) - before;
+		// no stop is worth making that close to the end
+		if (after < 0.5) return false;
+		const burn = rate(crew);
+		const short = car.fuel < left(car) * burn * MARGIN;
+		// it cannot get round to the pits again: now or never
+		if (short && last(car, crew, far)) return true;
+		// that apart, the pits are shut while the field lines up to go green
+		if (flag === 'restart') return false;
+		// whether a full tank from here would see it to the end
+		const enough = after * burn * MARGIN <= rules.tank;
+		if (flag === 'yellow') {
+			// a stop that has to be made is made now, while it costs little, if there is room in the tank to make it worth it
+			if (short) return enough || rules.tank - car.fuel > 0.5;
+			// and new tyres taken, though those at the front give up their places less readily
+			const place = cars.filter((other) => !other.retired && other.progress > car.progress).length;
+			return after >= 1 && car.wear > 0.45 + (place === 0 ? 0.25 : place === 1 ? 0.12 : 0);
+		}
+		if (short) {
+			if (crew.saving) return false;
+			// it has stopped already and was not given enough, or could not be: again, once a tankful will do
+			if (crew.stops) return enough;
+			return enough && after <= crew.plan + 0.5;
+		}
+		return after >= 1.5 && car.wear > 0.8;
+	}
+
+	/** Takes a car off the track at the way in, and lays the way through the pits from where it is. */
+	function take(car: Car, crew: Crew) {
+		const { way, line, stop, end } = lane.path(crew.box);
+		// the point of the way nearest the car, and the one it joins at, a little further on
+		let near = 0;
+		for (let k = 1; k < Math.min(way.count, 60); k++) {
+			if (
+				Math.hypot(way.x[k] - car.x, way.y[k] - car.y) <
+				Math.hypot(way.x[near] - car.x, way.y[near] - car.y)
+			) {
+				near = k;
+			}
+		}
+		let join = near + 1;
+		while (join + 1 < way.count && way.along[join] - way.along[near] < JOIN) join++;
+		const onto = Math.atan2(way.y[join] - way.y[join - 1], way.x[join] - way.x[join - 1]);
+		const lead = curve(
+			{ x: car.x, y: car.y, angle: car.angle },
+			{ x: way.x[join], y: way.y[join], angle: onto }
+		).slice(0, -1);
+		const rail: Rail = { x: [], y: [], along: [], length: 0, line: 0, stop: 0, end: 0 };
+		for (const [x, y] of lead) {
+			rail.x.push(x);
+			rail.y.push(y);
+		}
+		for (let k = join; k < way.count; k++) {
+			rail.x.push(way.x[k]);
+			rail.y.push(way.y[k]);
+		}
+		rail.along.push(0);
+		for (let k = 1; k < rail.x.length; k++) {
+			rail.along.push(
+				rail.along[k - 1] + Math.hypot(rail.x[k] - rail.x[k - 1], rail.y[k] - rail.y[k - 1])
+			);
+		}
+		rail.length = rail.along[rail.along.length - 1];
+		const joined = rail.along[lead.length] - way.along[join];
+		rail.line = line + joined;
+		rail.stop = stop + joined;
+		rail.end = end + joined;
+		crew.rail = rail;
+		crew.at = 0;
+		crew.s = 0;
+		crew.v = Math.max(2, car.speed);
+		crew.held = 0;
+		crew.go = false;
+		car.lane = LANE.in;
+		// nothing can run into it from here on
+		car.body.setActive(false);
+	}
+
+	/** What a crew does at a stop, decided as the car pulls up, and how long it will take. */
+	function serve(car: Car, crew: Crew, time: number) {
+		const laps = left(car);
+		const yellow = race.flag() !== 'green';
+		const need = (laps * rate(crew) + (yellow ? SPARE : 0)) * MARGIN;
+		let add = clamp(need - car.fuel, 0, rules.tank - car.fuel);
+		if (add < 0.1) add = 0;
+		const filling = add ? HOSE + PER_LAP * add : 0;
+		const both = Math.max(filling, TYRES) + (add ? TOGETHER : 0);
+		// new tyres if they will win back the seconds they cost, as this crew judges it
+		const worth = laps * car.wear * WORTH * crew.appetite;
+		const tyres = !add || (laps >= 0.7 && worth > (both - filling) * (yellow ? CHEAP : 1));
+		const skill = clamp(car.entry.crew, 0, 1);
+		crew.service = add && tyres ? 'both' : add ? 'fuel' : 'tyres';
+		crew.slow = rand() < lerp(FUMBLES[0], FUMBLES[1], skill);
+		const seconds =
+			(tyres ? both : filling) * lerp(SLOWEST, QUICKEST, skill) +
+			(crew.slow ? FUMBLE + rand() * FUMBLE_MORE : 0);
+		crew.since = time;
+		crew.until = time + seconds;
+		crew.flow = add / seconds;
+		crew.tyres = tyres;
+		crew.stops++;
+		car.lane = LANE.box;
+		race.note(car, { kind: 'pit', service: crew.service });
+	}
+
+	/** Whether a car is on the move in the pits: on its way to its box or away from it, not standing in it. */
+	const moving = (car: Car) => car.lane === LANE.in || car.lane === LANE.out;
+
+	/** Whether a car in its box can pull out into the lane: nothing coming down it, or just past. */
+	function free(car: Car, crew: Crew, lorries: Lorry[]) {
+		for (const other of cars) {
+			if (other === car || !moving(other)) continue;
+			// one that is turning into a box before this one never gets here
+			if (other.lane === LANE.in && crews[cars.indexOf(other)].box < crew.box) continue;
+			const gap = along(car.sample, other.sample);
+			if (gap > -16 && gap < 7) return false;
+		}
+		return lorries.every((lorry) => {
+			const gap = along(car.sample, lorry.sample);
+			// one stopped behind is waiting for this very car to go
+			return gap <= -22 || gap >= lorry.keep || (gap < 0 && lorry.speed < 0.5);
+		});
+	}
+
+	/** How long a car will take from where it is to the end of its way out, if nothing holds it up. */
+	function joining(car: Car, crew: Crew) {
+		const rail = crew.rail!;
+		const away = joins(car);
+		let [s, v, t] = [crew.s, crew.v, 0];
+		for (; s < rail.length && t < 10; t += 0.05) {
+			v =
+				s < rail.end ? Math.min(rules.limit, v + PULL_AWAY * 0.05) : Math.min(away, v + GO * 0.05);
+			s += v * 0.05;
+		}
+		return t;
+	}
+
+	/**
+	 * How fast a car is going as it joins the track: nearly what it would
+	 * take that part of it at. Under caution, no faster than it went down the
+	 * lane; and with a wreck or the truck anywhere near, at a crawl, to pick
+	 * its way round.
+	 */
+	const joins = (car: Car) =>
+		race.flag() === 'green' && !inTheWay(-12, 45)
+			? Math.max(rules.limit, car.pace[lane.merge] * EXIT)
+			: inTheWay(-12, 45)
+				? CRAWL
+				: rules.limit;
+	/** How fast a car may be going as it leaves the track for the way in: what it can brake from on the way. */
+	const enters = Math.sqrt(rules.limit ** 2 + 2 * SLOW * (lane.path(0).line - JOIN));
+
+	/**
+	 * Whether there is a wreck lying on the track, or the tow truck at work
+	 * on it, between `from` metres and `to` metres on from where the way out
+	 * joins the track, and no further out from the inside than `within`.
+	 */
+	function inTheWay(from: number, to: number, within = HALF_CORRIDOR) {
+		const here = (sample: number, across: number) => {
+			const far = along(lane.merge, sample);
+			return far > from && far < to && across > -HALF_CORRIDOR && across < within;
+		};
+		for (const other of cars) {
+			if (other.retired && here(other.sample, other.across)) return true;
+		}
+		for (const truck of race.trucks) {
+			if (!truck.busy || Math.abs(truck.speed ?? 0) >= 6) continue;
+			const sample = nearest(track, truck.x, truck.y, lane.merge);
+			if (here(sample, lateral(track, truck.x, truck.y, sample))) return true;
+		}
+		return false;
+	}
+
+	/** Whether the track is blocked right where the way out joins it. */
+	const blocked = () => inTheWay(-8, 12, 1);
+
+	/** Whether a car at the end of the lane can go: nobody on the track will be where it joins when it gets there. */
+	function gap(car: Car, crew: Crew) {
+		const arrives = joining(car, crew);
+		for (const other of cars) {
+			if (other === car || other.retired || other.lane >= LANE.in) continue;
+			const short = along(other.sample, lane.merge);
+			if (short < -20 || short > 160) continue;
+			// how far past where it joins the other will be by then
+			const past = other.speed * arrives - short;
+			if (past > -(6 + Math.max(0, other.speed - 16) * 1.2) && past < 8) return false;
+		}
+		return true;
+	}
+
+	/** One step of a car that is off the track: down the lane, into its box, out again. */
+	function ride(car: Car, crew: Crew, time: number, dt: number, lorries: Lorry[]) {
+		const rail = crew.rail!;
+		let target = rules.limit;
+		let pull = PULL_AWAY;
+		let brake = BRAKE;
+		if (car.lane === LANE.in && crew.s < rail.line) {
+			// on the way in: braking from racing speed to the lane's limit by the line
+			target = Math.sqrt(rules.limit ** 2 + 2 * SLOW * Math.max(0, rail.line - crew.s - 2));
+			brake = SLOW * 1.3;
+		} else if (car.lane === LANE.box) {
+			target = 0;
+			car.fuel = Math.min(rules.tank, car.fuel + crew.flow * dt);
+			if (time >= crew.until && free(car, crew, lorries)) {
+				if (crew.tyres) car.wear = 0;
+				car.lane = LANE.out;
+				race.note(car, { kind: 'away', seconds: time - crew.since, slow: crew.slow });
+			}
+		} else if (car.lane === LANE.in) {
+			target = Math.min(target, Math.sqrt(2 * BRAKE * Math.max(0, rail.stop - crew.s)));
+		} else if (crew.s >= rail.end) {
+			// on the way out, and committed to it
+			target = joins(car);
+			pull = GO;
+		} else if (!crew.go && rail.end - crew.s < LOOK) {
+			// At the end of the lane it looks for a gap to join in, and once it
+			// has seen one it goes; until then it is held there.
+			crew.held ||= time;
+			// (held too long behind a wreck, it goes anyway: the truck wants the lane to fetch it)
+			const waited = time - crew.held;
+			if (waited > 3 * PATIENCE || (!blocked() && (gap(car, crew) || waited > PATIENCE))) {
+				crew.go = true;
+			} else target = Math.min(target, Math.sqrt(2 * BRAKE * Math.max(0, rail.end - 1 - crew.s)));
+		}
+		// Behind whatever is ahead of it on the move in the pits. Two that are
+		// level cannot both go: the one further up the grid does.
+		if (car.lane !== LANE.box) {
+			for (const other of cars) {
+				if (other === car || !moving(other)) continue;
+				const space = along(car.sample, other.sample);
+				if (space > LEVEL && space < 25) {
+					target = Math.min(
+						target,
+						Math.sqrt(Math.max(0, other.speed) ** 2 + 2 * BRAKE * Math.max(0, space - KEEP))
+					);
+				} else if (Math.abs(space) <= LEVEL && cars.indexOf(other) < cars.indexOf(car)) {
+					target = 0;
+				}
+			}
+			for (const lorry of lorries) {
+				const space = along(car.sample, lorry.sample);
+				if (space > 0 && space < 28) {
+					target = Math.min(
+						target,
+						Math.sqrt(lorry.speed ** 2 + 2 * BRAKE * Math.max(0, space - lorry.keep))
+					);
+				}
+			}
+		}
+		crew.v = Math.max(0, crew.v + clamp(target - crew.v, -brake * dt, pull * dt));
+		crew.s = Math.min(rail.length, crew.s + crew.v * dt);
+		if (car.lane === LANE.in && rail.stop - crew.s < 0.12) {
+			crew.s = rail.stop;
+			crew.v = 0;
+			serve(car, crew, time);
+		}
+		while (crew.at + 2 < rail.along.length && rail.along[crew.at + 1] <= crew.s) crew.at++;
+		const [a, b] = [crew.at, crew.at + 1];
+		const t = clamp((crew.s - rail.along[a]) / (rail.along[b] - rail.along[a] || 1), 0, 1);
+		const x = rail.x[a] + (rail.x[b] - rail.x[a]) * t;
+		const y = rail.y[a] + (rail.y[b] - rail.y[a]) * t;
+		// facing the way the way runs, over a couple of metres of it so it turns smoothly
+		const [from, to] = [Math.max(0, a - 2), Math.min(rail.x.length - 1, b + 2)];
+		const angle = Math.atan2(rail.y[to] - rail.y[from], rail.x[to] - rail.x[from]);
+		car.body.setTransform({ x, y }, angle);
+		car.body.setLinearVelocity({ x: Math.cos(angle) * crew.v, y: Math.sin(angle) * crew.v });
+		car.body.setAngularVelocity(0);
+		if (crew.s >= rail.length) {
+			// back on the track, and a car like any other again, holding the inside
+			crew.rail = null;
+			car.lane = LANE.racing;
+			car.body.setActive(true);
+			car.offset = INSIDE - track.line[lane.merge];
+			car.steer = 0;
+			car.stuck = 0;
+		}
+	}
+
+	/** A truck that is in the lane, or crossing it, as the cars there see it. */
+	type Lorry = { sample: number; speed: number; keep: number };
+	function inTheLane(): Lorry[] {
+		const found: Lorry[] = [];
+		for (const truck of race.trucks) {
+			if (!truck.busy) continue;
+			const sample = nearest(track, truck.x, truck.y);
+			const across = lateral(track, truck.x, truck.y, sample);
+			// in the lane, on its way through the wall, or in among the boxes
+			if (across < -HALF_CORRIDOR + 0.5 && across > -BOX_ACROSS - 1.5) {
+				found.push({
+					sample,
+					speed: Math.max(0, truck.speed ?? 0),
+					keep: KEEP_TRUCK + (truck.towing >= 0 ? TRAILER : 0)
+				});
+			}
+		}
+		return found;
+	}
+
+	return {
+		lane,
+
+		/** How much throttle a driver may use: less while saving fuel. */
+		lift: (car: Car) => (on && crews[cars.indexOf(car)].saving ? LIFT : 1),
+
+		/**
+		 * Where across the track a car called in should be, if it matters yet,
+		 * and how fast it may be going, on its way to the way in. Null for any
+		 * other car.
+		 */
+		call(car: Car) {
+			if (car.lane !== LANE.called) return null;
+			const far = ahead(car.sample, lane.entry);
+			const to = far > length / 2 ? 0 : far;
+			let limit = Math.sqrt(enters ** 2 + 2 * EASE * Math.max(0, to - 3));
+			// Those coming in go in one behind another, not side by side. Only
+			// the one behind gives anything up for it, and only a little: it
+			// drops back until there is room between them. Of two that are level
+			// the one further down the grid is the one behind.
+			for (const other of cars) {
+				if (other === car || other.retired) continue;
+				if (other.lane !== LANE.called && other.lane !== LANE.in) continue;
+				const space = along(car.sample, other.sample);
+				const behind = space > 0 || (space === 0 && cars.indexOf(other) < cars.indexOf(car));
+				if (behind && space < QUEUE) limit = Math.min(limit, Math.max(8, other.speed - 2));
+			}
+			// It keeps to the racing line until it is nearly there, and then to
+			// the inside, lifting a little to hold it: no more than that is
+			// given up on the track. (Under caution that leaves the inside to
+			// the tow truck for as long as may be.)
+			if (to > MOVE_IN) return { across: null, limit };
+			return { across: INSIDE, limit: Math.min(limit, car.pace[car.sample] * TIGHT) };
+		},
+
+		/** Counts what a car has burnt and worn this step, given the throttle it is using and how much of its grip the corner is taking. */
+		use(car: Car, throttle: number, cornering: number, dt: number) {
+			if (!on) return;
+			const crew = crews[cars.indexOf(car)];
+			const moved = Math.abs(car.speed) * dt;
+			const burnt = (moved / length) * BURN * lane.thirst * (IDLE + FULL * Math.max(0, throttle));
+			car.fuel = Math.max(0, car.fuel - burnt);
+			car.wear = Math.min(
+				1,
+				car.wear +
+					rules.wear * (moved / length) * (ROLL + CORNER * cornering ** 2 + SLIDE * car.slip)
+			);
+			// what it burns is judged from racing laps, not from laps spent saving it
+			if (race.flag() === 'green' && !crew.saving) {
+				crew.used += burnt;
+				crew.driven += moved;
+			}
+		},
+
+		/** One step of the crews. Call before the world is stepped, once the drivers have had their turn. */
+		step(time: number, started: boolean, dt: number) {
+			if (!on) return;
+			const flag = race.flag();
+			const lorries = cars.some((car) => car.lane >= LANE.in) ? inTheLane() : [];
+			cars.forEach((car, index) => {
+				const crew = crews[index];
+				if (car.retired) return;
+				if (car.lane >= LANE.in) return ride(car, crew, time, dt, lorries);
+				if (car.finishTime || !started) return;
+				if (car.fuel <= 0 && Math.abs(car.speed) < DRY) {
+					car.lane = LANE.racing;
+					race.note(car, { kind: 'dry' });
+					race.retire(car);
+					return;
+				}
+				// saving fuel while a little short of what it needs, until it is not
+				const need = left(car) * rate(crew) * MARGIN;
+				crew.saving = car.fuel < need * (crew.saving ? 1.02 : 1) && car.fuel >= need * STRETCH;
+				const far = ahead(car.sample, lane.entry);
+				if (car.lane === LANE.called) {
+					if (flag === 'checkered' || (flag === 'restart' && !last(car, crew, far))) {
+						// the pits shut as the field lines up to go green
+						car.lane = LANE.racing;
+					} else if (far <= 2 * spacing || far >= length - 10 * spacing) {
+						// At the way in: taken off the track if it is where it should
+						// be and slow enough, and not on top of the one that went in
+						// before it.
+						const facing = Math.atan2(track.ty[car.sample], track.tx[car.sample]);
+						const square = Math.abs(
+							Math.atan2(Math.sin(car.angle - facing), Math.cos(car.angle - facing))
+						);
+						const room = cars.every(
+							(other) =>
+								other === car ||
+								!moving(other) ||
+								Math.hypot(other.x - car.x, other.y - car.y) > KEEP - 1
+						);
+						if (
+							room &&
+							car.across < 0.5 &&
+							car.speed < enters + 4 &&
+							car.speed > 0.3 &&
+							square < 0.5
+						) {
+							take(car, crew);
+						}
+					} else if (far > length - 18 * spacing) {
+						// missed it: round again
+						car.lane = LANE.racing;
+					}
+				} else if (
+					flag !== 'checkered' &&
+					far <= CALL_FAR &&
+					far >= (flag === 'green' ? CALL_NEAR : CALL_LATE) &&
+					wants(car, crew, far, flag)
+				) {
+					car.lane = LANE.called;
+				}
+			});
+		}
+	};
+}
