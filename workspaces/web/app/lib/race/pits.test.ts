@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BOX, BOX_ACROSS, LANE, STAND, pitsFor } from './pits';
+import { LOAD } from './recovery';
 import { createReplay, pack, record, unpack } from './recording';
 import { ROSTER, type Entry } from './roster';
 import { TRUCK } from './service';
@@ -365,13 +366,27 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 
 	/**
 	 * A race, watched for where the trucks go while they are out, which cars
-	 * they are out for, whether they are ever both out, and how near each
-	 * other they ever come.
+	 * they are out for, whether they are ever both out, how near each other
+	 * they ever come, how many times they go out, and whether one ever has a
+	 * full bed. And the wrecks each truck took off the track on each trip,
+	 * and where each lay on the track when it was lifted.
 	 */
 	function watched(seed: number, count: number) {
 		const race = createRace(seed, drawGrid(seed, ROSTER, count), track);
-		const seen = { race, out: 0, onTrack: 0, elsewhere: 0, both: 0, nearest: Infinity };
+		const seen = {
+			race,
+			out: 0,
+			onTrack: 0,
+			elsewhere: 0,
+			both: 0,
+			nearest: Infinity,
+			trips: 0,
+			full: 0,
+			loads: [] as number[][]
+		};
 		const retired: number[] = [];
+		const doing = race.trucks.map((truck) => truck.doing);
+		const trip = race.trucks.map(() => [] as number[]);
 		while (!race.done) {
 			race.step();
 			for (const event of race.events) if (event.kind === 'retire') retired.push(event.car);
@@ -379,6 +394,23 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 			const [one, other] = race.trucks;
 			seen.nearest = Math.min(seen.nearest, Math.hypot(one.x - other.x, one.y - other.y));
 			if (one.busy && other.busy) seen.both++;
+			race.trucks.forEach((truck, index) => {
+				if (truck.doing === 'out' && doing[index] !== 'out') seen.trips++;
+				if (truck.load.every((car) => car >= 0)) seen.full++;
+				// a car on the crane on the track is one being lifted off it
+				if (
+					truck.towing >= 0 &&
+					truck.across > -HALF_CORRIDOR &&
+					!trip[index].includes(truck.towing)
+				) {
+					trip[index].push(truck.towing);
+				}
+				if (truck.doing === 'haul' && doing[index] !== 'haul' && trip[index].length) {
+					seen.loads.push(trip[index]);
+					trip[index] = [];
+				}
+				doing[index] = truck.doing;
+			});
 			for (const truck of race.trucks) {
 				if (!truck.busy) continue;
 				seen.out++;
@@ -402,7 +434,7 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 	/** Both trucks on a stand, and not the same one. */
 	function home({ race }: ReturnType<typeof watched>) {
 		const on = race.trucks.map((truck) => {
-			expect(truck).toMatchObject({ busy: false, towing: -1 });
+			expect(truck).toMatchObject({ busy: false, towing: -1, load: [-1, -1] });
 			return lane.stands.findIndex(
 				(stand) => Math.hypot(truck.x - stand.x, truck.y - stand.y) < 0.6
 			);
@@ -425,11 +457,13 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 	// a race that loses one car, out on the track, while it is still being raced
 	const single = find(6, (seen) => seen.retired.length === 1 && seen.out > 0);
 	// and one that loses several at once, in a full field, and is raced to the end all the same:
-	// the second truck sets off as soon as the first has its wreck on the hook
+	// the second truck sets off as soon as the first has all it can take on its bed
 	const several = find(
 		ROSTER.length,
 		(seen) => seen.both > 0 && seen.race.cars.some((car) => car.finishTime > 0)
 	);
+	// one in which a truck takes two wrecks off the track in one trip
+	const pair = find(ROSTER.length, (seen) => seen.full > 0);
 
 	it('stand at the end of the pit lane, and are back there when the job is done', () => {
 		expect(single.race.trucks).toHaveLength(2);
@@ -446,6 +480,18 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 	it('leave the wreck in its own pit box', () => {
 		expect(single.retired).toHaveLength(1);
 		boxed(single);
+	});
+
+	it('lift a wreck onto the bed with the crane, and take two in one trip where there are two to take', () => {
+		expect(pair.full).toBeGreaterThan(0);
+		expect(pair.loads.some((load) => load.length === LOAD)).toBe(true);
+		// never more than the bed holds, and no wreck lifted twice
+		for (const load of pair.loads) expect(load.length).toBeLessThanOrEqual(LOAD);
+		expect(new Set(pair.loads.flat()).size).toBe(pair.loads.flat().length);
+		// fewer trips than wrecks, and each of them put in its own box
+		expect(pair.trips).toBeLessThan(pair.retired.length);
+		boxed(pair);
+		home(pair);
 	});
 
 	it("both go out when there is more than one wreck, and keep out of each other's way", () => {
