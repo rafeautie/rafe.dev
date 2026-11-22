@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BOX, BOX_ACROSS, LANE, STAND, pitsFor } from './pits';
 import { LOAD } from './recovery';
 import { createReplay, pack, record, unpack } from './recording';
+import { offRoadAt } from './render';
 import { ROSTER, type Entry } from './roster';
 import { TRUCK } from './service';
 import { HULL } from './sim';
@@ -18,7 +19,15 @@ import {
 	type RaceEvent,
 	type Rules
 } from './sim';
-import { getTrack, HALF_CORRIDOR, lateral, nearest, TRACK_IDS, type TrackId } from './track';
+import {
+	getTrack,
+	HALF_CORRIDOR,
+	HALF_ROAD,
+	lateral,
+	nearest,
+	TRACK_IDS,
+	type TrackId
+} from './track';
 
 /** A stop as the test saw it: who, when it pulled up and when it left, what was done, and what it did to the car. */
 type Stopped = {
@@ -53,6 +62,9 @@ function run(
 	const joined: number[] = [];
 	let nearest2 = Infinity;
 	let least = Infinity;
+	// the most any car off the track slid, and how often one of its rear tyres was off the road
+	let slid = 0;
+	let rough = 0;
 	for (let step = 0; step < (LIGHTS + timeCap(rules.laps) + 1) / DT && !race.done; step++) {
 		const before = race.cars.map((car) => ({ fuel: car.fuel, wear: car.wear, lane: car.lane }));
 		race.step();
@@ -101,6 +113,17 @@ function run(
 			}
 		}
 		for (const car of race.cars) least = Math.min(least, car.fuel);
+		for (const car of race.cars) {
+			if (car.retired || car.lane < LANE.in) continue;
+			slid = Math.max(slid, car.slip);
+			const [cos, sin] = [Math.cos(car.angle), Math.sin(car.angle)];
+			for (const side of [-0.85, 0.85]) {
+				// where the renderer has a rear tyre (render.ts)
+				const x = car.x - 1.3 * cos - side * sin;
+				const y = car.y - 1.3 * sin + side * cos;
+				if (offRoadAt(track, x, y)) rough++;
+			}
+		}
 	}
 	return Object.assign(race, {
 		all: events,
@@ -110,7 +133,9 @@ function run(
 		entered,
 		joined,
 		nearest: nearest2,
-		least
+		least,
+		slid,
+		rough
 	});
 }
 
@@ -120,6 +145,28 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 	const track = getTrack(id);
 	const { n } = track;
 	const lane = pitsFor(track);
+
+	it('is paved, as the track is, while the verge and the grass are not', () => {
+		/** How many points the given distance either side of the centre line are off the road, as a share of them. */
+		const rough = (across: number) => {
+			let off = 0;
+			for (let i = 0; i < n; i++) {
+				for (const side of [-1, 1]) {
+					const x = track.x[i] - track.ty[i] * across * side;
+					const y = track.y[i] + track.tx[i] * across * side;
+					if (offRoadAt(track, x, y)) off++;
+				}
+			}
+			return off / (2 * n);
+		};
+		expect(rough(0)).toBe(0);
+		expect(rough(HALF_ROAD - 0.6)).toBe(0);
+		// (less where the ways to and from the pits are paved through it)
+		expect(rough(HALF_ROAD + 0.4)).toBeGreaterThan(0.9);
+		// (and the grass inside, along the pit lane)
+		expect(rough(HALF_CORRIDOR + 3)).toBeGreaterThan(0.6);
+		for (const box of lane.boxes) expect(offRoadAt(track, box.x, box.y)).toBe(false);
+	});
 
 	it('has a box for every car, each clear of the next', () => {
 		expect(lane.boxes).toHaveLength(ROSTER.length);
@@ -244,6 +291,14 @@ describe.each(TRACK_IDS)('pit stops on the %s', (id) => {
 		for (const race of races) {
 			expect(race.fastest).toBeLessThanOrEqual(RULES.limit + 0.01);
 			expect(race.nearest).toBeGreaterThan(3.5);
+		}
+	});
+
+	it('throw up nothing on the way: no sliding, and never a tyre off the paving', () => {
+		for (const race of races) {
+			expect(race.stops.length).toBeGreaterThan(0);
+			expect(race.slid).toBe(0);
+			expect(race.rough).toBe(0);
 		}
 	});
 
