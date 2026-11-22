@@ -642,6 +642,8 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		const cy = Math.floor(truck.y * SCALE) + oy;
 		// its two lamps flash turn about while it is out
 		const flash = truck.busy ? 1 + (Math.floor(performance.now() / 180) & 1) : 0;
+		// which way its front wheels point, as against the way it faces
+		const steer = [Math.cos(truck.steer), Math.sin(truck.steer)];
 		// the box round it, turned as it is, with its tyres
 		const half = TRUCK.wide + 0.22;
 		const ex = Math.ceil((Math.abs(cos) * TRUCK.long + Math.abs(sin) * half) * SCALE) + 2;
@@ -655,12 +657,17 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 				const k = py * width + px;
 				const side = Math.abs(y);
 				if (Math.abs(x) > TRUCK.long || side > TRUCK.wide) {
-					// the tyres stand a little proud of it: one axle under the cab, two under the back of the bed
+					// the tyres stand a little proud of it: one axle under the cab,
+					// turned as far as it is steered, and two under the back of the bed
+					const [fx, fy] = [x - FRONT_WHEEL, side - TRUCK.wide];
+					const turned = y < 0 ? -steer[1] : steer[1];
+					const front =
+						Math.abs(fx * steer[0] + fy * turned) < 0.5 &&
+						Math.abs(fy * steer[0] - fx * turned) < 0.22;
 					const wheel =
-						Math.abs(side - TRUCK.wide) < 0.22 &&
-						(Math.abs(x - FRONT_WHEEL) < 0.5 ||
-							Math.abs(x - MID_WHEEL) < 0.5 ||
-							Math.abs(x - BACK_WHEEL) < 0.5);
+						front ||
+						(Math.abs(side - TRUCK.wide) < 0.22 &&
+							(Math.abs(x - MID_WHEEL) < 0.5 || Math.abs(x - BACK_WHEEL) < 0.5));
 					if (wheel) frame[k] = shadow ? mix(frame[k], BLACK, 0.4) : TYRE;
 					continue;
 				}

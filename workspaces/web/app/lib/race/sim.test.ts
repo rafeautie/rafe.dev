@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { ROSTER } from './roster';
 import { LIMITS } from './settings';
 import { LANE, pitsFor } from './pits';
-import { KERBSIDE, RING, TIGHTEST, TRUCK, TRUCK_HALF, hookOf, serviceFor } from './service';
+import {
+	KERBSIDE,
+	RING,
+	TIGHTEST,
+	TRUCK,
+	TRUCK_HALF,
+	WHEELBASE,
+	hookOf,
+	serviceFor
+} from './service';
 import {
 	CLASSIC,
 	createRace,
@@ -279,10 +288,13 @@ describe.each(TRACK_IDS)('the wheels on the %s', (id) => {
 				race.step();
 				for (const truck of race.trucks) {
 					if (!truck.busy || truck.towed) continue;
-					const { x, y, sample } = truck;
-					// on the track, and not still on the way on to it
-					if (Math.abs(lateral(track, x, y, nearest(track, x, y, sample))) > KERBSIDE + 0.05)
-						continue;
+					const { x, y, sample, angle } = truck;
+					// on the track, and not still on the way on to it: its back axles
+					// come on from the pits a good way behind its front one
+					const [bx, by] = [x + Math.cos(angle) * TRUCK.rear, y + Math.sin(angle) * TRUCK.rear];
+					const off = (px: number, py: number) =>
+						Math.abs(lateral(track, px, py, nearest(track, px, py, sample))) > KERBSIDE + 0.05;
+					if (off(x, y) || off(bx, by)) continue;
 					const wreck = race.cars.some(
 						(car) => car.retired && !car.towed && Math.hypot(car.x - x, car.y - y) < 32
 					);
@@ -400,12 +412,30 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 			race.trucks.forEach((truck, index) => {
 				const was = trucks[index];
 				const moved = Math.hypot(truck.x - was.x, truck.y - was.y);
-				// It turns only as it moves: never on the spot, never tighter than
-				// it can steer. Squaring up on its stand as it parks is a last turn
-				// of the wheel at a crawl, and never much of one: it turns in off
-				// the lane early enough to be all but straight on the stand.
+				// It steers as a truck does. Its front wheels turn no further than
+				// they go, and no faster than they can be turned; it goes round
+				// about its back axles, which go only the way it faces, never
+				// sideways; and so it turns only as they move, never on the spot,
+				// and never tighter than its wheels are turned for. Squaring up on
+				// its stand as it parks is a last turn of the wheel at a crawl, and
+				// never much of one: it turns in off the lane early enough to be
+				// all but straight on the stand.
+				expect(Math.abs(truck.steer)).toBeLessThanOrEqual(TRUCK.lock + 1e-9);
+				expect(Math.abs(truck.steer - was.steer)).toBeLessThan(TRUCK.steering * DT + 1e-9);
 				if (truck.doing !== 'park' && was.doing !== 'park') {
-					expect(turned(was.angle, truck.angle)).toBeLessThan(moved / 6 + 1e-4);
+					const [back, before] = [truck, was].map(({ x, y, angle }) => [
+						x + Math.cos(angle) * TRUCK.rear,
+						y + Math.sin(angle) * TRUCK.rear
+					]);
+					const [dx, dy] = [back[0] - before[0], back[1] - before[1]];
+					const facing =
+						was.angle +
+						Math.atan2(Math.sin(truck.angle - was.angle), Math.cos(truck.angle - was.angle)) / 2;
+					expect(Math.abs(dy * Math.cos(facing) - dx * Math.sin(facing))).toBeLessThan(1e-3);
+					const rolled = Math.abs(dx * Math.cos(facing) + dy * Math.sin(facing));
+					const tightest =
+						Math.tan(Math.max(Math.abs(truck.steer), Math.abs(was.steer))) / WHEELBASE;
+					expect(turned(was.angle, truck.angle)).toBeLessThan(rolled * tightest + 1e-4);
 				} else if (truck.doing === 'park') {
 					const square = Math.min(...stands.map((stand) => turned(stand.angle, truck.angle)));
 					expect(square).toBeLessThan(0.2);

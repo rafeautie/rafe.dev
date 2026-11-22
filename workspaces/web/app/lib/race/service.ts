@@ -20,7 +20,9 @@ export const HALF_LANE = 2.2;
  * axles it is steered by are; how far forward of its middle the crane turns;
  * where the middle of each of the two cars it carries goes on the bed, the
  * back one first, which is the one it loads first; and where its wheels are:
- * one axle under the cab and two under the back of the bed.
+ * one axle under the cab, which steers, and two under the back of the bed,
+ * between which the truck turns; and as far as its front wheels turn either
+ * way, and how fast they can be turned (rad/s).
  */
 export const TRUCK = {
 	long: 5.6,
@@ -28,8 +30,13 @@ export const TRUCK = {
 	axle: 3.6,
 	pivot: 3.4,
 	bed: [-3.45, 0.85],
-	wheels: [4.6, -2.4, -3.6]
+	wheels: [4.6, -2.4, -3.6],
+	rear: -3,
+	lock: 0.75,
+	steering: 1.2
 };
+/** From the back axles the truck turns about to the front one it steers by. */
+export const WHEELBASE = TRUCK.wheels[0] - TRUCK.rear;
 
 /** Where a truck at `x`, `y` facing `angle` has its crane's hook, with the crane swung and run out as it is. */
 export function hookOf(

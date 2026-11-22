@@ -108,6 +108,7 @@ describe('a recording', () => {
 				expect(Math.abs(Math.sin(shown.crane.swing - truck.crane.swing))).toBeLessThan(0.02);
 				expect(Math.abs(shown.crane.reach - truck.crane.reach)).toBeLessThan(0.03);
 				expect(Math.abs(shown.crane.raise - truck.crane.raise)).toBeLessThan(0.01);
+				expect(Math.abs(shown.steer - truck.steer)).toBeLessThan(0.01);
 				if (shown.towing >= 0) towed++;
 				if (shown.load.some((car) => car >= 0)) loaded++;
 			});
@@ -163,8 +164,14 @@ describe('a recording', () => {
 	});
 
 	it('still plays a recording made before the trucks had cranes', () => {
-		const { cranes, ...recording } = record(WRECK, drawGrid(WRECK, SIX), track, [], CLASSIC);
-		expect(cranes).toBe(true);
+		const { cranes, steering, ...recording } = record(
+			WRECK,
+			drawGrid(WRECK, SIX),
+			track,
+			[],
+			CLASSIC
+		);
+		expect([cranes, steering]).toEqual([true, true]);
 		const cars = SIX.length * 10;
 		// the same race with each truck's moment cut down to what it was: where it was, and what it was doing
 		const moment = recording.poses.length / recording.frames;
@@ -197,6 +204,45 @@ describe('a recording', () => {
 				expect(shown).toMatchObject({ load: [-1, -1], crane: { raise: 0 } });
 			});
 		}
+	});
+
+	it('still plays a recording made before the trucks steered, with their wheels straight', () => {
+		const { steering, ...recording } = record(WRECK, drawGrid(WRECK, SIX), track, [], CLASSIC);
+		expect(steering).toBe(true);
+		const cars = SIX.length * 10;
+		// the same race with the last byte of each truck's moment, its wheels, cut out
+		const moment = recording.poses.length / recording.frames;
+		const size = (moment - cars) / recording.trucks!;
+		const old = cars + recording.trucks! * (size - 1);
+		const poses = new Uint8Array(recording.frames * old);
+		for (let frame = 0; frame < recording.frames; frame++) {
+			const at = frame * moment;
+			poses.set(recording.poses.subarray(at, at + cars), frame * old);
+			for (let truck = 0; truck < recording.trucks!; truck++) {
+				const from = at + cars + truck * size;
+				poses.set(
+					recording.poses.subarray(from, from + size - 1),
+					frame * old + cars + truck * (size - 1)
+				);
+			}
+		}
+		const before = createReplay({ ...recording, poses }, ROSTER);
+		const now = createReplay(record(WRECK, drawGrid(WRECK, SIX), track, [], CLASSIC), ROSTER);
+		let steered = 0;
+		for (let time = 0; time < now.duration; time += 0.5) {
+			before.seek(time);
+			now.seek(time);
+			expect(before.cars).toEqual(now.cars);
+			now.trucks.forEach((truck, index) => {
+				const { steer, ...shown } = before.trucks[index];
+				const { steer: turned, ...expected } = truck;
+				expect(shown).toEqual(expected);
+				expect(steer).toBe(0);
+				if (Math.abs(turned) > 0.05) steered++;
+			});
+		}
+		// (and in the new one, they are turned now and then)
+		expect(steered).toBeGreaterThan(0);
 	});
 
 	it('takes one packed before there was a choice of track to be on the circuit', () => {

@@ -2,6 +2,7 @@ import { planStop, type Plan } from './crew';
 import { LANE, pitsFor, type Stop } from './pits';
 import { LOAD, STOWED, type Crane } from './recovery';
 import type { Entry } from './roster';
+import { TRUCK as TOW_TRUCK } from './service';
 import {
 	CLASSIC,
 	createRace,
@@ -35,11 +36,13 @@ const COARSE = 10;
  * Bytes for one truck at one moment: x, y and angle as 16 bits each, what it
  * is doing, the car on each place on its bed (counted from 1, 0 for none),
  * and its crane: which way it points, how far out, and how high it has lifted
- * what is on it. A recording from before the trucks had beds and cranes has
- * only the first and a byte that said which gate it had open, when there
- * were gates.
+ * what is on it; and how far its front wheels are turned. A recording from
+ * before the trucks steered has all but the last, and one from before they
+ * had beds and cranes only the first and a byte that said which gate it had
+ * open, when there were gates.
  */
-const TRUCK = 7 + LOAD + 3;
+const TRUCK = 7 + LOAD + 4;
+const UNSTEERED_TRUCK = TRUCK - 1;
 const OLD_TRUCK = 8;
 /** What a truck is doing: the car on its crane (its hook, in an old recording), counted from 1, in the low bits, and this one set while it is out. */
 const BUSY = 128;
@@ -71,7 +74,9 @@ export type Recording = {
 	trucks?: number;
 	/** Whether the trucks are recorded with their beds and cranes, as they all are now. */
 	cranes?: true;
-	/** `frames` moments, each `grid.length` cars of POSE bytes and then the trucks, of TRUCK bytes (OLD_TRUCK without `cranes`). */
+	/** Whether they are recorded with how far their front wheels are turned, as they all are now. */
+	steering?: true;
+	/** `frames` moments, each `grid.length` cars of POSE bytes and then the trucks, of TRUCK bytes (UNSTEERED_TRUCK without `steering`, OLD_TRUCK without `cranes` either). */
 	poses: Uint8Array;
 };
 
@@ -87,6 +92,8 @@ export type ReplayTruck = {
 	/** The cars on its bed, by their places on it, as indices into the cars: -1 where there is room. */
 	load: number[];
 	crane: Crane;
+	/** How far its front wheels are turned, towards its left positive. */
+	steer: number;
 };
 
 /** A car as it is at the moment the replay is showing. */
@@ -152,7 +159,8 @@ export function standing(track: Track): ReplayTruck[] {
 		busy: false,
 		towing: -1,
 		load: Array.from({ length: LOAD }, () => -1),
-		crane: { ...STOWED }
+		crane: { ...STOWED },
+		steer: 0
 	}));
 }
 
@@ -211,6 +219,7 @@ export function record(
 			view.setUint8(at + 7 + LOAD, Math.round(heading(swing) / 256) & 255);
 			view.setUint8(at + 8 + LOAD, Math.min(255, Math.round(reach * BOOM)));
 			view.setUint8(at + 9 + LOAD, Math.round(raise * 255));
+			view.setInt8(at + 10 + LOAD, Math.round((truck.steer / TOW_TRUCK.lock) * 127));
 			called ||= truck.busy;
 		});
 		frames++;
@@ -263,7 +272,7 @@ export function record(
 		...(per !== FINE && { per }),
 		events,
 		trucks: called ? race.trucks.length : 0,
-		...(called ? { cranes: true as const } : {}),
+		...(called ? { cranes: true as const, steering: true as const } : {}),
 		poses
 	};
 }
@@ -331,7 +340,8 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 	const trucks = standing(track);
 	const recorded = recording.trucks ?? 0;
 	const cranes = recording.cranes ?? false;
-	const size = cranes ? TRUCK : OLD_TRUCK;
+	const steering = recording.steering ?? false;
+	const size = steering ? TRUCK : cranes ? UNSTEERED_TRUCK : OLD_TRUCK;
 	const moment = grid.length * pose + recorded * size;
 	const duration = (frames - 1) / rate;
 	let flag: Flag = 'green';
@@ -449,6 +459,11 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 			truck.crane.swing = facing(a + 7 + LOAD, 8);
 			truck.crane.reach = byte(a + 8 + LOAD) / BOOM;
 			truck.crane.raise = byte(a + 9 + LOAD) / 255;
+			// (one recorded before the trucks steered is shown with its wheels straight)
+			if (!steering) continue;
+			const turned =
+				view.getInt8(a + 10 + LOAD) * (1 - t) + view.getInt8(a + 10 + LOAD + moment) * t;
+			truck.steer = (turned / 127) * TOW_TRUCK.lock;
 		}
 		return passed;
 	}
