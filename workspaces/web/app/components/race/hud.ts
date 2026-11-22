@@ -1,14 +1,13 @@
 import { MAX_BETS, MARKETS, pays, type Market, type Pools } from '~/lib/race/betting';
-import { toFrame, type Follow, type Frame, type Lens } from '~/lib/race/camera';
-import { LANE } from '~/lib/race/pits';
+import { inside, toFrame, zoomOf, type Box, type Follow, type Lens } from '~/lib/race/camera';
 import { ADVANCE, clip, enlarge, hex, measure, wrap, type Painter } from '~/lib/race/pixels';
 import type { Replay } from '~/lib/race/recording';
-import { HEIGHT, SCALE, WIDTH, type CarView } from '~/lib/race/render';
+import { HEIGHT, WIDTH, type CarView } from '~/lib/race/render';
 import type { Bet, RoomState, Standing } from '~/lib/race/room';
 import { CONDITIONS, ROSTER, inCondition } from '~/lib/race/roster';
 import { DEFAULT_SETTINGS, STATS } from '~/lib/race/settings';
 import { LIGHTS, neutral, rank, type Flag } from '~/lib/race/sim';
-import { createTelemetry, type Readout } from '~/lib/race/telemetry';
+import { GAPS_EVERY, createTelemetry, pitOf, type Readout } from '~/lib/race/telemetry';
 import { ASKS, FLAGS, SHORT, chips, entry, holding, label, signed } from './shared';
 import type { Running, Selection, Tick } from './shared';
 
@@ -80,7 +79,7 @@ export function fit(width: number, height: number, ratio: number): View {
 	};
 }
 
-export type Box = { x: number; y: number; w: number; h: number };
+export type { Box };
 const box = (x: number, y: number, w: number, h: number): Box => ({ x, y, w, h });
 const rows = (count: number, row: (index: number) => Box) =>
 	Array.from({ length: count }, (_, index) => row(index));
@@ -156,8 +155,6 @@ const STOPS = { fuel: 'Fuel', tyres: 'Tyres', both: 'F+T' };
  * for one to be clear by about half a car.
  */
 const CLEAR = 2;
-/** How often, in seconds, the tower reads the gaps again, so the figures can be read. */
-const GAPS_EVERY = 0.5;
 
 /** The stakes one click away. The last is everything you may bet. */
 export const STAKES = [10, 50, 100, 'Max'] as const;
@@ -281,6 +278,8 @@ export function layout(
 			cancel: box(mx + 150, my + 138, 50, 15)
 		},
 		track,
+		// where the track is in the frame and how big the frame is, for the camera
+		frame: { width, height, ox: track.x, oy: track.y },
 		stage,
 		views,
 		chip,
@@ -371,6 +370,8 @@ export type Scene = {
 	/** The cars where they are drawn, and, once there is a race, the replay showing it. */
 	cars: CarView[];
 	replay: Replay | null;
+	/** The ids of the cars you have bet on. */
+	backed: Set<string>;
 	/** What this viewer's camera is following, and where it is looking. */
 	watch: Watch;
 };
@@ -378,8 +379,7 @@ export type Scene = {
 /** A viewer's camera, for the graphics: what it follows, and where it is looking. */
 export type Watch = {
 	follow: Follow;
-	lens: Lens | null;
-	frame: Frame;
+	lens: Lens;
 	/** The cars it has in view because they are followed, and the one whose numbers are shown. */
 	followed: Set<string>;
 	focus: string | null;
@@ -579,7 +579,7 @@ export function createHud() {
 				gaps.set(car.entry.id, replay.gap(index, replay.cars.indexOf(top)))
 			);
 		}
-		const backed = new Set(scene.bets.flatMap((bet) => bet.outcome.split('>')));
+		const { backed } = scene;
 		order.forEach((id, place) => {
 			const ry = y + 34 + Math.round(glide(`row ${id}`, place * ROW, dt));
 			const car = field?.find((car) => car.entry.id === id);
@@ -594,12 +594,9 @@ export function createHud() {
 			if (car && replay?.pits && phase === 'racing' && !car.retired) {
 				// under the name, what is left in the tank and of the tyres:
 				// each bar runs down, and turns red when there is little left
-				[car.fuel, 1 - car.wear].forEach((share, which) => {
-					const bx = x + 30 + which * 16;
-					const full = Math.round(clamp01(share) * 14);
-					p.fill(bx, ry + 11, 14, 1, FAINT);
-					p.fill(bx, ry + 11, full, 1, share < 0.2 ? BAD : which ? GOOD : GOLD);
-				});
+				[car.fuel, 1 - car.wear].forEach((share, which) =>
+					meter(p, x + 30 + which * 16, ry + 11, 14, 1, share, supply(share, which))
+				);
 			}
 			if (car && top) {
 				// the gap to the leader in seconds: how long ago the leader was
@@ -607,10 +604,10 @@ export function createHud() {
 				const behind = gaps.get(id) ?? null;
 				const [gap, colour] = car.retired
 					? ['Out', BAD]
-					: car.lane === LANE.box && car.stop
+					: pitOf(car.lane) === 'box' && car.stop
 						? // standing in its box: what for, and for how long so far
-							[`${STOPS[car.stop.service]} ${car.stop.seconds.toFixed(1)}`, GOLD]
-						: car.lane >= LANE.in && !car.finishTime
+							[stopText(car.stop), GOLD]
+						: pitOf(car.lane) !== 'track' && !car.finishTime
 							? ['Pit', GOLD]
 							: car === top
 								? car.finishTime
@@ -750,22 +747,16 @@ export function createHud() {
 	 * are wherever the camera shows the cars.
 	 */
 	function markers(p: Painter, at: Layout, scene: Scene) {
-		const backed = new Set(scene.bets.flatMap((bet) => bet.outcome.split('>')));
-		const { lens, frame, focus } = scene.watch;
+		const { lens, focus } = scene.watch;
 		// how many times bigger the cars are shown, so the arrow clears the roof
-		const zoom = lens ? lens.to.w / lens.from.w : 1;
+		const zoom = zoomOf(lens);
 		for (const car of scene.cars) {
-			const mine = backed.has(car.entry.id);
+			const mine = scene.backed.has(car.entry.id);
 			const shown =
 				scene.room?.phase === 'racing' && scene.replay !== null && car.entry.id === focus;
 			if (!mine && !shown) continue;
-			const on = lens
-				? toFrame(lens, frame, car.x, car.y)
-				: { x: at.track.x + car.x * SCALE, y: at.track.y + car.y * SCALE };
-			const { stage } = at;
-			const outside =
-				on.x < stage.x || on.y < stage.y || on.x >= stage.x + stage.w || on.y >= stage.y + stage.h;
-			if (outside) continue;
+			const on = toFrame(lens, at.frame, car.x, car.y);
+			if (!inside(at.stage, on.x, on.y)) continue;
 			const colour = mine ? GOLD : PAPER;
 			const x = Math.round(on.x / at.unit);
 			const y = Math.round(on.y / at.unit) - 12 - Math.round(3 * zoom);
@@ -794,18 +785,8 @@ export function createHud() {
 		const { x, y, w, h } = at.chip;
 		const following = follow.mode !== 'track';
 		p.fill(x, y, w, h, INK, 0.85);
-		const named = focus ? entry(focus).name : null;
-		const [text, colour] = !following
-			? ['Tap a car to follow', DIM]
-			: !named
-				? [follow.mode === 'mine' ? 'No bets to follow' : 'Nobody', DIM]
-				: follow.mode === 'group'
-					? [`${follow.ids.length} cars`, PAPER]
-					: follow.mode === 'mine'
-						? [`Yours: ${named}`, PAPER]
-						: follow.mode === 'battle'
-							? [`Battle: ${named}`, PAPER]
-							: [named, PAPER];
+		const text = chipText(follow, focus);
+		const colour = following && focus ? PAPER : DIM;
 		const from = following && focus ? tile(p, x + 2, y + 2, focus) : x + 3;
 		p.text(from, y + 3, clip(text, x + w - (following ? 15 : 3) - from), colour);
 		if (following) p.centre(at.unfollow.x + 7, y + 3, '×', PAPER);
@@ -817,10 +798,11 @@ export function createHud() {
 	const telemetry = createTelemetry();
 	let readout: Readout | null = null;
 	function live(p: Painter, at: Box, scene: Scene, dt: number) {
-		const { replay, watch } = scene;
-		const index =
-			replay && watch.focus ? replay.cars.findIndex((car) => car.entry.id === watch.focus) : -1;
-		readout = replay && index >= 0 ? telemetry.read(replay, index, running) : null;
+		const { watch } = scene;
+		// only drawn while the race runs, so there is a replay
+		const replay = scene.replay!;
+		const index = replay.cars.findIndex((car) => car.entry.id === watch.focus);
+		readout = index >= 0 ? telemetry.read(replay, index, running) : null;
 		const { x, y, w } = at;
 		if (!readout) {
 			panel(p, { ...at, h: 32 });
@@ -849,10 +831,8 @@ export function createHud() {
 		pedals.forEach(([name, share, colour], row) => {
 			const by = y + 19 + row * 9;
 			const bx = x + 72;
-			const bw = x + w - 5 - (bx + 20);
 			p.text(bx, by, name, DIM);
-			p.fill(bx + 20, by + 2, bw, 3, FAINT);
-			p.fill(bx + 20, by + 2, Math.round(bw * clamp01(share)), 3, colour);
+			meter(p, bx + 20, by + 2, x + w - 5 - (bx + 20), 3, share, colour);
 		});
 
 		// the cars either side, and how many seconds there are to each
@@ -897,9 +877,7 @@ export function createHud() {
 			shares.forEach(([name, share], which) => {
 				const bx = x + 5 + which * 47;
 				p.text(bx, y + 89, name, DIM);
-				p.fill(bx + 26, y + 91, 16, 3, FAINT);
-				const colour = share < 0.2 ? BAD : which ? GOOD : GOLD;
-				p.fill(bx + 26, y + 91, Math.round(16 * clamp01(share)), 3, colour);
+				meter(p, bx + 26, y + 91, 16, 3, share, supply(share, which));
 			});
 			const crew = watch.crew === null ? '--' : String(Math.round(watch.crew * 100));
 			p.text(x + w - 44, y + 89, 'Crew', DIM);
@@ -912,9 +890,9 @@ export function createHud() {
 		if (r.retired) badges.push(['Out', ALARM, PAPER]);
 		else if (r.finished) badges.push(['Home', PAPER, INK]);
 		else if (r.pit === 'box' && r.stop) {
-			badges.push([`In box ${STOPS[r.stop.service]} ${r.stop.seconds.toFixed(1)}`, GOLD, INK]);
+			badges.push([`In box ${stopText(r.stop)}`, GOLD, INK]);
 		} else if (r.pit === 'lane') badges.push(['Pit lane', GOLD, INK]);
-		if (r.caution && !r.finished && replay) badges.push([FLAGS[replay.flag], FLAG, INK]);
+		if (r.caution && !r.finished) badges.push([FLAGS[replay.flag], FLAG, INK]);
 		let bx = x + 5;
 		for (const [text, fill, colour] of badges) {
 			const bw = measure(text) + 6;
@@ -924,8 +902,7 @@ export function createHud() {
 		}
 		if (!badges.length && r.stop?.over) {
 			p.text(x + 5, sy + 2, 'Last stop', DIM);
-			const took = `${STOPS[r.stop.service]} ${r.stop.seconds.toFixed(1)}s`;
-			p.right(x + w - 5, sy + 2, took, r.stop.slow ? BAD : GOOD);
+			p.right(x + w - 5, sy + 2, `${stopText(r.stop)}s`, r.stop.slow ? BAD : GOOD);
 		}
 	}
 
@@ -1157,12 +1134,12 @@ export function createHud() {
 	}
 
 	return {
-		/** Draws everything over the race, `dt` seconds after the last time. */
 		/** The tower's running order as it is showing it, top first. */
 		order: () => running,
 		/** The followed car's numbers as last drawn, for the page to say as text. */
 		readout: () => readout,
 
+		/** Draws everything over the race, `dt` seconds after the last time. */
 		draw(frame: Painter, at: Layout, scene: Scene, dt: number) {
 			const p = enlarge(frame, at.unit);
 			const { room } = scene;
@@ -1208,3 +1185,41 @@ export function createHud() {
 }
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+/** A bar `share` full of `colour`, on a faint one. */
+function meter(
+	p: Painter,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	share: number,
+	colour: number
+) {
+	p.fill(x, y, w, h, FAINT);
+	p.fill(x, y, Math.round(w * clamp01(share)), h, colour);
+}
+
+/** The colour of what is left in the tank (gold) or of the tyres (green), red when there is little. */
+const supply = (share: number, tyres: number) => (share < 0.2 ? BAD : tyres ? GOOD : GOLD);
+
+/** A stop as the tower and the numbers say it: what for, and how many seconds. */
+const stopText = (stop: NonNullable<Readout['stop']>) =>
+	`${STOPS[stop.service]} ${stop.seconds.toFixed(1)}`;
+
+/** What the box beside the camera's buttons says is being followed. */
+function chipText(follow: Follow, focus: string | null) {
+	if (follow.mode === 'track') return 'Tap a car to follow';
+	const named = focus && entry(focus).name;
+	if (!named) return follow.mode === 'mine' ? 'No bets to follow' : 'Nobody';
+	switch (follow.mode) {
+		case 'group':
+			return `${follow.ids.length} cars`;
+		case 'mine':
+			return `Yours: ${named}`;
+		case 'battle':
+			return `Battle: ${named}`;
+		default:
+			return named;
+	}
+}

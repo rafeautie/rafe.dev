@@ -10,6 +10,7 @@ import {
 	WORLD_H,
 	WORLD_W,
 	lateral,
+	clamp,
 	nearest,
 	type Track,
 	type TrackId
@@ -375,8 +376,10 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 	let crewed = true;
 	// the part of the frame a viewer's camera shows magnified (camera.ts), if any
 	let lens: Lens | null = null;
-	// the frame as drawn, for magnifying from
+	// the rows of the frame the lens shows, as drawn, for magnifying from; and
+	// which column of them each pixel across is taken from
 	let unmagnified = new Uint32Array(0);
+	let columns = new Int32Array(0);
 	// the frame at its own size, and at the next whole size up, on the way to the screen
 	const small = document.createElement('canvas');
 	const large = document.createElement('canvas');
@@ -441,20 +444,29 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 			Math.abs(from.x - to.x) < 0.5 &&
 			Math.abs(from.y - to.y) < 0.5;
 		if (same || x1 <= x0 || y1 <= y0) return;
-		if (unmagnified.length !== frame.length) unmagnified = new Uint32Array(frame.length);
-		unmagnified.set(frame);
 		const [kx, ky] = [from.w / to.w, from.h / to.h];
-		const columns = new Int32Array(x1 - x0);
+		const source = (py: number) =>
+			clamp(Math.floor(from.y + (py - to.y + 0.5) * ky), 0, height - 1);
+		// only the rows the lens shows are kept aside, not the whole frame
+		const [r0, r1] = [source(y0), source(y1 - 1) + 1];
+		const kept = (r1 - r0) * width;
+		if (unmagnified.length < kept) unmagnified = new Uint32Array(kept);
+		unmagnified.set(frame.subarray(r0 * width, r1 * width));
+		if (columns.length < x1 - x0) columns = new Int32Array(x1 - x0);
 		for (let px = x0; px < x1; px++) {
-			columns[px - x0] = Math.min(
-				width - 1,
-				Math.max(0, Math.floor(from.x + (px - to.x + 0.5) * kx))
-			);
+			columns[px - x0] = clamp(Math.floor(from.x + (px - to.x + 0.5) * kx), 0, width - 1);
 		}
+		let last = -1;
 		for (let py = y0; py < y1; py++) {
-			const sy = Math.min(height - 1, Math.max(0, Math.floor(from.y + (py - to.y + 0.5) * ky)));
-			const row = sy * width;
+			const sy = source(py);
 			const out = py * width;
+			if (sy === last) {
+				// magnified, a row of the frame is several rows of the screen: the same again
+				frame.copyWithin(out + x0, out - width + x0, out - width + x1);
+				continue;
+			}
+			last = sy;
+			const row = (sy - r0) * width;
 			for (let px = x0; px < x1; px++) frame[out + px] = unmagnified[row + columns[px - x0]];
 		}
 	}

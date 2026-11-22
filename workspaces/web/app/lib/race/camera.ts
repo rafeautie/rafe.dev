@@ -1,4 +1,6 @@
 import { SCALE } from './render';
+import { rank } from './sim';
+import { clamp } from './track';
 
 // Where a viewer's camera looks. Everybody watches the same race; each viewer
 // may follow one car, or a group of them, instead of the whole track. The
@@ -26,20 +28,19 @@ export type Follow =
 
 export const TRACK: Follow = { mode: 'track' };
 
-/** The closest the camera goes: the race's pixels at three times their size. */
+/** The closest the camera goes, which is where one car is followed: the race's pixels at three times their size. */
 export const ZOOM_MAX = 3;
-/** One car is followed at this, a group no further out than the whole track. */
-export const ZOOM_CAR = 3;
+/** A group is followed no further out than the whole track. */
 export const ZOOM_MIN = 1;
 /** Room kept round a group, in metres. */
 export const MARGIN = 12;
 /** Seconds ahead of a followed car the camera looks, so it sees where the car is going. */
-export const LEAD = 0.25;
+const LEAD = 0.25;
 /** A car is in a battle with another this many seconds up or down the road from it, or this many metres when slow. */
-export const BATTLE_S = 1;
-export const BATTLE_M = 12;
+const BATTLE_S = 1;
+const BATTLE_M = 12;
 /** How quickly the camera catches up: about this many seconds to close two thirds of the way. */
-export const GLIDE = 0.15;
+const GLIDE = 0.15;
 
 /** Enough of a car to follow it. */
 export type Body = {
@@ -65,21 +66,19 @@ export type Lens = { from: Box; to: Box };
 /** Where the track is in the frame and how big the frame is, in its pixels. */
 export type Frame = { width: number; height: number; ox: number; oy: number };
 
-const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
+/** The car at the head of the race, as the running order has it. */
+const leader = <T extends Body>(cars: T[]): T | null => rank(cars)[0] ?? null;
 
-/** The car at the head of the race: home first, then furthest on. */
-function leader<T extends Body>(cars: T[]) {
-	let best: T | null = null;
-	for (const car of cars) {
-		if (!best) best = car;
-		else if (car.finishTime && best.finishTime) {
-			if (car.finishTime < best.finishTime) best = car;
-		} else if (car.finishTime || best.finishTime) {
-			if (car.finishTime) best = car;
-		} else if (car.progress > best.progress) best = car;
-	}
-	return best;
-}
+/** How many times its size the lens shows the frame. */
+export const zoomOf = ({ from, to }: Lens) => to.w / from.w;
+
+/** Whether a point is inside a box. */
+export const inside = (box: Box, x: number, y: number) =>
+	x >= box.x && y >= box.y && x < box.x + box.w && y < box.y + box.h;
+
+/** Following a number of cars: none is the whole track, one is that car, more a group. */
+const following = (ids: string[]): Follow =>
+	ids.length > 1 ? { mode: 'group', ids } : ids.length ? { mode: 'car', id: ids[0] } : TRACK;
 
 /**
  * A car and those racing it: every car still running within a second of it
@@ -119,13 +118,12 @@ export function chosen<T extends Body>(follow: Follow, cars: T[], backed: Set<st
 }
 
 /**
- * The one car whose numbers are shown while following: the car, the one a
- * battle is about, the first of a group, or of the cars bet on the one
+ * The one car whose numbers are shown, of those a choice picked: the car, the
+ * one a battle is about, the first of a group, or of the cars bet on the one
  * furthest up the race.
  */
-export function focus<T extends Body>(follow: Follow, cars: T[], backed: Set<string>): T | null {
-	if (follow.mode === 'mine') return leader(chosen(follow, cars, backed));
-	return chosen(follow, cars, backed)[0] ?? null;
+export function focus<T extends Body>(follow: Follow, picked: T[]): T | null {
+	return follow.mode === 'mine' ? leader(picked) : (picked[0] ?? null);
 }
 
 /**
@@ -141,7 +139,7 @@ export function aim(bodies: Body[], to: Box): Aim | null {
 		return {
 			x: car.x + Math.cos(car.angle) * ahead,
 			y: car.y + Math.sin(car.angle) * ahead,
-			zoom: ZOOM_CAR
+			zoom: ZOOM_MAX
 		};
 	}
 	const xs = bodies.map((car) => car.x);
@@ -186,10 +184,9 @@ export function framing(aim: Aim, to: Box, frame: Frame): Box {
 
 /** Where a point of the track (metres) is on the frame once it is magnified, in the frame's pixels. */
 export function toFrame({ from, to }: Lens, frame: Frame, x: number, y: number) {
-	const k = to.w / from.w;
 	return {
-		x: to.x + (frame.ox + x * SCALE - from.x) * k,
-		y: to.y + (frame.oy + y * SCALE - from.y) * (to.h / from.h)
+		x: to.x + ((frame.ox + x * SCALE - from.x) * to.w) / from.w,
+		y: to.y + ((frame.oy + y * SCALE - from.y) * to.h) / from.h
 	};
 }
 
@@ -219,10 +216,7 @@ export function pick<T extends Body>(cars: T[], x: number, y: number, reach = 4)
 export function toggle(follow: Follow, id: string, add: boolean): Follow {
 	if (!add) return follow.mode === 'car' && follow.id === id ? TRACK : { mode: 'car', id };
 	const ids = follow.mode === 'car' ? [follow.id] : follow.mode === 'group' ? [...follow.ids] : [];
-	const next = ids.includes(id) ? ids.filter((other) => other !== id) : [...ids, id];
-	if (!next.length) return TRACK;
-	if (next.length === 1) return { mode: 'car', id: next[0] };
-	return { mode: 'group', ids: next };
+	return following(ids.includes(id) ? ids.filter((other) => other !== id) : [...ids, id]);
 }
 
 /** A choice kept from before, if the field has its cars: otherwise the whole track. */
@@ -234,12 +228,9 @@ export function keep(follow: Follow, field: string[]): Follow {
 		case 'battle':
 			return follow.id && !has(follow.id) ? { mode: 'battle', id: null } : follow;
 		case 'group': {
+			// the same choice when every car is still there, so nothing changes
 			const ids = follow.ids.filter(has);
-			return ids.length > 1
-				? { mode: 'group', ids }
-				: ids.length
-					? { mode: 'car', id: ids[0] }
-					: TRACK;
+			return ids.length === follow.ids.length ? follow : following(ids);
 		}
 		default:
 			return follow;
@@ -295,10 +286,6 @@ export function createCamera() {
 				Math.hypot(goal.x - at.x, goal.y - at.y) * SCALE < 1;
 			if (near) at = { ...goal };
 			return at;
-		},
-		/** Puts it straight on the whole track, as on a new race. */
-		reset() {
-			at = null;
 		}
 	};
 }

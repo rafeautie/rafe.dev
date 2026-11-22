@@ -401,6 +401,14 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		return Math.max(0, last - frame / rate);
 	}
 
+	/** How fast car `index` was going at race time `time`, in m/s, as recorded. */
+	function speedAt(index: number, time: number) {
+		const at = Math.max(0, Math.min(duration, time)) * rate;
+		const frame = Math.min(frames - 2, Math.floor(at));
+		const a = frame * moment + index * pose + 8;
+		return (view.getInt8(a) * (1 - (at - frame)) + view.getInt8(a + moment) * (at - frame)) / 2;
+	}
+
 	seek(0);
 	return {
 		track,
@@ -409,6 +417,7 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		trucks,
 		seek,
 		gap,
+		speedAt,
 		get flag() {
 			return flag;
 		},

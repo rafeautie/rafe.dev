@@ -1,6 +1,7 @@
 import { LANE } from './pits';
 import type { ReplayCar } from './recording';
 import { neutral, rank, type Flag } from './sim';
+import { clamp } from './track';
 
 // The numbers for one car, live, as a race engineer would want them: how fast
 // it is going and whether it is on the throttle or the brake, where it is
@@ -8,12 +9,13 @@ import { neutral, rank, type Flag } from './sim';
 // the tank and the tyres, and any stop it is making.
 //
 // The recording has where each car is and how fast it is going, not what its
-// driver is doing with the pedals. Those are told from how the speed changes:
+// driver is doing with the pedals. Those are told from how the speed changed
+// over the last moment, read back from the recording:
 // gaining speed is the throttle, losing it faster than the car would just
 // rolling is the brake. They are an estimate, and good enough to watch.
 
 /** How far back, in seconds, the speed is looked at to tell what the pedals are doing. */
-export const PEDAL_WINDOW = 0.25;
+const PEDAL_WINDOW = 0.25;
 /** About what full throttle and full braking do to a car, in m/s². */
 const FULL_THROTTLE = 6;
 const FULL_BRAKE = 12;
@@ -21,8 +23,8 @@ const FULL_BRAKE = 12;
 const ROLLING = 1.5;
 /** A car holding its speed has this much throttle on, to keep it there. */
 const HOLDING = 0.3;
-/** How often, in seconds, the gaps are read again, so the figures can be read. */
-const GAPS_EVERY = 0.5;
+/** How often, in seconds, the gaps are read again, so the figures can be read: here and in the timing tower. */
+export const GAPS_EVERY = 0.5;
 
 /** What of the replay the numbers come from. A replay is one. */
 export type Source = {
@@ -33,6 +35,7 @@ export type Source = {
 	time: number;
 	lap: (car: ReplayCar) => number;
 	gap: (behind: number, ahead: number) => number | null;
+	speedAt: (index: number, time: number) => number;
 };
 
 export type Readout = {
@@ -72,7 +75,7 @@ export function pedals(speed: number, change: number) {
 		return { throttle: 0, brake: Math.min(1, (-change - ROLLING) / (FULL_BRAKE - ROLLING) + 0.15) };
 	}
 	if (Math.abs(speed) < 0.5 && change <= 0) return { throttle: 0, brake: 0 };
-	return { throttle: Math.max(0, Math.min(1, HOLDING + change / FULL_THROTTLE)), brake: 0 };
+	return { throttle: clamp(HOLDING + change / FULL_THROTTLE, 0, 1), brake: 0 };
 }
 
 /** Where a car is with the pits, from its lane (LANE in pits.ts). */
@@ -82,11 +85,8 @@ export function pitOf(lane: number): Readout['pit'] {
 	return 'track';
 }
 
-/** Follows one car at a time and reads its numbers each frame. */
+/** Follows one car at a time and reads its numbers each frame, the gaps only every so often. */
 export function createTelemetry() {
-	let id: string | null = null;
-	// its speed lately: race time and m/s
-	let history: [number, number][] = [];
 	let gaps: { ahead: number | null; behind: number | null } = { ahead: null, behind: null };
 	let neighbours = '';
 	let readAt = -Infinity;
@@ -100,23 +100,8 @@ export function createTelemetry() {
 		read(source: Source, index: number, order?: string[]): Readout {
 			const car = source.cars[index];
 			const time = source.time;
-			if (car.entry.id !== id) {
-				id = car.entry.id;
-				history = [];
-				readAt = -Infinity;
-			}
-			// a jump in the race (a seek, or the tab coming back) starts the history over
-			const latest = history[history.length - 1];
-			if (latest && (time < latest[0] || time - latest[0] > 0.5)) {
-				history = [];
-				readAt = -Infinity;
-			}
-			if (!latest || time > latest[0]) history.push([time, car.speed]);
-			while (history.length > 2 && time - history[1][0] >= PEDAL_WINDOW) history.shift();
-			const [from] = history;
-			const span = time - from[0];
-			const change = span > 0.05 ? (car.speed - from[1]) / span : 0;
-			const { throttle, brake } = pedals(car.speed, change);
+			const before = time >= PEDAL_WINDOW ? source.speedAt(index, time - PEDAL_WINDOW) : car.speed;
+			const { throttle, brake } = pedals(car.speed, (car.speed - before) / PEDAL_WINDOW);
 
 			const byId = (id: string) => source.cars.find((other) => other.entry.id === id);
 			const given = order?.map(byId);
@@ -127,7 +112,8 @@ export function createTelemetry() {
 			const place = placed.indexOf(car);
 			const above = placed[place - 1] ?? null;
 			const below = placed[place + 1] ?? null;
-			const around = `${above?.entry.id}/${below?.entry.id}`;
+			// read again for new neighbours, every so often, and after a seek back
+			const around = `${car.entry.id}:${above?.entry.id}/${below?.entry.id}`;
 			if (around !== neighbours || time - readAt >= GAPS_EVERY || time < readAt) {
 				neighbours = around;
 				readAt = time;

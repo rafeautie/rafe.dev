@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
 	MARGIN,
 	TRACK,
-	ZOOM_CAR,
 	ZOOM_MAX,
 	ZOOM_MIN,
 	aim,
@@ -19,6 +18,7 @@ import {
 	toWorld,
 	toggle,
 	type Body,
+	type Follow,
 	type Frame
 } from './camera';
 import { HEIGHT, SCALE, WIDTH } from './render';
@@ -70,9 +70,11 @@ describe('choosing cars', () => {
 	it('follows the cars bet on, and shows the numbers of the one furthest on', () => {
 		const backed = new Set(['c', 'b']);
 		expect(chosen({ mode: 'mine' }, field, backed).map((c) => c.entry.id)).toEqual(['b', 'c']);
-		expect(focus({ mode: 'mine' }, field, backed)?.entry.id).toBe('b');
-		expect(focus({ mode: 'group', ids: ['c', 'a'] }, field, backed)?.entry.id).toBe('c');
-		expect(focus(TRACK, field, backed)).toBeNull();
+		const mine: Follow = { mode: 'mine' };
+		expect(focus(mine, chosen(mine, field, backed))?.entry.id).toBe('b');
+		const group: Follow = { mode: 'group', ids: ['c', 'a'] };
+		expect(focus(group, chosen(group, field, backed))?.entry.id).toBe('c');
+		expect(focus(TRACK, [])).toBeNull();
 	});
 });
 
@@ -83,7 +85,7 @@ describe('aiming', () => {
 
 	it('holds one car close up, a little ahead of where it is going', () => {
 		const at = aim([car('a', { x: 50, y: 40, speed: 40, angle: 0 })], whole)!;
-		expect(at.zoom).toBe(ZOOM_CAR);
+		expect(at.zoom).toBe(ZOOM_MAX);
 		expect(at.x).toBeGreaterThan(50);
 		expect(at.y).toBeCloseTo(40);
 	});
@@ -182,6 +184,9 @@ describe('keeping a choice', () => {
 		expect(keep({ mode: 'group', ids: ['a', 'z'] }, field)).toEqual({ mode: 'car', id: 'a' });
 		expect(keep({ mode: 'battle', id: 'z' }, field)).toEqual({ mode: 'battle', id: null });
 		expect(keep({ mode: 'mine' }, field)).toEqual({ mode: 'mine' });
+		// unchanged is the very same choice, so the page need not set it again
+		const pair: Follow = { mode: 'group', ids: ['a', 'b'] };
+		expect(keep(pair, field)).toBe(pair);
 	});
 
 	it('reads back what was stored, and anything else as the track', () => {
