@@ -555,4 +555,4 @@ export const layout: Layout = {
 };
 
 /** What the tests race on it (Checks). */
-export const checks: Checks = { wreck: 1, clean: 1, behind: [[300, 2], [270, -1.5], 25] };
+export const checks: Checks = { wreck: 6, clean: 1, behind: [[300, 2], [270, -1.5], 25] };
