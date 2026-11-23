@@ -5,6 +5,7 @@
 // and a line here, then running `node scripts/race-lines.mjs` to work out
 // its racing line (docs/race-tracks-handoff.md).
 import * as daytona from './tracks/daytona';
+import * as daytonaRoad from './tracks/daytona-road';
 import * as indianapolis from './tracks/indianapolis';
 import type { Layout } from './tracks/layout';
 import * as martinsville from './tracks/martinsville';
@@ -14,6 +15,7 @@ export * from './tracks/layout';
 
 export const LAYOUTS = {
 	daytona: daytona.layout,
+	'daytona-road': daytonaRoad.layout,
 	indianapolis: indianapolis.layout,
 	martinsville: martinsville.layout,
 	monza: monza.layout
