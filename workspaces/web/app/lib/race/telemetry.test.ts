@@ -32,7 +32,7 @@ describe('pits', () => {
 });
 
 describe('reading a car', () => {
-	const track = getTrack('circuit');
+	const track = getTrack('daytona');
 	const grid = ROSTER.slice(0, 6);
 	const replay = createReplay(record(7, grid, track, [30], RULES), ROSTER);
 

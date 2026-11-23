@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOX, BOX_ACROSS, createPits, LANE, STAND, pitsFor } from './pits';
+import { BOX, BOX_ACROSS, createPits, entering, LANE, STAND, pitsFor } from './pits';
 import { LOAD } from './recovery';
 import { createReplay, pack, record, unpack } from './recording';
 import { offRoadAt } from './render';
@@ -59,8 +59,12 @@ function run(
 	const stops: Stopped[] = [];
 	const open = new Map<number, Stopped>();
 	let fastest = 0;
-	// how fast each car was going as it left the track for the pits under green, and as it rejoined it, as a share of the speed the track is taken at there
+	// How fast each car was going as it left the track for the pits under
+	// green, and as it rejoined it, as a share of the speed the track is taken
+	// at there; leaving it, of that or of the most it may leave at, whichever
+	// is less, where the way in leaves a fast stretch.
 	const entered: number[] = [];
+	const most = entering(pitsFor(track), rules);
 	const joined: number[] = [];
 	let nearest2 = Infinity;
 	let least = Infinity;
@@ -78,7 +82,7 @@ function run(
 			const was = before[index].lane;
 			if (race.flag !== 'green') return;
 			if (was === LANE.called && car.lane === LANE.in)
-				entered.push(car.speed / car.pace[car.sample]);
+				entered.push(car.speed / Math.min(car.pace[car.sample], most));
 			if (was === LANE.out && car.lane === LANE.racing)
 				joined.push(car.speed / car.pace[car.sample]);
 		});
@@ -177,7 +181,7 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 	it('has a box for every car, each clear of the next', () => {
 		expect(lane.boxes).toHaveLength(ROSTER.length);
 		lane.boxes.forEach((box, index) => {
-			// (found from where it is meant to be: on the circuit a box is as near another stretch of the track as its own)
+			// (found from where it is meant to be: on a winding track a box may be as near another stretch of the track as its own)
 			const sample = nearest(track, box.x, box.y, Math.round(box.sample) % n);
 			expect(Math.abs(lateral(track, box.x, box.y, sample) + BOX_ACROSS)).toBeLessThan(1);
 			if (index) {
@@ -314,48 +318,53 @@ describe.each(TRACK_IDS)('pit stops on the %s', (id) => {
 		expect(entered.length).toBeGreaterThan(10);
 		expect(joined.length).toBeGreaterThan(10);
 		// Off the track, and back on it, at something like the speed the track
-		// is taken at there. (Now and then one is slow for a reason of its
-		// own: held up, or damaged, or behind another on its way in.)
+		// is taken at there, or off it as fast as the way in allows where that
+		// is less. (Now and then one is slow for a reason of its own: held up,
+		// or damaged, or behind another on its way in.)
 		expect(entered[entered.length >> 1]).toBeGreaterThan(0.85);
 		expect(joined[joined.length >> 1]).toBeGreaterThan(0.85);
 		expect(entered[Math.floor(entered.length * 0.15)]).toBeGreaterThan(0.75);
 		expect(joined[Math.floor(joined.length * 0.15)]).toBeGreaterThan(0.75);
 	});
 
-	it('are made under caution too, but not once the field is lining up to go green', () => {
-		let under = 0;
-		for (let seed = 1; seed <= 18; seed++) {
-			// a wreck is rare enough that some of them have a caution thrown by
-			// hand, at about the time the cars are getting low on fuel
-			const race =
-				seed <= SEEDS.length
-					? races[seed - 1]
-					: run(seed, id, RULES, { flags: seed % 2 ? [] : [LIGHTS + 45] });
-			under += race.stops.filter((stop) => stop.flag === 'yellow').length;
-			// The pits shut as the field lines up: whoever was already on the
-			// way in is in its box soon after, and nobody follows. (The time
-			// cap may end a race with the field still lined up.)
-			let restart = 0;
-			for (const event of [...race.all, { kind: 'green', time: Infinity }]) {
-				if (event.kind === 'restart') restart = event.time;
-				if (event.kind !== 'green' && event.kind !== 'caution') continue;
-				if (restart) {
-					const late = race.stops.filter(
-						(stop) => stop.in > restart + 15 && stop.in < event.time && stop.fuel[0] > 1.2
-					);
-					expect(late, `seed ${seed}`).toEqual([]);
+	it(
+		'are made under caution too, but not once the field is lining up to go green',
+		{ timeout: 30_000 },
+		() => {
+			let under = 0;
+			for (let seed = 1; seed <= 18; seed++) {
+				// a wreck is rare enough that some of them have a caution thrown by
+				// hand, at about the time the cars are getting low on fuel
+				const race =
+					seed <= SEEDS.length
+						? races[seed - 1]
+						: run(seed, id, RULES, { flags: seed % 2 ? [] : [LIGHTS + 45] });
+				under += race.stops.filter((stop) => stop.flag === 'yellow').length;
+				// The pits shut as the field lines up: whoever was already on the
+				// way in is in its box soon after, and nobody follows. (The time
+				// cap may end a race with the field still lined up.)
+				let restart = 0;
+				for (const event of [...race.all, { kind: 'green', time: Infinity }]) {
+					if (event.kind === 'restart') restart = event.time;
+					if (event.kind !== 'green' && event.kind !== 'caution') continue;
+					if (restart) {
+						const late = race.stops.filter(
+							(stop) => stop.in > restart + 15 && stop.in < event.time && stop.fuel[0] > 1.2
+						);
+						expect(late, `seed ${seed}`).toEqual([]);
+					}
+					restart = 0;
 				}
-				restart = 0;
+				expect(race.all.filter((event) => event.kind === 'dry')).toHaveLength(0);
 			}
-			expect(race.all.filter((event) => event.kind === 'dry')).toHaveLength(0);
+			expect(under).toBeGreaterThan(1);
 		}
-		expect(under).toBeGreaterThan(1);
-	});
+	);
 });
 
 describe('the pits', () => {
 	it('are not there at all when the rules say so', () => {
-		const race = run(3, 'oval', { ...RULES, pits: false });
+		const race = run(3, 'daytona', { ...RULES, pits: false });
 		expect(race.stops).toHaveLength(0);
 		for (const car of race.cars) {
 			expect(car.fuel).toBe(RULES.tank);
@@ -365,20 +374,20 @@ describe('the pits', () => {
 	});
 
 	it('are left alone by a field with fuel for the whole race and tyres that do not wear', () => {
-		const race = run(1, 'oval', { ...RULES, tank: 8, wear: 0 });
+		const race = run(1, 'daytona', { ...RULES, tank: 8, wear: 0 });
 		expect(race.stops).toHaveLength(0);
 		expect(race.cars.some((car) => car.finishTime)).toBe(true);
 	});
 
 	it('are visited more often on a smaller tank', () => {
-		const small = run(1, 'oval', { ...RULES, tank: 1.5 });
-		const usual = run(1, 'oval');
+		const small = run(1, 'daytona', { ...RULES, tank: 1.5 });
+		const usual = run(1, 'daytona');
 		expect(small.stops.length).toBeGreaterThan(usual.stops.length);
 		expect(small.all.filter((event) => event.kind === 'dry')).toHaveLength(0);
 	});
 
 	it('cannot save a car that has not the fuel to reach them: it stops on the track, out of the race', () => {
-		const race = run(1, 'circuit', { ...RULES, tank: 0.3 });
+		const race = run(1, 'indianapolis', { ...RULES, tank: 0.3 });
 		const dry = race.all.filter((event) => event.kind === 'dry');
 		expect(dry.length).toBeGreaterThan(0);
 		for (const event of dry) {
@@ -396,7 +405,7 @@ describe('the pits', () => {
 		const taken = [0, 1].map((crew) => {
 			const field: Entry[] = ROSTER.map((entry) => ({ ...entry, crew }));
 			return SEEDS.flatMap((seed) =>
-				run(seed, 'oval', RULES, { field, count: 3 }).stops.map((stop) => stop.out - stop.in)
+				run(seed, 'daytona', RULES, { field, count: 3 }).stops.map((stop) => stop.out - stop.in)
 			);
 		});
 		const mean = (list: number[]) => list.reduce((sum, value) => sum + value, 0) / list.length;
@@ -479,7 +488,7 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 			for (const truck of race.trucks) {
 				if (!truck.busy) continue;
 				seen.out++;
-				// where it is by its own count, since the boxes are as near another stretch of the circuit as their own
+				// where it is by its own count, since the boxes may be as near another stretch of the track as their own
 				if (truck.across > -HALF_CORRIDOR) seen.onTrack++;
 				// off the track it is in the pits, and nowhere else
 				else if (!beside(truck.sample)) seen.elsewhere++;
@@ -528,7 +537,10 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 		(seen) => seen.both > 0 && seen.race.cars.some((car) => car.finishTime > 0)
 	);
 	// one in which a truck takes two wrecks off the track in one trip
-	const pair = find(ROSTER.length, (seen) => seen.full > 0);
+	const pair = find(
+		ROSTER.length,
+		(seen) => seen.full > 0 && seen.loads.some((load) => load.length === LOAD)
+	);
 
 	it('stand at the end of the pit lane, and are back there when the job is done', () => {
 		expect(single.race.trucks).toHaveLength(2);
@@ -572,7 +584,7 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 });
 
 describe('a recording of a race with pits', () => {
-	const track = getTrack('oval');
+	const track = getTrack('daytona');
 	const grid = drawGrid(1, ROSTER, 6);
 	const recording = record(1, grid, track);
 	const stop = recording.events.find((event) => event.kind === 'pit')!;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CHECKS } from './tracks/checks';
 import { ROSTER } from './roster';
 import { LIMITS } from './settings';
 import { LANE, pitsFor } from './pits';
@@ -157,8 +158,8 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 	// Every car on the roster, the most /admin/race allows. More cars crash
 	// more, and each caution ends with a lap or so going green, so a race of
 	// them may run long and now and then out of time (a few in a hundred, on
-	// the circuit, and some runs of seeds more than that, so it takes sixty to
-	// tell), but never so badly that the whole field is wrecked.
+	// the winding tracks, and some runs of seeds more than that, so it takes
+	// sixty to tell), but never so badly that the whole field is wrecked.
 	it('reaches a result with the largest field, cautions and all', { timeout: 240_000 }, () => {
 		let won = 0;
 		for (let seed = 1; seed <= 60; seed++) {
@@ -191,25 +192,6 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 			expect(race.order()[0].finishTime).toBeGreaterThan(0);
 		}
 	});
-});
-
-// The racing line through the circuit's hairpin runs along its outside edge,
-// so a car that went out there is lying where the field comes past. Under the
-// caution the leader came up on it from outside, held on that side with no
-// road left to get by, and nosed it along at a crawl, which kept it moving
-// and so waited behind rather than gone round, while the cars behind piled
-// into the stopped queue one by one until the whole field was out.
-it('goes round a wreck on the outside of the circuit hairpin under caution', () => {
-	const race = run(15, getTrack('circuit'), [LIGHTS + 25], ROSTER);
-	let flag: Flag = 'green';
-	const retired: number[] = [];
-	for (const event of race.all) {
-		if (event.kind === 'retire' && neutral(flag)) retired.push(event.car);
-		flag = flown(flag, event.kind);
-	}
-	expect(retired).toEqual([]);
-	expect(race.flag).toBe('checkered');
-	expect(race.cars.filter((car) => car.retired).length).toBeLessThanOrEqual(1);
 });
 
 /**
@@ -333,14 +315,22 @@ describe.each(TRACK_IDS)('the line the pit lane is on, on the %s', (id) => {
 		return least;
 	};
 
-	it('stays inside the wall all the way round', () => {
-		for (let sample = 0; sample < n; sample++) {
+	// Where the pits are, from the end of the way in to where the way out
+	// leaves the lane, which is all of it that the lane and the trucks drive
+	// on (the ways in and out ease across from the track to it). Elsewhere it
+	// may be pinched, where a hairpin turns between two stretches of track
+	// nearer each other than a truck could turn round in.
+	const lane = pitsFor(track);
+	const used = Array.from({ length: lane.leave - lane.in1 + 1 }, (_, k) => (lane.in1 + k) % n);
+
+	it('stays inside the wall where the pits are', () => {
+		for (const sample of used) {
 			expect(clear(place(sample, -RING))).toBeGreaterThan(RING - 0.5);
 		}
 	});
 
-	it('bends no tighter than a truck can steer', () => {
-		for (let sample = 0; sample < n; sample++) {
+	it('bends no tighter than a truck can steer where the pits are', () => {
+		for (const sample of used) {
 			const [a, b, c] = [-3, 0, 3].map((d) => place(sample + d, -RING));
 			const [cross, sides] = triangle(...a, ...b, ...c);
 			expect(sides / Math.abs(2 * cross || 1e-9)).toBeGreaterThan(TIGHTEST - 0.5);
@@ -348,23 +338,10 @@ describe.each(TRACK_IDS)('the line the pit lane is on, on the %s', (id) => {
 	});
 });
 
-/**
- * Seeds that make the races the caution tests need, on each track: one that
- * loses a single car early on, and a clean one, where nobody is in trouble
- * when a caution is thrown by hand twenty seconds in.
- */
-const SEEDS: Record<TrackId, { wreck: number; clean: number }> = {
-	circuit: { wreck: 59, clean: 8 },
-	oval: { wreck: 3, clean: 5 },
-	daytona: { wreck: 9, clean: 7 },
-	indianapolis: { wreck: 6, clean: 4 },
-	martinsville: { wreck: 3, clean: 7 },
-	monza: { wreck: 16, clean: 2 }
-};
-
 describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 	const track = getTrack(id);
-	const { wreck: wrecking, clean } = SEEDS[id];
+	// (the seeds of its races, kept with the track: Checks in tracks/layout.ts)
+	const { wreck: wrecking, clean } = CHECKS[id];
 	const stretch = stretchOf(track);
 
 	it('comes out for a wreck, which a truck takes off the track before the green', () => {
@@ -525,10 +502,11 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 					again++;
 				}
 				if (event.kind === 'green') {
-					// given in the step the leader came round to the line
+					// given in the step the leader came round to the line, or to
+					// where the track gives it
 					const leader = rank(race.cars.filter((car) => !car.retired))[0];
-					expect(leader.laps).toBe(before + 1);
-					expect(leader.progress % track.length).toBeLessThan(1);
+					if (!track.restart) expect(leader.laps).toBe(before + 1);
+					expect((leader.progress - track.restart + track.length) % track.length).toBeLessThan(1);
 					greens++;
 				}
 				// and nobody takes the flag under caution
@@ -671,16 +649,28 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 				before = field.map((car) => car.speed);
 			}
 			expect(green).toBeGreaterThan(0);
-			// no row brakes as it crosses the line, and each is soon quicker than it was
+			// No row brakes as it crosses the line, and each is soon quicker than
+			// it was: by 2 m/s in the next three seconds, or by as much of that as
+			// there is time for before the leader brakes for the first corner,
+			// where that comes sooner.
 			const slowest = before.slice();
-			for (let step = 0; step < 3 / DT; step++) {
+			const fastest = before.slice();
+			let top = field[0].speed;
+			let step = 0;
+			for (; step < 3 / DT; step++) {
 				race.step();
 				race.events.length = 0;
-				field.forEach((car, place) => (slowest[place] = Math.min(slowest[place], car.speed)));
+				if (field[0].speed < top - 0.5) break;
+				top = Math.max(top, field[0].speed);
+				field.forEach((car, place) => {
+					slowest[place] = Math.min(slowest[place], car.speed);
+					fastest[place] = Math.max(fastest[place], car.speed);
+				});
 			}
+			const gain = (2 * step * DT) / 3;
 			field.forEach((car, place) => {
 				expect(slowest[place], car.entry.id).toBeGreaterThan(before[place] - 0.5);
-				expect(car.speed, car.entry.id).toBeGreaterThan(before[place] + 2);
+				expect(fastest[place], car.entry.id).toBeGreaterThan(before[place] + gain);
 			});
 		}
 	);
@@ -698,16 +688,16 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 });
 
 /**
- * Races run as the site runs them, pits and all, in each of which a car
- * used to be driven hard into a tow truck at work under caution, or the
- * truck into a car, before the trucks were solid and the drivers gave them
- * room: the track, how many cars, and the seed.
+ * Races run as the site runs them, pits and all, with tow trucks at work
+ * under caution, where a car used to be driven hard into one now and then,
+ * or the truck into a car, before the trucks were solid and the drivers gave
+ * them room: the track, how many cars, and the seed.
  */
 const TRUCK_HITS: [TrackId, number, number][] = [
-	['circuit', 6, 199],
-	['oval', 6, 13],
-	['oval', 6, 171],
-	['oval', 8, 19]
+	['daytona', 6, 21],
+	['daytona', 8, 14],
+	['indianapolis', 6, 1],
+	['indianapolis', 8, 5]
 ];
 
 describe('the tow trucks out on the track', () => {

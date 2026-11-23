@@ -41,6 +41,8 @@ export const APRON = BOX_EDGE + BOX.wide;
 const INSIDE = -MAX_OFFSET;
 /** How far along the lane it takes a car to turn into its box, and out of it. */
 const PULL = 10;
+/** How far short of the way in a car may be taken off the track for it (see `far` in createPits). */
+const TAKEN = 3;
 /** The ways through the pits are worked out at points this far apart, in samples. */
 const STEP = 0.5;
 /**
@@ -98,7 +100,7 @@ export function pitsFor(track: Track): PitLane {
 function build(track: Track) {
 	const { n } = track;
 	const { place } = serviceFor(track);
-	const { from, slip, thirst, away, boxes: firstBox } = track.pits;
+	const { from, slip, thirst, away, boxes: firstBox, yard: yardAt } = track.pits;
 	// Samples here count on past the line without starting again, so the way
 	// through is always forwards: in from the track between in0 and in1, past
 	// the boxes and the trucks' stand to the end of the lane at out0, on in
@@ -107,7 +109,13 @@ function build(track: Track) {
 	const in1 = in0 + slip;
 	// the first box, a car's length and more down the lane, or as far on as the
 	// track's layout puts it, where the lane runs round a bend before the boxes
-	const first = firstBox === undefined ? in1 + PULL : in1 + ((((firstBox - in1) % n) + n) % n);
+	/** The first sample at or after `after` that is `sample` as the track counts them. */
+	const past = (after: number, sample: number) => after + ((((sample - after) % n) + n) % n);
+	// the boxes in rows, each from the sample of its first box, one after another
+	const rows: [number, number][] = Array.isArray(firstBox)
+		? firstBox
+		: [[firstBox === undefined ? in1 + PULL : firstBox, BOXES]];
+	const first = past(in1, rows[0][0]);
 	/** Where in the world a sample, which need not be a whole one, is `across` from the centre line. */
 	const at = (sample: number, across: number): [number, number] => {
 		const whole = Math.floor(sample);
@@ -181,8 +189,12 @@ function build(track: Track) {
 
 	/** Each box: the sample it is level with, where its middle is and which way a car in it faces. */
 	const boxes = [standing(first, -BOX_ACROSS)];
-	while (boxes.length < BOXES) {
-		boxes.push(standing(on(boxes[boxes.length - 1].sample, BOX.pitch), -BOX_ACROSS));
+	for (const [row, [start, count]] of rows.entries()) {
+		for (let k = row ? 0 : 1; k < count && boxes.length < BOXES; k++) {
+			const after = boxes[boxes.length - 1].sample;
+			const sample = k ? on(after, BOX.pitch) : past(after, start);
+			boxes.push(standing(sample, -BOX_ACROSS));
+		}
 	}
 	const last = boxes[BOXES - 1].sample;
 	// The trucks' yard: one stretch of paving past the last box, long enough
@@ -193,7 +205,9 @@ function build(track: Track) {
 	// as it does on into a turn, the truck stands straight across the bend,
 	// between the two. At the start they stand one behind the other from the
 	// front of it, the front one being the one nearest the way out.
-	const fronts = [Math.round(on(on(last, STAND.after), TRUCK.axle))];
+	const fronts = [
+		Math.round(on(yardAt === undefined ? on(last, STAND.after) : past(last, yardAt), TRUCK.axle))
+	];
 	while (fronts.length < TRUCKS) fronts.unshift(Math.round(on(fronts[0], STAND.pitch)));
 	/** A truck standing in the yard with its front axle level with `front`: where its middle is and which way it faces, and the samples its axles are level with. */
 	const spot = (front: number) => {
@@ -215,8 +229,6 @@ function build(track: Track) {
 	/** The yard: the furthest back and the furthest forward a truck's front axle is standing in it, and where one stands with it level with a sample between. */
 	const yard = { back: fronts[TRUCKS - 1], front: fronts[0], spot };
 	const out0 = Math.ceil(fronts[0] + STAND.run);
-	/** The first sample at or after `after` that is `sample` as the track counts them. */
-	const past = (after: number, sample: number) => after + ((((sample - after) % n) + n) % n);
 	const leave = away ? past(out0, away[0]) : out0;
 	const out1 = away ? past(leave, away[1]) : out0 + RAMP;
 	/** The way out, from the end of the lane: in line with it to where it leaves for the track. */
@@ -317,8 +329,10 @@ function build(track: Track) {
 		thirst,
 		/** The way in through the wall, the lane, and the way out through the wall, to be paved. */
 		ways: [
+			// (from a little short of the way in, where a car may be let off the track)
 			way([
-				[in0, INSIDE - 0.6],
+				[in0 - TAKEN, INSIDE - 1],
+				[in0, INSIDE - 1],
 				[in1, -RING]
 			]),
 			way([
@@ -487,6 +501,14 @@ export type Pits = ReturnType<typeof createPits>;
  * the rules' `pits` off there are none: no car burns or wears anything, or
  * ever comes in.
  */
+/**
+ * How fast (m/s) a car may leave the track for the pits: as fast as it can
+ * still brake on the way in to the lane's limit by where the limit begins.
+ */
+export function entering(lane: PitLane, rules: Rules) {
+	return Math.sqrt(rules.limit ** 2 + 2 * SLOW * (lane.path(0).line - JOIN));
+}
+
 export function createPits(
 	cars: Car[],
 	track: Track,
@@ -765,7 +787,7 @@ export function createPits(
 				? CRAWL
 				: rules.limit;
 	/** How fast a car may be going as it leaves the track for the way in: what it can brake from on the way. */
-	const enters = Math.sqrt(rules.limit ** 2 + 2 * SLOW * (lane.path(0).line - JOIN));
+	const enters = entering(lane, rules);
 
 	/**
 	 * Whether there is a wreck lying on the track, or the tow truck at work

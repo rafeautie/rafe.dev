@@ -38,6 +38,13 @@ const PITS = 3;
 const FINE = 20;
 const COARSE = 10;
 /**
+ * Positions are written down in 16 bits: to a 256th of a metre in a world
+ * under 256 m across, as every one was at first, and as finely as still fits
+ * in a bigger one (a real-sized circuit's world is a few kilometres across).
+ */
+export const placing = (track: Track) =>
+	Math.min(256, Math.floor(65535 / Math.max(track.width, track.height)));
+/**
  * Bytes for one truck at one moment: x, y and angle as 16 bits each, what it
  * is doing, the car on each place on its bed (counted from 1, 0 for none),
  * and its crane: which way it points, how far out, and how high it has lifted
@@ -194,6 +201,7 @@ export function record(
 	const per = rules.laps > CLASSIC.laps || far * FINE > 65535 ? COARSE : FINE;
 	const moment = grid.length * pose + race.trucks.length * TRUCK;
 	const view = new DataView(new ArrayBuffer(longest * moment));
+	const fix = placing(track);
 	const heading = (angle: number) => {
 		const turn = angle / (2 * Math.PI);
 		return (turn - Math.floor(turn)) * 65536;
@@ -206,8 +214,8 @@ export function record(
 	const write = () => {
 		race.cars.forEach((car, index) => {
 			const at = frames * moment + index * pose;
-			view.setUint16(at, car.x * 256, true);
-			view.setUint16(at + 2, car.y * 256, true);
+			view.setUint16(at, car.x * fix, true);
+			view.setUint16(at + 2, car.y * fix, true);
 			view.setUint16(at + 4, heading(car.angle), true);
 			view.setUint16(at + 6, Math.min(65535, (car.progress + 100) * per), true);
 			view.setInt8(at + 8, Math.max(-127, Math.min(127, car.speed * 2)));
@@ -219,8 +227,8 @@ export function record(
 		});
 		race.trucks.forEach((truck, index) => {
 			const at = frames * moment + grid.length * pose + index * TRUCK;
-			view.setUint16(at, truck.x * 256, true);
-			view.setUint16(at + 2, truck.y * 256, true);
+			view.setUint16(at, truck.x * fix, true);
+			view.setUint16(at + 2, truck.y * fix, true);
 			view.setUint16(at + 4, heading(truck.angle), true);
 			view.setUint8(at + 6, (truck.busy ? BUSY : 0) | (truck.towing + 1));
 			truck.load.forEach((car, place) => view.setUint8(at + 7 + place, car + 1));
@@ -300,8 +308,9 @@ export function pack(recording: Recording): Uint8Array {
 export function unpack(bytes: Uint8Array): Recording {
 	const length = new DataView(bytes.buffer, bytes.byteOffset).getUint32(0, true);
 	const header = JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + length)));
-	// recorded before there was a choice of track, when there was only the circuit
-	return { track: 'circuit', ...header, poses: bytes.subarray(4 + length) };
+	// (one recorded before there was a choice of track says none, and is not
+	// played: the track it was raced on has since been taken out)
+	return { ...header, poses: bytes.subarray(4 + length) };
 }
 
 /**
@@ -317,6 +326,7 @@ export function unpack(bytes: Uint8Array): Recording {
 export function createReplay(recording: Recording, roster: Entry[]) {
 	const { rate, frames, grid, events, poses } = recording;
 	const track = getTrack(recording.track);
+	const fix = placing(track);
 	const view = new DataView(poses.buffer, poses.byteOffset, poses.byteLength);
 	const cars = grid.map((id): ReplayCar => ({
 		entry: roster.find((entry) => entry.id === id)!,
@@ -427,8 +437,8 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		cars.forEach((car, index) => {
 			const a = frame * moment + index * pose;
 			const b = a + moment;
-			car.x = between(a) / 256;
-			car.y = between(a + 2) / 256;
+			car.x = between(a) / fix;
+			car.y = between(a + 2) / fix;
 			car.angle = facing(a + 4);
 			car.progress = between(a + 6) / per - 100;
 			car.laps = Math.floor(car.progress / track.length);
@@ -452,8 +462,8 @@ export function createReplay(recording: Recording, roster: Entry[]) {
 		for (let index = 0; index < Math.min(recorded, trucks.length); index++) {
 			const truck = trucks[index];
 			const a = frame * moment + grid.length * pose + index * size;
-			truck.x = between(a) / 256;
-			truck.y = between(a + 2) / 256;
+			truck.x = between(a) / fix;
+			truck.y = between(a + 2) / fix;
 			truck.angle = facing(a + 4);
 			// what it is doing is one thing or another, never between: as at the nearer of the two moments
 			const nearer = t > 0.5 ? a + moment : a;

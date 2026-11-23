@@ -1,5 +1,4 @@
 import { racingLine, SPAN } from './line';
-import LINES from './lines.json';
 import { LAYOUTS, type Layout, type Point } from './tracks';
 
 // The tracks (tracks.ts): each a closed centre line through its control
@@ -8,6 +7,9 @@ import { LAYOUTS, type Layout, type Point } from './tracks';
 // 16:9, which is drawn whole in the same frame from one fixed overhead view,
 // like a slot car layout on a table: a bigger world is drawn smaller. Which
 // one a race runs on is the admin's choice (settings.ts).
+
+/** Each track's racing line as worked out ahead of time, a file a track (scripts/race-lines.mjs). */
+const LINES = import.meta.glob<number[]>('./lines/*.json', { eager: true, import: 'default' });
 
 /** Half the tarmac's width. */
 export const HALF_ROAD = 4.5;
@@ -176,7 +178,7 @@ function build(id: TrackId, layout: Layout) {
 	// The racing line, as an offset along the normal (line.ts). It takes a
 	// while to work out, so it is worked out ahead of time and kept, in
 	// centimetres (scripts/race-lines.mjs); and now, if the track has changed since.
-	const kept: number[] | undefined = (LINES as Record<string, number[]>)[id];
+	const kept: number[] | undefined = LINES[`./lines/${id}.json`];
 	const line =
 		kept?.length === n
 			? Float32Array.from(kept, (cm) => cm / 100)
@@ -219,7 +221,9 @@ function build(id: TrackId, layout: Layout) {
 		width,
 		height,
 		/** Where its pits are (pits.ts). */
-		pits: layout.pits
+		pits: layout.pits,
+		/** How far round the lap (m) the green is given after a caution: at the line, unless the track says otherwise. */
+		restart: (layout.restart ?? 0) * step
 	};
 }
 

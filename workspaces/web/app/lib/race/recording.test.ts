@@ -4,20 +4,21 @@ import { ROSTER } from './roster';
 import { CLASSIC, createRace, drawGrid, rank } from './sim';
 import { getTrack } from './track';
 
-// on the circuit, where the seeds these pick were picked
-const track = getTrack('circuit');
+// on the tri-oval, where the seeds these pick were picked
+const track = getTrack('daytona');
 
 /**
  * The six cars that raced every time before the field could change size. The
  * seeds below were picked for races between them, so they race here.
  */
 const SIX = ROSTER.slice(0, 6);
-/** A race between them that loses a car early on, and a truck goes for it. */
-const WRECK = 20;
+/** A race between them that loses a car early on, and a truck goes for it; and one in which nobody is in trouble. */
+const WRECK = 9;
+const CLEAN = 7;
 
 describe('a recording', () => {
 	it('plays back as the race it was made from', () => {
-		const seed = 5;
+		const seed = WRECK;
 		const grid = drawGrid(seed, SIX);
 		const recording = record(seed, grid, track, [], CLASSIC);
 		const replay = createReplay(recording, ROSTER);
@@ -56,7 +57,7 @@ describe('a recording', () => {
 	});
 
 	it('shows the same thing after seeking backwards', () => {
-		const recording = record(5, drawGrid(5, SIX), track, [], CLASSIC);
+		const recording = record(CLEAN, drawGrid(CLEAN, SIX), track, [], CLASSIC);
 		const straight = createReplay(recording, ROSTER);
 		const wound = createReplay(recording, ROSTER);
 		straight.seek(30);
@@ -66,7 +67,7 @@ describe('a recording', () => {
 	});
 
 	it('gives the gap between two cars by the clock', () => {
-		const replay = createReplay(record(5, drawGrid(5, SIX), track, [], CLASSIC), ROSTER);
+		const replay = createReplay(record(CLEAN, drawGrid(CLEAN, SIX), track, [], CLASSIC), ROSTER);
 		// on the grid nobody has yet been where the car behind is
 		expect(replay.gap(1, 0)).toBeNull();
 		replay.seek(30);
@@ -81,7 +82,7 @@ describe('a recording', () => {
 	});
 
 	it('plays back the caution and the truck that fetched the wreck, crane and all', () => {
-		// seed WRECK loses a car ten seconds in
+		// seed WRECK loses a car early on
 		const grid = drawGrid(WRECK, SIX);
 		const recording = record(WRECK, grid, track, [], CLASSIC);
 		const replay = createReplay(recording, ROSTER);
@@ -130,8 +131,8 @@ describe('a recording', () => {
 	});
 
 	it('leaves the trucks out of a race none went out in, and shows them parked', () => {
-		// seed 5 is a clean race; seed WRECK loses a car, and a truck goes for it
-		const quiet = record(5, drawGrid(5, SIX), track, [], CLASSIC);
+		// seed CLEAN is a clean race; seed WRECK loses a car, and a truck goes for it
+		const quiet = record(CLEAN, drawGrid(CLEAN, SIX), track, [], CLASSIC);
 		const busy = record(WRECK, drawGrid(WRECK, SIX), track, [], CLASSIC);
 		const cars = SIX.length * 10;
 		expect(quiet.trucks).toBe(0);
@@ -245,9 +246,10 @@ describe('a recording', () => {
 		expect(steered).toBeGreaterThan(0);
 	});
 
-	it('takes one packed before there was a choice of track to be on the circuit', () => {
-		const { track: _, ...older } = record(1, drawGrid(1, SIX), getTrack('oval'), [], CLASSIC);
-		expect(unpack(pack(older as never)).track).toBe('circuit');
+	it('says no track for one packed before there was a choice of track', () => {
+		// (it was raced on a track since taken out, and is not played)
+		const { track: _, ...older } = record(1, drawGrid(1, SIX), track, [], CLASSIC);
+		expect(unpack(pack(older as never)).track).toBeUndefined();
 	});
 
 	it('survives being packed into bytes, and stays under 600 KB', () => {

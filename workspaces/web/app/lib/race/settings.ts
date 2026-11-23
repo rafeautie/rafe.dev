@@ -42,7 +42,7 @@ export type Settings = {
 };
 
 export const DEFAULT_SETTINGS: Settings = {
-	track: 'oval',
+	track: 'daytona',
 	count: 6,
 	cars: Object.fromEntries(
 		ROSTER.map(({ id, speed, grip, aggression, reliability, crew }) => [
@@ -152,6 +152,8 @@ export function complete(saved: Partial<Settings>, base: Settings = DEFAULT_SETT
 		...base,
 		...(pitSpeed !== undefined && { pitMph: Math.round(pitSpeed * MPH) }),
 		...kept,
+		// a track since taken out is raced on the code's
+		track: isTrackId(kept.track) ? kept.track : base.track,
 		cars: Object.fromEntries(
 			Object.entries(base.cars).map(([id, stats]) => [id, { ...stats, ...saved.cars?.[id] }])
 		)

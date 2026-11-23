@@ -1,5 +1,6 @@
 import { PolygonShape, World } from 'planck';
 import { describe, expect, it } from 'vitest';
+import { CHECKS } from './tracks/checks';
 import { pitsFor } from './pits';
 import { LOAD, createRecovery, type Truck } from './recovery';
 import { TRUCK } from './service';
@@ -136,16 +137,6 @@ function fetch(id: TrackId, lying: [number, number, number?][], most = 900) {
 	return { track, lane, cars, recovery, seen, done };
 }
 
-/** On each track, two wrecks on a straight, the second some way back from the first, and when it happens. */
-const BEHIND: Record<TrackId, [[number, number], [number, number], number]> = {
-	circuit: [[305, 2], [272, -1.5], 30],
-	oval: [[178, 2], [148, -1.5], 25],
-	daytona: [[190, 2], [160, -1.5], 25],
-	indianapolis: [[195, 2], [165, -1.5], 25],
-	martinsville: [[190, 2], [160, -1.5], 25],
-	monza: [[395, 2], [365, -1.5], 25]
-};
-
 /** How far a corner of either truck is inside the outline of the other (m), at the most: 0 for not at all. */
 function overlap(a: Truck, b: Truck) {
 	let most = 0;
@@ -244,7 +235,8 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 		// little way back up the road. Both lie on a straight: round a tight
 		// bend, backing up swings the front of the truck out off the tarmac,
 		// and it does not.
-		const [first, second, when] = BEHIND[id];
+		// (where, kept with the track: Checks in tracks/layout.ts)
+		const [first, second, when] = CHECKS[id].behind;
 		const { track, seen, done } = fetch(id, [first, [...second, when]]);
 		expect(done()).toBe(true);
 		const [one, two] = seen.lifts;

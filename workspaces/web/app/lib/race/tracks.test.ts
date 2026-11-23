@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { APRON, BOX_ACROSS, pitsFor } from './pits';
-import { pack, record } from './recording';
+import { pack, placing, record } from './recording';
 import { ROSTER } from './roster';
 import { LIMITS } from './settings';
 import { drawGrid, RULES } from './sim';
@@ -21,7 +21,7 @@ import { LAYOUTS, WORLD } from './tracks';
 // bend tighter than a car or a tow truck can take, and room on the infield
 // for its pits and on the straight behind the start line for the grid.
 
-/** The tightest a centre line may bend, as a radius in metres: the circuit's hairpin. */
+/** The tightest a centre line may bend, as a radius in metres: about the tightest hairpin the cars and trucks can get round. */
 const TIGHTEST = 8.4;
 /** Two stretches of a track this far apart along it or more are different stretches. */
 const APART = 45;
@@ -39,8 +39,10 @@ describe.each(TRACK_IDS)('the %s', (id) => {
 		expect(width).toBeGreaterThanOrEqual(WORLD);
 		expect(height).toBe((width * 9) / 16);
 		expect(track.width).toBe(width);
-		// the recordings keep positions to a 256th of a metre in 16 bits
-		expect(width).toBeLessThan(256);
+		// the recordings keep positions in 16 bits: to a 256th of a metre in a
+		// world under 256 m across, and to no worse than a 16th in any
+		expect(placing(track)).toBeGreaterThanOrEqual(width < 256 ? 256 : 16);
+		expect(Math.max(width, height) * placing(track)).toBeLessThanOrEqual(65535);
 	});
 
 	it('is all inside its world, walls and all', () => {
@@ -107,7 +109,7 @@ describe.each(TRACK_IDS)('the %s', (id) => {
 	it('has a straight behind the start line for the whole grid', () => {
 		// as far back as the back of the grid with every car in the roster on it,
 		// which on the oval runs a little way into the last bend
-		for (let behind = 0; behind <= 6 + 6.5 * 8; behind++) {
+		for (let behind = 0; behind <= 6 + 6.5 * (ROSTER.length - 1); behind++) {
 			expect(track.bend[(n - behind) % n]).toBeLessThan(1 / 30);
 		}
 	});

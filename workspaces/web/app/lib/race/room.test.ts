@@ -668,7 +668,7 @@ describe('the admin', () => {
 		await vi.waitFor(() => expect(viewer.states()).toHaveLength(1));
 		const tuned = {
 			...DEFAULT_SETTINGS,
-			track: 'circuit' as const,
+			track: 'monza' as const,
 			count: 3,
 			cars: {
 				...DEFAULT_SETTINGS.cars,

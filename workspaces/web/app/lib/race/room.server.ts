@@ -39,7 +39,7 @@ import {
 	type Flag,
 	type RaceEvent
 } from './sim';
-import { getTrack } from './track';
+import { getTrack, isTrackId } from './track';
 
 // The one room everybody at /race is in. It runs the cycle (betting, the
 // race, the result, and round again) on an alarm, keeps a socket open to
@@ -142,7 +142,7 @@ export class RaceRoom extends DurableObject<Env> {
 			await this.open(state.round + 1);
 		} else {
 			this.send(server, this.report(state));
-			const recording = this.ctx.storage.kv.get<Uint8Array>('recording');
+			const recording = this.recording;
 			if (state.phase !== 'betting' && recording) server.send(recording);
 		}
 		if (player) this.send(server, this.you(player));
@@ -224,21 +224,28 @@ export class RaceRoom extends DurableObject<Env> {
 		const state = this.ctx.storage.kv.get<RoomState>('state');
 		// A state kept from before races carried their settings takes today's;
 		// one from before a setting existed has the code's, except that one from
-		// before there was a choice of track was raced on the circuit, and one
-		// from before there were pits was three laps with none.
+		// before there were pits was three laps with none.
 		return state
 			? {
 					...state,
 					settings: state.settings
 						? complete(state.settings, {
 								...DEFAULT_SETTINGS,
-								track: 'circuit',
 								laps: CLASSIC.laps,
 								pits: CLASSIC.pits
 							})
 						: this.settings
 				}
 			: { ...IDLE, settings: this.settings };
+	}
+
+	/**
+	 * The race's recording, if there is one, and it is of a race on a track
+	 * there still is: one raced on a track since taken out cannot be played.
+	 */
+	private get recording() {
+		const bytes = this.ctx.storage.kv.get<Uint8Array>('recording');
+		return bytes && isTrackId(unpack(bytes).track) ? bytes : undefined;
 	}
 
 	/** The admin's settings, or the code's where there are none. */
@@ -727,7 +734,7 @@ export class RaceRoom extends DurableObject<Env> {
 	 */
 	async adminCaution() {
 		const state = this.state;
-		const bytes = this.ctx.storage.kv.get<Uint8Array>('recording');
+		const bytes = this.recording;
 		if (state.phase !== 'racing' || !bytes) return 'No race is running';
 		const at = (Date.now() + CAUTION_LEAD_MS - state.startsAt) / 1000;
 		if (at <= LIGHTS) return 'The race has not started';
