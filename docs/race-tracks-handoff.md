@@ -9,7 +9,8 @@ Branch `claude/race-tracks-wip`. It holds the framework, the three ovals, Monza 
 - **Per-track world and camera.** Each track gets its own world size, camera and follow-view bounds that work at that size. The framework session (the one that wrote this) owns that and the ovals and Monza; it is not done yet, see "Framework work still to do".
 - **Pit lanes where the real ones are.** Real entry, real pit straight, real exit. Where a real pit straight is too short for 8 boxes and the truck yard, the boxes and yard carry on past the next corner (box rows, `yard`; see below).
 - **No driving tuning.** Track sessions don't change grip, speed, AI or the racing-line code. Geometry and data checks must pass. If at real scale races don't finish, cautions don't clear or cars leave the tarmac, report it in the PR rather than tuning around it; driving gets tuned separately later.
-- Don't merge anything; the orchestrator handles merges.
+- **Track PRs target `claude/race-tracks-wip`, not `main`.** It is the integration branch for the whole tracks change, and it goes to `main` as one PR at the end. Branch from it, open your PR against it, and don't push to it directly.
+- Don't merge anything; the orchestrator merges into `claude/race-tracks-wip`.
 
 ## How a track is defined
 
@@ -39,6 +40,11 @@ Test data is gathered from the track files by name (`tracks/checks.ts`), so a ne
 ## Checks every track must pass
 
 Run `npx vitest run app/lib/race` in `workspaces/web`; `-t <id>` narrows to one track. Tests run in workerd, whose floating point differs from node: seeds or tunings picked in node can behave differently there, so confirm in vitest.
+
+The checks don't depend on how big a track is:
+
+- Each per-track test's time limit, and the number of seeds the multi-race ones race, scale with the lap against 600 m (`app/lib/race/budget.ts`: `budget`, `seedsFor`, `lapScale`). The tow-truck tests' time limits scale the same way.
+- Whether a tyre is on the tarmac or the pits' paving (`offRoadAt` in render.ts) is worked out from the track and the pit geometry, not from the drawn picture, so it is right however small a big track is drawn.
 
 - **tracks.test:** the world is 16:9 and in-bounds with walls; recordings keep positions to at least 1/16 m (`placing`, see below); no centre-line radius under 8.4 m; other stretches far enough apart; a straight behind the line for the grid; the pits and yard clear of every other stretch; laps and recording size.
 - **line.test:** the cached racing line is current, quicker than the alternatives, and takes each corner of 45° or more outside–inside–outside.

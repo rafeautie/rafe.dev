@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { budget, seedsFor } from './budget';
 import { BOX, BOX_ACROSS, createPits, entering, LANE, STAND, pitsFor } from './pits';
 import { LOAD } from './recovery';
 import { createReplay, pack, record, unpack } from './recording';
@@ -131,7 +132,7 @@ function run(
 				// where the renderer has a rear tyre (render.ts)
 				const x = car.x - 1.3 * cos - side * sin;
 				const y = car.y - 1.3 * sin + side * cos;
-				if (offRoadAt(track, x, y)) rough++;
+				if (offRoadAt(track, x, y, car.sample)) rough++;
 			}
 		}
 	}
@@ -156,7 +157,7 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 	const { n } = track;
 	const lane = pitsFor(track);
 
-	it('is paved, as the track is, while the verge and the grass are not', () => {
+	it('is paved, as the track is, while the verge and the grass are not', budget(id, 5_000), () => {
 		/** How many points the given distance either side of the centre line are off the road, as a share of them. */
 		const rough = (across: number) => {
 			let off = 0;
@@ -164,7 +165,7 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 				for (const side of [-1, 1]) {
 					const x = track.x[i] - track.ty[i] * across * side;
 					const y = track.y[i] + track.tx[i] * across * side;
-					if (offRoadAt(track, x, y)) off++;
+					if (offRoadAt(track, x, y, i)) off++;
 				}
 			}
 			return off / (2 * n);
@@ -175,10 +176,12 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 		expect(rough(HALF_ROAD + 0.4)).toBeGreaterThan(0.9);
 		// (and the grass inside, along the pit lane)
 		expect(rough(HALF_CORRIDOR + 3)).toBeGreaterThan(0.6);
-		for (const box of lane.boxes) expect(offRoadAt(track, box.x, box.y)).toBe(false);
+		for (const box of lane.boxes) {
+			expect(offRoadAt(track, box.x, box.y, Math.round(box.sample) % n)).toBe(false);
+		}
 	});
 
-	it('has a box for every car, each clear of the next', () => {
+	it('has a box for every car, each clear of the next', budget(id, 5_000), () => {
 		expect(lane.boxes).toHaveLength(ROSTER.length);
 		lane.boxes.forEach((box, index) => {
 			// (found from where it is meant to be: on a winding track a box may be as near another stretch of the track as its own)
@@ -191,33 +194,37 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 		});
 	});
 
-	it('has boxes bigger than the cars, and stands bigger than the tow trucks past the last of them', () => {
-		// a car with its wheels, which stand a little proud of the bodywork, and a truck with its own
-		const long = Math.max(...HULL.filter((_, k) => k % 2 === 0)) * 2;
-		const wide = Math.max(...HULL.filter((_, k) => k % 2 === 1)) * 2 + 0.3;
-		expect(BOX.long).toBeGreaterThan(long + 1);
-		expect(BOX.wide).toBeGreaterThan(wide + 0.7);
-		expect(BOX.pitch).toBeGreaterThan(BOX.long);
-		expect(STAND.long).toBeGreaterThan(TRUCK.long * 2 + 1);
-		expect(STAND.wide).toBeGreaterThan(TRUCK.wide * 2 + 0.44 + 0.7);
-		expect(lane.stands).toHaveLength(2);
-		// one behind the other, the front one first, in line with the boxes
-		const [front, rear] = lane.stands;
-		const last = lane.boxes[lane.boxes.length - 1];
-		expect(Math.hypot(front.x - rear.x, front.y - rear.y)).toBeGreaterThan(STAND.long);
-		expect(front.sample).toBeGreaterThan(rear.sample);
-		// clear of the last box, and short of the end of the lane
-		expect(rear.sample - STAND.long / 2).toBeGreaterThan(last.sample + BOX.long / 2);
-		expect(front.sample + STAND.long / 2).toBeLessThan(lane.out0);
-		for (const stand of lane.stands) expect(stand.across).toBe(last.across);
-		// and all of it on the straight the start line is on, or all but: on
-		// the oval the front stand runs on a little way into the first turn
-		const bend = (sample: number) => track.bend[((Math.round(sample) % n) + n) % n];
-		for (const box of lane.boxes) expect(bend(box.sample)).toBeLessThan(1 / 50);
-		for (const stand of lane.stands) expect(bend(stand.sample)).toBeLessThan(1 / 45);
-	});
+	it(
+		'has boxes bigger than the cars, and stands bigger than the tow trucks past the last of them',
+		budget(id, 5_000),
+		() => {
+			// a car with its wheels, which stand a little proud of the bodywork, and a truck with its own
+			const long = Math.max(...HULL.filter((_, k) => k % 2 === 0)) * 2;
+			const wide = Math.max(...HULL.filter((_, k) => k % 2 === 1)) * 2 + 0.3;
+			expect(BOX.long).toBeGreaterThan(long + 1);
+			expect(BOX.wide).toBeGreaterThan(wide + 0.7);
+			expect(BOX.pitch).toBeGreaterThan(BOX.long);
+			expect(STAND.long).toBeGreaterThan(TRUCK.long * 2 + 1);
+			expect(STAND.wide).toBeGreaterThan(TRUCK.wide * 2 + 0.44 + 0.7);
+			expect(lane.stands).toHaveLength(2);
+			// one behind the other, the front one first, in line with the boxes
+			const [front, rear] = lane.stands;
+			const last = lane.boxes[lane.boxes.length - 1];
+			expect(Math.hypot(front.x - rear.x, front.y - rear.y)).toBeGreaterThan(STAND.long);
+			expect(front.sample).toBeGreaterThan(rear.sample);
+			// clear of the last box, and short of the end of the lane
+			expect(rear.sample - STAND.long / 2).toBeGreaterThan(last.sample + BOX.long / 2);
+			expect(front.sample + STAND.long / 2).toBeLessThan(lane.out0);
+			for (const stand of lane.stands) expect(stand.across).toBe(last.across);
+			// and all of it on the straight the start line is on, or all but: on
+			// the oval the front stand runs on a little way into the first turn
+			const bend = (sample: number) => track.bend[((Math.round(sample) % n) + n) % n];
+			for (const box of lane.boxes) expect(bend(box.sample)).toBeLessThan(1 / 50);
+			for (const stand of lane.stands) expect(bend(stand.sample)).toBeLessThan(1 / 45);
+		}
+	);
 
-	it('leads from the track through every box and back to the track', () => {
+	it('leads from the track through every box and back to the track', budget(id, 5_000), () => {
 		lane.boxes.forEach((box, index) => {
 			const { way, stop, end } = lane.path(index);
 			const across = (k: number) => lateral(track, way.x[k], way.y[k], way.sample[k]);
@@ -249,24 +256,28 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 describe.each(TRACK_IDS)('pit stops on the %s', (id) => {
 	const races = SEEDS.map((seed) => run(seed, id));
 
-	it('are made by every car that gets to the end, since a tank will not last the race', () => {
-		expect(RULES.tank).toBeLessThan(RULES.laps);
-		for (const race of races) {
-			const stopped = new Set(race.stops.map((stop) => stop.car));
-			race.cars.forEach((car, index) => {
-				if (car.finishTime) expect(stopped.has(index)).toBe(true);
-			});
+	it(
+		'are made by every car that gets to the end, since a tank will not last the race',
+		budget(id, 5_000),
+		() => {
+			expect(RULES.tank).toBeLessThan(RULES.laps);
+			for (const race of races) {
+				const stopped = new Set(race.stops.map((stop) => stop.car));
+				race.cars.forEach((car, index) => {
+					if (car.finishTime) expect(stopped.has(index)).toBe(true);
+				});
+			}
 		}
-	});
+	);
 
-	it('leave nobody out of fuel', () => {
+	it('leave nobody out of fuel', budget(id, 5_000), () => {
 		for (const race of races) {
 			expect(race.all.filter((event) => event.kind === 'dry')).toHaveLength(0);
 			expect(race.least).toBeGreaterThanOrEqual(0);
 		}
 	});
 
-	it('put in fuel, or change the tyres, or both, as the crew says', () => {
+	it('put in fuel, or change the tyres, or both, as the crew says', budget(id, 5_000), () => {
 		const services = new Set<string>();
 		for (const race of races) {
 			expect(race.stops.length).toBeGreaterThan(0);
@@ -286,7 +297,7 @@ describe.each(TRACK_IDS)('pit stops on the %s', (id) => {
 		expect(services).toContain('both');
 	});
 
-	it('end with the car back in the race', () => {
+	it('end with the car back in the race', budget(id, 5_000), () => {
 		for (const race of races) {
 			// (the race may be over, though, before the last of them has been let go, or is back out)
 			expect(race.unfinished).toBeLessThanOrEqual(1);
@@ -297,42 +308,54 @@ describe.each(TRACK_IDS)('pit stops on the %s', (id) => {
 		}
 	});
 
-	it('are driven to no faster than the lane allows, and never one car through another', () => {
-		for (const race of races) {
-			expect(race.fastest).toBeLessThanOrEqual(RULES.limit + 0.01);
-			expect(race.nearest).toBeGreaterThan(3.5);
+	it(
+		'are driven to no faster than the lane allows, and never one car through another',
+		budget(id, 5_000),
+		() => {
+			for (const race of races) {
+				expect(race.fastest).toBeLessThanOrEqual(RULES.limit + 0.01);
+				expect(race.nearest).toBeGreaterThan(3.5);
+			}
 		}
-	});
+	);
 
-	it('throw up nothing on the way: no sliding, and never a tyre off the paving', () => {
-		for (const race of races) {
-			expect(race.stops.length).toBeGreaterThan(0);
-			expect(race.slid).toBe(0);
-			expect(race.rough).toBe(0);
+	it(
+		'throw up nothing on the way: no sliding, and never a tyre off the paving',
+		budget(id, 5_000),
+		() => {
+			for (const race of races) {
+				expect(race.stops.length).toBeGreaterThan(0);
+				expect(race.slid).toBe(0);
+				expect(race.rough).toBe(0);
+			}
 		}
-	});
+	);
 
-	it('are come in for and gone out from without slowing on the track: the braking is done on the way in', () => {
-		const entered = races.flatMap((race) => race.entered).sort((a, b) => a - b);
-		const joined = races.flatMap((race) => race.joined).sort((a, b) => a - b);
-		expect(entered.length).toBeGreaterThan(10);
-		expect(joined.length).toBeGreaterThan(10);
-		// Off the track, and back on it, at something like the speed the track
-		// is taken at there, or off it as fast as the way in allows where that
-		// is less. (Now and then one is slow for a reason of its own: held up,
-		// or damaged, or behind another on its way in.)
-		expect(entered[entered.length >> 1]).toBeGreaterThan(0.85);
-		expect(joined[joined.length >> 1]).toBeGreaterThan(0.85);
-		expect(entered[Math.floor(entered.length * 0.15)]).toBeGreaterThan(0.75);
-		expect(joined[Math.floor(joined.length * 0.15)]).toBeGreaterThan(0.75);
-	});
+	it(
+		'are come in for and gone out from without slowing on the track: the braking is done on the way in',
+		budget(id, 5_000),
+		() => {
+			const entered = races.flatMap((race) => race.entered).sort((a, b) => a - b);
+			const joined = races.flatMap((race) => race.joined).sort((a, b) => a - b);
+			expect(entered.length).toBeGreaterThan(10);
+			expect(joined.length).toBeGreaterThan(10);
+			// Off the track, and back on it, at something like the speed the track
+			// is taken at there, or off it as fast as the way in allows where that
+			// is less. (Now and then one is slow for a reason of its own: held up,
+			// or damaged, or behind another on its way in.)
+			expect(entered[entered.length >> 1]).toBeGreaterThan(0.85);
+			expect(joined[joined.length >> 1]).toBeGreaterThan(0.85);
+			expect(entered[Math.floor(entered.length * 0.15)]).toBeGreaterThan(0.75);
+			expect(joined[Math.floor(joined.length * 0.15)]).toBeGreaterThan(0.75);
+		}
+	);
 
 	it(
 		'are made under caution too, but not once the field is lining up to go green',
-		{ timeout: 30_000 },
+		budget(id, 30_000),
 		() => {
 			let under = 0;
-			for (let seed = 1; seed <= 18; seed++) {
+			for (let seed = 1; seed <= seedsFor(id, 18, 10); seed++) {
 				// a wreck is rare enough that some of them have a caution thrown by
 				// hand, at about the time the cars are getting low on fuel
 				const race =
@@ -542,34 +565,46 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 		(seen) => seen.full > 0 && seen.loads.some((load) => load.length === LOAD)
 	);
 
-	it('stand at the end of the pit lane, and are back there when the job is done', () => {
-		expect(single.race.trucks).toHaveLength(2);
-		expect(single.out).toBeGreaterThan(0);
-		home(single);
-	});
+	it(
+		'stand at the end of the pit lane, and are back there when the job is done',
+		budget(id, 5_000),
+		() => {
+			expect(single.race.trucks).toHaveLength(2);
+			expect(single.out).toBeGreaterThan(0);
+			home(single);
+		}
+	);
 
-	it('go out to a wreck by the way out of the pits and bring it back by the way in', () => {
-		expect(single.onTrack).toBeGreaterThan(0);
-		expect(single.elsewhere).toBe(0);
-		expect(several.elsewhere).toBe(0);
-	});
+	it(
+		'go out to a wreck by the way out of the pits and bring it back by the way in',
+		budget(id, 5_000),
+		() => {
+			expect(single.onTrack).toBeGreaterThan(0);
+			expect(single.elsewhere).toBe(0);
+			expect(several.elsewhere).toBe(0);
+		}
+	);
 
-	it('leave the wreck in its own pit box', () => {
+	it('leave the wreck in its own pit box', budget(id, 5_000), () => {
 		expect(single.retired).toHaveLength(1);
 		boxed(single);
 	});
 
-	it('lift a wreck onto the bed with the crane, and take two in one trip where there are two to take', () => {
-		expect(pair.full).toBeGreaterThan(0);
-		expect(pair.loads.some((load) => load.length === LOAD)).toBe(true);
-		// never more than the bed holds, and no wreck lifted twice
-		for (const load of pair.loads) expect(load.length).toBeLessThanOrEqual(LOAD);
-		expect(new Set(pair.loads.flat()).size).toBe(pair.loads.flat().length);
-		// fewer trips than wrecks, and each of them put in its own box
-		expect(pair.trips).toBeLessThan(pair.retired.length);
-		boxed(pair);
-		home(pair);
-	});
+	it(
+		'lift a wreck onto the bed with the crane, and take two in one trip where there are two to take',
+		budget(id, 5_000),
+		() => {
+			expect(pair.full).toBeGreaterThan(0);
+			expect(pair.loads.some((load) => load.length === LOAD)).toBe(true);
+			// never more than the bed holds, and no wreck lifted twice
+			for (const load of pair.loads) expect(load.length).toBeLessThanOrEqual(LOAD);
+			expect(new Set(pair.loads.flat()).size).toBe(pair.loads.flat().length);
+			// fewer trips than wrecks, and each of them put in its own box
+			expect(pair.trips).toBeLessThan(pair.retired.length);
+			boxed(pair);
+			home(pair);
+		}
+	);
 
 	it("both go out when there is more than one wreck, and keep out of each other's way", () => {
 		expect(several.retired.length).toBeGreaterThan(1);
@@ -783,29 +818,37 @@ function twoIn(id: TrackId, first: number, second: number, delay: number) {
 }
 
 describe.each(TRACK_IDS)('two cars in the pit lane on the %s', (id) => {
-	it('keep to the limit going by a box where the other is turning in, stopped or pulling out', () => {
-		// From a car's length or so behind the first as it turns into its box,
-		// to well after it has stopped there and is getting away again: the
-		// second has its own box further on, and nothing else to slow for.
-		// (Any closer behind than that, it has to brake for the first before
-		// it is out of the way.)
-		for (let delay = 0.9; delay < 12; delay += 0.3) {
-			const { slowest, closest, stops } = twoIn(id, 1, 6, delay);
-			expect(stops).toBe(2);
-			expect(slowest, `${delay.toFixed(1)} s behind`).toBeGreaterThan(RULES.limit * 0.97);
-			expect(slowest).toBeLessThanOrEqual(RULES.limit + 0.01);
-			expect(closest).toBeGreaterThan(3.5);
+	it(
+		'keep to the limit going by a box where the other is turning in, stopped or pulling out',
+		budget(id, 5_000),
+		() => {
+			// From a car's length or so behind the first as it turns into its box,
+			// to well after it has stopped there and is getting away again: the
+			// second has its own box further on, and nothing else to slow for.
+			// (Any closer behind than that, it has to brake for the first before
+			// it is out of the way.)
+			for (let delay = 0.9; delay < 12; delay += 0.3) {
+				const { slowest, closest, stops } = twoIn(id, 1, 6, delay);
+				expect(stops).toBe(2);
+				expect(slowest, `${delay.toFixed(1)} s behind`).toBeGreaterThan(RULES.limit * 0.97);
+				expect(slowest).toBeLessThanOrEqual(RULES.limit + 0.01);
+				expect(closest).toBeGreaterThan(3.5);
+			}
+			for (const delay of [0.3, 0.6]) expect(twoIn(id, 1, 6, delay).closest).toBeGreaterThan(3.5);
 		}
-		for (const delay of [0.3, 0.6]) expect(twoIn(id, 1, 6, delay).closest).toBeGreaterThan(3.5);
-	});
+	);
 
-	it('queue behind one that is ahead of them in the lane, and never go through it', () => {
-		for (let delay = 0.3; delay < 2; delay += 0.2) {
-			const { closest, behind, order, stops } = twoIn(id, 5, 6, delay);
-			expect(stops).toBe(2);
-			expect(order).toBe(true);
-			expect(behind, `${delay.toFixed(1)} s behind`).toBeGreaterThan(5.5);
-			expect(closest).toBeGreaterThan(3.5);
+	it(
+		'queue behind one that is ahead of them in the lane, and never go through it',
+		budget(id, 5_000),
+		() => {
+			for (let delay = 0.3; delay < 2; delay += 0.2) {
+				const { closest, behind, order, stops } = twoIn(id, 5, 6, delay);
+				expect(stops).toBe(2);
+				expect(order).toBe(true);
+				expect(behind, `${delay.toFixed(1)} s behind`).toBeGreaterThan(5.5);
+				expect(closest).toBeGreaterThan(3.5);
+			}
 		}
-	});
+	);
 });
