@@ -9,7 +9,8 @@ Branch `claude/race-tracks-wip`. It holds the framework, the three ovals, Monza 
 - **Per-track world and camera.** Each track gets its own world size, camera and follow-view bounds that work at that size. The framework session (the one that wrote this) owns that and the ovals and Monza; it is not done yet, see "Framework work still to do".
 - **Pit lanes where the real ones are.** Real entry, real pit straight, real exit. Where a real pit straight is too short for 8 boxes and the truck yard, the boxes and yard carry on past the next corner (box rows, `yard`; see below).
 - **No driving tuning.** Track sessions don't change grip, speed, AI or the racing-line code. Geometry and data checks must pass. If at real scale races don't finish, cautions don't clear or cars leave the tarmac, report it in the PR rather than tuning around it; driving gets tuned separately later.
-- Don't merge anything; the orchestrator handles merges.
+- **Track PRs target `claude/race-tracks-wip`, not `main`.** It is the integration branch for the whole tracks change, and it goes to `main` as one PR at the end. Branch from it, open your PR against it, and don't push to it directly.
+- Don't merge anything; the orchestrator merges into `claude/race-tracks-wip`.
 
 ## How a track is defined
 
