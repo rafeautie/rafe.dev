@@ -296,7 +296,7 @@ export const LAYOUTS = {
 			],
 			0.55
 		),
-		pits: { from: 204, slip: 42, thirst: 1, away: [76, 118], boxes: 287 }
+		pits: { from: 204, slip: 42, thirst: 0.99, away: [76, 118], boxes: 287 }
 	},
 	/**
 	 * The fast one: the main straight, the chicane at the end of it and the
@@ -365,5 +365,160 @@ export const LAYOUTS = {
 			[160, 125.3]
 		],
 		pits: { from: 446, slip: 34, thirst: 0.9, away: [66, 92], boxes: 490 }
+	},
+	/**
+	 * The Grand Prix course: the long front straight, the right-hander at the
+	 * end of it and the esses climbing away from it, the back straight, the
+	 * long loop at the far end, the Boot with its tight toe, and the climb
+	 * back to the right-hander onto the front straight. The pits are on the
+	 * infield of the front straight; the way out runs on round the inside of
+	 * the first corner.
+	 */
+	glen: {
+		name: 'Watkins Glen',
+		kind: 'road',
+		world: 252,
+		control: [
+			[166, 24],
+			[180, 24],
+			[194, 24],
+			[208, 24],
+			[222.5, 24.0],
+			[233.0, 26.8],
+			[240.7, 34.5],
+			[243.5, 45.0],
+			[243, 54],
+			[241.5, 62],
+			[236, 70],
+			[228.5, 79],
+			[219, 87],
+			[207.5, 95],
+			[195, 102],
+			[181, 107],
+			[167, 110],
+			[140, 111.5],
+			[125, 112],
+			[110, 112.5],
+			[95, 113],
+			[80, 113],
+			[65, 113],
+			[53, 112],
+			[44, 107],
+			[38.5, 99],
+			[38, 90],
+			[41, 82],
+			[46, 75.5],
+			[50, 70.5],
+			[52.5, 64],
+			[51.5, 58],
+			[48, 54.3],
+			[42.5, 53],
+			[28.5, 53.0],
+			[18.5, 50.3],
+			[11.2, 43.0],
+			[8.5, 33.0],
+			[11.2, 23.0],
+			[18.5, 15.7],
+			[28.5, 13.0],
+			[40, 14],
+			[46, 14],
+			[56.0, 14.0],
+			[65.9, 18.1],
+			[70.0, 28.0],
+			[70, 36],
+			[70, 42],
+			[70.0, 47.0],
+			[71.5, 52.8],
+			[75.8, 57.0],
+			[81.5, 58.5],
+			[87.2, 57.0],
+			[91.5, 52.8],
+			[93.0, 47.0],
+			[93, 46],
+			[93.0, 43.0],
+			[95.5, 33.5],
+			[102.5, 26.5],
+			[112.0, 24.0],
+			[124, 24],
+			[136, 24],
+			[148, 24],
+			[157, 24]
+		],
+		pits: { from: 584, slip: 24, thirst: 0.96, away: [100, 132], boxes: 619 }
+	},
+	/**
+	 * The long one: the hairpin at the end of the pit straight, the kink and
+	 * climb onto the long straight up to the chicane at the top, the long
+	 * right round the far end, the double left in the middle, the fast run
+	 * down and round the far right, and the long sweep back to the chicane
+	 * before the line. The pits are on the infield of the pit straight, in
+	 * from before the chicane; the way out runs down the inside of the hairpin.
+	 */
+	spa: {
+		name: 'Spa-Francorchamps',
+		kind: 'road',
+		world: 240,
+		control: [
+			[94.2, 107.9],
+			[83.4, 109.8],
+			[72.5, 111.7],
+			[61.7, 113.6],
+			[50.9, 115.6],
+			[40, 117.5],
+			[33.1, 118.7],
+			[23.1, 118],
+			[14.6, 112.8],
+			[9.4, 104.1],
+			[8.9, 94.1],
+			[13, 85],
+			[21, 78.8],
+			[43, 67.5],
+			[53, 62.5],
+			[64, 57.5],
+			[80, 50.5],
+			[96, 43.5],
+			[112, 36.5],
+			[128, 29.5],
+			[144, 22.5],
+			[158, 16.5],
+			[168, 13],
+			[176, 13],
+			[183, 15.5],
+			[190, 16],
+			[197, 14.5],
+			[208.7, 13],
+			[219.2, 15.8],
+			[226.9, 23.5],
+			[229.7, 34],
+			[226.9, 44.5],
+			[219.2, 52.2],
+			[208.7, 55],
+			[198, 53.2],
+			[189, 51.2],
+			[180, 50],
+			[166, 51],
+			[156.6, 51.2],
+			[148.3, 56],
+			[145, 65],
+			[148.3, 74],
+			[156.6, 78.8],
+			[164, 80],
+			[176, 81],
+			[191.2, 82.7],
+			[203.3, 92],
+			[205.3, 107.2],
+			[196, 119.3],
+			[184.3, 121.9],
+			[176, 120],
+			[168, 115],
+			[162, 109],
+			[156, 103.5],
+			[143.4, 99.2],
+			[132.6, 101.1],
+			[121.8, 103.1],
+			[110.9, 105],
+			[100.1, 106.9]
+		],
+		pits: { from: 550, slip: 30, thirst: 1, away: [85, 125], boxes: 642 }
 	}
 } satisfies Record<string, Layout>;

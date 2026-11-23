@@ -93,6 +93,15 @@ const WRECK = 1.5;
 const PACE = 12;
 const CATCH = 17;
 const RUN_IN = 16;
+/**
+ * The leader's speed bringing the field round to the line: held back toward
+ * the pace again while the lineup has strung out through the corners (more
+ * than `STRUNG` m behind its place, at the back), so it closes up before the
+ * green rather than after.
+ */
+const STRUNG = 3;
+const runIn = (strung: number) =>
+	RUN_IN - (RUN_IN - PACE) * clamp((strung - STRUNG) / (2 * STRUNG), 0, 1);
 /** How far apart the queue runs, middle to middle. */
 const QUEUE = 8;
 /** Under caution, how fast (m/s) a car goes by a wreck, or a truck at work, and from how far either side of it (m). */
@@ -466,6 +475,8 @@ export function createRace(
 	const merged = new Set<Car>();
 	/** Whether the lineup has formed: every car in it near its place. Till then the leader holds the pace down. */
 	let formed = false;
+	/** How far (m) the car furthest back of its place in the lineup is behind it. */
+	let strung = 0;
 	/** Everything on the road this step: the cars, and the trucks that are out on the track. */
 	let road: Obstacle[] = cars;
 
@@ -603,6 +614,17 @@ export function createRace(
 		);
 
 	/** How far behind the leader a car is, forward round the lap: one that has edged a little ahead of them is a little way behind. */
+	/** Whether a car is touching a wreck that is still on the move. */
+	function againstWreck(car: Car) {
+		for (let edge = car.body.getContactList(); edge; edge = edge.next) {
+			if (!edge.contact.isTouching()) continue;
+			const other = edge.other?.getUserData();
+			if (typeof other !== 'number' || !cars[other].retired || cars[other].towed) continue;
+			if (Math.abs(cars[other].speed) > 0.3) return true;
+		}
+		return false;
+	}
+
 	function trailing(car: Car) {
 		const behind = onRound(car.sample, pacer!.sample) * spacing;
 		return behind > length - 20 ? behind - length : behind;
@@ -749,6 +771,9 @@ export function createRace(
 		// many there are, and from then on: the leader picks up the pace
 		formed ||=
 			caution.going > 0 && lineup.every((car, place) => Math.abs(trailing(car) - slot(place)) < 3);
+		strung = caution.going
+			? Math.max(0, ...lineup.map((car, place) => trailing(car) - slot(place)))
+			: 0;
 		// the green is only ever given at the line, and only to a field that
 		// has lined up (or had long enough to): if it cannot be this time, it
 		// is a lap more
@@ -1061,7 +1086,7 @@ export function createRace(
 				// nobody stands on the brakes at the flag: the speed allowed comes
 				// down over a few seconds, so the cars behind are not caught out
 				const easing = 32 - 6 * (race.time - caution.since);
-				const held = car !== pacer ? (caution.going ? FORM : CATCH) : formed ? RUN_IN : PACE;
+				const held = car !== pacer ? (caution.going ? FORM : CATCH) : formed ? runIn(strung) : PACE;
 				want = Math.min(want, Math.max(held, easing));
 			}
 			const corner = want;
@@ -1101,15 +1126,17 @@ export function createRace(
 				// however slowly the two of them are going)
 				const shoving =
 					caution !== null &&
-					blocker?.retired &&
-					gap < 2 * NOSE + 1 &&
-					Math.abs(car.across - blocker.across) < 1.5 &&
-					Math.abs(blocker.speed) > 0.3 &&
 					car.speed < 2.5 &&
-					// (a wreck, that is, not a truck)
-					'body' in blocker;
+					((blocker?.retired &&
+						gap < 2 * NOSE + 1 &&
+						Math.abs(car.across - blocker.across) < 1.5 &&
+						Math.abs(blocker.speed) > 0.3 &&
+						// (a wreck, that is, not a truck)
+						'body' in blocker) ||
+						// or up against one at an angle, a corner of each in the other
+						againstWreck(car));
 				const stalled = Math.abs(car.speed) < 1 || shoving;
-				car.stuck = stalled && (want > 1 || waiting) ? car.stuck + DT : 0;
+				car.stuck = stalled && (want > 1 || waiting || shoving) ? car.stuck + DT : 0;
 				if (car.stuck > 1) {
 					car.stuck = 0;
 					car.reverseUntil = race.time + 1.4;

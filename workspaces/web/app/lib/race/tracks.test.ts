@@ -107,7 +107,7 @@ describe.each(TRACK_IDS)('the %s', (id) => {
 	it('has a straight behind the start line for the whole grid', () => {
 		// as far back as the back of the grid with every car in the roster on it,
 		// which on the oval runs a little way into the last bend
-		for (let behind = 0; behind <= 6 + 6.5 * 8; behind++) {
+		for (let behind = 0; behind <= 6 + 6.5 * (ROSTER.length - 1); behind++) {
 			expect(track.bend[(n - behind) % n]).toBeLessThan(1 / 30);
 		}
 	});

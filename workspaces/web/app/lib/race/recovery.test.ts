@@ -143,7 +143,9 @@ const BEHIND: Record<TrackId, [[number, number], [number, number], number]> = {
 	daytona: [[190, 2], [160, -1.5], 25],
 	indianapolis: [[195, 2], [165, -1.5], 25],
 	martinsville: [[190, 2], [160, -1.5], 25],
-	monza: [[395, 2], [365, -1.5], 25]
+	monza: [[395, 2], [365, -1.5], 25],
+	glen: [[290, 2], [260, -1.5], 25],
+	spa: [[180, 2], [150, -1.5], 25]
 };
 
 /** How far a corner of either truck is inside the outline of the other (m), at the most: 0 for not at all. */

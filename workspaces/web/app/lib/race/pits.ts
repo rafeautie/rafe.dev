@@ -41,6 +41,8 @@ export const APRON = BOX_EDGE + BOX.wide;
 const INSIDE = -MAX_OFFSET;
 /** How far along the lane it takes a car to turn into its box, and out of it. */
 const PULL = 10;
+/** How far short of the way in a car may be taken off the track for it (see `far` in createPits). */
+const TAKEN = 3;
 /** The ways through the pits are worked out at points this far apart, in samples. */
 const STEP = 0.5;
 /**
@@ -317,8 +319,10 @@ function build(track: Track) {
 		thirst,
 		/** The way in through the wall, the lane, and the way out through the wall, to be paved. */
 		ways: [
+			// (from a little short of the way in, where a car may be let off the track)
 			way([
-				[in0, INSIDE - 0.6],
+				[in0 - TAKEN, INSIDE - 1],
+				[in0, INSIDE - 1],
 				[in1, -RING]
 			]),
 			way([
