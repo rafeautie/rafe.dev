@@ -163,8 +163,8 @@ export const layout: Layout = {
 		[883.9, 912.6], [893.9, 911.6], [903.8, 910.4]
 	],
 	banking: [[239, 329, 31], [420, 523, 31], [547, 27, 18]],
-	pits: { from: 5390, slip: 50, thirst: 0.78, away: [560, 600], boxes: 5470 }
+	pits: { from: 5390, slip: 50, thirst: 0.78, away: [560, 600], boxes: 5500 }
 };
 
 /** What the tests race on it (Checks). */
-export const checks: Checks = { wreck: 18, clean: 1, behind: [[60, 2], [30, -1.5], 25] };
+export const checks: Checks = { wreck: 18, clean: 2, behind: [[60, 2], [30, -1.5], 25] };
