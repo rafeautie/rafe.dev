@@ -187,6 +187,14 @@ const KEEP = 3;
 /** The plan is worked out again at least this often (s) while there is a wreck to fetch. */
 const REPLAN = 0.5;
 /**
+ * How far (m) a truck already on its way takes to curve onto a way worked out
+ * again from where it is. The new way starts under its front axle, so there
+ * is little to curve onto; and a long curve laid over a bend cuts inside it,
+ * which with a wreck sliding on, and the way worked out again and again,
+ * takes the truck's wheels off the road.
+ */
+const REJOIN = 2;
+/**
  * In the yard, the room a truck leaves between itself and another (m): how
  * far apart their middles are at the least, and how far ahead of one standing
  * there the middle of one turning in off the lane in front of it has to be.
@@ -1507,8 +1515,8 @@ function createTruck(
 	/** Where the wreck the truck is on its way to was when it set out for it. */
 	let sighted = { x: 0, y: 0 };
 
-	/** Off to the wreck: the quickest way there from where the truck is, on or back. */
-	function approach() {
+	/** Off to the wreck: the quickest way there from where the truck is, on or back, curving onto it over `joining` metres. */
+	function approach(joining?: number) {
 		takeNext();
 		const from = start();
 		let leg = roads.leg(from, wreck!, yard.lying(), truck.towed, now >= noBackUntil);
@@ -1518,7 +1526,7 @@ function createTruck(
 		segments = leg.segments.slice();
 		due = now + leg.time;
 		sighted = wreck!.body.getPosition().clone();
-		begin();
+		begin(joining);
 	}
 
 	/**
@@ -1538,13 +1546,13 @@ function createTruck(
 	}
 
 	/** On to the next part of the way to the wreck. */
-	function begin() {
+	function begin(joining?: number) {
 		const next = segments.shift()!;
 		backing = next.back;
 		truck.backLeft = 0;
 		waited = 0;
 		if (backing) takeBack(next.keys);
-		else take(drive(on(TRUCK.axle), next.keys), truck.towed);
+		else take(drive(on(TRUCK.axle), next.keys, joining), truck.towed);
 		stage = 'approach';
 	}
 
@@ -2133,7 +2141,7 @@ function createTruck(
 				if (still && timer > 0.3 && !passing() && (open() || timer > PATIENCE)) approach();
 			} else if (stage === 'approach') {
 				// one knocked on since the truck set out for it is set out for again
-				if (moved()) approach();
+				if (moved()) approach(REJOIN);
 				const done = backing
 					? backUp(dt, rearTraffic(dt))
 					: advance(dt, Math.min(traffic(dt), pitTraffic()), truck.towed ? HAUL : PULL);

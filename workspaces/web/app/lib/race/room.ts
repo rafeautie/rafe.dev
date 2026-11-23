@@ -1,4 +1,4 @@
-import type { Market, Pools, Result } from './betting';
+import type { Duel, Market, Pools, Result } from './betting';
 import type { Settings } from './settings';
 
 // What the race room and the pages watching it say to each other. The room
@@ -22,6 +22,8 @@ export type RoomState = {
 	/** The cars' ids in starting order, and the condition each is in (roster.ts). */
 	grid: string[];
 	conditions: string[];
+	/** The two cars set against each other for the duel market, or null if this race has none. */
+	duel: Duel;
 	/** When the recording's time 0 is or was, once betting has closed. */
 	startsAt: number;
 	/** How the race came out, once it is over. */
@@ -36,8 +38,17 @@ export type RoomState = {
 /** A bet as its owner sees it. `payout` is null until the race is settled. */
 export type Bet = { market: Market; outcome: string; stake: number; payout: number | null };
 
-/** A player as everyone sees them. */
-export type Standing = { id: number; name: string; balance: number; bankruptcies: number };
+/**
+ * A player as everyone sees them. `profit` is what their settled bets have
+ * won less what was staked on them, which going bankrupt does not put back.
+ */
+export type Standing = {
+	id: number;
+	name: string;
+	balance: number;
+	profit: number;
+	bankruptcies: number;
+};
 
 /**
  * What the room sends as text. The recording of the race comes separately,
@@ -51,7 +62,7 @@ export type FromRoom =
 	| { type: 'you'; you: Standing; bets: Bet[] }
 	/** To all: somebody bet, and what is now on that outcome. */
 	| { type: 'bet'; name: string; market: Market; outcome: string; stake: number; pool: number }
-	/** To all: the richest players. */
+	/** To all: the players furthest ahead on their bets. */
 	| { type: 'board'; board: Standing[] }
 	/** To one page: why what it asked for was not done. */
 	| { type: 'no'; reason: string };

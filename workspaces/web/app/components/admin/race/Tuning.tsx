@@ -16,8 +16,8 @@ import { cell, type Act, type View } from './format';
 
 // The numbers the game runs on, edited here and saved together, from the
 // next race on, and the track it is run on. They come in four kinds: the
-// race (how long it is, and its pits); the cars (how many race, and how each
-// goes), which decide who wins;
+// race (how long it is, its pits, and how hard a knock hits); the cars
+// (how many race, and how each goes), which decide who wins;
 // the money, which decides what winning is worth; and the timing of the loop.
 // Each car's record sits beside its stats, since that is what a change to
 // them is meant to move. The room checks everything again and says what is
@@ -135,7 +135,7 @@ export const Tuning = memo(function Tuning({
 					})}
 				</div>
 			</Panel>
-			<Panel title="race" description="how long it is, and the pits">
+			<Panel title="race" description="how long it is, the pits, and the knocks">
 				<div className="flex flex-wrap items-start gap-x-6 gap-y-4">
 					<Whole
 						name="laps"
@@ -173,6 +173,15 @@ export const Tuning = memo(function Tuning({
 							className="w-44"
 						/>
 					))}
+					{/* (knocks do damage whether or not there are pits) */}
+					<Whole
+						name="damage"
+						label="knock damage, % of the original"
+						draft={draft}
+						settings={settings}
+						onChange={setDraft}
+						className="w-44"
+					/>
 				</div>
 				<p className="mt-4 max-w-2xl text-foreground/50">
 					A lap raced burns about one lap of fuel, so a tank smaller than the race means a stop.

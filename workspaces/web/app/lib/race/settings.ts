@@ -27,6 +27,8 @@ export type Settings = {
 	tank: number;
 	/** How fast tyres wear, as a percentage of the usual. */
 	tyreWear: number;
+	/** How much damage a knock does, as a percentage of what it did before this could be set. */
+	damage: number;
 	/** The pit lane's speed limit, in whole miles an hour. */
 	pitMph: number;
 	/** Chips the house spreads over each market's outcomes. */
@@ -54,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	pits: RULES.pits,
 	tank: Math.round(RULES.tank * 10),
 	tyreWear: Math.round(RULES.wear * 100),
+	damage: Math.round(RULES.damage * 100),
 	pitMph: Math.round(RULES.limit * MPH),
 	seed: SEED,
 	start: START,
@@ -71,6 +74,7 @@ export const LIMITS = {
 	laps: [2, 5],
 	tank: [10, 80],
 	tyreWear: [0, 300],
+	damage: [0, 1000],
 	pitMph: [13, 56],
 	seed: [100, 100_000],
 	start: [1, 1_000_000],
@@ -85,6 +89,7 @@ const NAMES: Record<keyof typeof LIMITS, string> = {
 	laps: 'Laps',
 	tank: 'Fuel tank',
 	tyreWear: 'Tire wear',
+	damage: 'Damage',
 	pitMph: 'Pit lane speed limit',
 	seed: 'Pool seed',
 	start: 'Starting chips',
@@ -136,6 +141,7 @@ export const rulesOf = (settings: Settings): Rules => ({
 	pits: settings.pits,
 	tank: settings.tank / 10,
 	wear: settings.tyreWear / 100,
+	damage: settings.damage / 100,
 	// to the half metre a second, so 27 mph is the 12 the pits are tuned to, and
 	// any whole number of metres a second kept from before is what it was
 	limit: Math.round((settings.pitMph / MPH) * 2) / 2

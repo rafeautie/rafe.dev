@@ -34,6 +34,8 @@ import {
 /** A stop as the test saw it: who, when it pulled up and when it left, what was done, and what it did to the car. */
 type Stopped = {
 	car: number;
+	/** When it left the track for the pits. */
+	left: number;
 	in: number;
 	out: number;
 	service: string;
@@ -62,6 +64,8 @@ function run(
 	// how fast each car was going as it left the track for the pits under green, and as it rejoined it, as a share of the speed the track is taken at there
 	const entered: number[] = [];
 	const joined: number[] = [];
+	/** When each car last left the track for the pits. */
+	const offAt = race.cars.map(() => 0);
 	let nearest2 = Infinity;
 	let least = Infinity;
 	// the most any car off the track slid, and how often one of its rear tyres was off the road
@@ -72,6 +76,7 @@ function run(
 		race.step();
 		race.cars.forEach((car, index) => {
 			const was = before[index].lane;
+			if (was !== LANE.in && car.lane === LANE.in) offAt[index] = race.time;
 			if (race.flag !== 'green') return;
 			if (was === LANE.called && car.lane === LANE.in)
 				entered.push(car.speed / car.pace[car.sample]);
@@ -83,6 +88,7 @@ function run(
 			if (event.kind === 'pit') {
 				open.set(event.car, {
 					car: event.car,
+					left: offAt[event.car],
 					in: event.time,
 					out: 0,
 					service: event.service,
@@ -329,15 +335,16 @@ describe.each(TRACK_IDS)('pit stops on the %s', (id) => {
 					: run(seed, id, RULES, { flags: seed % 2 ? [] : [LIGHTS + 45] });
 			under += race.stops.filter((stop) => stop.flag === 'yellow').length;
 			// The pits shut as the field lines up: whoever was already on the
-			// way in is in its box soon after, and nobody follows. (The time
-			// cap may end a race with the field still lined up.)
+			// way in goes on to its box, however long the lane holds it up, and
+			// nobody follows. (The time cap may end a race with the field still
+			// lined up.)
 			let restart = 0;
 			for (const event of [...race.all, { kind: 'green', time: Infinity }]) {
 				if (event.kind === 'restart') restart = event.time;
 				if (event.kind !== 'green' && event.kind !== 'caution') continue;
 				if (restart) {
 					const late = race.stops.filter(
-						(stop) => stop.in > restart + 15 && stop.in < event.time && stop.fuel[0] > 1.2
+						(stop) => stop.left > restart + 1 && stop.in < event.time && stop.fuel[0] > 1.2
 					);
 					expect(late, `seed ${seed}`).toEqual([]);
 				}
@@ -483,7 +490,7 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 	/** The first race of those seeds that is what is wanted. */
 	function find(count: number, wanted: (seen: ReturnType<typeof watched>) => boolean) {
 		let seen = watched(1, count);
-		for (let seed = 2; !wanted(seen) && seed <= 60; seed++) seen = watched(seed, count);
+		for (let seed = 2; !wanted(seen) && seed <= 120; seed++) seen = watched(seed, count);
 		expect(wanted(seen)).toBe(true);
 		return seen;
 	}

@@ -39,10 +39,21 @@ export const LIGHTS = 2;
  * What a race is run to, which /admin/race can change (settings.ts): how
  * many laps it is, whether the cars burn fuel, wear tyres and pit for more
  * (pits.ts), how many laps of hard running a full tank holds, how fast the
- * tyres wear as a share of the usual, and the pit lane's speed limit in m/s.
+ * tyres wear as a share of the usual, the pit lane's speed limit in m/s, and
+ * how much damage a knock does as a share of what it did before there was a
+ * dial for it: as it was, by default. More makes for more wrecks and
+ * cautions, but at half as much again a pile-up now and then takes out a
+ * small field, or a whole one on the first lap, so it is not the default.
  */
-export type Rules = { laps: number; pits: boolean; tank: number; wear: number; limit: number };
-export const RULES: Rules = { laps: 4, pits: true, tank: 3.3, wear: 1, limit: 12 };
+export type Rules = {
+	laps: number;
+	pits: boolean;
+	tank: number;
+	wear: number;
+	limit: number;
+	damage: number;
+};
+export const RULES: Rules = { laps: 4, pits: true, tank: 3.3, wear: 1, limit: 12, damage: 1 };
 /** The race as it was before there were pits: three laps, flat out all the way. */
 export const CLASSIC: Rules = { ...RULES, laps: 3, pits: false };
 
@@ -75,6 +86,12 @@ const VERGE_GRIP = 0.6;
 const WRECK_DRAG = 0.2;
 /** Sideways room one car leaves another when passing, centre to centre. */
 const CLEAR = 2.5;
+/**
+ * A driver only pulls out to pass where the car ahead is on road straighter
+ * than this (the curvature, 1/m): pulling out as it brakes into a bend only
+ * takes the long way round the outside, or runs wide off it.
+ */
+const STRAIGHT = 0.01;
 /** Extra room given to a wrecked car, which may be lying across the road. */
 const WRECK = 1.5;
 /**
@@ -910,24 +927,33 @@ export function createRace(
 				// more on the other, cross over behind it: at a hairpin, where the
 				// line runs along the outside edge, a wreck there leaves no way by
 				// outside it. But until close enough to be held up, keep to its
-				// wheel tracks, which are quicker than any way round it.
+				// wheel tracks, which are quicker than any way round it, and in
+				// its tow; and behind a car in a bend, stay there until the road
+				// straightens (STRAIGHT). Close enough is a few car lengths
+				// back, so it pulls out with the tow's speed and room to use it.
 				const apart = car.across - blocker.across;
 				let side = Math.sign(apart);
 				const here = passing(blocker, side, room);
 				if (blocker.retired && here < room && passing(blocker, -side, room) > here + 0.5)
 					side = -side;
 				const closing = Math.max(0, car.speed - Math.max(0, blocker.speed));
-				if (gap < car.follow + 3 + closing * 1.5) {
+				if (
+					gap < car.follow + (blocker.retired ? 3 : 8) + closing * 1.5 &&
+					(blocker.retired || Math.abs(apart) > 1 || track.bend[blocker.sample] < STRAIGHT)
+				) {
 					offset = Math.abs(apart) > 1 ? blocker.across + side * room - line : (sides[0] ?? 0);
 					rounding = blocker.retired;
 				}
 				// And hold back while tucked in behind it, slowing in time to be
 				// no faster than it by the following distance, which matters most
 				// when it is a wreck. A car most of the way out to one side goes
-				// for the gap: it may rub, but it does not sit and wait. Nor does
-				// one tucked in behind a wreck stop as a queue would: creeping on
-				// is how it gets round, as a stopped car cannot steer.
-				if (gap > 0 && Math.abs(apart) < (blocker.retired ? room : 1.5))
+				// for the gap: it may rub, but it does not sit and wait. On a
+				// straight, where it pulls out to pass, a little way out is enough
+				// (in a bend, it would only run into the back of the car ahead).
+				// Nor does one tucked in behind a wreck stop as a queue would:
+				// creeping on is how it gets round, as a stopped car cannot steer.
+				const tucked = track.bend[blocker.sample] < STRAIGHT ? 0.7 : 1.5;
+				if (gap > 0 && Math.abs(apart) < (blocker.retired ? room : tucked))
 					limit = Math.max(3, approach(blocker, gap, car.follow, grip * G));
 			}
 			// and in the queue behind whatever is being followed, if anything is
@@ -1099,17 +1125,23 @@ export function createRace(
 			tyres(body, -AXLE, 0, 0, 1e5, 1e5);
 		}
 
-		// Air and rolling resistance, and the drag of the verge. Close behind
-		// another car the air is already moving, so there is less of it to
-		// push: the tow that lets a quicker car draw alongside on a straight.
+		// Air and rolling resistance, and the drag of the verge. Behind another
+		// car the air is already moving, so there is less of it to push: the
+		// tow that lets a quicker car draw alongside on a straight. It is felt
+		// from a long way back, and still as the car pulls out to pass, or the
+		// short straights would leave a quicker car stuck behind for good.
+		// Under caution, though, with the field nose to tail and braking for
+		// wrecks, a tow like that only carries each car on into the one ahead:
+		// there it is only felt close behind, as a gentle one.
+		const [wide, felt, cut] = caution ? [1.6, 25, 0.7] : [2.5, 80, 0.9];
 		let tow = 0;
 		for (const other of cars) {
 			if (other === car || other.retired) continue;
 			const ahead = along(car.sample, other.sample);
-			if (ahead > 0 && Math.abs(other.across - car.across) < 1.6)
-				tow = Math.max(tow, 1 - ahead / 25);
+			if (ahead > 0 && Math.abs(other.across - car.across) < wide)
+				tow = Math.max(tow, 1 - ahead / felt);
 		}
-		const air = 2.2 * (1 - 0.7 * tow);
+		const air = 2.2 * (1 - cut * tow);
 		const drag = 30 + air * Math.hypot(velocity.x, velocity.y) + (offRoad ? 400 : 0);
 		body.applyForceToCenter({ x: -velocity.x * drag, y: -velocity.y * drag });
 	}
@@ -1134,7 +1166,9 @@ export function createRace(
 		}
 		reshape(car);
 		const wrecked = car.retired;
-		if (!wrecked) car.damage = Math.min(1, car.damage + blow / (5 * car.tough));
+		// (rules kept from before there was a dial for it do what a knock did then)
+		const harm = rules.damage ?? 1;
+		if (!wrecked) car.damage = Math.min(1, car.damage + (harm * blow) / (5 * car.tough));
 		note(car, { kind: 'hit', x, y, force: blow + SHRUG, damage: car.damage });
 		if (wrecked || car.damage < 1) return;
 		retire(car);

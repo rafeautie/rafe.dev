@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Market } from '~/lib/race/betting';
+import type { Duel, Market } from '~/lib/race/betting';
 import type { Bet } from '~/lib/race/room';
 import { ROSTER } from '~/lib/race/roster';
 import type { Flag } from '~/lib/race/sim';
@@ -39,7 +39,7 @@ export const FLAG_MEANS: Record<Flag, string> = {
 };
 
 /** Whether a bet would win if the race ended now, where the running order says. */
-export function holding(bet: Bet, running: Running | null): boolean | null {
+export function holding(bet: Bet, running: Running | null, duel: Duel): boolean | null {
 	if (!running || bet.payout !== null) return null;
 	const [a, b] = bet.outcome.split('>');
 	switch (bet.market) {
@@ -51,7 +51,10 @@ export function holding(bet: Bet, running: Running | null): boolean | null {
 			return running.order[0] === a && running.order[1] === b;
 		case 'clean':
 			return bet.outcome === 'yes' ? !running.anyOut : running.anyOut;
-		// who goes out first, and who sets the best lap, are not in the running order
+		case 'duel':
+			// the first of the two in the running order is ahead of the other
+			return duel ? running.order.find((id) => duel.includes(id)) === a : null;
+		// who sets the best lap is not in the running order
 		default:
 			return null;
 	}
@@ -62,7 +65,7 @@ export const SHORT: Record<Market, string> = {
 	win: 'Win',
 	podium: 'Top 3',
 	exacta: 'Exacta',
-	crash: 'Crash',
+	duel: 'Duel',
 	lap: 'Fast lap',
 	clean: 'Clean'
 };
@@ -72,7 +75,7 @@ export const ASKS: Record<Market, string> = {
 	win: 'Which car wins',
 	podium: 'Which car finishes in the top three',
 	exacta: 'Which two cars finish first and second, in order',
-	crash: 'First car to retire (bets returned if none do)',
+	duel: 'Which of the two cars finishes ahead of the other',
 	lap: 'Which car sets the fastest lap',
 	clean: 'Whether every car finishes without retiring'
 };

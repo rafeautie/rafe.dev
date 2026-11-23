@@ -1,4 +1,4 @@
-import { MAX_BETS, MARKETS, pays, type Market, type Pools } from '~/lib/race/betting';
+import { MAX_BETS, MARKETS, pays, returns, type Market, type Pools } from '~/lib/race/betting';
 import { inside, toFrame, zoomOf, type Box, type Follow, type Lens } from '~/lib/race/camera';
 import { ADVANCE, clip, enlarge, hex, measure, wrap, type Painter } from '~/lib/race/pixels';
 import type { Replay } from '~/lib/race/recording';
@@ -677,8 +677,13 @@ export function createHud() {
 				// before the race: how each car turned up, and what it pays
 				const by = CONDITIONS[room.conditions[place]].by;
 				if (by) p.text(x + 62, ry + 3, by > 0 ? '↑' : '↓', by > 0 ? GOOD : BAD);
-				const odds = glide(`${priced} ${id}`, pays(pools[priced], priced, id), dt);
-				[figure, colour] = [times(odds), PAPER];
+				// a car that is not one of the duel's two pays nothing on it
+				if (pools[priced][id] === undefined) {
+					[figure, colour] = ['--', FAINT];
+				} else {
+					const odds = glide(`${priced} ${id}`, pays(pools[priced], priced, id), dt);
+					[figure, colour] = [times(odds), PAPER];
+				}
 			}
 			p.right(x + w - 4, ry + 3, figure, colour);
 		});
@@ -738,10 +743,11 @@ export function createHud() {
 		board.slice(from, from + BOARD_ROWS).forEach((player, row) => {
 			const ry = y + 17 + row * LINE;
 			const colour = player.id === scene.you?.id ? GOLD : PAPER;
-			const balance = chips(player.balance);
+			// what their bets have won or lost them, not what they hold
+			const profit = signed(player.profit);
 			p.right(name - 4, ry, String(from + row + 1), DIM);
-			p.text(name, ry, clip(player.name, edge - name - 4 - measure(balance)), colour);
-			p.right(edge, ry, balance, player.balance < 0 ? BAD : colour);
+			p.text(name, ry, clip(player.name, edge - name - 4 - measure(profit)), colour);
+			p.right(edge, ry, profit, player.profit < 0 ? BAD : colour);
 		});
 	}
 
@@ -800,7 +806,7 @@ export function createHud() {
 		p.right(x + w - 4, y + 4, `${chips(staked)} staked`, DIM);
 		bets.forEach((bet, index) => {
 			const ry = y + 16 + index * LINE;
-			const hold = holding(bet, running);
+			const hold = holding(bet, running, room?.duel ?? null);
 			const net = bet.payout === null ? 0 : bet.payout - bet.stake;
 			const [status, colour] =
 				bet.payout !== null
@@ -1043,13 +1049,15 @@ export function createHud() {
 			const car = { ...entry(id), ...room.settings.cars[id] };
 			const condition = CONDITIONS[room.conditions[place]];
 			const today = inCondition(car, room.conditions[place]);
+			// in a duel only its two cars can be picked: the rest are there as the form guide
+			const out = market === 'duel' && !room.duel?.includes(id);
 			if (single(market) && picked === id) {
 				p.fill(row.x, ry, row.w, row.h, PAPER, 0.12);
 				p.outline(row.x, ry, row.w, row.h, GOLD);
 			}
 			p.text(x + 6, ry + 3, String(place + 1), DIM);
 			tile(p, x + 15, ry + 2, id);
-			p.text(x + 31, ry + 3, car.name, PAPER);
+			p.text(x + 31, ry + 3, car.name, out ? DIM : PAPER);
 			if (condition.by) {
 				p.text(x + 70, ry + 3, condition.by > 0 ? '↑' : '↓', condition.by > 0 ? GOOD : BAD);
 			}
@@ -1065,7 +1073,7 @@ export function createHud() {
 			if (market === 'exacta') {
 				button(p, at.firsts[place], '1st', first === id);
 				button(p, at.seconds[place], '2nd', second === id, !first || first === id);
-			} else if (market === 'clean') {
+			} else if (market === 'clean' || out) {
 				// a clean race is not a bet on a car: the cars are there as the
 				// form guide, and the column says no car pays anything
 				p.right(x + w - 6, ry + 3, '--', FAINT);
@@ -1091,13 +1099,20 @@ export function createHud() {
 				p.text(named + 5, foot + 8, times(odds), DIM);
 			}
 		} else {
-			p.text(x + 6, foot + 8, market === 'exacta' ? 'Pick 1st, then 2nd' : 'Pick a car', DIM);
+			const ask =
+				market === 'exacta'
+					? 'Pick 1st, then 2nd'
+					: market === 'duel'
+						? 'Pick one of the two'
+						: 'Pick a car';
+			p.text(x + 6, foot + 8, ask, DIM);
 		}
-		const returns =
+		// with the stake in the pool, which is less than the odds on show promise
+		const back =
 			complete && picked
-				? chips(Math.floor((stake || 0) * pays(pools[market], market, picked)))
+				? chips(Math.floor(returns(pools[market], market, picked, stake || 0)))
 				: '-';
-		p.right(x + w - 6, foot + 8, `${chips(stake || 0)}→${returns}`, PAPER);
+		p.right(x + w - 6, foot + 8, `${chips(stake || 0)}→${back}`, PAPER);
 
 		STAKES.forEach((value, index) =>
 			button(p, at.stakes[index], String(value), stake === (value === 'Max' ? max : value))
@@ -1114,10 +1129,7 @@ export function createHud() {
 		p.text(
 			x + 6,
 			foot + 63,
-			clip(
-				note?.text ?? `${bets.length} of ${MAX_BETS} bets · returns at the current odds`,
-				w - 12
-			),
+			clip(note?.text ?? `${bets.length} of ${MAX_BETS} bets · returns as the pools stand`, w - 12),
 			note ? (note.bad ? BAD : GOOD) : DIM
 		);
 
