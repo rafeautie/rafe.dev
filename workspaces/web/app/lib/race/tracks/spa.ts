@@ -542,7 +542,7 @@ export const layout: Layout = {
 		[2027.4, 609.2]
 	],
 	restart: 1700,
-	pits: { from: 6480, slip: 200, thirst: 0.9, away: [150, 420], boxes: 6720 }
+	pits: { from: 6555, slip: 150, thirst: 0.9, away: [150, 420], boxes: 6720 }
 };
 
 /** What the tests race on it (Checks). */
