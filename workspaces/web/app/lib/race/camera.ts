@@ -1,11 +1,9 @@
 import { SCALE } from './render';
-import { rank } from './sim';
 import { clamp } from './track';
 
 // Where a viewer's camera looks. Everybody watches the same race; each viewer
-// may follow one car, or a group of them, instead of the whole track. The
-// camera picks out the cars being followed, works out where to look and how
-// close, and glides there. The renderer then shows that part of the frame
+// may follow one car instead of the whole track. The camera picks out the
+// car being followed, works out where to look and how close, and glides there. The renderer then shows that part of the frame
 // magnified over the part of the page the race has (render.ts `setCamera`),
 // before the broadcast graphics go on top, so they stay their own size.
 //
@@ -14,31 +12,15 @@ import { clamp } from './track';
 
 export type Box = { x: number; y: number; w: number; h: number };
 
-/**
- * What a viewer is following: the whole track; one car; a car and whoever is
- * racing it for position (the leader's battle when no car is named); the cars
- * they have bet on; or a group they picked.
- */
-export type Follow =
-	| { mode: 'track' }
-	| { mode: 'car'; id: string }
-	| { mode: 'battle'; id: string | null }
-	| { mode: 'mine' }
-	| { mode: 'group'; ids: string[] };
+/** What a viewer is following: the whole track, or one car. */
+export type Follow = { mode: 'track' } | { mode: 'car'; id: string };
 
 export const TRACK: Follow = { mode: 'track' };
 
-/** The closest the camera goes, which is where one car is followed: the race's pixels at two and a half times their size. */
+/** How close the camera goes on a followed car: the race's pixels at two and a half times their size. */
 export const ZOOM_MAX = 2.5;
-/** A group is followed no further out than the whole track. */
-export const ZOOM_MIN = 1;
-/** Room kept round a group, in metres. */
-export const MARGIN = 12;
 /** Seconds ahead of a followed car the camera looks, so it sees where the car is going. */
 const LEAD = 0.25;
-/** A car is in a battle with another this many seconds up or down the road from it, or this many metres when slow. */
-const BATTLE_S = 1;
-const BATTLE_M = 12;
 /** How quickly the camera catches up: about this many seconds to close two thirds of the way. */
 const GLIDE = 0.15;
 
@@ -50,8 +32,6 @@ export type Body = {
 	angle: number;
 	speed: number;
 	retired: boolean;
-	progress: number;
-	finishTime: number;
 };
 
 /** Where the camera looks, in the track's metres, and how close. */
@@ -66,9 +46,6 @@ export type Lens = { from: Box; to: Box };
 /** Where the track is in the frame and how big the frame is, in its pixels. */
 export type Frame = { width: number; height: number; ox: number; oy: number };
 
-/** The car at the head of the race, as the running order has it. */
-const leader = <T extends Body>(cars: T[]): T | null => rank(cars)[0] ?? null;
-
 /** How many times its size the lens shows the frame. */
 export const zoomOf = ({ from, to }: Lens) => to.w / from.w;
 
@@ -76,82 +53,23 @@ export const zoomOf = ({ from, to }: Lens) => to.w / from.w;
 export const inside = (box: Box, x: number, y: number) =>
 	x >= box.x && y >= box.y && x < box.x + box.w && y < box.y + box.h;
 
-/** Following a number of cars: none is the whole track, one is that car, more a group. */
-const following = (ids: string[]): Follow =>
-	ids.length > 1 ? { mode: 'group', ids } : ids.length ? { mode: 'car', id: ids[0] } : TRACK;
-
-/**
- * A car and those racing it: every car still running within a second of it
- * up or down the road, by race distance, so lapped cars it passes are not in
- * it. With nobody that close, the nearest car either way.
- */
-export function battle<T extends Body>(anchor: T, cars: T[]): T[] {
-	const running = cars.filter((car) => car !== anchor && !car.retired);
-	const reach = Math.max(BATTLE_M, Math.abs(anchor.speed) * BATTLE_S);
-	const near = running.filter((car) => Math.abs(car.progress - anchor.progress) <= reach);
-	if (near.length || !running.length) return [anchor, ...near];
-	const nearest = running.reduce((a, b) =>
-		Math.abs(a.progress - anchor.progress) <= Math.abs(b.progress - anchor.progress) ? a : b
-	);
-	return [anchor, nearest];
-}
-
-/** The cars a choice picks out of the field, `backed` being the ids of the cars bet on. */
-export function chosen<T extends Body>(follow: Follow, cars: T[], backed: Set<string>): T[] {
-	const byId = (id: string) => cars.find((car) => car.entry.id === id);
-	switch (follow.mode) {
-		case 'track':
-			return [];
-		case 'car': {
-			const car = byId(follow.id);
-			return car ? [car] : [];
-		}
-		case 'group':
-			return follow.ids.map(byId).filter((car): car is T => car !== undefined);
-		case 'mine':
-			return cars.filter((car) => backed.has(car.entry.id));
-		case 'battle': {
-			const anchor = (follow.id && byId(follow.id)) || leader(cars);
-			return anchor ? battle(anchor, cars) : [];
-		}
-	}
+/** The car a choice picks out of the field, if it is in it. */
+export function chosen<T extends Body>(follow: Follow, cars: T[]): T | null {
+	if (follow.mode === 'track') return null;
+	return cars.find((car) => car.entry.id === follow.id) ?? null;
 }
 
 /**
- * The one car whose numbers are shown, of those a choice picked: the car, the
- * one a battle is about, the first of a group, or of the cars bet on the one
- * furthest up the race.
+ * Where to look to see `car`: close up, a little ahead of it. Nothing to
+ * follow is null: the whole track.
  */
-export function focus<T extends Body>(follow: Follow, picked: T[]): T | null {
-	return follow.mode === 'mine' ? leader(picked) : (picked[0] ?? null);
-}
-
-/**
- * Where to look to see `bodies` in `to` (the frame's pixels the race has): a
- * car close up, a little ahead of it, or a group all in view with room round
- * it. Nothing to follow is null: the whole track.
- */
-export function aim(bodies: Body[], to: Box): Aim | null {
-	if (!bodies.length) return null;
-	if (bodies.length === 1) {
-		const [car] = bodies;
-		const ahead = car.retired ? 0 : car.speed * LEAD;
-		return {
-			x: car.x + Math.cos(car.angle) * ahead,
-			y: car.y + Math.sin(car.angle) * ahead,
-			zoom: ZOOM_MAX
-		};
-	}
-	const xs = bodies.map((car) => car.x);
-	const ys = bodies.map((car) => car.y);
-	const [left, right] = [Math.min(...xs) - MARGIN, Math.max(...xs) + MARGIN];
-	const [top, bottom] = [Math.min(...ys) - MARGIN, Math.max(...ys) + MARGIN];
-	const fits = Math.min(to.w / ((right - left) * SCALE), to.h / ((bottom - top) * SCALE));
-	// in quarter steps, so a group spreading a little does not keep the camera breathing
+export function aim(car: Body | null): Aim | null {
+	if (!car) return null;
+	const ahead = car.retired ? 0 : car.speed * LEAD;
 	return {
-		x: (left + right) / 2,
-		y: (top + bottom) / 2,
-		zoom: clamp(Math.floor(fits * 4) / 4, ZOOM_MIN, ZOOM_MAX)
+		x: car.x + Math.cos(car.angle) * ahead,
+		y: car.y + Math.sin(car.angle) * ahead,
+		zoom: ZOOM_MAX
 	};
 }
 
@@ -209,50 +127,24 @@ export function pick<T extends Body>(cars: T[], x: number, y: number, reach = 4)
 	return best;
 }
 
-/**
- * What a click does to what is followed: a car on its own, or with `add`
- * (shift or ctrl held) the car into or out of the group.
- */
-export function toggle(follow: Follow, id: string, add: boolean): Follow {
-	if (!add) return follow.mode === 'car' && follow.id === id ? TRACK : { mode: 'car', id };
-	const ids = follow.mode === 'car' ? [follow.id] : follow.mode === 'group' ? [...follow.ids] : [];
-	return following(ids.includes(id) ? ids.filter((other) => other !== id) : [...ids, id]);
+/** What a click on a car does to what is followed: follows it, or, if it is the car followed, goes back to the track. */
+export function toggle(follow: Follow, id: string): Follow {
+	return follow.mode === 'car' && follow.id === id ? TRACK : { mode: 'car', id };
 }
 
-/** A choice kept from before, if the field has its cars: otherwise the whole track. */
+/** A choice kept from before, if the field has its car: otherwise the whole track. */
 export function keep(follow: Follow, field: string[]): Follow {
-	const has = (id: string) => field.includes(id);
-	switch (follow.mode) {
-		case 'car':
-			return has(follow.id) ? follow : TRACK;
-		case 'battle':
-			return follow.id && !has(follow.id) ? { mode: 'battle', id: null } : follow;
-		case 'group': {
-			// the same choice when every car is still there, so nothing changes
-			const ids = follow.ids.filter(has);
-			return ids.length === follow.ids.length ? follow : following(ids);
-		}
-		default:
-			return follow;
-	}
+	return follow.mode === 'car' && !field.includes(follow.id) ? TRACK : follow;
 }
 
-/** A choice as kept in the page's storage, read back; anything unreadable is the whole track. */
+/**
+ * A choice as kept in the page's storage, read back. Anything else, including
+ * the group views there used to be, is the whole track.
+ */
 export function parse(stored: string | null): Follow {
 	try {
-		const value = JSON.parse(stored ?? '') as Follow;
-		if (value.mode === 'car' && typeof value.id === 'string') return value;
-		if (value.mode === 'battle' && (value.id === null || typeof value.id === 'string')) {
-			return value;
-		}
-		if (value.mode === 'mine') return value;
-		if (
-			value.mode === 'group' &&
-			Array.isArray(value.ids) &&
-			value.ids.every((id) => typeof id === 'string')
-		) {
-			return value;
-		}
+		const value = JSON.parse(stored ?? '') as { mode?: unknown; id?: unknown } | null;
+		if (value?.mode === 'car' && typeof value.id === 'string') return { mode: 'car', id: value.id };
 	} catch {
 		// not a choice
 	}

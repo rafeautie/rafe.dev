@@ -19,7 +19,6 @@ import {
 	aim,
 	chosen,
 	createCamera,
-	focus as focusOf,
 	framing,
 	home,
 	inside,
@@ -44,7 +43,6 @@ import {
 	BOARD_ROWS,
 	TICKS,
 	LEGEND,
-	VIEWS,
 	STAKES,
 	createHud,
 	layout,
@@ -234,16 +232,13 @@ export function Game({
 	const [follow, setFollow] = useState<Follow>(stored);
 	const [camera] = useState(createCamera);
 	// Where the camera last looked and the cars as they were, for a click on
-	// the race to be told which car it was on; and the cars it followed, and
-	// the one whose numbers are shown, for the graphics drawn after it.
+	// the race to be told which car it was on; and the car it followed, whose
+	// numbers are shown, for the graphics drawn after it.
 	const lens = useRef<Lens | null>(null);
 	const shown = useRef<Replay | null>(null);
 	// the place in the tower whose row a mouse is over
 	const hovered = useRef<number | null>(null);
-	const seen = useRef<{ followed: Set<string>; focus: string | null }>({
-		followed: new Set(),
-		focus: null
-	});
+	const seen = useRef<string | null>(null);
 	const [market, setMarket] = useState<Market>('win');
 	const [outcome, setOutcome] = useState<string | null>(null);
 	const [stake, setStake] = useState(50);
@@ -314,8 +309,8 @@ export function Game({
 		window.addEventListener('keydown', back);
 		return () => window.removeEventListener('keydown', back);
 	}, [follow]);
-	/** Follows a car, or with `add` puts it into or out of the group followed. */
-	const follows = (id: string, add: boolean) => setFollow((now) => toggle(now, id, add));
+	/** Follows a car, or stops following it if it is the one followed. */
+	const follows = (id: string) => setFollow((now) => toggle(now, id));
 	const rules = room?.settings ?? DEFAULT_SETTINGS;
 	// each car's crew, as the room has them tuned
 	const crews = useMemo(() => new Map(tuned(rules).map((car) => [car.id, car.crew])), [rules]);
@@ -393,19 +388,16 @@ export function Game({
 		// with the slip or the result over the middle, it rests on the whole track.
 		setAim((replay, dt) => {
 			shown.current = replay;
-			const bodies = racing && replay ? chosen(follow, replay.cars, backed) : [];
-			seen.current = {
-				followed: new Set(bodies.map((car) => car.entry.id)),
-				focus: focusOf(follow, bodies)?.entry.id ?? null
-			};
-			const where = camera.update(aim(bodies, at.stage), home(at.stage, at.frame), dt, still);
+			const car = racing && replay ? chosen(follow, replay.cars) : null;
+			seen.current = car?.entry.id ?? null;
+			const where = camera.update(aim(car), home(at.stage, at.frame), dt, still);
 			lens.current = { from: framing(where, at.stage, at.frame), to: at.stage };
 			return lens.current;
 		});
 	});
 	useEffect(() => {
 		setPaint((painter, cars, replay, dt) => {
-			const { followed, focus } = seen.current;
+			const focus = seen.current;
 			hud.draw(
 				painter,
 				at,
@@ -429,7 +421,6 @@ export function Game({
 					watch: {
 						follow,
 						lens: lens.current ?? { from: at.stage, to: at.stage },
-						followed,
 						focus,
 						crew: focus ? (crews.get(focus) ?? null) : null
 					}
@@ -456,7 +447,7 @@ export function Game({
 	});
 	const net = netOf(bets);
 
-	/** A click or tap on the race: on a car, it follows it (with shift or ctrl, into the group). */
+	/** A click or tap on the race: on a car, it follows it. */
 	function onRace(event: ReactMouseEvent<HTMLDivElement>) {
 		// the controls over the race take their own clicks; only one on the race itself is about a car
 		const replay = shown.current;
@@ -469,11 +460,9 @@ export function Game({
 		// a finger needs more room than a pointer: about this many CSS pixels either way
 		const reach = Math.max(3, 16 / (view.scale * SCALE * zoomOf(lens.current)));
 		const car = pick(replay.cars, spot.x, spot.y, reach);
-		if (car) follows(car.entry.id, event.shiftKey || event.ctrlKey || event.metaKey);
+		if (car) follows(car.entry.id);
 	}
 	const readout = racing ? hud.readout() : null;
-	// the car a battle is chosen round: the one followed, or else the leader
-	const anchor = follow.mode === 'car' || follow.mode === 'battle' ? follow.id : null;
 
 	return (
 		<div className={PAGE}>
@@ -513,10 +502,7 @@ export function Game({
 										<button
 											key={place}
 											type="button"
-											aria-pressed={
-												(follow.mode === 'car' && follow.id === id) ||
-												(follow.mode === 'group' && follow.ids.includes(id))
-											}
+											aria-pressed={follow.mode === 'car' && follow.id === id}
 											aria-label={`Follow ${hud.order()[place] === id && hud.rows()[place] ? describeRow(hud.rows()[place]) : `${entry(id).name}, place ${place + 1}`}`}
 											// the row says what a click does while a pointer is over it; a finger has no hover
 											onPointerEnter={(event) => {
@@ -525,12 +511,7 @@ export function Game({
 											onPointerLeave={() => {
 												if (hovered.current === place) hovered.current = null;
 											}}
-											onClick={(event) =>
-												follows(
-													hud.order()[place] ?? id,
-													event.shiftKey || event.ctrlKey || event.metaKey
-												)
-											}
+											onClick={() => follows(hud.order()[place] ?? id)}
 											className={hit}
 											style={within(at.towerRows[place])}
 										/>
@@ -595,45 +576,15 @@ export function Game({
 						</div>
 					</div>
 
-					{/* what the camera follows: the whole track, a battle, your cars, or the car followed */}
-					{racing && (
-						<div role="group" aria-label="Camera">
-							{VIEWS.map(([mode], index) => (
-								<button
-									key={mode}
-									type="button"
-									aria-pressed={follow.mode === mode}
-									aria-label={
-										mode === 'track'
-											? 'Whole track'
-											: mode === 'battle'
-												? `Battle${anchor ? ` around ${entry(anchor).name}` : ' for the lead'}`
-												: 'Follow the cars you bet on'
-									}
-									disabled={mode === 'mine' && bets.length === 0}
-									onClick={() =>
-										setFollow(
-											mode === 'track'
-												? TRACK
-												: mode === 'mine'
-													? { mode: 'mine' }
-													: { mode: 'battle', id: anchor }
-										)
-									}
-									className={hit}
-									style={over(at.views[index])}
-								/>
-							))}
-							{follow.mode !== 'track' && (
-								<button
-									type="button"
-									aria-label="Stop following, show the whole track"
-									onClick={() => setFollow(TRACK)}
-									className={hit}
-									style={over(at.unfollow)}
-								/>
-							)}
-						</div>
+					{/* following a car: the cross over the race goes back to the whole track, like Escape */}
+					{racing && follow.mode !== 'track' && (
+						<button
+							type="button"
+							aria-label="Stop following, show the whole track"
+							onClick={() => setFollow(TRACK)}
+							className={hit}
+							style={over(at.unfollow)}
+						/>
 					)}
 
 					{betting && (
