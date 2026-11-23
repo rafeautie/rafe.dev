@@ -301,23 +301,39 @@ function paint(track: Track) {
 			if (k >= 0 && surface[k] === APRON_) ground[k] = PAINT;
 		}
 	}
-	for (const stand of pit.stands) {
-		const [cos, sin] = [Math.cos(stand.angle), Math.sin(stand.angle)];
+	// The trucks' yard is one area, where they stand wherever there is room:
+	// all of it from the back of where the one behind stands at the start to
+	// the front of where the one in front does, run together into one, with
+	// one edge round the whole of it.
+	const inYard = (wx: number, wy: number, inset: number) =>
+		pit.stands.some((stand) => {
+			const [dx, dy] = [wx - stand.x, wy - stand.y];
+			const [cos, sin] = [Math.cos(stand.angle), Math.sin(stand.angle)];
+			// (each runs on a little, to meet the next)
+			const long = STAND.long / 2 + (STAND.pitch - STAND.long) / 2 + 0.3;
+			return (
+				Math.abs(dx * cos + dy * sin) <= long - inset &&
+				Math.abs(dy * cos - dx * sin) <= STAND.wide / 2 - inset
+			);
+		});
+	{
+		const [front] = pit.stands;
+		const [cos, sin] = [Math.cos(front.angle), Math.sin(front.angle)];
 		const reach = Math.ceil(STAND.long * SCALE);
-		const [cx, cy] = [Math.floor(stand.x * SCALE), Math.floor(stand.y * SCALE)];
-		for (let py = Math.max(0, cy - reach); py < Math.min(HEIGHT, cy + reach); py++) {
-			for (let px = Math.max(0, cx - reach); px < Math.min(WIDTH, cx + reach); px++) {
-				const [wx, wy] = [(px + 0.5) / SCALE - stand.x, (py + 0.5) / SCALE - stand.y];
-				const along = wx * cos + wy * sin;
-				const side = wy * cos - wx * sin;
-				if (Math.abs(along) > STAND.long / 2 || Math.abs(side) > STAND.wide / 2) continue;
+		const xs = pit.stands.map((stand) => Math.floor(stand.x * SCALE));
+		const ys = pit.stands.map((stand) => Math.floor(stand.y * SCALE));
+		const [x0, x1] = [Math.min(...xs) - reach, Math.max(...xs) + reach];
+		const [y0, y1] = [Math.min(...ys) - reach, Math.max(...ys) + reach];
+		for (let py = Math.max(0, y0); py < Math.min(HEIGHT, y1); py++) {
+			for (let px = Math.max(0, x0); px < Math.min(WIDTH, x1); px++) {
+				const [wx, wy] = [(px + 0.5) / SCALE, (py + 0.5) / SCALE];
+				if (!inYard(wx, wy, 0)) continue;
 				const k = py * WIDTH + px;
 				if (surface[k] !== APRON_) continue;
-				const edge =
-					STAND.long / 2 - Math.abs(along) < 0.25 || STAND.wide / 2 - Math.abs(side) < 0.25;
-				// hatched in the trucks' own amber
-				const hatch = Math.floor((along + side) * 1.4) & 1;
-				if (edge) ground[k] = AMBER;
+				// hatched in the trucks' own amber, the same way all over
+				const [ax, ay] = [wx - front.x, wy - front.y];
+				const hatch = Math.floor((ax * cos + ay * sin + ay * cos - ax * sin) * 1.4) & 1;
+				if (!inYard(wx, wy, 0.25)) ground[k] = AMBER;
 				else if (hatch) ground[k] = mix(ground[k], AMBER, 0.3);
 			}
 		}
