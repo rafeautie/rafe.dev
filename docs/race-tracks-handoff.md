@@ -40,6 +40,11 @@ Test data is gathered from the track files by name (`tracks/checks.ts`), so a ne
 
 Run `npx vitest run app/lib/race` in `workspaces/web`; `-t <id>` narrows to one track. Tests run in workerd, whose floating point differs from node: seeds or tunings picked in node can behave differently there, so confirm in vitest.
 
+The checks don't depend on how big a track is:
+
+- Each per-track test's time limit, and the number of seeds the multi-race ones race, scale with the lap against 600 m (`app/lib/race/budget.ts`: `budget`, `seedsFor`, `lapScale`). The tow-truck tests' time limits scale the same way.
+- Whether a tyre is on the tarmac or the pits' paving (`offRoadAt` in render.ts) is worked out from the track and the pit geometry, not from the drawn picture, so it is right however small a big track is drawn.
+
 - **tracks.test:** the world is 16:9 and in-bounds with walls; recordings keep positions to at least 1/16 m (`placing`, see below); no centre-line radius under 8.4 m; other stretches far enough apart; a straight behind the line for the grid; the pits and yard clear of every other stretch; laps and recording size.
 - **line.test:** the cached racing line is current, quicker than the alternatives, and takes each corner of 45° or more outside–inside–outside.
 - **pits.test:**
