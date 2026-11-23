@@ -9,6 +9,7 @@ import * as indianapolis from './tracks/indianapolis';
 import type { Layout } from './tracks/layout';
 import * as martinsville from './tracks/martinsville';
 import * as monza from './tracks/monza';
+import * as silverstone from './tracks/silverstone';
 
 export * from './tracks/layout';
 
@@ -16,5 +17,6 @@ export const LAYOUTS = {
 	daytona: daytona.layout,
 	indianapolis: indianapolis.layout,
 	martinsville: martinsville.layout,
-	monza: monza.layout
+	monza: monza.layout,
+	silverstone: silverstone.layout
 } satisfies Record<string, Layout>;
