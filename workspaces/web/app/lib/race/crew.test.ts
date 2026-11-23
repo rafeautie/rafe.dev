@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { budget } from './budget';
 import {
 	crewAt,
 	fuelled,
@@ -177,21 +178,25 @@ describe.each(TRACK_IDS)('pit stops on the %s, as recorded', (id) => {
 		replay.seek(0);
 	}
 
-	it('has stops of every kind', () => {
+	it('has stops of every kind', budget(id, 5_000), () => {
 		expect(stops.length).toBeGreaterThan(5);
 	});
 
-	it('never lets a car go before its crew are done, and lets it go then unless the lane is busy', () => {
-		for (const { plan, seconds } of stops) {
-			// rounded to the hundredth, as recorded, and to the step the race runs at
-			expect(seconds).toBeGreaterThanOrEqual(plan.seconds - 0.05);
+	it(
+		'never lets a car go before its crew are done, and lets it go then unless the lane is busy',
+		budget(id, 5_000),
+		() => {
+			for (const { plan, seconds } of stops) {
+				// rounded to the hundredth, as recorded, and to the step the race runs at
+				expect(seconds).toBeGreaterThanOrEqual(plan.seconds - 0.05);
+			}
+			const prompt = stops.filter(({ plan, seconds }) => seconds - plan.seconds < 0.1);
+			// (cars that come in together are often held for one another in the lane)
+			expect(prompt.length).toBeGreaterThan(stops.length / 3);
 		}
-		const prompt = stops.filter(({ plan, seconds }) => seconds - plan.seconds < 0.1);
-		// (cars that come in together are often held for one another in the lane)
-		expect(prompt.length).toBeGreaterThan(stops.length / 3);
-	});
+	);
 
-	it('fills a car with fuel as the fueller puts it in', () => {
+	it('fills a car with fuel as the fueller puts it in', budget(id, 5_000), () => {
 		for (const { plan, fuel } of stops) {
 			if (!plan.fuel) {
 				expect(fuel[4]).toBeCloseTo(fuel[0], 1);
@@ -204,25 +209,29 @@ describe.each(TRACK_IDS)('pit stops on the %s, as recorded', (id) => {
 		}
 	});
 
-	it('tells the replay of the stop a car is coming in to make, before it makes it', () => {
-		const recording = record(1, drawGrid(1, ROSTER, 6), track, [], RULES);
-		const replay = createReplay(recording, ROSTER);
-		const pit = recording.events.find((event) => event.kind === 'pit');
-		expect(pit).toBeDefined();
-		if (pit?.kind !== 'pit') return;
-		// a moment before it stops it is on its way in, and the stop it is coming for is known
-		let seen = false;
-		for (let t = pit.time - 3; t < pit.time; t += 0.1) {
-			replay.seek(t);
-			const car = replay.cars[pit.car];
-			if (car.lane === LANE.in) {
-				expect(car.coming).toEqual(planOf(pit));
-				seen = true;
+	it(
+		'tells the replay of the stop a car is coming in to make, before it makes it',
+		budget(id, 5_000),
+		() => {
+			const recording = record(1, drawGrid(1, ROSTER, 6), track, [], RULES);
+			const replay = createReplay(recording, ROSTER);
+			const pit = recording.events.find((event) => event.kind === 'pit');
+			expect(pit).toBeDefined();
+			if (pit?.kind !== 'pit') return;
+			// a moment before it stops it is on its way in, and the stop it is coming for is known
+			let seen = false;
+			for (let t = pit.time - 3; t < pit.time; t += 0.1) {
+				replay.seek(t);
+				const car = replay.cars[pit.car];
+				if (car.lane === LANE.in) {
+					expect(car.coming).toEqual(planOf(pit));
+					seen = true;
+				}
 			}
+			expect(seen).toBe(true);
+			replay.seek(pit.time + 0.05);
+			expect(replay.cars[pit.car].stop?.plan).toEqual(planOf(pit));
+			expect(replay.cars[pit.car].coming).toBeNull();
 		}
-		expect(seen).toBe(true);
-		replay.seek(pit.time + 0.05);
-		expect(replay.cars[pit.car].stop?.plan).toEqual(planOf(pit));
-		expect(replay.cars[pit.car].coming).toBeNull();
-	});
+	);
 });

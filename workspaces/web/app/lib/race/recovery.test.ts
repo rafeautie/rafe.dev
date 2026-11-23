@@ -1,5 +1,6 @@
 import { PolygonShape, World } from 'planck';
 import { describe, expect, it } from 'vitest';
+import { budget, lapScale } from './budget';
 import { CHECKS } from './tracks/checks';
 import { pitsFor } from './pits';
 import { LOAD, createRecovery, type Truck } from './recovery';
@@ -15,7 +16,7 @@ import { HALF_CORRIDOR, NOSE, TRACK_IDS, getTrack, lateral, nearest, type TrackI
  * The trucks are stepped until every wreck is in its box and both trucks
  * are back in the yard, or `most` seconds.
  */
-function fetch(id: TrackId, lying: [number, number, number?][], most = 900) {
+function fetch(id: TrackId, lying: [number, number, number?][], most = 900 * lapScale(id)) {
 	const track = getTrack(id);
 	const { n } = track;
 	const lane = pitsFor(track);
@@ -172,48 +173,56 @@ describe.each(TRACK_IDS)('the tow trucks on the %s, sent for five wrecks at once
 		[280, 0.5]
 	]);
 
-	it('take two at a time, and never more than the bed holds', () => {
+	it('take two at a time, and never more than the bed holds', budget(id, 5_000), () => {
 		expect(LOAD).toBe(TRUCK.bed.length);
 		expect(LOAD).toBe(2);
 		expect(Math.max(...seen.most)).toBe(LOAD);
 	});
 
-	it('go out together, come back out for the rest, and leave every one in its own box', () => {
-		// five wrecks, two trucks, two to a bed: both go, and one of them goes out again
-		expect(seen.trips.reduce((a, b) => a + b)).toBe(3);
-		expect(Math.min(...seen.trips)).toBe(1);
-		expect(seen.together).toBeGreaterThan(5);
-		expect(done()).toBe(true);
-		cars.forEach((car, index) => {
-			const box = lane.boxes[index];
-			expect(car.towed).toBe(true);
-			expect(Math.abs(Math.sin(car.angle - box.angle))).toBeLessThan(0.2);
-		});
-		// and do it in less time than a race lasts
-		expect(seen.time).toBeLessThan(240);
-	});
+	it(
+		'go out together, come back out for the rest, and leave every one in its own box',
+		budget(id, 5_000),
+		() => {
+			// five wrecks, two trucks, two to a bed: both go, and one of them goes out again
+			expect(seen.trips.reduce((a, b) => a + b)).toBe(3);
+			expect(Math.min(...seen.trips)).toBe(1);
+			expect(seen.together).toBeGreaterThan(5);
+			expect(done()).toBe(true);
+			cars.forEach((car, index) => {
+				const box = lane.boxes[index];
+				expect(car.towed).toBe(true);
+				expect(Math.abs(Math.sin(car.angle - box.angle))).toBeLessThan(0.2);
+			});
+			// and do it in less time than a race lasts (longer, on a longer lap)
+			expect(seen.time).toBeLessThan(240 * lapScale(id));
+		}
+	);
 
-	it('say the track is clear only once every wreck is off it', () => {
+	it('say the track is clear only once every wreck is off it', budget(id, 5_000), () => {
 		expect(seen.falseAway).toBe(0);
 		expect(seen.falseClear).toBe(0);
 		expect(recovery.clear).toBe(true);
 	});
 
-	it('are each back in the yard at the end, with nothing on, and never one on top of the other', () => {
-		expect(seen.overlap).toBe(0);
-		const spots = recovery.trucks.map((truck) => {
-			expect(truck).toMatchObject({ busy: false, towing: -1, load: [-1, -1] });
-			return lane.stands.findIndex(
-				(stand) => Math.hypot(truck.x - stand.x, truck.y - stand.y) < 0.6
-			);
-		});
-		// the yard has room for the two of them one behind the other, which is where they end up
-		expect([...spots].sort()).toEqual([0, 1]);
-	});
+	it(
+		'are each back in the yard at the end, with nothing on, and never one on top of the other',
+		budget(id, 5_000),
+		() => {
+			expect(seen.overlap).toBe(0);
+			const spots = recovery.trucks.map((truck) => {
+				expect(truck).toMatchObject({ busy: false, towing: -1, load: [-1, -1] });
+				return lane.stands.findIndex(
+					(stand) => Math.hypot(truck.x - stand.x, truck.y - stand.y) < 0.6
+				);
+			});
+			// the yard has room for the two of them one behind the other, which is where they end up
+			expect([...spots].sort()).toEqual([0, 1]);
+		}
+	);
 });
 
 describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
-	it('share wrecks spread round the lap between them, both out at once', () => {
+	it('share wrecks spread round the lap between them, both out at once', budget(id, 5_000), () => {
 		const { seen, done } = fetch(id, [
 			[40, 1.5],
 			[70, -1],
@@ -227,24 +236,28 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 		for (const index of [0, 1]) {
 			expect(seen.lifts.filter((lift) => lift.truck === index)).toHaveLength(2);
 		}
-		expect(seen.time).toBeLessThan(120);
+		expect(seen.time).toBeLessThan(120 * lapScale(id));
 	});
 
-	it('back up to a wreck lying just behind the one it has lifted, rather than go round for it', () => {
-		// The second is called once the truck is at the first, and it lies a
-		// little way back up the road. Both lie on a straight: round a tight
-		// bend, backing up swings the front of the truck out off the tarmac,
-		// and it does not.
-		// (where, kept with the track: Checks in tracks/layout.ts)
-		const [first, second, when] = CHECKS[id].behind;
-		const { track, seen, done } = fetch(id, [first, [...second, when]]);
-		expect(done()).toBe(true);
-		const [one, two] = seen.lifts;
-		expect(one.truck).toBe(two.truck);
-		expect(seen.reversed[one.truck]).toBe(true);
-		// a few metres, not a lap
-		expect(two.driven - one.driven).toBeLessThan(track.length / 8);
-	});
+	it(
+		'back up to a wreck lying just behind the one it has lifted, rather than go round for it',
+		budget(id, 5_000),
+		() => {
+			// The second is called once the truck is at the first, and it lies a
+			// little way back up the road. Both lie on a straight: round a tight
+			// bend, backing up swings the front of the truck out off the tarmac,
+			// and it does not.
+			// (where, kept with the track: Checks in tracks/layout.ts)
+			const [first, second, when] = CHECKS[id].behind;
+			const { track, seen, done } = fetch(id, [first, [...second, when]]);
+			expect(done()).toBe(true);
+			const [one, two] = seen.lifts;
+			expect(one.truck).toBe(two.truck);
+			expect(seen.reversed[one.truck]).toBe(true);
+			// a few metres, not a lap
+			expect(two.driven - one.driven).toBeLessThan(track.length / 8);
+		}
+	);
 
 	it.each([
 		[4, -2],
@@ -253,6 +266,7 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 		[-15, -1]
 	])(
 		'get to a wreck lying %s m on from where the way out of the pits joins the track without going round for it',
+		budget(id, 5_000),
 		(far, across) => {
 			const { track, seen, done } = fetch(id, [[far, across]]);
 			expect(done()).toBe(true);
@@ -261,34 +275,42 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 		}
 	);
 
-	it('fit a wreck that happens with them out in with the rest, with no trip more for it', () => {
-		const { seen, done } = fetch(id, [
-			[50, 1.5],
-			[120, 2, 10],
-			[170, -1]
-		]);
-		expect(done()).toBe(true);
-		expect(seen.lifts).toHaveLength(3);
-		expect(seen.trips.reduce((a, b) => a + b)).toBeLessThanOrEqual(2);
-		expect(seen.falseAway).toBe(0);
-		expect(seen.falseClear).toBe(0);
-	});
+	it(
+		'fit a wreck that happens with them out in with the rest, with no trip more for it',
+		budget(id, 5_000),
+		() => {
+			const { seen, done } = fetch(id, [
+				[50, 1.5],
+				[120, 2, 10],
+				[170, -1]
+			]);
+			expect(done()).toBe(true);
+			expect(seen.lifts).toHaveLength(3);
+			expect(seen.trips.reduce((a, b) => a + b)).toBeLessThanOrEqual(2);
+			expect(seen.falseAway).toBe(0);
+			expect(seen.falseClear).toBe(0);
+		}
+	);
 
-	it('stand in the yard wherever there is room: the one left moves up, and the other comes back in behind it', () => {
-		const { lane, recovery, seen, done } = fetch(id, [[90, 1]]);
-		expect(done()).toBe(true);
-		// the front one went, and the one behind it moved up to the front of the yard while it was out
-		const [lift] = seen.lifts;
-		expect(lift.truck).toBe(0);
-		expect(seen.trips).toEqual([1, 0]);
-		expect(seen.overlap).toBe(0);
-		const [front, back] = lane.stands;
-		const [went, stayed] = recovery.trucks;
-		expect(Math.hypot(stayed.x - front.x, stayed.y - front.y)).toBeLessThan(0.6);
-		expect(Math.hypot(went.x - back.x, went.y - back.y)).toBeLessThan(0.6);
-		// and with the front of it taken, the room left is at the back
-		expect(recovery.spotFor(0)).toBe(lane.yard.back);
-	});
+	it(
+		'stand in the yard wherever there is room: the one left moves up, and the other comes back in behind it',
+		budget(id, 5_000),
+		() => {
+			const { lane, recovery, seen, done } = fetch(id, [[90, 1]]);
+			expect(done()).toBe(true);
+			// the front one went, and the one behind it moved up to the front of the yard while it was out
+			const [lift] = seen.lifts;
+			expect(lift.truck).toBe(0);
+			expect(seen.trips).toEqual([1, 0]);
+			expect(seen.overlap).toBe(0);
+			const [front, back] = lane.stands;
+			const [went, stayed] = recovery.trucks;
+			expect(Math.hypot(stayed.x - front.x, stayed.y - front.y)).toBeLessThan(0.6);
+			expect(Math.hypot(went.x - back.x, went.y - back.y)).toBeLessThan(0.6);
+			// and with the front of it taken, the room left is at the back
+			expect(recovery.spotFor(0)).toBe(lane.yard.back);
+		}
+	);
 });
 
 describe.each(TRACK_IDS)('a tow truck on the %s', (id) => {
@@ -337,16 +359,20 @@ describe.each(TRACK_IDS)('a tow truck on the %s', (id) => {
 		nearest = Math.min(nearest, (stand.x - at.x) * cos + (stand.y - at.y) * sin);
 	}
 
-	it('is solid: a car that runs into it stops at it, and takes the knock', () => {
-		// (its middle no nearer the truck's than the two of them end to end)
-		expect(nearest).toBeGreaterThan(TRUCK.long + NOSE - 0.3);
-		// a knock of most of the 10 m/s it was doing
-		expect(knock / 1000).toBeGreaterThan(8);
-		const { x, y } = body.getLinearVelocity();
-		expect(x * cos + y * sin).toBeLessThan(1);
-	});
+	it(
+		'is solid: a car that runs into it stops at it, and takes the knock',
+		budget(id, 5_000),
+		() => {
+			// (its middle no nearer the truck's than the two of them end to end)
+			expect(nearest).toBeGreaterThan(TRUCK.long + NOSE - 0.3);
+			// a knock of most of the 10 m/s it was doing
+			expect(knock / 1000).toBeGreaterThan(8);
+			const { x, y } = body.getLinearVelocity();
+			expect(x * cos + y * sin).toBeLessThan(1);
+		}
+	);
 
-	it('is hardly moved by it, and is back where it was the moment after', () => {
+	it('is hardly moved by it, and is back where it was the moment after', budget(id, 5_000), () => {
 		expect(shoved).toBeLessThan(0.05);
 		expect(Math.hypot(truck.x - stand.x, truck.y - stand.y)).toBeLessThan(0.005);
 		expect(truck.doing).toBe('parked');

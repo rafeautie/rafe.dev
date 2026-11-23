@@ -5,7 +5,15 @@ import { createPainter, hex, measure, mix, type Painter } from './pixels';
 import { standing, type ReplayCar, type ReplayTruck } from './recording';
 import { HALF_LANE, RING, TRUCK, serviceFor, type Route } from './service';
 import { HULL, neutral, type Car, type Flag, type RaceEvent } from './sim';
-import { HALF_CORRIDOR, HALF_ROAD, clamp, lateral, type Track, type TrackId } from './track';
+import {
+	HALF_CORRIDOR,
+	HALF_ROAD,
+	clamp,
+	lateral,
+	nearest,
+	type Track,
+	type TrackId
+} from './track';
 
 // Draws the race as pixel art. Everything is plotted pixel by pixel into one
 // small frame (4 px to the metre) that is scaled up with hard edges; nothing
@@ -395,17 +403,88 @@ function paint(track: Track) {
 const [GRASS_, WALL_, VERGE_, TARMAC_, APRON_, PAVED_] = [0, 1, 2, 3, 4, 5];
 
 /**
+ * The paving off the track, worked out once a track, for offRoadAt: each way
+ * through the pits (the lane's concrete is HALF_LANE either side of it), and
+ * the apron behind the lane, all the way back between the first box and the
+ * last stand and easing in to the lane either side, as paint lays them, in
+ * strips a metre long, each with a box round it to pass it by quickly.
+ */
+const pavings = new Map<TrackId, ReturnType<typeof paving>>();
+function paving(track: Track) {
+	const pit = pitsFor(track);
+	type Box = { x0: number; y0: number; x1: number; y1: number };
+	const boxOf = (xs: number[], ys: number[], pad: number): Box => ({
+		x0: Math.min(...xs) - pad,
+		y0: Math.min(...ys) - pad,
+		x1: Math.max(...xs) + pad,
+		y1: Math.max(...ys) + pad
+	});
+	const ways = pit.ways.map((way) => ({
+		way,
+		box: boxOf(Array.from(way.x), Array.from(way.y), HALF_LANE)
+	}));
+	const begin = pit.boxes[0].sample - BOX.long / 2 - 2;
+	const end = pit.stands[0].sample + STAND.long / 2 + 1;
+	const deep = (s: number) => {
+		const ease = clamp(Math.min(s - begin + TAPER, end + TAPER - s) / TAPER, 0, 1);
+		return BOX_EDGE + (APRON - BOX_EDGE) * ease * ease * (3 - 2 * ease);
+	};
+	const strips: { corners: [number, number][]; box: Box }[] = [];
+	for (let s = begin - TAPER; s < end + TAPER; s++) {
+		const corners = [
+			pit.at(s, -(BOX_EDGE - 0.6)),
+			pit.at(s, -deep(s)),
+			pit.at(s + 1, -deep(s + 1)),
+			pit.at(s + 1, -(BOX_EDGE - 0.6))
+		];
+		strips.push({
+			corners,
+			box: boxOf(
+				corners.map(([x]) => x),
+				corners.map(([, y]) => y),
+				0
+			)
+		});
+	}
+	return { ways, strips };
+}
+
+/**
  * Whether a tyre at a point (in metres) is off the road: on the grass or the
  * verge, where it throws up dust, rather than on the track's tarmac or the
- * concrete of the pits. Off the painted area altogether is grass.
+ * concrete of the pits. Worked out from the track itself, not from the
+ * picture of it, so it is the same however small a big track is drawn.
+ * `hint` is a sample near the point, if one is known.
  */
-export function offRoadAt(track: Track, x: number, y: number) {
-	const { surface } = paintTrack(track);
-	const scale = scaleOf(track);
-	const [px, py] = [Math.floor(x * scale), Math.floor(y * scale)];
-	if (px < 0 || py < 0 || px >= WIDTH || py >= HEIGHT) return true;
-	const here = surface[py * WIDTH + px];
-	return here !== TARMAC_ && here !== APRON_ && here !== PAVED_;
+export function offRoadAt(track: Track, x: number, y: number, hint = -1) {
+	if (Math.abs(lateral(track, x, y, nearest(track, x, y, hint))) <= HALF_ROAD) return false;
+	let paved = pavings.get(track.id);
+	if (!paved) pavings.set(track.id, (paved = paving(track)));
+	const within = (box: { x0: number; y0: number; x1: number; y1: number }) =>
+		x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1;
+	for (const { way, box } of paved.ways) {
+		if (!within(box)) continue;
+		for (let k = 0; k + 1 < way.count; k++) {
+			const [ax, ay, bx, by] = [way.x[k], way.y[k], way.x[k + 1], way.y[k + 1]];
+			const [ex, ey] = [bx - ax, by - ay];
+			const t = clamp(((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey || 1), 0, 1);
+			if (Math.hypot(x - ax - ex * t, y - ay - ey * t) <= HALF_LANE) return false;
+		}
+	}
+	for (const { corners, box } of paved.strips) {
+		if (within(box) && inPolygon(corners, x, y)) return false;
+	}
+	return true;
+}
+
+/** Whether a point is inside a polygon given by its corners in order. */
+function inPolygon(corners: [number, number][], x: number, y: number) {
+	let within = false;
+	for (let a = 0, b = corners.length - 1; a < corners.length; b = a++) {
+		const [[ax, ay], [bx, by]] = [corners[a], corners[b]];
+		if (ay > y !== by > y && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) within = !within;
+	}
+	return within;
 }
 
 /** Whether a point (in the car's own metres) is inside its outline. */
