@@ -275,7 +275,9 @@ export function Game({
 	if (room && room.round !== round) {
 		setRound(room.round);
 		setSent(null);
-		if (outcome !== null && !outcomes(market, room.grid).includes(outcome)) setOutcome(null);
+		if (outcome !== null && !outcomes(market, room.grid, room.duel).includes(outcome)) {
+			setOutcome(null);
+		}
 		// so does what is followed, which may also be from before a reload
 		const kept = keep(follow, room.grid);
 		if (kept !== follow) setFollow(kept);
@@ -544,7 +546,7 @@ export function Game({
 								<ol>
 									{board.map((player) => (
 										<li key={player.id}>
-											{player.name}, {chips(player.balance)} chips
+											{player.name}, {signed(player.profit)} chips on their bets
 										</li>
 									))}
 								</ol>
@@ -642,7 +644,11 @@ export function Game({
 										key={m}
 										type="button"
 										aria-pressed={m === market}
-										aria-label={MARKET_NAMES[m]}
+										aria-label={
+											m === 'duel' && room.duel
+												? `${MARKET_NAMES[m]}: ${room.duel.map((id) => entry(id).name).join(' against ')}`
+												: MARKET_NAMES[m]
+										}
 										tabIndex={m === market ? 0 : -1}
 										onClick={() => {
 											setMarket(m);
@@ -695,6 +701,8 @@ export function Game({
 									);
 								}
 								if (market === 'clean') return null;
+								// a duel is between its two cars: no other can be picked
+								if (market === 'duel' && !room.duel?.includes(id)) return null;
 								return (
 									<button
 										key={id}
@@ -813,7 +821,7 @@ export function Game({
 				<section aria-label="Your bets">
 					<ul>
 						{bets.map((bet, index) => {
-							const hold = holding(bet, running);
+							const hold = holding(bet, running, room?.duel ?? null);
 							return (
 								<li key={index}>
 									{MARKET_NAMES[bet.market]}: {label(bet.market, bet.outcome)}, {chips(bet.stake)}{' '}

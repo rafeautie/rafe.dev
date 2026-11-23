@@ -360,6 +360,8 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 	let timer = 0;
 	/** Seconds it has been waiting behind a car on the track. */
 	let waited = 0;
+	/** Seconds it has been stopped by a car up against its front. */
+	let blocked = 0;
 	/** Hauling: how far along the way the truck and all it carries are through the wall. */
 	let door = 0;
 	/**
@@ -608,8 +610,12 @@ function createTruck(world: World, cars: Car[], track: Track, index: number, yar
 		// never so slow that the last of the way is not covered
 		const cap = Math.min(limit, Math.max(0.6, caps[at] + (caps[at + 1] - caps[at]) * t));
 		pace += clamp(cap - pace, -1.5 * BRAKE * dt, pull * dt);
-		// (edging past a car that will not move, it may push it)
-		if (limit > NUDGE && pace > 0 && bumped()) pace = 0;
+		// (edging past a car that will not move, it may push it; and one it has
+		// bumped that still will not move, waiting on the truck as the truck
+		// waits on it, is edged past in the end too, or the two would wait for good)
+		const stuck = limit > NUDGE && pace > 0 && bumped();
+		blocked = stuck ? blocked + dt : 0;
+		if (stuck) pace = blocked > FORBEARANCE ? Math.min(pace, NUDGE) : 0;
 		// The point it is steered by is taken along the way, and back onto it
 		// if it is off it: the wheel is turned for whichever way that is to go,
 		// a little way on, and the truck goes round to it as fast as it does.

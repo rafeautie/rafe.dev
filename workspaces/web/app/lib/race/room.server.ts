@@ -5,6 +5,7 @@ import {
 	MAX_BETS,
 	outcomes,
 	pays,
+	pickDuel,
 	seed as seedPool,
 	type Market,
 	type Pools,
@@ -61,6 +62,7 @@ const IDLE: RoomState = {
 	endsAt: 0,
 	grid: [],
 	conditions: [],
+	duel: null,
 	startsAt: 0,
 	result: null,
 	settings: DEFAULT_SETTINGS
@@ -85,6 +87,11 @@ function resultOf(recording: Recording): Result {
 }
 
 type PlayerRow = Standing & { banned: number };
+
+// What a player's settled bets have won, less their stakes. A bet handed back
+// paid its stake, so counts nothing, and one not yet settled is left out.
+const PROFIT =
+	'(SELECT COALESCE(SUM(payout - stake), 0) FROM bets WHERE bets.player = players.id) AS profit';
 
 export class RaceRoom extends DurableObject<Env> {
 	private sql: SqlStorage;
@@ -117,6 +124,7 @@ export class RaceRoom extends DurableObject<Env> {
 				market TEXT NOT NULL, outcome TEXT NOT NULL, stake INTEGER NOT NULL, payout INTEGER
 			);
 			CREATE INDEX IF NOT EXISTS bets_round ON bets (round, player);
+			CREATE INDEX IF NOT EXISTS bets_player ON bets (player);
 			CREATE TABLE IF NOT EXISTS adjustments (
 				id INTEGER PRIMARY KEY, player INTEGER NOT NULL, at INTEGER NOT NULL,
 				kind TEXT NOT NULL, amount INTEGER NOT NULL
@@ -225,10 +233,12 @@ export class RaceRoom extends DurableObject<Env> {
 		// A state kept from before races carried their settings takes today's;
 		// one from before a setting existed has the code's, except that one from
 		// before there was a choice of track was raced on the circuit, and one
-		// from before there were pits was three laps with none.
+		// from before there were pits was three laps with none. One from before
+		// there was a duel has none: nothing can be bet on it in that race.
 		return state
 			? {
 					...state,
+					duel: state.duel ?? null,
 					settings: state.settings
 						? complete(state.settings, {
 								...DEFAULT_SETTINGS,
@@ -291,7 +301,8 @@ export class RaceRoom extends DurableObject<Env> {
 	/**
 	 * Opens betting on a new race: draws the starting order and the cars'
 	 * conditions, and seeds every pool by running the race a few times over
-	 * to see how it tends to go. The race keeps the settings as they are now.
+	 * to see how it tends to go, which also says which two cars to set against
+	 * each other. The race keeps the settings as they are now.
 	 */
 	private open(round: number) {
 		const settings = this.settings;
@@ -304,10 +315,11 @@ export class RaceRoom extends DurableObject<Env> {
 		const trials = Array.from({ length: settings.trials }, () =>
 			resultOf(record(seed(), cars, track, [], rulesOf(settings)))
 		);
+		const duel = pickDuel(grid, trials);
 		this.ctx.storage.kv.delete('recording');
 		for (const market of MARKETS) {
 			for (const [outcome, chips] of Object.entries(
-				seedPool(market, grid, trials, settings.seed)
+				seedPool(market, grid, trials, settings.seed, duel)
 			)) {
 				this.sql.exec('INSERT INTO pool_seeds VALUES (?, ?, ?, ?)', round, market, outcome, chips);
 			}
@@ -319,6 +331,7 @@ export class RaceRoom extends DurableObject<Env> {
 			endsAt: Date.now() + settings.bettingSeconds * 1000,
 			grid,
 			conditions,
+			duel,
 			settings
 		});
 	}
@@ -331,7 +344,10 @@ export class RaceRoom extends DurableObject<Env> {
 	private run(state: RoomState, raceSeed: number, flags: number[]) {
 		const roster = tuned(state.settings);
 		const cars = state.grid.map((id, slot) =>
-			inCondition(roster.find((entry) => entry.id === id)!, state.conditions[slot])
+			inCondition(
+				roster.find((entry) => entry.id === id)!,
+				state.conditions[slot]
+			)
 		);
 		const recording = record(
 			raceSeed,
@@ -418,7 +434,7 @@ export class RaceRoom extends DurableObject<Env> {
 				.toArray();
 			for (const bet of open) {
 				const payout = Math.floor(
-					bet.stake * pays(pools[bet.market], bet.market, bet.outcome, result)
+					bet.stake * pays(pools[bet.market], bet.market, bet.outcome, result, state.duel)
 				);
 				this.sql.exec('UPDATE bets SET payout = ? WHERE id = ?', payout, bet.id);
 				this.sql.exec('UPDATE players SET balance = balance + ? WHERE id = ?', payout, bet.player);
@@ -476,6 +492,8 @@ export class RaceRoom extends DurableObject<Env> {
 			state.round
 		);
 		for (const { market, outcome, chips } of rows) {
+			// a race opened before a market was dropped still has chips on it
+			if (!pools[market]) continue;
 			pools[market][outcome] = (pools[market][outcome] ?? 0) + chips;
 		}
 		return pools;
@@ -508,7 +526,7 @@ export class RaceRoom extends DurableObject<Env> {
 	private player(id: number) {
 		return this.sql
 			.exec<PlayerRow>(
-				'SELECT id, name, balance, bankruptcies, banned FROM players WHERE id = ?',
+				`SELECT id, name, balance, ${PROFIT}, bankruptcies, banned FROM players WHERE id = ?`,
 				id
 			)
 			.one();
@@ -522,7 +540,9 @@ export class RaceRoom extends DurableObject<Env> {
 				this.state.round,
 				id
 			)
-			.toArray();
+			.toArray()
+			// one on a market no longer run is handed back when the race ends; pages cannot show it
+			.filter((bet) => MARKETS.includes(bet.market));
 		return { type: 'you', you, bets };
 	}
 
@@ -536,15 +556,15 @@ export class RaceRoom extends DurableObject<Env> {
 		return players;
 	}
 
-	/** The leaderboard: only the players watching now, richest first. */
+	/** The leaderboard: only the players watching now, the furthest ahead on their bets first. */
 	private board(closing?: WebSocket): FromRoom {
 		const ids = [...this.connected(closing)];
 		const board = ids.length
 			? this.sql
 					.exec<Standing>(
-						`SELECT id, name, balance, bankruptcies FROM players
+						`SELECT id, name, balance, ${PROFIT}, bankruptcies FROM players
 						 WHERE banned = 0 AND id IN (SELECT value FROM json_each(?))
-						 ORDER BY balance DESC LIMIT 20`,
+						 ORDER BY profit DESC, balance DESC LIMIT 20`,
 						JSON.stringify(ids)
 					)
 					.toArray()
@@ -565,7 +585,10 @@ export class RaceRoom extends DurableObject<Env> {
 		const state = this.state;
 		// the alarm that closes betting can run late; the clock is what counts
 		if (state.phase !== 'betting' || Date.now() >= state.endsAt) return 'Betting is closed';
-		if (!MARKETS.includes(market) || !outcomes(market, state.grid).includes(outcome as string)) {
+		if (
+			!MARKETS.includes(market) ||
+			!outcomes(market, state.grid, state.duel).includes(outcome as string)
+		) {
 			return 'No such bet';
 		}
 		if (!Number.isInteger(stake) || (stake as number) < 1) return 'Stake a whole number of chips';
@@ -846,7 +869,7 @@ export class RaceRoom extends DurableObject<Env> {
 	private playerRows(where: string, value: string) {
 		return this.sql
 			.exec<PlayerRow & { seen: number; bets: number }>(
-				`SELECT id, name, balance, bankruptcies, banned, seen, COALESCE(placed.n, 0) AS bets
+				`SELECT id, name, balance, ${PROFIT}, bankruptcies, banned, seen, COALESCE(placed.n, 0) AS bets
 				 FROM players LEFT JOIN (SELECT player, COUNT(*) AS n FROM bets GROUP BY player) AS placed
 				 ON placed.player = players.id
 				 WHERE ${where} LIMIT 100`,

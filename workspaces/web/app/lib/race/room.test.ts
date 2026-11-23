@@ -86,6 +86,9 @@ describe('the race room', () => {
 		// every pool is seeded before anyone bets
 		const { pools } = first.last('state');
 		expect(Object.keys(pools.exacta)).toHaveLength(30);
+		// two of the cars are set against each other, and only they are in that pool
+		expect(state.grid).toEqual(expect.arrayContaining(state.duel!));
+		expect(Object.keys(pools.duel).sort()).toEqual([...state.duel!].sort());
 		for (const pool of Object.values(pools)) {
 			expect(Object.values(pool).reduce((sum, chips) => sum + chips, 0)).toBeCloseTo(SEED);
 		}
@@ -355,10 +358,112 @@ describe('the betting', () => {
 			result.firstOut ? 'no' : 'yes'
 		]);
 		expect(you.balance).toBe(START - 80 + bets.reduce((sum, bet) => sum + bet.payout!, 0));
+		// what the bets won or lost is all that has moved the balance
+		expect(you.profit).toBe(you.balance - START);
 		expect(bets.find((bet) => bet.outcome === result.order[0])!.payout).toBe(
 			Math.floor((10 * (SEED + 60)) / pools.win[result.order[0]])
 		);
 		expect(punter.last('board').board[0]).toEqual(you);
+	});
+
+	it('pays the duel to whichever of its two cars finishes ahead', SLOW, async () => {
+		const room = await quick('duelling');
+		const punter = await watch(room, 'secret-of-the-second');
+		await vi.waitFor(() => expect(punter.all('state')).toHaveLength(1));
+		const { grid, duel } = punter.last('state').state;
+		for (const car of duel!) {
+			await punter.ask({ type: 'bet', market: 'duel', outcome: car, stake: 10 });
+		}
+		// no other car can be bet on in it
+		const other = grid.find((car) => !duel!.includes(car))!;
+		expect(
+			await punter.ask({ type: 'bet', market: 'duel', outcome: other, stake: 10 })
+		).toMatchObject({ type: 'no' });
+
+		await ring(room);
+		await ring(room);
+		await vi.waitFor(() => expect(punter.states()).toHaveLength(3));
+		const { state, pools } = punter.last('state');
+		const { order } = state.result!;
+		await vi.waitFor(() => expect(punter.last('you').bets.every((bet) => bet.payout !== null)));
+		const ahead = order.find((car) => duel!.includes(car))!;
+		const { you, bets } = punter.last('you');
+		expect(bets.filter((bet) => bet.payout).map((bet) => bet.outcome)).toEqual([ahead]);
+		expect(bets.find((bet) => bet.outcome === ahead)!.payout).toBe(
+			Math.floor((10 * (SEED + 20)) / pools.duel[ahead])
+		);
+		expect(you.balance).toBe(START - 20 + bets.reduce((sum, bet) => sum + bet.payout!, 0));
+	});
+
+	it('ranks the board by what bets have won, not by chips held', SLOW, async () => {
+		const room = await quick('ranking');
+		const winner = await watch(room, 'secret-of-the-shrewd');
+		const loser = await watch(room, 'secret-of-the-bailed-out');
+		await vi.waitFor(() => expect(loser.all('you')).toHaveLength(1));
+		const [ahead, behind] = [winner.last('you').you.id, loser.last('you').you.id];
+		await runInDurableObject(room, (_, { storage }) => {
+			const bet = 'INSERT INTO bets (round, player, market, outcome, stake, payout) VALUES';
+			// one race won, one handed back, and one still open, which does not count yet
+			storage.sql.exec(`${bet} (0, ?1, 'win', 'x', 100, 500), (0, ?1, 'lap', 'x', 40, 40)`, ahead);
+			storage.sql.exec(`${bet} (1, ?, 'win', 'x', 70, NULL)`, ahead);
+			// one race lost, on a market since dropped, by a player holding more chips
+			storage.sql.exec(`${bet} (0, ?, 'crash', 'x', 300, 0)`, behind);
+			storage.sql.exec('UPDATE players SET balance = 9000 WHERE id = ?', behind);
+		});
+		await loser.ask({ type: 'name', name: 'Bailed Out' });
+		expect(loser.last('you').you).toMatchObject({ balance: 9000, profit: -300 });
+		await vi.waitFor(() =>
+			expect(winner.last('board').board).toMatchObject([
+				{ id: ahead, profit: 400 },
+				{ id: behind, profit: -300, balance: 9000 }
+			])
+		);
+		// the admin's lists have it too, and are still in the order they were
+		const { live } = await room.adminView('');
+		expect(live.map((player) => [player.id, player.profit])).toEqual([
+			[behind, -300],
+			[ahead, 400]
+		]);
+	});
+
+	it('carries on with a race opened before there was a duel', SLOW, async () => {
+		const room = await quick('before the duel');
+		const punter = await watch(room, 'secret-of-the-old-hand');
+		await vi.waitFor(() => expect(punter.all('state')).toHaveLength(1));
+		const { id } = punter.last('you').you;
+		const car = punter.last('state').state.grid[0];
+		// as it was stored then: no duel, and chips on the market the duel replaced
+		await runInDurableObject(room, (_, { storage }) => {
+			const { duel: _duel, ...state } = storage.kv.get<RoomState>('state')!;
+			storage.kv.put('state', state);
+			storage.sql.exec("DELETE FROM pool_seeds WHERE market = 'duel'");
+			storage.sql.exec("INSERT INTO pool_seeds VALUES (1, 'crash', ?, 2000)", car);
+			storage.sql.exec(
+				"INSERT INTO bets (round, player, market, outcome, stake) VALUES (1, ?, 'crash', ?, 50)",
+				id,
+				car
+			);
+			storage.sql.exec('UPDATE players SET balance = balance - 50 WHERE id = ?', id);
+		});
+		expect(
+			await punter.ask({ type: 'bet', market: 'duel', outcome: car, stake: 10 })
+		).toMatchObject({ type: 'no' });
+		await punter.ask({ type: 'bet', market: 'win', outcome: car, stake: 10 });
+		expect(punter.last('you').bets).toHaveLength(1);
+
+		await ring(room);
+		await ring(room);
+		await vi.waitFor(() => expect(punter.states()).toHaveLength(3));
+		expect(punter.states()[2]).toMatchObject({ round: 1, phase: 'results', duel: null });
+		expect(punter.last('state').pools.duel).toEqual({});
+		// the old bet is handed back, and counts for nothing
+		const { you, bets } = punter.last('you');
+		expect(you.balance).toBe(START - 10 + bets[0].payout!);
+		expect(you.profit).toBe(bets[0].payout! - 10);
+		// and the next race has a duel
+		await ring(room);
+		await vi.waitFor(() => expect(punter.states()).toHaveLength(4));
+		expect(punter.states()[3].duel).toHaveLength(2);
 	});
 
 	it('hands every bet back when a race is called off', SLOW, async () => {
@@ -396,8 +501,9 @@ describe('the betting', () => {
 		await runInDurableObject(room, (_, { storage }) => {
 			storage.sql.exec('UPDATE bets SET payout = 0 WHERE player = ?', id);
 		});
+		// the chips come back, but what the bets lost stays lost
 		expect(await punter.ask({ type: 'bankrupt' })).toMatchObject({
-			you: { balance: START, bankruptcies: 1 }
+			you: { balance: START, profit: -10, bankruptcies: 1 }
 		});
 		const written = await runInDurableObject(room, (_, { storage }) =>
 			storage.sql.exec('SELECT player, kind, amount FROM adjustments').toArray()
@@ -439,6 +545,8 @@ describe('the admin', () => {
 					id,
 					name: 'Renamed One',
 					balance: START,
+					// a reset is no winnings, and the one bet is not settled
+					profit: 0,
 					bankruptcies: 0,
 					banned: false,
 					seen: expect.any(Number),
