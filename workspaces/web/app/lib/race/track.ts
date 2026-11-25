@@ -97,7 +97,7 @@ function triOval(turn: number, leg: number, kink: number, apex: number, top: num
 // Daytona, made small: a back straight about two and a half times as long
 // as the radius of the turns, and the front stretch bent out about seven
 // metres past where the turns end, its point at the bottom of the world.
-const OVAL = triOval(30, 36, (11 * Math.PI) / 180, 50, 11);
+const OVAL = triOval(32, 34, (10 * Math.PI) / 180, 50, 10);
 
 /** The tracks there are, by id. */
 const TRACKS = {

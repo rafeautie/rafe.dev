@@ -225,40 +225,41 @@ function paint(track: Track) {
 
 	/**
 	 * Lays concrete a lane wide along a way, over grass, and with `through`
-	 * over the wall and the verge too. Through them it is tarmac, the track's
-	 * own run on out to where the wall was, with the line along the track's
-	 * edge left off where the way leaves it, so there is no seam between the
-	 * two. Returns the wall it took out.
+	 * over the wall and the verge too. Returns the wall it took out.
+	 *
+	 * Where a way leaves the track it comes out from under the tarmac,
+	 * spreading to its full width as it draws away from the track rather
+	 * than starting as a round end out on the verge: nothing is laid further
+	 * from the centre line than the track's edge and three times as far again
+	 * as the way has drawn away from it by then.
 	 */
 	function pave(way: Route, through = false) {
 		const gap: { x: number; y: number }[] = [];
 		const half = HALF_LANE * SCALE;
 		const reach = Math.ceil(half);
+		const nearest = Math.min(...Array.from(way.across, Math.abs));
 		for (let d = 0; d <= way.length; d += 0.25) {
 			let at = 0;
 			while (at + 2 < way.count && way.along[at + 1] <= d) at++;
 			const t = (d - way.along[at]) / (way.along[at + 1] - way.along[at]);
 			const cx = (way.x[at] + (way.x[at + 1] - way.x[at]) * t) * SCALE;
 			const cy = (way.y[at] + (way.y[at + 1] - way.y[at]) * t) * SCALE;
+			const across = Math.abs(way.across[at] + (way.across[at + 1] - way.across[at]) * t);
+			const spread = through ? HALF_ROAD + 3 * (across - nearest) : Infinity;
 			for (let py = Math.floor(cy - reach); py <= cy + reach; py++) {
 				for (let px = Math.floor(cx - reach); px <= cx + reach; px++) {
 					if (px < 0 || py < 0 || px >= WIDTH || py >= HEIGHT) continue;
 					if ((px + 0.5 - cx) ** 2 + (py + 0.5 - cy) ** 2 > half ** 2) continue;
 					const k = py * WIDTH + px;
 					const was = surface[k];
-					if (!through && was !== GRASS_ && was !== PAVED_) continue;
-					const far = through
-						? Math.abs(lateral(track, (px + 0.5) / SCALE, (py + 0.5) / SCALE, which[k]))
-						: Infinity;
-					if (was === TARMAC_) {
-						if (far > HALF_ROAD - 0.5 && far <= HALF_ROAD) ground[k] = TARMAC[grain(px, py)];
-						continue;
-					}
+					if (was === TARMAC_ || (was !== GRASS_ && was !== PAVED_ && !through)) continue;
+					const [wx, wy] = [(px + 0.5) / SCALE, (py + 0.5) / SCALE];
+					if (through && Math.abs(lateral(track, wx, wy, which[k])) > spread) continue;
 					if (was === WALL_) {
 						gap.push({ x: px, y: py });
 						surface[k] = TARMAC_;
 					} else surface[k] = PAVED_;
-					ground[k] = far <= HALF_CORRIDOR + 0.8 ? TARMAC[grain(px, py)] : CONCRETE[grain(px, py)];
+					ground[k] = CONCRETE[grain(px, py)];
 				}
 			}
 		}
