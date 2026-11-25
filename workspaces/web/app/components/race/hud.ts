@@ -112,16 +112,10 @@ const SLIP_FOOT = 76;
 const slipHeight = (count: number) => SLIP_HEAD + count * CAR + SLIP_FOOT;
 /** How tall the tower is for a field of `count` cars, the leaderboard and everybody's bets. */
 const towerHeight = (count: number) => 35 + count * ROW;
-/** How tall the live numbers for a followed car are, and how high the camera's buttons over the track are. */
+/** How tall the live numbers for a followed car are, and how high the box over the track saying what is followed is. */
 const TELE_H = 112;
 const STRIP_H = 13;
-/** The buttons over the track that choose what the camera follows, and how wide each is. */
-export const VIEWS = [
-	['track', 'Track', 34],
-	['battle', 'Battle', 40],
-	['mine', 'My cars', 46]
-] as const;
-/** How wide the box beside them saying what is followed is. */
+/** How wide that box is. */
 const CHIP = 120;
 const BOARD_H = 18 + BOARD_ROWS * LINE;
 const TICKER_H = 17 + TICKS * TICK;
@@ -205,7 +199,7 @@ export function layout(
 	let tower: Box, board: Box, ticker: Box, wallet: Box, bets: Box, key: Box, pane: Box, tele: Box;
 	// The part of the frame the race has, which a viewer's camera magnifies
 	// (camera.ts), in the frame's pixels; and the top of it in the graphics'
-	// pixels, where the camera's buttons go.
+	// pixels, where the box saying what is followed goes.
 	let stage: Box, top: number;
 	// and the middle of the row they are in
 	let middle = fw >> 1;
@@ -234,7 +228,7 @@ export function layout(
 		const column = stacked === 'beside' ? box(across + tw, 0, SIDE, fh) : box(0, th, fw, fh - th);
 		x = column.x + ((column.w - SLIP) >> 1);
 		y = column.y + column.h - slipH - 4;
-		// the camera's buttons go across the top of the column, where they hide none of the track
+		// what is followed goes at the top of the column, where it hides none of the track
 		const under = column.y + STRIP_H + 6;
 		pane = box(column.x, under, column.w, (betting ? y - 4 : column.y + column.h) - under);
 		const left = column.x + ((column.w - COLUMN) >> 1);
@@ -257,15 +251,8 @@ export function layout(
 		// over the panels, above the stat bars it is about
 		key = box(x + SLIP - KEY_W, y - KEY_H - 4, KEY_W, KEY_H);
 	}
-	// the camera's buttons, in a row across the top of the race, with what is followed beside them
-	const strip = VIEWS.reduce((sum, [, , w]) => sum + w + 2, 0) + 2 + CHIP;
-	let vx = middle - (strip >> 1);
-	const views = VIEWS.map(([, , w]) => {
-		const at = box(vx, top, w, STRIP_H);
-		vx += w + 2;
-		return at;
-	});
-	const chip = box(vx + 2, top, CHIP, STRIP_H);
+	// what is followed, in the middle of the top of the race
+	const chip = box(middle - (CHIP >> 1), top, CHIP, STRIP_H);
 	// the settings open over the middle of everything
 	const mx = (fw - MENU) >> 1;
 	const my = (fh - 170) >> 1;
@@ -290,7 +277,6 @@ export function layout(
 		// where the track is in the frame and how big the frame is, for the camera
 		frame: { width, height, ox: track.x, oy: track.y },
 		stage,
-		views,
 		chip,
 		unfollow: box(chip.x + chip.w - STRIP_H, chip.y, STRIP_H, STRIP_H),
 		tele,
@@ -391,8 +377,7 @@ export type Scene = {
 export type Watch = {
 	follow: Follow;
 	lens: Lens;
-	/** The cars it has in view because they are followed, and the one whose numbers are shown. */
-	followed: Set<string>;
+	/** The car it has in view because it is followed, whose numbers are shown. */
 	focus: string | null;
 	/** That car's crew, 0 to 1, as the room has it. */
 	crew: number | null;
@@ -612,10 +597,8 @@ export function createHud() {
 			const car = field?.[index];
 			const status: Status = car ? statusOf(car, index, trucks) : 'racing';
 			const gone = status === 'out' || status === 'tow';
-			// the cars being followed are picked out
-			if (field && watch.followed.has(id)) {
-				p.fill(x + 2, ry, w - 2, ROW - 1, PAPER, id === watch.focus ? 0.16 : 0.08);
-			}
+			// the car being followed is picked out
+			if (field && id === watch.focus) p.fill(x + 2, ry, w - 2, ROW - 1, PAPER, 0.16);
 			if (backed.has(id)) p.fill(x, ry, 2, ROW - 1, GOLD);
 			p.text(x + 5, ry + 3, String(place + 1), place === 0 && !gone ? PAPER : DIM);
 			tile(p, x + 14, ry + 2, id);
@@ -862,16 +845,11 @@ export function createHud() {
 	}
 
 	/**
-	 * The camera's buttons across the top of the race: the whole track, the
-	 * battle, the cars you have bet on; and what is being followed, with a
-	 * cross to go back to the whole track.
+	 * What is being followed, across the top of the race, with a cross to go
+	 * back to the whole track.
 	 */
-	function views(p: Painter, at: Layout, scene: Scene) {
+	function watched(p: Painter, at: Layout, scene: Scene) {
 		const { follow, focus } = scene.watch;
-		const mine = scene.bets.length > 0;
-		VIEWS.forEach(([mode, name], index) => {
-			button(p, at.views[index], name, follow.mode === mode, mode === 'mine' && !mine);
-		});
 		const { x, y, w, h } = at.chip;
 		const following = follow.mode !== 'track';
 		p.fill(x, y, w, h, INK, 0.85);
@@ -897,8 +875,7 @@ export function createHud() {
 		if (!readout) {
 			panel(p, { ...at, h: 32 });
 			head(p, at, 'Following', '');
-			const none = watch.follow.mode === 'mine' ? 'Bet on a car to follow it' : 'Nobody';
-			p.text(x + 5, y + 20, none, DIM);
+			p.text(x + 5, y + 20, 'Nobody', DIM);
 			return;
 		}
 		const r = readout;
@@ -1265,7 +1242,7 @@ export function createHud() {
 			if (racing && scene.watch.follow.mode !== 'track') live(p, up(at.tele), scene, dt);
 			else readout = null;
 			p.clip(null);
-			if (racing) views(p, at, scene);
+			if (racing) watched(p, at, scene);
 			if (room?.phase === 'betting') slip(p, at, scene, dt);
 			else if (room?.phase === 'results') result(p, at.card, scene, dt);
 			else if (room?.phase !== 'racing') {
@@ -1306,21 +1283,10 @@ const supply = (share: number, tyres: number) => (share < 0.2 ? BAD : tyres ? GO
 const stopText = (stop: NonNullable<Readout['stop']>) =>
 	`${STOPS[stop.service]} ${stop.seconds.toFixed(1)}`;
 
-/** What the box beside the camera's buttons says is being followed. */
+/** What the box over the race says is being followed. */
 function chipText(follow: Follow, focus: string | null) {
 	if (follow.mode === 'track') return 'Tap a car to follow';
-	const named = focus && entry(focus).name;
-	if (!named) return follow.mode === 'mine' ? 'No bets to follow' : 'Nobody';
-	switch (follow.mode) {
-		case 'group':
-			return `${follow.ids.length} cars`;
-		case 'mine':
-			return `Yours: ${named}`;
-		case 'battle':
-			return `Battle: ${named}`;
-		default:
-			return named;
-	}
+	return (focus && entry(focus).name) || 'Nobody';
 }
 
 /** What a stop is for, as a row of the tower has room to say it beside its chip. */
