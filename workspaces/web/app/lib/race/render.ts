@@ -254,7 +254,9 @@ function paint(track: Track) {
 					const was = surface[k];
 					if (was === TARMAC_ || (was !== GRASS_ && was !== PAVED_ && !through)) continue;
 					const [wx, wy] = [(px + 0.5) / SCALE, (py + 0.5) / SCALE];
-					if (through && Math.abs(lateral(track, wx, wy, which[k])) > spread) continue;
+					// (far from the track, past where `which` is known, it cannot be the edge)
+					const edge = through && near[k] !== Infinity;
+					if (edge && Math.abs(lateral(track, wx, wy, which[k])) > spread) continue;
 					if (was === WALL_) {
 						gap.push({ x: px, y: py });
 						surface[k] = TARMAC_;

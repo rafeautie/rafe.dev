@@ -176,6 +176,20 @@ describe.each(TRACK_IDS)('the pit lane on the %s', (id) => {
 		for (const box of lane.boxes) expect(offRoadAt(track, box.x, box.y)).toBe(false);
 	});
 
+	// The ways in and out come out from under the edge of the track, rather
+	// than ending in a round tip that sticks out onto the verge beside it.
+	it('leaves the track and joins it again from under its edge, with nothing paved on the verge there', () => {
+		const verge = (sample: number) => {
+			const i = Math.round(sample) % n;
+			const across = -(HALF_ROAD + 0.3);
+			return offRoadAt(track, track.x[i] + track.nx[i] * across, track.y[i] + track.ny[i] * across);
+		};
+		for (let d = 1; d <= 4; d += 0.5) {
+			expect(verge(lane.in0 + n - d), `${d} m before the way in`).toBe(true);
+			expect(verge(lane.out1 + d), `${d} m past the way out`).toBe(true);
+		}
+	});
+
 	it('has a box for every car, each clear of the next', () => {
 		expect(lane.boxes).toHaveLength(ROSTER.length);
 		lane.boxes.forEach((box, index) => {
