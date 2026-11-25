@@ -502,8 +502,8 @@ export function createRace(
 		// the bend a little ahead, as far as the steering takes to wind on
 		const lead = sample + Math.round((1 + Math.abs(car.speed) * 0.08) / spacing);
 		const bend = curvature(...held(lead - SPAN), ...held(lead), ...held(lead + SPAN));
-		// how far the car is to one side of the line (+ the side the track's
-		// normal points to), and how far it is heading off it
+		// how far the car is to one side of the line (+ to the driver's right),
+		// and how far it is heading off it
 		const [bx, by] = held(sample - 1);
 		const [fx, fy] = held(sample + 1);
 		const way = Math.atan2(fy - by, fx - bx);
@@ -516,7 +516,8 @@ export function createRace(
 				: car.angle + Math.atan(Math.tan(car.steer) / 2) + (car.speed < 0 ? Math.PI : 0);
 		const off = Math.atan2(Math.sin(going - way), Math.cos(going - way));
 		const [hx, hy] = held(sample);
-		const wide = (car.x - hx) * track.nx[sample] + (car.y - hy) * track.ny[sample];
+		const wide =
+			((car.x - hx) * track.nx[sample] + (car.y - hy) * track.ny[sample]) * track.hand;
 		const want = bend - clamp(wide, -3, 3) / HOLD ** 2 - (1.8 * off) / HOLD;
 		return Math.atan(2 * AXLE * want);
 	}

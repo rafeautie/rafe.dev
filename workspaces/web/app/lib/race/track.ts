@@ -292,7 +292,10 @@ function build(id: TrackId, { control, world = 1, infield }: Layout) {
 	const [width, height] = [WORLD_W * world, WORLD_H * world];
 	const scale = 4 / world;
 
-	return { id, n, step, length, x, y, tx, ty, nx, ny, line, bend, turn, width, height, scale };
+	/** 1 if the normal points to the driver's right, as on most tracks, -1 if to the left. */
+	const hand = infield === 'right' ? -1 : 1;
+
+	return { id, n, step, length, x, y, tx, ty, nx, ny, line, bend, turn, width, height, scale, hand };
 }
 
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));

@@ -201,8 +201,8 @@ function build(track: Track) {
 		for (let i = 0; i < n; i++) {
 			const [a, b] = [(i + n - 1) % n, (i + 1) % n];
 			const d = Math.hypot(rx[b] - rx[a], ry[b] - ry[a]);
-			ix[i] = (ry[b] - ry[a]) / d;
-			iy[i] = -(rx[b] - rx[a]) / d;
+			ix[i] = ((ry[b] - ry[a]) / d) * track.hand;
+			iy[i] = (-(rx[b] - rx[a]) / d) * track.hand;
 		}
 		return { x: rx, y: ry, ix, iy };
 	})();
