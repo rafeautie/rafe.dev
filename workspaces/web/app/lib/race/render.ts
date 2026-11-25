@@ -225,7 +225,10 @@ function paint(track: Track) {
 
 	/**
 	 * Lays concrete a lane wide along a way, over grass, and with `through`
-	 * over the wall and the verge too. Returns the wall it took out.
+	 * over the wall and the verge too. Through them it is tarmac, the track's
+	 * own run on out to where the wall was, with the line along the track's
+	 * edge left off where the way leaves it, so there is no seam between the
+	 * two. Returns the wall it took out.
 	 */
 	function pave(way: Route, through = false) {
 		const gap: { x: number; y: number }[] = [];
@@ -243,12 +246,19 @@ function paint(track: Track) {
 					if ((px + 0.5 - cx) ** 2 + (py + 0.5 - cy) ** 2 > half ** 2) continue;
 					const k = py * WIDTH + px;
 					const was = surface[k];
-					if (was === TARMAC_ || (was !== GRASS_ && was !== PAVED_ && !through)) continue;
+					if (!through && was !== GRASS_ && was !== PAVED_) continue;
+					const far = through
+						? Math.abs(lateral(track, (px + 0.5) / SCALE, (py + 0.5) / SCALE, which[k]))
+						: Infinity;
+					if (was === TARMAC_) {
+						if (far > HALF_ROAD - 0.5 && far <= HALF_ROAD) ground[k] = TARMAC[grain(px, py)];
+						continue;
+					}
 					if (was === WALL_) {
 						gap.push({ x: px, y: py });
 						surface[k] = TARMAC_;
 					} else surface[k] = PAVED_;
-					ground[k] = CONCRETE[grain(px, py)];
+					ground[k] = far <= HALF_CORRIDOR + 0.8 ? TARMAC[grain(px, py)] : CONCRETE[grain(px, py)];
 				}
 			}
 		}
