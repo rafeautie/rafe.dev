@@ -286,7 +286,8 @@ describe.each(TRACK_IDS)('the wheels on the %s', (id) => {
 	it('of a tow truck driving down the track stay on the tarmac', { timeout: 120_000 }, () => {
 		expect(KERBSIDE + TRUCK_HALF).toBeLessThan(HALF_ROAD);
 		let driving = 0;
-		for (let seed = 1; seed <= 12; seed++) {
+		// as many races as it takes to see enough of it, on a track with few wrecks
+		for (let seed = 1; seed <= 12 || (driving <= 1000 && seed <= 60); seed++) {
 			const race = createRace(seed, drawGrid(seed, ROSTER), track, [], CLASSIC);
 			// where each truck last stood to lift a wreck, which it pulls away from as it pulled up to it
 			const lifted = race.trucks.map(() => ({ x: Infinity, y: Infinity }));
@@ -353,7 +354,7 @@ describe.each(TRACK_IDS)('the line the pit lane is on, on the %s', (id) => {
  */
 const SEEDS: Record<TrackId, { wreck: number; clean: number }> = {
 	circuit: { wreck: 20, clean: 1 },
-	oval: { wreck: 6, clean: 1 }
+	oval: { wreck: 4, clean: 3 }
 };
 
 describe.each(TRACK_IDS)('a caution on the %s', (id) => {

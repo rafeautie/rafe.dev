@@ -106,53 +106,53 @@ const CIRCUIT: [number, number][] = [
 ];
 
 /**
- * An oval: a bend round each end, (x, radius) of its centre, joined by two
- * straights, as points about every `spacing` metres. Driven anticlockwise on
- * screen, so every bend is a left; `start` is how far along the bottom
- * straight the line is, as a share of it.
+ * A tri-oval, after Daytona's: a straight across the back, a long turn at
+ * each end, and a front stretch bent out in the middle, where the line
+ * is. Driven anticlockwise on screen, so every bend is a left. `turn` is the
+ * radius of the turns at the ends; the front stretch is two straight `leg`s,
+ * each set `kink` (radians) off level and bent into the other through a
+ * curve of radius `apex`; `top` is how far down the world the back straight
+ * runs. The back straight is as long as makes the ends meet. As points about
+ * every `spacing` metres, from the line.
  */
-function oval(left: [number, number], right: [number, number], start: number, spacing = 8) {
-	const cy = WORLD_H / 2;
-	const [lx, lr] = left;
-	const [rx, rr] = right;
-	// where the straights touch each bend, as the angle round its centre
-	const touch = Math.acos((lr - rr) / (rx - lx));
-	const at = (cx: number, r: number, a: number): [number, number] => [
-		cx + r * Math.cos(a),
-		cy + r * Math.sin(a)
-	];
-	const pieces: ((t: number) => [number, number])[] = [];
-	const lengths: number[] = [];
-	const straight = (a: [number, number], b: [number, number]) => {
-		pieces.push((t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
-		lengths.push(Math.hypot(b[0] - a[0], b[1] - a[1]));
-	};
-	const bend = (cx: number, r: number, from: number, to: number) => {
-		pieces.push((t) => at(cx, r, from + (to - from) * t));
-		lengths.push(Math.abs(to - from) * r);
-	};
-	const bottomL = at(lx, lr, touch);
-	const bottomR = at(rx, rr, touch);
-	const line: [number, number] = [
-		bottomL[0] + (bottomR[0] - bottomL[0]) * start,
-		bottomL[1] + (bottomR[1] - bottomL[1]) * start
-	];
-	straight(line, bottomR);
-	bend(rx, rr, touch, -touch);
-	straight(at(rx, rr, -touch), at(lx, lr, -touch));
-	bend(lx, lr, -touch, touch - 2 * Math.PI);
-	straight(bottomL, line);
+function triOval(turn: number, leg: number, kink: number, apex: number, top: number, spacing = 4) {
+	const back = 2 * apex * Math.sin(kink) + 2 * leg * Math.cos(kink) - 2 * turn * Math.sin(kink);
 	const points: [number, number][] = [];
-	pieces.forEach((piece, k) => {
-		const count = Math.max(1, Math.round(lengths[k] / spacing));
-		for (let j = 0; j < count; j++) points.push(piece(j / count));
-	});
-	return points;
+	// driven from the line on, heading right along the bottom of the screen
+	let [x, y, heading] = [0, 0, 0];
+	const straight = (length: number) => {
+		const count = Math.max(1, Math.round(length / spacing));
+		for (let j = 0; j < count; j++) {
+			points.push([x, y]);
+			x += (Math.cos(heading) * length) / count;
+			y += (Math.sin(heading) * length) / count;
+		}
+	};
+	/** A bend to the left, which on a screen, y down, turns the heading back. */
+	const bend = (radius: number, sweep: number) => {
+		const count = Math.max(1, Math.round((radius * sweep) / spacing));
+		const [cx, cy] = [x + radius * Math.sin(heading), y - radius * Math.cos(heading)];
+		for (let j = 0; j < count; j++) {
+			points.push([x, y]);
+			heading -= sweep / count;
+			[x, y] = [cx - radius * Math.sin(heading), cy + radius * Math.cos(heading)];
+		}
+	};
+	bend(apex, kink);
+	straight(leg);
+	bend(turn, Math.PI - kink);
+	straight(back);
+	bend(turn, Math.PI - kink);
+	straight(leg);
+	bend(apex, kink);
+	const high = Math.min(...points.map(([, py]) => py));
+	return points.map(([px, py]): [number, number] => [WORLD_W / 2 + px, top + py - high]);
 }
 
-// A regular oval filling the world: two matching bends as wide as its
-// height allows, and a straight of about 70 m between them on each side.
-const OVAL = oval([44, 32], [116, 32], 0.5);
+// Daytona, made small: a back straight about two and a half times as long
+// as the radius of the turns, and the front stretch bent out about seven
+// metres past where the turns end, its point at the bottom of the world.
+const OVAL = triOval(32, 34, (10 * Math.PI) / 180, 50, 10);
 
 /**
  * A track's layout: its name, its control points, how many times wider than
@@ -169,7 +169,7 @@ type Layout = {
 
 /** The tracks there are, by id. */
 const TRACKS: Record<'oval' | 'circuit', Layout> = {
-	oval: { name: 'Oval', control: OVAL },
+	oval: { name: 'Daytona', control: OVAL },
 	circuit: { name: 'Watkins Glen', control: CIRCUIT, world: 272 / WORLD_W, infield: 'right' }
 };
 
