@@ -89,7 +89,7 @@ const LAYOUTS: Record<
 	{ from: number; slip: number; thirst: number; away?: [number, number] }
 > = {
 	circuit: { from: 308, slip: 30, thirst: 1.23 },
-	oval: { from: 254, slip: 40, thirst: 1.06, away: [133, 177] }
+	oval: { from: 256, slip: 40, thirst: 1.06, away: [134, 178] }
 };
 
 /** What is done at a stop. */

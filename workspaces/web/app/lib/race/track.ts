@@ -51,8 +51,8 @@ const CIRCUIT: [number, number][] = [
 ];
 
 /**
- * A tri-oval, after Daytona's: a straight across the back, a long banked turn
- * at each end, and a front stretch bent out in the middle, where the line
+ * A tri-oval, after Daytona's: a straight across the back, a long turn at
+ * each end, and a front stretch bent out in the middle, where the line
  * is. Driven anticlockwise on screen, so every bend is a left. `turn` is the
  * radius of the turns at the ends; the front stretch is two straight `leg`s,
  * each set `kink` (radians) off level and bent into the other through a
@@ -60,9 +60,8 @@ const CIRCUIT: [number, number][] = [
  * runs. The back straight is as long as makes the ends meet. As points about
  * every `spacing` metres, from the line.
  */
-function triOval(turn: number, leg: number, kink: number, apex: number, top: number, spacing = 8) {
-	const back =
-		2 * apex * Math.sin(kink) + 2 * leg * Math.cos(kink) - 2 * turn * Math.sin(kink);
+function triOval(turn: number, leg: number, kink: number, apex: number, top: number, spacing = 4) {
+	const back = 2 * apex * Math.sin(kink) + 2 * leg * Math.cos(kink) - 2 * turn * Math.sin(kink);
 	const points: [number, number][] = [];
 	// driven from the line on, heading right along the bottom of the screen
 	let [x, y, heading] = [0, 0, 0];
@@ -96,9 +95,9 @@ function triOval(turn: number, leg: number, kink: number, apex: number, top: num
 }
 
 // Daytona, made small: a back straight about two and a half times as long
-// as the turns are tight, and the front stretch bent out about seven
+// as the radius of the turns, and the front stretch bent out about seven
 // metres past where the turns end, its point at the bottom of the world.
-const OVAL = triOval(30, 37, (11 * Math.PI) / 180, 40, 11);
+const OVAL = triOval(30, 36, (11 * Math.PI) / 180, 50, 11);
 
 /** The tracks there are, by id. */
 const TRACKS = {
