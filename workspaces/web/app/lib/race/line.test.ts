@@ -4,6 +4,8 @@ import { getTrack, HALF_CAR, HALF_ROAD, MAX_OFFSET, TRACK_IDS, triangle } from '
 
 /** Corners the other way round with no more than this many metres between them are an S. */
 const S_BEND = 45;
+/** A corner that turns the road less than this (radians) is a kink. */
+const KINK = (40 * Math.PI) / 180;
 
 describe.each(TRACK_IDS)('the racing line on the %s', (id) => {
 	const track = getTrack(id);
@@ -77,6 +79,14 @@ describe.each(TRACK_IDS)('the racing line on the %s', (id) => {
 			const close = (a: number, b: number) => wrap(b - a) < S_BEND;
 			const before = Array.from({ length: 30 }, (_, d) => from - 1 - d);
 			const after = Array.from({ length: 30 }, (_, d) => to + d);
+			// (a kink, which turns the road only a little, is taken nearly straight)
+			const turned = Math.abs(
+				Math.atan2(
+					tx[wrap(from)] * ty[wrap(to)] - ty[wrap(from)] * tx[wrap(to)],
+					tx[wrap(from)] * tx[wrap(to)] + ty[wrap(from)] * ty[wrap(to)]
+				)
+			);
+			if (turned < KINK) return;
 			if (!close(last[1], from)) expect(outside(before)).toBeLessThan(-MAX_OFFSET / 2);
 			if (!close(to, next[0])) expect(outside(after)).toBeLessThan(-MAX_OFFSET / 2);
 		});
