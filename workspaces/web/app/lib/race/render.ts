@@ -226,17 +226,26 @@ function paint(track: Track) {
 	/**
 	 * Lays concrete a lane wide along a way, over grass, and with `through`
 	 * over the wall and the verge too. Returns the wall it took out.
+	 *
+	 * Where a way leaves the track it comes out from under the tarmac,
+	 * spreading to its full width as it draws away from the track rather
+	 * than starting as a round end out on the verge: nothing is laid further
+	 * from the centre line than the track's edge and three times as far again
+	 * as the way has drawn away from it by then.
 	 */
 	function pave(way: Route, through = false) {
 		const gap: { x: number; y: number }[] = [];
 		const half = HALF_LANE * SCALE;
 		const reach = Math.ceil(half);
+		const nearest = Math.min(...Array.from(way.across, Math.abs));
 		for (let d = 0; d <= way.length; d += 0.25) {
 			let at = 0;
 			while (at + 2 < way.count && way.along[at + 1] <= d) at++;
 			const t = (d - way.along[at]) / (way.along[at + 1] - way.along[at]);
 			const cx = (way.x[at] + (way.x[at + 1] - way.x[at]) * t) * SCALE;
 			const cy = (way.y[at] + (way.y[at + 1] - way.y[at]) * t) * SCALE;
+			const across = Math.abs(way.across[at] + (way.across[at + 1] - way.across[at]) * t);
+			const spread = through ? HALF_ROAD + 3 * (across - nearest) : Infinity;
 			for (let py = Math.floor(cy - reach); py <= cy + reach; py++) {
 				for (let px = Math.floor(cx - reach); px <= cx + reach; px++) {
 					if (px < 0 || py < 0 || px >= WIDTH || py >= HEIGHT) continue;
@@ -244,6 +253,10 @@ function paint(track: Track) {
 					const k = py * WIDTH + px;
 					const was = surface[k];
 					if (was === TARMAC_ || (was !== GRASS_ && was !== PAVED_ && !through)) continue;
+					const [wx, wy] = [(px + 0.5) / SCALE, (py + 0.5) / SCALE];
+					// (far from the track, past where `which` is known, it cannot be the edge)
+					const edge = through && near[k] !== Infinity;
+					if (edge && Math.abs(lateral(track, wx, wy, which[k])) > spread) continue;
 					if (was === WALL_) {
 						gap.push({ x: px, y: py });
 						surface[k] = TARMAC_;
