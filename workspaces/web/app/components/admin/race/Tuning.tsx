@@ -7,7 +7,7 @@ import { Input } from '~/components/ui/input';
 import { resetRaceSettings, saveRaceSettings } from '~/lib/race/admin';
 import { ROSTER } from '~/lib/race/roster';
 import { DEFAULT_SETTINGS, LIMITS, STATS, type Settings } from '~/lib/race/settings';
-import { getTrack, TRACK_IDS, trackName, WORLD_H, WORLD_W, type TrackId } from '~/lib/race/track';
+import { getTrack, TRACK_IDS, trackName, type TrackId } from '~/lib/race/track';
 import { cn } from '~/lib/utils';
 import { Panel } from '~/components/admin/cards';
 import { Car, Table, Heading } from './parts';
@@ -114,7 +114,11 @@ export const Tuning = memo(function Tuning({
 										: 'border-foreground/15 text-foreground/60 hover:border-foreground/40'
 								)}
 							>
-								<svg viewBox={`0 0 ${WORLD_W} ${WORLD_H}`} className="w-full" aria-hidden>
+								<svg
+									viewBox={`0 0 ${getTrack(id).width} ${getTrack(id).height}`}
+									className="w-full"
+									aria-hidden
+								>
 									<path
 										d={outlineOf(id)}
 										fill="none"

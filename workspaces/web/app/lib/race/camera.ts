@@ -43,8 +43,13 @@ export type Aim = { x: number; y: number; zoom: number };
  */
 export type Lens = { from: Box; to: Box };
 
-/** Where the track is in the frame and how big the frame is, in its pixels. */
-export type Frame = { width: number; height: number; ox: number; oy: number };
+/**
+ * Where the track is in the frame and how big the frame is, in its pixels,
+ * and how many of them a metre of the track is drawn as, if not the usual.
+ */
+export type Frame = { width: number; height: number; ox: number; oy: number; scale?: number };
+
+const pixels = (frame: Frame) => frame.scale ?? SCALE;
 
 /** How many times its size the lens shows the frame. */
 export const zoomOf = ({ from, to }: Lens) => to.w / from.w;
@@ -74,10 +79,11 @@ export function aim(car: Body | null): Aim | null {
 }
 
 /** The camera's rest: the part of the frame the race has, as it is, unmagnified. */
-export function home(to: Box, { ox, oy }: Frame): Aim {
+export function home(to: Box, frame: Frame): Aim {
+	const { ox, oy } = frame;
 	return {
-		x: (to.x + to.w / 2 - ox) / SCALE,
-		y: (to.y + to.h / 2 - oy) / SCALE,
+		x: (to.x + to.w / 2 - ox) / pixels(frame),
+		y: (to.y + to.h / 2 - oy) / pixels(frame),
 		zoom: 1
 	};
 }
@@ -90,8 +96,8 @@ export function home(to: Box, { ox, oy }: Frame): Aim {
 export function framing(aim: Aim, to: Box, frame: Frame): Box {
 	const w = Math.min(frame.width, to.w / aim.zoom);
 	const h = Math.min(frame.height, to.h / aim.zoom);
-	const cx = frame.ox + aim.x * SCALE;
-	const cy = frame.oy + aim.y * SCALE;
+	const cx = frame.ox + aim.x * pixels(frame);
+	const cy = frame.oy + aim.y * pixels(frame);
 	return {
 		x: clamp(cx - w / 2, 0, frame.width - w),
 		y: clamp(cy - h / 2, 0, frame.height - h),
@@ -103,16 +109,16 @@ export function framing(aim: Aim, to: Box, frame: Frame): Box {
 /** Where a point of the track (metres) is on the frame once it is magnified, in the frame's pixels. */
 export function toFrame({ from, to }: Lens, frame: Frame, x: number, y: number) {
 	return {
-		x: to.x + ((frame.ox + x * SCALE - from.x) * to.w) / from.w,
-		y: to.y + ((frame.oy + y * SCALE - from.y) * to.h) / from.h
+		x: to.x + ((frame.ox + x * pixels(frame) - from.x) * to.w) / from.w,
+		y: to.y + ((frame.oy + y * pixels(frame) - from.y) * to.h) / from.h
 	};
 }
 
 /** Where a pixel of the magnified frame is on the track, in metres. */
 export function toWorld({ from, to }: Lens, frame: Frame, px: number, py: number) {
 	return {
-		x: (from.x + ((px - to.x) * from.w) / to.w - frame.ox) / SCALE,
-		y: (from.y + ((py - to.y) * from.h) / to.h - frame.oy) / SCALE
+		x: (from.x + ((px - to.x) * from.w) / to.w - frame.ox) / pixels(frame),
+		y: (from.y + ((py - to.y) * from.h) / to.h - frame.oy) / pixels(frame)
 	};
 }
 
