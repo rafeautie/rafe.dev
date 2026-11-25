@@ -44,7 +44,8 @@ import {
 // laps, with no fuel or tyres to think of. The pits have their own tests
 // (pits.test.ts).
 const LAPS = CLASSIC.laps;
-const TIME_CAP = timeCap(LAPS);
+/** How long a race of them may last on a track. */
+const capOf = (track: Track) => timeCap(LAPS, track.length);
 
 /**
  * The six cars that raced every time before the field could change size. The
@@ -61,7 +62,7 @@ function run(seed: number, track: Track, flags: number[] = [], field = SIX) {
 	const race = createRace(seed, drawGrid(seed, field), track, flags, CLASSIC);
 	const events: RaceEvent[] = [];
 	// as many steps as the longest race is allowed to last
-	for (let step = 0; step < (LIGHTS + TIME_CAP + 1) / DT && !race.done; step++) {
+	for (let step = 0; step < (LIGHTS + capOf(track) + 1) / DT && !race.done; step++) {
 		race.step();
 		events.push(...race.events);
 		race.events.length = 0;
@@ -121,7 +122,7 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 				const race = run(seed, track);
 				expect(race.done).toBe(true);
 				// ended by the cars finishing, not by the clock running out, cautions and all
-				expect(race.time).toBeLessThan(LIGHTS + TIME_CAP - 10);
+				expect(race.time).toBeLessThan(LIGHTS + capOf(track) - 10);
 				const [winner] = race.order();
 				expect(winner.finishTime).toBeGreaterThan(0);
 				// every lap of it, and one more for each that was ended under caution
@@ -168,7 +169,7 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 				`seed ${seed}`
 			).toBe(true);
 			if (race.flag === 'checkered') won++;
-			else expect(race.time).toBeGreaterThan(LIGHTS + TIME_CAP);
+			else expect(race.time).toBeGreaterThan(LIGHTS + capOf(track));
 			for (const car of race.cars) {
 				expect(Number.isFinite(car.x + car.y + car.angle)).toBe(true);
 				const across = lateral(track, car.x, car.y, nearest(track, car.x, car.y));
@@ -603,7 +604,7 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 					if (kind === 'restart') expect(flown[k - 1], `seed ${seed}`).toBe('caution');
 				});
 				// unless the race was called off at the time cap with a caution out
-				if (flown.length && race.time <= LIGHTS + TIME_CAP) {
+				if (flown.length && race.time <= LIGHTS + capOf(track)) {
 					expect(flown.at(-1), `seed ${seed}`).toBe('green');
 				}
 			}

@@ -57,8 +57,16 @@ export const RULES: Rules = { laps: 4, pits: true, tank: 3.3, wear: 1, limit: 12
 /** The race as it was before there were pits: three laps, flat out all the way. */
 export const CLASSIC: Rules = { ...RULES, laps: 3, pits: false };
 
-/** A race is called off this long after the start, whoever is still out. A caution or two fits inside it, each as long as the tow truck takes to go round for the wreck. */
-export const timeCap = (laps: number) => 180 + 60 * laps;
+/**
+ * A race is called off this long after the start, whoever is still out. A
+ * caution or two fits inside it, each as long as the tow truck takes to go
+ * round for the wreck. On a track with a longer lap than most (`length`, in
+ * metres), it is longer in proportion.
+ */
+export const timeCap = (laps: number, length = 0) =>
+	(180 + 60 * laps) * Math.max(1, length / USUAL_LAP);
+/** About how long a lap is on most tracks (m). */
+const USUAL_LAP = 400;
 /** Once someone has won, the rest get this long to finish. */
 const AFTER_WINNER = 8;
 /** And this much longer where there are pits, which string a field out. */
@@ -652,7 +660,7 @@ export function createRace(
 		race.done =
 			running.every((car) => car.finishTime) ||
 			race.time > won + AFTER_WINNER + (rules.pits ? AFTER_STOPS : 0) ||
-			race.time > LIGHTS + timeCap(rules.laps);
+			race.time > LIGHTS + timeCap(rules.laps, track.length);
 	}
 
 	/**

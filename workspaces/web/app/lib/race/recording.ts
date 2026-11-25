@@ -180,7 +180,7 @@ export function record(
 	rules: Rules = RULES
 ): Recording {
 	const race = createRace(seed, grid, track, flags, rules);
-	const longest = Math.ceil((LIGHTS + timeCap(rules.laps)) / DT / EVERY) + 2;
+	const longest = Math.ceil((LIGHTS + timeCap(rules.laps, track.length)) / DT / EVERY) + 2;
 	const pose = POSE + (rules.pits ? PITS : 0);
 	const per = rules.laps > CLASSIC.laps ? COARSE : FINE;
 	const moment = grid.length * pose + race.trucks.length * TRUCK;
