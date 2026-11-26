@@ -165,6 +165,9 @@ function paintTrack(track: Track) {
  */
 function paint(track: Track) {
 	const { n, step, x, y, tx, ty, bend, length, scale } = track;
+	// how wide the kerbs, the edge lines and the start line are painted: half a
+	// metre, and never under two of the frame's pixels
+	const band = Math.max(0.5, 2 / scale);
 	const { place } = serviceFor(track);
 	// the nearest centre-line sample to every pixel near the track
 	const near = new Float32Array(WIDTH * HEIGHT).fill(Infinity);
@@ -211,9 +214,9 @@ function paint(track: Track) {
 				// metres round the lap, for the start line and the kerb stripes
 				const along = i * step + (wx - x[i]) * tx[i] + (wy - y[i]) * ty[i];
 				const fromLine = Math.min(Math.abs(along), Math.abs(along - length));
-				if (fromLine < 0.5) {
+				if (fromLine < band) {
 					ground[k] = (px + py) & 1 ? PAINT : BLACK;
-				} else if (across > HALF_ROAD - 0.5) {
+				} else if (across > HALF_ROAD - band) {
 					// kerbs on the bends, a painted line on the straights
 					const kerb = bend[i] > 1 / 30 && Math.floor(along / 1.5) & 1;
 					ground[k] = kerb ? KERB : PAINT;
