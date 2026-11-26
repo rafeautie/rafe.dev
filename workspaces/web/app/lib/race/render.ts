@@ -55,6 +55,8 @@ export type Service = { trucks: ReplayTruck[]; flag: Flag; pits?: boolean; time?
 /** Nothing happening on a track: every truck on its stand, no caution. */
 const standingBy = (track: Track): Service => ({ trucks: standing(track), flag: 'green' });
 
+/** Half how wide the slots in the tarmac are painted, in the frame's pixels. */
+const SLOT_WIDTH = 0.52;
 /** There is a caution lamp on the infield wall about this often round the lap (m). */
 const LAMPS_EVERY = 45;
 /** The pit apron eases out from the lane to its full depth over this far (m), before the first box and after the last stand. */
@@ -215,7 +217,7 @@ function paint(track: Track) {
 					// kerbs on the bends, a painted line on the straights
 					const kerb = bend[i] > 1 / 30 && Math.floor(along / 1.5) & 1;
 					ground[k] = kerb ? KERB : PAINT;
-				} else if (Math.abs(across - 2) < 0.13) {
+				} else if (Math.abs(across - 2) < SLOT_WIDTH / scale) {
 					// the two slots a slot car track would have
 					ground[k] = SLOT;
 				} else {
@@ -348,7 +350,7 @@ function paint(track: Track) {
 				// hatched in the trucks' own amber, the same way all over
 				const [ax, ay] = [wx - front.x, wy - front.y];
 				const hatch = Math.floor((ax * cos + ay * sin + ay * cos - ax * sin) * 1.4) & 1;
-				if (!inYard(wx, wy, 0.25)) ground[k] = AMBER;
+				if (!inYard(wx, wy, 1 / scale)) ground[k] = AMBER;
 				else if (hatch) ground[k] = mix(ground[k], AMBER, 0.3);
 			}
 		}
@@ -357,13 +359,17 @@ function paint(track: Track) {
 		for (let across = -RING - HALF_LANE; across <= -RING + HALF_LANE; across += 0.1) {
 			const [wx, wy] = pit.at(sample, across);
 			const [px, py] = [Math.floor(wx * scale), Math.floor(wy * scale)];
-			if (px >= 0 && py >= 0 && px < WIDTH && py < HEIGHT) ground[py * WIDTH + px] = PAINT;
+			if (px < 0 || py < 0 || px >= WIDTH || py >= HEIGHT) continue;
+			// (on the paving only, where the lane runs round a bend wider than it is drawn)
+			const k = py * WIDTH + px;
+			if (surface[k] === PAVED_ || surface[k] === APRON_) ground[k] = PAINT;
 		}
 	}
 	const boxes = pit.boxes.map((box) => {
 		const [cos, sin] = [Math.cos(box.angle), Math.sin(box.angle)];
 		const reach = Math.ceil((BOX.long + BOX.wide) * scale);
-		/** The box's painted edge, to be done over each race in the colour of the car whose box it is. */
+		/** The box's painted edge, a pixel wide, to be done over each race in the colour of the car whose box it is. */
+		const line = 1 / scale;
 		const edge: { x: number; y: number }[] = [];
 		const [cx, cy] = [Math.floor(box.x * scale), Math.floor(box.y * scale)];
 		for (let py = Math.max(0, cy - reach); py < Math.min(HEIGHT, cy + reach); py++) {
@@ -377,7 +383,9 @@ function paint(track: Track) {
 				const k = py * WIDTH + px;
 				if (surface[k] !== APRON_) continue;
 				const border =
-					BOX.long / 2 - Math.abs(along) < 0.25 || front - side < 0.25 || side - back < 0.25;
+					BOX.long / 2 - Math.abs(along) < line ||
+					front - side < line ||
+					side - back < line;
 				if (border) {
 					ground[k] = PAINT;
 					edge.push({ x: px, y: py });
