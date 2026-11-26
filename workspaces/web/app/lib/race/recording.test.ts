@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createReplay, pack, record, unpack } from './recording';
 import { ROSTER } from './roster';
-import { CLASSIC, createRace, drawGrid, rank } from './sim';
-import { getTrack } from './track';
+import { LIMITS } from './settings';
+import { CLASSIC, createRace, drawGrid, rank, RULES } from './sim';
+import { getTrack, TRACK_IDS } from './track';
 
 // on the circuit, where the seeds these pick were picked
 const track = getTrack('circuit');
@@ -264,4 +265,18 @@ describe('a recording', () => {
 			expect(poses.every((byte, at) => byte === recorded[at])).toBe(true);
 		}
 	});
+
+	// (the room keeps it as one stored value, which can be no more than 2 MB)
+	it.each(TRACK_IDS)(
+		'of the longest race the rules allow on the %s, with the largest field, can be stored',
+		{ timeout: 120_000 },
+		(id) => {
+			const rules = { ...RULES, laps: LIMITS.laps[1] };
+			const count = LIMITS.count[1];
+			for (let seed = 1; seed <= 3; seed++) {
+				const recording = record(seed, drawGrid(seed, ROSTER, count), getTrack(id), [], rules);
+				expect(pack(recording).length).toBeLessThan(1_950_000);
+			}
+		}
+	);
 });
