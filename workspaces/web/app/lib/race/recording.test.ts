@@ -14,7 +14,7 @@ const track = getTrack('circuit');
  */
 const SIX = ROSTER.slice(0, 6);
 /** A race between them that loses a car early on, and a truck goes for it. */
-const WRECK = 20;
+const WRECK = 4;
 
 describe('a recording', () => {
 	it('plays back as the race it was made from', () => {
@@ -33,7 +33,8 @@ describe('a recording', () => {
 				expect(Math.abs(shown.x - car.x)).toBeLessThan(0.01);
 				expect(Math.abs(shown.y - car.y)).toBeLessThan(0.01);
 				expect(Math.abs(Math.sin(shown.angle - car.angle))).toBeLessThan(0.001);
-				expect(Math.abs(shown.progress - car.progress)).toBeLessThan(0.06);
+				// (to within the whole numbers it is written down in: fewer to the metre on a longer lap)
+				expect(Math.abs(shown.progress - car.progress)).toBeLessThan(1.2 / (recording.per ?? 20));
 				expect(Math.abs(shown.slip - Math.min(25.5, car.slip))).toBeLessThan(0.11);
 				expect(shown.retired).toBe(car.retired);
 				expect(Math.abs(shown.damage - car.damage)).toBeLessThan(0.001);

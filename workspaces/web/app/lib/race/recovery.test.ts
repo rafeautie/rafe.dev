@@ -138,7 +138,7 @@ function fetch(id: TrackId, lying: [number, number, number?][], most = 900) {
 
 /** On each track, two wrecks on a straight, the second some way back from the first, and when it happens. */
 const BEHIND: Record<TrackId, [[number, number], [number, number], number]> = {
-	circuit: [[305, 2], [272, -1.5], 30],
+	circuit: [[570, 2], [540, -1.5], 30],
 	oval: [[178, 2], [148, -1.5], 25]
 };
 
