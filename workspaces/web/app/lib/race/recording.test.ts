@@ -13,12 +13,13 @@ const track = getTrack('circuit');
  * seeds below were picked for races between them, so they race here.
  */
 const SIX = ROSTER.slice(0, 6);
-/** A race between them that loses a car early on, and a truck goes for it. */
+/** A race between them that nobody goes out of, with knocks in it; and one that loses a car early on, and a truck goes for it. */
+const QUIET = 9;
 const WRECK = 4;
 
 describe('a recording', () => {
 	it('plays back as the race it was made from', () => {
-		const seed = 5;
+		const seed = QUIET;
 		const grid = drawGrid(seed, SIX);
 		const recording = record(seed, grid, track, [], CLASSIC);
 		const replay = createReplay(recording, ROSTER);
@@ -58,7 +59,7 @@ describe('a recording', () => {
 	});
 
 	it('shows the same thing after seeking backwards', () => {
-		const recording = record(5, drawGrid(5, SIX), track, [], CLASSIC);
+		const recording = record(QUIET, drawGrid(QUIET, SIX), track, [], CLASSIC);
 		const straight = createReplay(recording, ROSTER);
 		const wound = createReplay(recording, ROSTER);
 		straight.seek(30);
@@ -68,7 +69,7 @@ describe('a recording', () => {
 	});
 
 	it('gives the gap between two cars by the clock', () => {
-		const replay = createReplay(record(5, drawGrid(5, SIX), track, [], CLASSIC), ROSTER);
+		const replay = createReplay(record(QUIET, drawGrid(QUIET, SIX), track, [], CLASSIC), ROSTER);
 		// on the grid nobody has yet been where the car behind is
 		expect(replay.gap(1, 0)).toBeNull();
 		replay.seek(30);
@@ -132,8 +133,8 @@ describe('a recording', () => {
 	});
 
 	it('leaves the trucks out of a race none went out in, and shows them parked', () => {
-		// seed 5 is a clean race; seed WRECK loses a car, and a truck goes for it
-		const quiet = record(5, drawGrid(5, SIX), track, [], CLASSIC);
+		// seed QUIET is a clean race; seed WRECK loses a car, and a truck goes for it
+		const quiet = record(QUIET, drawGrid(QUIET, SIX), track, [], CLASSIC);
 		const busy = record(WRECK, drawGrid(WRECK, SIX), track, [], CLASSIC);
 		const cars = SIX.length * 10;
 		expect(quiet.trucks).toBe(0);

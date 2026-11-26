@@ -386,9 +386,7 @@ function paint(track: Track) {
 				const k = py * WIDTH + px;
 				if (surface[k] !== APRON_) continue;
 				const border =
-					BOX.long / 2 - Math.abs(along) < line ||
-					front - side < line ||
-					side - back < line;
+					BOX.long / 2 - Math.abs(along) < line || front - side < line || side - back < line;
 				if (border) {
 					ground[k] = PAINT;
 					edge.push({ x: px, y: py });
