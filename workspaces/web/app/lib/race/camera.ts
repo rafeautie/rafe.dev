@@ -65,16 +65,17 @@ export function chosen<T extends Body>(follow: Follow, cars: T[]): T | null {
 }
 
 /**
- * Where to look to see `car`: close up, a little ahead of it. Nothing to
- * follow is null: the whole track.
+ * Where to look to see `car`: close up, a little ahead of it, and as close
+ * on a track drawn smaller in the `frame` as on any other. Nothing to follow
+ * is null: the whole track.
  */
-export function aim(car: Body | null): Aim | null {
+export function aim(car: Body | null, frame?: Frame): Aim | null {
 	if (!car) return null;
 	const ahead = car.retired ? 0 : car.speed * LEAD;
 	return {
 		x: car.x + Math.cos(car.angle) * ahead,
 		y: car.y + Math.sin(car.angle) * ahead,
-		zoom: ZOOM_MAX
+		zoom: frame ? (ZOOM_MAX * SCALE) / pixels(frame) : ZOOM_MAX
 	};
 }
 

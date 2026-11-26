@@ -393,7 +393,7 @@ export function Game({
 			shown.current = replay;
 			const car = racing && replay ? chosen(follow, replay.cars) : null;
 			seen.current = car?.entry.id ?? null;
-			const where = camera.update(aim(car), home(at.stage, at.frame), dt, still);
+			const where = camera.update(aim(car, at.frame), home(at.stage, at.frame), dt, still);
 			lens.current = { from: framing(where, at.stage, at.frame), to: at.stage };
 			return lens.current;
 		});
