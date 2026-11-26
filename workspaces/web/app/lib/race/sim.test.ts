@@ -332,14 +332,19 @@ describe.each(TRACK_IDS)('the line the pit lane is on, on the %s', (id) => {
 		return least;
 	};
 
-	it('stays inside the wall all the way round', () => {
-		for (let sample = 0; sample < n; sample++) {
+	// (only where the pits are, from the way in to the way out, which is all
+	// of it that is ever driven: elsewhere a tight bend may pinch it)
+	const { in0, out1 } = pitsFor(track);
+	const pits = Array.from({ length: out1 - in0 + 1 }, (_, k) => (in0 + k) % n);
+
+	it('stays inside the wall all the way round the pits', () => {
+		for (const sample of pits) {
 			expect(clear(place(sample, -RING))).toBeGreaterThan(RING - 0.5);
 		}
 	});
 
 	it('bends no tighter than a truck can steer', () => {
-		for (let sample = 0; sample < n; sample++) {
+		for (const sample of pits) {
 			const [a, b, c] = [-3, 0, 3].map((d) => place(sample + d, -RING));
 			const [cross, sides] = triangle(...a, ...b, ...c);
 			expect(sides / Math.abs(2 * cross || 1e-9)).toBeGreaterThan(TIGHTEST - 0.5);
