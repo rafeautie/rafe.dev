@@ -731,7 +731,15 @@ export function createRace(
 		// It starts lining up as soon as the last wreck is lifted, the truck
 		// having a lap of the track to take it round yet, but is not given the
 		// green until that is off the track too.
-		if (!caution.going && recovery.away && out >= CAUTION_MIN && (closed || out >= CAUTION_MAX)) {
+		// (on a track that says where, only once the leader is past it, on the run to the line)
+		const near = track.lineup === null || onRound(track.lineup, pacer.sample) < onRound(track.lineup, 0);
+		if (
+			!caution.going &&
+			recovery.away &&
+			near &&
+			out >= CAUTION_MIN &&
+			(closed || out >= CAUTION_MAX)
+		) {
 			caution.going = race.time;
 			merged.clear();
 			lineup = rank(racing).filter((car) => onRound(car.sample, pacer!.sample) < n / 2);

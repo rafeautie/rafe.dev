@@ -88,7 +88,7 @@ const LAYOUTS: Record<
 	TrackId,
 	{ from: number; slip: number; thirst: number; away?: [number, number] }
 > = {
-	circuit: { from: 680, slip: 66, thirst: 1.04, away: [126, 152] },
+	circuit: { from: 672, slip: 66, thirst: 1.04, away: [118, 144] },
 	oval: { from: 258, slip: 40, thirst: 1.05, away: [152, 182] }
 };
 

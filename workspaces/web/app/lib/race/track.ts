@@ -40,14 +40,14 @@ export const MAX_OFFSET = HALF_ROAD - HALF_CAR - 0.35;
  * driver's right.
  */
 const CIRCUIT: [number, number][] = [
-	[108, 124.1],
+	[100, 124.1],
 	[95, 124.0],
 	[74, 123.5],
 	[59, 122.5],
 	[44, 121.3],
-	[25.5, 120.1],
-	[16.5, 117.3],
-	[11.2, 110.1],
+	[25.1, 120.1],
+	[16.7, 117.7],
+	[10.7, 109.9],
 	[12.3, 96.7],
 	[15, 82.0],
 	[22.2, 69.5],
@@ -104,7 +104,8 @@ const CIRCUIT: [number, number][] = [
 	[148.6, 103.5],
 	[146.8, 114.5],
 	[140.5, 121.6],
-	[131, 124.2]
+	[131, 124.2],
+	[108, 124.1]
 ];
 
 /**
@@ -160,19 +161,28 @@ const OVAL = triOval(32, 34, (10 * Math.PI) / 180, 50, 10);
  * A track's layout: its name, its control points, how many times wider than
  * the usual world its world is, and which side of a driver the infield is on,
  * which is where the pits and everything else off the track are (service.ts):
- * the left, unless it is run clockwise.
+ * the left, unless it is run clockwise; and on a track too twisty to line up
+ * two by two for a restart just anywhere, the sample after which the field
+ * does, on the run to the line.
  */
 type Layout = {
 	name: string;
 	control: [number, number][];
 	world?: number;
 	infield?: 'left' | 'right';
+	lineup?: number;
 };
 
 /** The tracks there are, by id. */
 const TRACKS: Record<'oval' | 'circuit', Layout> = {
 	oval: { name: 'Daytona', control: OVAL },
-	circuit: { name: 'Watkins Glen', control: CIRCUIT, world: 272 / WORLD_W, infield: 'right' }
+	circuit: {
+		name: 'Watkins Glen',
+		control: CIRCUIT,
+		world: 272 / WORLD_W,
+		infield: 'right',
+		lineup: 612
+	}
 };
 
 export type TrackId = keyof typeof TRACKS;
@@ -260,7 +270,7 @@ function centre(control: [number, number][], infield: Layout['infield'] = 'left'
 	return { n, step, length, x, y, tx, ty, nx, ny };
 }
 
-function build(id: TrackId, { control, world = 1, infield }: Layout) {
+function build(id: TrackId, { control, world = 1, infield, lineup }: Layout) {
 	const { n, step, length, x, y, tx, ty, nx, ny } = centre(control, infield);
 
 	// The racing line, as an offset along the normal (line.ts). It takes a
@@ -295,7 +305,26 @@ function build(id: TrackId, { control, world = 1, infield }: Layout) {
 	/** 1 if the normal points to the driver's right, as on most tracks, -1 if to the left. */
 	const hand = infield === 'right' ? -1 : 1;
 
-	return { id, n, step, length, x, y, tx, ty, nx, ny, line, bend, turn, width, height, scale, hand };
+	return {
+		id,
+		n,
+		step,
+		length,
+		x,
+		y,
+		tx,
+		ty,
+		nx,
+		ny,
+		line,
+		bend,
+		turn,
+		width,
+		height,
+		scale,
+		hand,
+		lineup: lineup ?? null
+	};
 }
 
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
