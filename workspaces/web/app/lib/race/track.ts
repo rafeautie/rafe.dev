@@ -161,16 +161,13 @@ const OVAL = triOval(32, 34, (10 * Math.PI) / 180, 50, 10);
  * A track's layout: its name, its control points, how many times wider than
  * the usual world its world is, and which side of a driver the infield is on,
  * which is where the pits and everything else off the track are (service.ts):
- * the left, unless it is run clockwise; and on a track too twisty to line up
- * two by two for a restart just anywhere, the sample after which the field
- * does, on the run to the line.
+ * the left, unless it is run clockwise.
  */
 type Layout = {
 	name: string;
 	control: [number, number][];
 	world?: number;
 	infield?: 'left' | 'right';
-	lineup?: number;
 };
 
 /** The tracks there are, by id. */
@@ -180,8 +177,7 @@ const TRACKS: Record<'oval' | 'circuit', Layout> = {
 		name: 'Watkins Glen',
 		control: CIRCUIT,
 		world: 272 / WORLD_W,
-		infield: 'right',
-		lineup: 612
+		infield: 'right'
 	}
 };
 
@@ -270,7 +266,7 @@ function centre(control: [number, number][], infield: Layout['infield'] = 'left'
 	return { n, step, length, x, y, tx, ty, nx, ny };
 }
 
-function build(id: TrackId, { control, world = 1, infield, lineup }: Layout) {
+function build(id: TrackId, { control, world = 1, infield }: Layout) {
 	const { n, step, length, x, y, tx, ty, nx, ny } = centre(control, infield);
 
 	// The racing line, as an offset along the normal (line.ts). It takes a
@@ -322,8 +318,7 @@ function build(id: TrackId, { control, world = 1, infield, lineup }: Layout) {
 		width,
 		height,
 		scale,
-		hand,
-		lineup: lineup ?? null
+		hand
 	};
 }
 

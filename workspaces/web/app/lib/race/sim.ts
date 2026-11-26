@@ -524,8 +524,7 @@ export function createRace(
 				: car.angle + Math.atan(Math.tan(car.steer) / 2) + (car.speed < 0 ? Math.PI : 0);
 		const off = Math.atan2(Math.sin(going - way), Math.cos(going - way));
 		const [hx, hy] = held(sample);
-		const wide =
-			((car.x - hx) * track.nx[sample] + (car.y - hy) * track.ny[sample]) * track.hand;
+		const wide = ((car.x - hx) * track.nx[sample] + (car.y - hy) * track.ny[sample]) * track.hand;
 		const want = bend - clamp(wide, -3, 3) / HOLD ** 2 - (1.8 * off) / HOLD;
 		return Math.atan(2 * AXLE * want);
 	}
@@ -731,15 +730,7 @@ export function createRace(
 		// It starts lining up as soon as the last wreck is lifted, the truck
 		// having a lap of the track to take it round yet, but is not given the
 		// green until that is off the track too.
-		// (on a track that says where, only once the leader is past it, on the run to the line)
-		const near = track.lineup === null || onRound(track.lineup, pacer.sample) < onRound(track.lineup, 0);
-		if (
-			!caution.going &&
-			recovery.away &&
-			near &&
-			out >= CAUTION_MIN &&
-			(closed || out >= CAUTION_MAX)
-		) {
+		if (!caution.going && recovery.away && out >= CAUTION_MIN && (closed || out >= CAUTION_MAX)) {
 			caution.going = race.time;
 			merged.clear();
 			lineup = rank(racing).filter((car) => onRound(car.sample, pacer!.sample) < n / 2);
