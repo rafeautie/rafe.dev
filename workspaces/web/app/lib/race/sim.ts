@@ -1011,6 +1011,11 @@ export function createRace(
 				if (car.leader >= 0 && racing(car.leader)) {
 					const room = Math.max(0, car.leadPoint - car.progress - 1);
 					limit = Math.max(3, Math.sqrt(car.leadSpeed ** 2 + grip * G * room));
+					// (and nearer it already than it is followed, it drops back)
+					const leader = cars[car.leader];
+					const ahead = along(car.sample, leader.sample);
+					if (ahead > 0 && ahead < car.follow)
+						limit = Math.min(limit, Math.max(3, leader.speed + (ahead - car.follow) * 1.5));
 				}
 				// and the one it is tucked in behind now, it keeps its distance from
 				for (const other of cars) {

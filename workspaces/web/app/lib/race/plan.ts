@@ -112,7 +112,6 @@ export type Thought = {
 	leadGap: number;
 };
 
-const env = (name: string, value: number) => Number((globalThis as any).process?.env?.[name] ?? value);
 /** How many moments ahead a driver runs things forward, and how far apart they are (s). */
 const MOMENTS = 12;
 const MOMENT = 0.25;
@@ -120,23 +119,27 @@ const MOMENT = 0.25;
 const AROUND = 8;
 const WAYS = 8;
 /** Nearer than this, front to back, two cars are alongside each other; and nearer than this, side to side, they are on the same piece of road (m, between their middles). */
-const LEVEL = env('LEVEL', 3.4);
+const LEVEL = 3.4;
 const ABREAST = 2.1;
+/** And nearer than this, side to side, two cars alongside each other touch. */
+const TOUCH = 1.8;
 /** A car's length, and how far clear of the one ahead a car on its way out from behind it keeps (m). */
 const LENGTH = 4.2;
-const CLEARS = env('CLEARS', 1);
+const CLEARS = 1;
 /**
  * What a way to go is worth, in metres of road: what hitting a car costs,
  * and each metre across the road from the way now taken, and each metre off
  * the racing line; and what a place is worth: being past a car rather than
  * behind it, and half that for being alongside it.
  */
-const HIT = env('HIT', 60);
-const SWITCH = env('SWITCH', 1.5);
-const OFF = env('OFF', 0.2);
-const PLACE = env('PLACE', 25);
+const HIT = 60;
+/** What each moment alongside a car costs for each metre nearer it than abreast. */
+const SQUEEZE = 8;
+const SWITCH = 2;
+const OFF = 0.2;
+const PLACE = 25;
 /** How many seconds more, at the speed a way to go ends up at, it is credited with: a car not held up goes on gaining. */
-const AFTER = env('AFTER', 2);
+const AFTER = 2;
 
 const who = new Int32Array(AROUND);
 const lead = new Float64Array(AROUND);
@@ -353,7 +356,7 @@ export function think(
 							leadGap = Math.max(0, gone);
 						}
 					}
-				} else if (gap > -LEVEL && !(struck & bit)) {
+				} else if (gap > -LEVEL) {
 					// One alongside on it. If they were alongside with room, the one
 					// that has moved over on the other is the one that has to give
 					// it back; if that is the other one, it will.
@@ -363,6 +366,11 @@ export function think(
 						const closing = apart > 0 ? theirs : -theirs;
 						if (closer <= closing + 0.02) continue;
 					}
+					// Too near it costs something every moment, the nearer the more,
+					// so that of two ways the one that opens the gap is the better;
+					// and near enough to touch is a hit.
+					cost += SQUEEZE * (ABREAST - Math.abs(apart));
+					if (Math.abs(apart) >= TOUCH || struck & bit) continue;
 					struck |= bit;
 					cost += HIT;
 					// (and if there is no way round that, it is the one behind that lifts)
