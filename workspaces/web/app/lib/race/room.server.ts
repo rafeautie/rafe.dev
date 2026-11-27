@@ -713,12 +713,16 @@ export class RaceRoom extends DurableObject<Env> {
 		this.tell(this.board());
 	}
 
-	/** Pays back as much of a player's loan as their chips cover. */
+	/**
+	 * Pays back the whole of a player's loan from their chips. Only with chips
+	 * to spare: paying with the last of them would leave the player out of
+	 * chips, to borrow again.
+	 */
 	private repay(id: number) {
 		const { balance, debt } = this.player(id);
 		if (debt === 0) return 'You owe the house nothing';
-		if (balance === 0) return 'You have no chips to pay back with';
-		this.ctx.storage.transactionSync(() => this.repaid(id, Math.min(balance, debt)));
+		if (balance <= debt) return 'Pay it back once you have more than you owe';
+		this.ctx.storage.transactionSync(() => this.repaid(id, debt));
 		this.tell(this.board());
 	}
 

@@ -24,7 +24,7 @@ describe.each(TRACK_IDS)('the racing line on the %s', (id) => {
 		};
 		let start = 0;
 		while (bends(start)) start++;
-		for (let i = start; i < start + n; ) {
+		for (let i = start; i < start + n;) {
 			const way = bends(i);
 			if (!way) {
 				i++;

@@ -52,7 +52,8 @@ function Open({ you, problem, send, at, over, show }: Props) {
 	const nameRefusal = asked?.kind === 'name' ? refusal : null;
 	const repayRefusal = asked?.kind === 'repay' ? refusal : null;
 	const debt = you.debt > 0;
-	const back = Math.min(you.balance, you.debt);
+	// all of it, and only with chips to spare (room.server.ts)
+	const back = debt && you.balance > you.debt ? you.debt : 0;
 	const repaid = asked?.kind === 'repay' && you.debt < asked.from;
 	const note = nameRefusal
 		? { text: nameRefusal, bad: true }

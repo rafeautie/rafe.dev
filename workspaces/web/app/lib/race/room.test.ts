@@ -563,7 +563,7 @@ describe('the betting', () => {
 		// 1,100 back on 600 staked is 500 won: that goes to the loan, the 600 to the balance
 		expect(punter.last('you').you).toMatchObject({ balance: 400 + 600, debt: 500, profit: 500 });
 
-		// what is left of the loan can be paid back by hand
+		// what is left of the loan can be paid back by hand, all at once
 		expect(await punter.ask({ type: 'repay' })).toMatchObject({
 			you: { balance: 500, debt: 0 }
 		});
@@ -604,6 +604,11 @@ describe('the betting', () => {
 			expect(punter.last('you').bets.every((bet) => bet.payout !== null)).toBe(true)
 		);
 		expect(punter.last('you').you).toMatchObject({ balance: 30, debt: 300 });
+		// paying back with the last chips would only leave them out of chips
+		expect(await punter.ask({ type: 'repay' })).toEqual({
+			type: 'no',
+			reason: 'Pay it back once you have more than you owe'
+		});
 	});
 
 	it('lets a player go bankrupt only when the house will lend no more', SLOW, async () => {

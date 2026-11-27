@@ -1224,13 +1224,10 @@ export function createHud() {
 		if (!debt) return;
 
 		p.fill(x + 6, y + 102, w - 12, 1, FAINT);
-		const back = Math.min(you.balance, you.debt);
-		wrap(
-			back > 0
-				? "Winnings pay the loan back first. You're in the green once it's paid. You can pay it back now from your chips."
-				: "Winnings pay the loan back first. You're in the green once it's paid.",
-			w - 12
-		).forEach((line, index) => p.text(x + 6, y + 107 + index * 9, line, DIM));
+		const back = you.balance > you.debt ? you.debt : 0;
+		wrap("Winnings pay the loan back first. You're in the green once it's paid.", w - 12).forEach(
+			(line, index) => p.text(x + 6, y + 107 + index * 9, line, DIM)
+		);
 		if (back > 0) {
 			const { repay } = at;
 			p.fill(repay.x, repay.y, repay.w, repay.h, GOLD);
