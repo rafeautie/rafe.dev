@@ -45,9 +45,12 @@ export type Bet = { market: Market; outcome: string; stake: number; payout: numb
 export type Standing = {
 	id: number;
 	name: string;
+	/** Chips to bet with; never below zero. */
 	balance: number;
 	profit: number;
 	bankruptcies: number;
+	/** What re-ups have borrowed from the house and not paid back yet. */
+	debt: number;
 };
 
 /**
@@ -58,8 +61,10 @@ export type FromRoom =
 	/** Where the cycle is, with the chips on every outcome as they stand. */
 	| { type: 'state'; state: RoomState; pools: Pools }
 	| { type: 'sync'; sent: number; now: number }
-	/** To one page: who it is, and its bets on this race. */
-	| { type: 'you'; you: Standing; bets: Bet[] }
+	/** To one page: who it is, and its bets on this race. A banned player cannot bet or borrow. */
+	| { type: 'you'; you: Standing; bets: Bet[]; banned: boolean }
+	/** To one player's pages: their re-up loan has just been paid off. */
+	| { type: 'paid' }
 	/** To all: somebody bet, and what is now on that outcome. */
 	| { type: 'bet'; name: string; market: Market; outcome: string; stake: number; pool: number }
 	/** To all: the players furthest ahead on their bets. */
@@ -72,5 +77,9 @@ export type ToRoom =
 	| { type: 'sync'; sent: number }
 	| { type: 'name'; name: string }
 	| { type: 'bet'; market: Market; outcome: string; stake: number }
-	/** Wipe a debt and start again on the opening stake. */
+	/** Borrow from the house when out of chips, up to the re-up limit. */
+	| { type: 'reup'; amount: number }
+	/** Pay back as much of the loan as the balance covers. */
+	| { type: 'repay' }
+	/** Out of chips and out of credit: wipe the loan and start again on the opening stake. */
 	| { type: 'bankrupt' };

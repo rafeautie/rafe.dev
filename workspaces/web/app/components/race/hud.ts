@@ -161,6 +161,10 @@ const CLEAR = 2;
 
 /** The stakes one click away. The last is everything you may bet. */
 export const STAKES = [10, 50, 100, 'Max'] as const;
+/** What a re-up can borrow in one click. The last is all the house will lend. */
+export const LOANS = [250, 500, 'Max'] as const;
+/** How tall the out-of-chips panel is. */
+const REUP_H = 170;
 
 export type Layout = ReturnType<typeof layout>;
 
@@ -256,6 +260,9 @@ export function layout(
 	// the settings open over the middle of everything
 	const mx = (fw - MENU) >> 1;
 	const my = (fh - 170) >> 1;
+	// Out of chips, the same, but on a phone at the top, over the track, where
+	// it is in view without scrolling.
+	const ry = stacked === 'under' ? 6 : (fh - REUP_H) >> 1;
 	const widths = MARKETS.map((market) => measure(SHORT[market]) + 9);
 	// where the slip's rows of cars end, and what is picked, the stake and the button begin
 	const foot = y + slipH - SLIP_FOOT;
@@ -269,10 +276,18 @@ export function layout(
 			close: box(mx + MENU - 15, my, 15, 15),
 			name: box(mx + 6, my + 31, MENU - 56, 15),
 			save: box(mx + MENU - 46, my + 31, 40, 15),
-			bankrupt: box(mx + 6, my + 138, 124, 15),
-			confirm: box(mx + 90, my + 138, 56, 15),
-			cancel: box(mx + 150, my + 138, 50, 15)
+			repay: box(mx + 6, my + 138, 124, 15)
 		},
+		reup: {
+			panel: box(mx, ry, MENU, REUP_H),
+			close: box(mx + MENU - 15, ry, 15, 15),
+			amounts: LOANS.map((_, index) => box(mx + 6 + index * 48, ry + 86, 46, 15)),
+			input: box(mx + 150, ry + 86, MENU - 156, 15),
+			go: box(mx + 6, ry + 118, MENU - 12, 17),
+			watch: box(mx + 6, ry + 139, MENU - 12, 15)
+		},
+		// on the wallet, out of chips: the way back to the re-up
+		reupChip: box(wallet.x + wallet.w - 41, wallet.y + 12, 37, 10),
 		track,
 		// where the track is in the frame and how big the frame is, for the camera
 		frame: { width, height, ox: track.x, oy: track.y },
@@ -339,11 +354,21 @@ export type Menu = {
 	selection: Selection;
 	/** Whether the name can be saved as it is. */
 	fresh: boolean;
-	/** What came of saving the name, and of going bankrupt. */
+	/** What came of saving the name, and of paying the loan back. */
 	note: { text: string; bad: boolean } | null;
 	refusal: string | null;
+};
+
+/** The out-of-chips panel while it is open: what is to be borrowed, and what came of asking. */
+export type Reup = {
+	amount: number;
+	typing: boolean;
+	selection: Selection;
+	/** The most the house will lend now; 0 when the only way on is bankruptcy. */
+	credit: number;
 	/** Whether bankruptcy has been asked for and is waiting to be confirmed. */
 	sure: boolean;
+	refusal: string | null;
 };
 
 export type Scene = {
@@ -362,6 +387,11 @@ export type Scene = {
 	pan: number;
 	slip: Slip;
 	menu: Menu | null;
+	reup: Reup | null;
+	/** Whether you are out of chips: none left, and no bets riding. */
+	broke: boolean;
+	/** Whether your loan was paid off in this race. */
+	paid: boolean;
 	/** The cars where they are drawn, and, once there is a race, the replay showing it. */
 	cars: CarView[];
 	replay: Replay | null;
@@ -750,26 +780,36 @@ export function createHud() {
 		});
 	}
 
-	// What you have. In debt it says how much further you may go; once a race
-	// is settled, what it changed by.
-	function wallet(p: Painter, at: Box, scene: Scene, dt: number) {
+	// What you have. Owing the house, it says how much, in place of being in
+	// the green; once a race is settled, what it changed by; out of chips, the
+	// way back to a re-up.
+	function wallet(p: Painter, at: Box, chip: Box, scene: Scene, dt: number) {
 		const { x, y, w } = at;
-		const { you, room, bets } = scene;
+		const { you, room, bets, broke, paid } = scene;
 		panel(p, at);
 		if (!you) return;
-		const debt = you.balance < 0;
+		const owing = you.debt > 0;
 		const balance = chips(glide('balance', you.balance, dt));
-		p.text(x + 5, y + 5, balance, debt ? BAD : PAPER, 2);
+		p.text(x + 5, y + 5, balance, broke ? BAD : owing ? GOLD : PAPER, 2);
 		const space = w - 15 - measure(balance, 2);
 		p.right(x + w - 5, y + 4, clip(you.name, space), GOLD);
+		if (broke) {
+			p.fill(chip.x, chip.y, chip.w, chip.h, GOLD);
+			p.centre(chip.x + (chip.w >> 1), chip.y + 2, 'Re-up', INK);
+			return;
+		}
 		const net = room?.phase === 'results' ? netOf(bets) : null;
-		const [line, colour] = net
-			? [signed(net), net > 0 ? GOOD : BAD]
-			: debt
-				? [`${chips(you.balance + (room?.settings.debtCap ?? 0))} left`, BAD]
-				: you.bankruptcies > 0
-					? [`Bust ×${you.bankruptcies}`, DIM]
-					: ['Chips', DIM];
+		const [line, colour] = paid
+			? ['Paid off', GOOD]
+			: net
+				? [signed(net), net > 0 ? GOOD : BAD]
+				: owing
+					? [`Owe ${chips(you.debt)}`, BAD]
+					: you.balance === 0
+						? ['All in', DIM]
+						: you.bankruptcies > 0
+							? [`Bust ×${you.bankruptcies}`, DIM]
+							: ['Chips', DIM];
 		p.right(x + w - 5, y + 13, clip(line, space), colour);
 	}
 
@@ -1150,14 +1190,15 @@ export function createHud() {
 		});
 	}
 
-	// Your name, where you stand, and the way out of debt, over everything
+	// Your name, where you stand, and paying back a loan, over everything
 	// else, which goes dark behind it.
 	function settings(p: Painter, at: Layout['menu'], scene: Scene, menu: Menu) {
-		const { you, room } = scene;
+		const { you } = scene;
 		if (!you) return;
-		const debt = you.balance < 0;
+		const debt = you.debt > 0;
 		const { x, y, w } = at.panel;
-		const h = debt ? 170 : 91;
+		// owing, room for what that means, and for paying it back if it can be
+		const h = !debt ? 91 : you.balance > you.debt ? 170 : 128;
 		p.fill(0, 0, p.width, p.height, INK, 0.55);
 		p.fill(x - 1, y - 1, w + 2, h + 2, INK, 0.5);
 		p.fill(x, y, w, h, INK, 0.96);
@@ -1172,10 +1213,10 @@ export function createHud() {
 		if (menu.note) p.text(x + 6, y + 50, clip(menu.note.text, w - 12), menu.note.bad ? BAD : GOOD);
 
 		p.fill(x + 6, y + 62, w - 12, 1, FAINT);
-		const facts: [string, string, number][] = [['Balance', chips(you.balance), debt ? BAD : PAPER]];
-		if (debt) {
-			facts.push(['Credit left', chips(you.balance + (room?.settings.debtCap ?? 0)), PAPER]);
-		}
+		const facts: [string, string, number][] = [
+			['Balance', chips(you.balance), debt ? GOLD : PAPER]
+		];
+		if (debt) facts.push(['Owed to the house', chips(you.debt), BAD]);
 		facts.push(['Bankruptcies', String(you.bankruptcies), PAPER]);
 		facts.forEach(([name, value, colour], index) => {
 			p.text(x + 6, y + 67 + index * 11, name, DIM);
@@ -1184,26 +1225,81 @@ export function createHud() {
 		if (!debt) return;
 
 		p.fill(x + 6, y + 102, w - 12, 1, FAINT);
+		const back = you.balance > you.debt ? you.debt : 0;
+		wrap("Winnings pay the loan back first. You're in the green once it's paid.", w - 12).forEach(
+			(line, index) => p.text(x + 6, y + 107 + index * 9, line, DIM)
+		);
+		if (back > 0) {
+			const { repay } = at;
+			p.fill(repay.x, repay.y, repay.w, repay.h, GOLD);
+			p.centre(repay.x + (repay.w >> 1), repay.y + 4, `Pay back ${chips(back)}`, INK);
+		}
+		if (menu.refusal) p.text(x + 6, y + 157, clip(menu.refusal, w - 12), BAD);
+	}
+
+	// Out of chips: borrow from the house to go on, or, when it will lend no
+	// more, go bankrupt. Over everything else, which goes dark behind it.
+	function outOfChips(p: Painter, at: Layout['reup'], scene: Scene, reup: Reup) {
+		const { you, room } = scene;
+		if (!you) return;
+		const { x, y, w, h } = at.panel;
+		p.fill(0, 0, p.width, p.height, INK, 0.55);
+		p.fill(x - 1, y - 1, w + 2, h + 2, INK, 0.5);
+		p.fill(x, y, w, h, INK, 0.96);
+		head(p, at.panel, 'Out of chips', '×');
+		p.text(x + 6, y + 21, '0 chips', BAD, 2);
 		const start = chips(room?.settings.start ?? 0);
-		wrap(
-			`Wipes your debt and puts you back to ${start} chips. It is counted on the leaderboard.`,
-			w - 12
-		).forEach((line, index) => p.text(x + 6, y + 107 + index * 9, line, DIM));
-		if (menu.sure) {
-			p.text(x + 6, y + 142, 'Are you sure?', PAPER);
-			p.fill(at.confirm.x, at.confirm.y, at.confirm.w, at.confirm.h, ALARM);
-			p.centre(at.confirm.x + (at.confirm.w >> 1), at.confirm.y + 4, 'Confirm', PAPER);
-			button(p, at.cancel, 'Cancel', false);
+		const says =
+			reup.credit > 0
+				? "You're broke. Borrow from the house to keep betting. Winnings pay the loan back first, and you're not in the green until it's paid off."
+				: you.debt > 0
+					? `You owe the house ${chips(you.debt)}, as much as it lends, so it won't lend you more. Going bankrupt wipes the loan and starts you again on ${start} chips. It's counted on the leaderboard.`
+					: `The house isn't lending right now. Going bankrupt starts you again on ${start} chips. It's counted on the leaderboard.`;
+		wrap(says, w - 12)
+			.slice(0, 5)
+			.forEach((line, index) => p.text(x + 6, y + 40 + index * 9, line, DIM));
+
+		const { go, watch } = at;
+		if (reup.credit > 0) {
+			const amount = Number.isNaN(reup.amount) ? 0 : reup.amount;
+			LOANS.forEach((value, index) =>
+				button(
+					p,
+					at.amounts[index],
+					String(value),
+					amount === (value === 'Max' ? reup.credit : value),
+					value !== 'Max' && value > reup.credit
+				)
+			);
+			const field = at.input;
+			const figures = Number.isNaN(reup.amount) ? '' : String(reup.amount);
+			p.fill(field.x, field.y, field.w, field.h, INK);
+			p.outline(field.x, field.y, field.w, field.h, reup.typing ? GOLD : FAINT);
+			typed(
+				p,
+				field.x + field.w - 6 - measure(figures),
+				field.y + 4,
+				figures,
+				reup.typing ? reup.selection : null
+			);
+			p.text(x + 6, y + 107, "You'll owe", DIM);
+			const owed = you.debt + amount;
+			const limit = room?.settings.debtCap ?? 0;
+			p.right(x + w - 6, y + 107, `${chips(owed)} / ${chips(limit)}`, owed > limit ? BAD : PAPER);
+			const ready = amount >= 1 && amount <= reup.credit;
+			p.fill(go.x, go.y, go.w, go.h, ready ? GOLD : FAINT, ready ? 1 : 0.6);
+			p.centre(go.x + (go.w >> 1), go.y + 5, `Re-up ${chips(amount)}`, ready ? INK : DIM);
 		} else {
-			p.fill(at.bankrupt.x, at.bankrupt.y, at.bankrupt.w, at.bankrupt.h, ALARM);
+			p.fill(go.x, go.y, go.w, go.h, ALARM);
 			p.centre(
-				at.bankrupt.x + (at.bankrupt.w >> 1),
-				at.bankrupt.y + 4,
-				'Declare bankruptcy',
+				go.x + (go.w >> 1),
+				go.y + 5,
+				reup.sure ? 'Sure? Confirm bankruptcy' : 'Declare bankruptcy',
 				PAPER
 			);
 		}
-		if (menu.refusal) p.text(x + 6, y + 157, clip(menu.refusal, w - 12), BAD);
+		button(p, watch, 'Just watch', false);
+		if (reup.refusal) p.text(x + 6, y + 158, clip(reup.refusal, w - 12), BAD);
 	}
 
 	return {
@@ -1236,7 +1332,7 @@ export function createHud() {
 			tower(p, up(at.tower), scene, dt);
 			leaderboard(p, up(at.board), scene);
 			ticker(p, up(at.ticker), scene);
-			wallet(p, up(at.wallet), scene, dt);
+			wallet(p, up(at.wallet), up(at.reupChip), scene, dt);
 			yours(p, up(at.bets), scene);
 			const racing = room?.phase === 'racing' && scene.replay !== null;
 			if (racing && scene.watch.follow.mode !== 'track') live(p, up(at.tele), scene, dt);
@@ -1256,6 +1352,7 @@ export function createHud() {
 				);
 			}
 			if (scene.menu) settings(p, at.menu, scene, scene.menu);
+			if (scene.reup) outOfChips(p, at.reup, scene, scene.reup);
 		}
 	};
 }

@@ -23,12 +23,15 @@ export const MARKET_NAMES: Record<Market, string> = {
 
 /** Chips a new player starts with, and is put back to by going bankrupt. */
 export const START = 1000;
-/** How far below zero a balance may go. */
+/** The most a player out of chips may owe the house for re-ups. */
 export const DEBT_CAP = 1000;
 /** Chips the house spreads over each market's outcomes. */
 export const SEED = 5000;
 /** Bets one player may place on one race. */
 export const MAX_BETS = 20;
+
+/** What the house will still lend a player who owes it `debt`, under a re-up limit of `cap`. */
+export const credit = (debt: number, cap: number) => Math.max(0, cap - debt);
 
 /** What a race came to, as far as the betting cares. Cars are named by id. */
 export type Result = {

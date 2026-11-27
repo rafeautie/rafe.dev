@@ -63,7 +63,7 @@ const GROUPS: { title: string; description: string; fields: [Key, string][] }[] 
 		description: 'what a player has to bet with',
 		fields: [
 			['start', 'starting chips'],
-			['debtCap', 'debt cap']
+			['debtCap', 're-up limit, most a player may owe (0 is off)']
 		]
 	},
 	{

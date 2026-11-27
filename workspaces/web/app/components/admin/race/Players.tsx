@@ -72,10 +72,10 @@ export function Players({
 	};
 	const unban = (player: Player) =>
 		void act(() => banRacePlayer({ data: { id: player.id, banned: false } }));
-	const owing = players.filter((player) => player.balance < 0);
+	const owing = players.filter((player) => player.debt > 0);
 	const debt = owing.length;
 	const today = players.filter((player) => clock - player.seen < DAY).length;
-	const held = players.reduce((sum, player) => sum + Math.max(0, player.balance), 0);
+	const held = players.reduce((sum, player) => sum + player.balance, 0);
 	const richest = players.reduce<Player | null>(
 		(top, player) => (!player.banned && (!top || player.balance > top.balance) ? player : top),
 		null
@@ -83,7 +83,7 @@ export function Players({
 	const banned = players.filter((player) => player.banned).length;
 	const summary = [
 		`${players.length === SHOWN ? `${SHOWN}+` : players.length} ${players.length === 1 ? 'player' : 'players'}`,
-		debt && `${debt} in debt`,
+		debt && `${debt} owing re-ups`,
 		banned && `${banned} banned`
 	]
 		.filter(Boolean)
@@ -100,11 +100,11 @@ export function Players({
 					hint={richest ? `most: ${richest.name}` : undefined}
 				/>
 				<StatCard
-					label="in debt"
+					label="owing re-ups"
 					value={NUMBER.format(debt)}
 					hint={
 						debt
-							? `owing ${NUMBER.format(-owing.reduce((sum, player) => sum + player.balance, 0))}`
+							? `owing ${NUMBER.format(owing.reduce((sum, player) => sum + player.debt, 0))}`
 							: undefined
 					}
 				/>
@@ -156,7 +156,7 @@ export function Players({
 					description={
 						asking?.kind === 'ban'
 							? 'They can still watch, but cannot bet and are left off the leaderboard. Their bets on this race are handed back.'
-							: 'Their balance goes back to the starting chips, and the change is recorded.'
+							: 'Their balance goes back to the starting chips, any re-up loan is wiped, and the change is recorded.'
 					}
 					confirm={asking?.kind === 'ban' ? 'Ban' : 'Reset chips'}
 					destructive
@@ -217,7 +217,10 @@ function Roster({
 	unban: (player: Player) => void;
 }) {
 	return (
-		<Table head={['name', 'chips', 'bets', 'bankrupt', 'last seen', '']} right={[1, 2, 3]}>
+		<Table
+			head={['name', 'chips', 'owes', 'bets', 'bankrupt', 'last seen', '']}
+			right={[1, 2, 3, 4]}
+		>
 			{players.map((player) => (
 				<tr key={player.id} className={cn(player.banned && 'text-foreground/50')}>
 					<td className={cell}>
@@ -229,8 +232,9 @@ function Roster({
 							</Badge>
 						)}
 					</td>
-					<td className={cn(number, player.balance < 0 && 'text-destructive')}>
-						{NUMBER.format(player.balance)}
+					<td className={number}>{NUMBER.format(player.balance)}</td>
+					<td className={cn(number, player.debt > 0 && 'text-destructive')}>
+						{player.debt ? NUMBER.format(player.debt) : '–'}
 					</td>
 					<td className={number}>{NUMBER.format(player.bets)}</td>
 					<td className={number}>{player.bankruptcies || '–'}</td>
