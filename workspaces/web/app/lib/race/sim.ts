@@ -57,8 +57,16 @@ export const RULES: Rules = { laps: 4, pits: true, tank: 3.3, wear: 1, limit: 12
 /** The race as it was before there were pits: three laps, flat out all the way. */
 export const CLASSIC: Rules = { ...RULES, laps: 3, pits: false };
 
-/** A race is called off this long after the start, whoever is still out. A caution or two fits inside it, each as long as the tow truck takes to go round for the wreck. */
-export const timeCap = (laps: number) => 180 + 60 * laps;
+/**
+ * A race is called off this long after the start, whoever is still out. A
+ * caution or two fits inside it, each as long as the tow truck takes to go
+ * round for the wreck. On a track with a longer lap than most (`length`, in
+ * metres), it is longer in proportion.
+ */
+export const timeCap = (laps: number, length = 0) =>
+	(180 + 60 * laps) * Math.max(1, length / USUAL_LAP);
+/** About how long a lap is on most tracks (m). */
+const USUAL_LAP = 400;
 /** Once someone has won, the rest get this long to finish. */
 const AFTER_WINNER = 8;
 /** And this much longer where there are pits, which string a field out. */
@@ -502,8 +510,8 @@ export function createRace(
 		// the bend a little ahead, as far as the steering takes to wind on
 		const lead = sample + Math.round((1 + Math.abs(car.speed) * 0.08) / spacing);
 		const bend = curvature(...held(lead - SPAN), ...held(lead), ...held(lead + SPAN));
-		// how far the car is to one side of the line (+ the side the track's
-		// normal points to), and how far it is heading off it
+		// how far the car is to one side of the line (+ to the driver's right),
+		// and how far it is heading off it
 		const [bx, by] = held(sample - 1);
 		const [fx, fy] = held(sample + 1);
 		const way = Math.atan2(fy - by, fx - bx);
@@ -516,7 +524,7 @@ export function createRace(
 				: car.angle + Math.atan(Math.tan(car.steer) / 2) + (car.speed < 0 ? Math.PI : 0);
 		const off = Math.atan2(Math.sin(going - way), Math.cos(going - way));
 		const [hx, hy] = held(sample);
-		const wide = (car.x - hx) * track.nx[sample] + (car.y - hy) * track.ny[sample];
+		const wide = ((car.x - hx) * track.nx[sample] + (car.y - hy) * track.ny[sample]) * track.hand;
 		const want = bend - clamp(wide, -3, 3) / HOLD ** 2 - (1.8 * off) / HOLD;
 		return Math.atan(2 * AXLE * want);
 	}
@@ -651,7 +659,7 @@ export function createRace(
 		race.done =
 			running.every((car) => car.finishTime) ||
 			race.time > won + AFTER_WINNER + (rules.pits ? AFTER_STOPS : 0) ||
-			race.time > LIGHTS + timeCap(rules.laps);
+			race.time > LIGHTS + timeCap(rules.laps, track.length);
 	}
 
 	/**

@@ -54,6 +54,12 @@ describe('aiming', () => {
 		expect(at.y).toBeCloseTo(40);
 	});
 
+	it('holds it as close on a track drawn smaller, so the car is as big', () => {
+		const smaller = { ...frame, scale: SCALE / 1.7 };
+		const at = aim(car('a', { x: 50, y: 40, speed: 40, angle: 0 }), smaller)!;
+		expect(at.zoom * smaller.scale).toBeCloseTo(ZOOM_MAX * SCALE);
+	});
+
 	it('looks right at a car that is out of the race', () => {
 		expect(aim(car('a', { x: 50, y: 40, speed: 40, retired: true }))).toEqual({
 			x: 50,

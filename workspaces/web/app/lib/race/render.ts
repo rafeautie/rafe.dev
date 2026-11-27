@@ -17,13 +17,15 @@ import {
 } from './track';
 
 // Draws the race as pixel art. Everything is plotted pixel by pixel into one
-// small frame (4 px to the metre) that is scaled up with hard edges; nothing
-// is smoothed, so turned and dented cars stay crisp.
+// small frame (4 px to the metre, or fewer for a track in a bigger world, so
+// that every track's world is the same number of pixels) that is scaled up
+// with hard edges; nothing is smoothed, so turned and dented cars stay crisp.
 //
-// The frame is the track's own 160 x 90 m unless `resize` makes it larger.
+// The frame is the track's own world unless `resize` makes it larger.
 // Then the track sits somewhere inside it with grass all round, which is where
 // the page draws the broadcast graphics (components/race/hud.ts).
 
+/** Pixels to the metre in the usual world; a track in a bigger one has its own (track.ts). */
 export const SCALE = 4;
 export const WIDTH = WORLD_W * SCALE;
 export const HEIGHT = WORLD_H * SCALE;
@@ -53,6 +55,8 @@ export type Service = { trucks: ReplayTruck[]; flag: Flag; pits?: boolean; time?
 /** Nothing happening on a track: every truck on its stand, no caution. */
 const standingBy = (track: Track): Service => ({ trucks: standing(track), flag: 'green' });
 
+/** Half how wide the slots in the tarmac are painted, in the frame's pixels. */
+const SLOT_WIDTH = 0.52;
 /** There is a caution lamp on the infield wall about this often round the lap (m). */
 const LAMPS_EVERY = 45;
 /** The pit apron eases out from the lane to its full depth over this far (m), before the first box and after the last stand. */
@@ -160,15 +164,18 @@ function paintTrack(track: Track) {
  * lamps on the wall, and the edge of each pit box.
  */
 function paint(track: Track) {
-	const { n, step, x, y, tx, ty, bend, length } = track;
+	const { n, step, x, y, tx, ty, bend, length, scale } = track;
+	// how wide the kerbs, the edge lines and the start line are painted: half a
+	// metre, and never under two of the frame's pixels
+	const band = Math.max(0.5, 2 / scale);
 	const { place } = serviceFor(track);
 	// the nearest centre-line sample to every pixel near the track
 	const near = new Float32Array(WIDTH * HEIGHT).fill(Infinity);
 	const which = new Int16Array(WIDTH * HEIGHT);
-	const reach = Math.ceil((HALF_CORRIDOR + 2) * SCALE);
+	const reach = Math.ceil((HALF_CORRIDOR + 2) * scale);
 	for (let i = 0; i < n; i++) {
-		const cx = x[i] * SCALE;
-		const cy = y[i] * SCALE;
+		const cx = x[i] * scale;
+		const cy = y[i] * scale;
 		for (let py = Math.max(0, Math.floor(cy - reach)); py < Math.min(HEIGHT, cy + reach); py++) {
 			for (let px = Math.max(0, Math.floor(cx - reach)); px < Math.min(WIDTH, cx + reach); px++) {
 				const d = (px + 0.5 - cx) ** 2 + (py + 0.5 - cy) ** 2;
@@ -190,8 +197,8 @@ function paint(track: Track) {
 			const k = py * WIDTH + px;
 			const speck = grain(px, py);
 			const i = which[k];
-			const wx = (px + 0.5) / SCALE;
-			const wy = (py + 0.5) / SCALE;
+			const wx = (px + 0.5) / scale;
+			const wy = (py + 0.5) / scale;
 			const across = near[k] === Infinity ? Infinity : Math.abs(lateral(track, wx, wy, i));
 			if (across > HALF_CORRIDOR + 0.8) {
 				ground[k] = grass(px, py);
@@ -207,13 +214,13 @@ function paint(track: Track) {
 				// metres round the lap, for the start line and the kerb stripes
 				const along = i * step + (wx - x[i]) * tx[i] + (wy - y[i]) * ty[i];
 				const fromLine = Math.min(Math.abs(along), Math.abs(along - length));
-				if (fromLine < 0.5) {
+				if (fromLine < band) {
 					ground[k] = (px + py) & 1 ? PAINT : BLACK;
-				} else if (across > HALF_ROAD - 0.5) {
+				} else if (across > HALF_ROAD - band) {
 					// kerbs on the bends, a painted line on the straights
 					const kerb = bend[i] > 1 / 30 && Math.floor(along / 1.5) & 1;
 					ground[k] = kerb ? KERB : PAINT;
-				} else if (Math.abs(across - 2) < 0.13) {
+				} else if (Math.abs(across - 2) < SLOT_WIDTH / scale) {
 					// the two slots a slot car track would have
 					ground[k] = SLOT;
 				} else {
@@ -235,15 +242,15 @@ function paint(track: Track) {
 	 */
 	function pave(way: Route, through = false) {
 		const gap: { x: number; y: number }[] = [];
-		const half = HALF_LANE * SCALE;
+		const half = HALF_LANE * scale;
 		const reach = Math.ceil(half);
 		const nearest = Math.min(...Array.from(way.across, Math.abs));
 		for (let d = 0; d <= way.length; d += 0.25) {
 			let at = 0;
 			while (at + 2 < way.count && way.along[at + 1] <= d) at++;
 			const t = (d - way.along[at]) / (way.along[at + 1] - way.along[at]);
-			const cx = (way.x[at] + (way.x[at + 1] - way.x[at]) * t) * SCALE;
-			const cy = (way.y[at] + (way.y[at + 1] - way.y[at]) * t) * SCALE;
+			const cx = (way.x[at] + (way.x[at + 1] - way.x[at]) * t) * scale;
+			const cy = (way.y[at] + (way.y[at + 1] - way.y[at]) * t) * scale;
 			const across = Math.abs(way.across[at] + (way.across[at + 1] - way.across[at]) * t);
 			const spread = through ? HALF_ROAD + 3 * (across - nearest) : Infinity;
 			for (let py = Math.floor(cy - reach); py <= cy + reach; py++) {
@@ -253,7 +260,7 @@ function paint(track: Track) {
 					const k = py * WIDTH + px;
 					const was = surface[k];
 					if (was === TARMAC_ || (was !== GRASS_ && was !== PAVED_ && !through)) continue;
-					const [wx, wy] = [(px + 0.5) / SCALE, (py + 0.5) / SCALE];
+					const [wx, wy] = [(px + 0.5) / scale, (py + 0.5) / scale];
 					// (far from the track, past where `which` is known, it cannot be the edge)
 					const edge = through && near[k] !== Infinity;
 					if (edge && Math.abs(lateral(track, wx, wy, which[k])) > spread) continue;
@@ -281,14 +288,14 @@ function paint(track: Track) {
 			// dashed, a metre on and a metre off, along where the wall ran
 			const k = y * WIDTH + x;
 			const i = which[k];
-			const far = lateral(track, (x + 0.5) / SCALE, (y + 0.5) / SCALE, i);
+			const far = lateral(track, (x + 0.5) / scale, (y + 0.5) / scale, i);
 			if (far > -HALF_CORRIDOR - 0.3 && (i & 1) === 0) ground[k] = PAINT;
 		}
 	}
 	/** The frame pixel of a point that is `across` from the centre line at a sample, if it is in the frame. */
 	const at = (sample: number, across: number) => {
 		const [wx, wy] = pit.at(sample, -across);
-		const [px, py] = [Math.floor(wx * SCALE), Math.floor(wy * SCALE)];
+		const [px, py] = [Math.floor(wx * scale), Math.floor(wy * scale)];
 		return px >= 0 && py >= 0 && px < WIDTH && py < HEIGHT ? py * WIDTH + px : -1;
 	};
 	const begin = pit.boxes[0].sample - BOX.long / 2 - 2;
@@ -332,21 +339,21 @@ function paint(track: Track) {
 	{
 		const [front] = pit.stands;
 		const [cos, sin] = [Math.cos(front.angle), Math.sin(front.angle)];
-		const reach = Math.ceil(STAND.long * SCALE);
-		const xs = pit.stands.map((stand) => Math.floor(stand.x * SCALE));
-		const ys = pit.stands.map((stand) => Math.floor(stand.y * SCALE));
+		const reach = Math.ceil(STAND.long * scale);
+		const xs = pit.stands.map((stand) => Math.floor(stand.x * scale));
+		const ys = pit.stands.map((stand) => Math.floor(stand.y * scale));
 		const [x0, x1] = [Math.min(...xs) - reach, Math.max(...xs) + reach];
 		const [y0, y1] = [Math.min(...ys) - reach, Math.max(...ys) + reach];
 		for (let py = Math.max(0, y0); py < Math.min(HEIGHT, y1); py++) {
 			for (let px = Math.max(0, x0); px < Math.min(WIDTH, x1); px++) {
-				const [wx, wy] = [(px + 0.5) / SCALE, (py + 0.5) / SCALE];
+				const [wx, wy] = [(px + 0.5) / scale, (py + 0.5) / scale];
 				if (!inYard(wx, wy, 0)) continue;
 				const k = py * WIDTH + px;
 				if (surface[k] !== APRON_) continue;
 				// hatched in the trucks' own amber, the same way all over
 				const [ax, ay] = [wx - front.x, wy - front.y];
 				const hatch = Math.floor((ax * cos + ay * sin + ay * cos - ax * sin) * 1.4) & 1;
-				if (!inYard(wx, wy, 0.25)) ground[k] = AMBER;
+				if (!inYard(wx, wy, 1 / scale)) ground[k] = AMBER;
 				else if (hatch) ground[k] = mix(ground[k], AMBER, 0.3);
 			}
 		}
@@ -354,19 +361,23 @@ function paint(track: Track) {
 	for (const sample of [pit.in1, pit.out0]) {
 		for (let across = -RING - HALF_LANE; across <= -RING + HALF_LANE; across += 0.1) {
 			const [wx, wy] = pit.at(sample, across);
-			const [px, py] = [Math.floor(wx * SCALE), Math.floor(wy * SCALE)];
-			if (px >= 0 && py >= 0 && px < WIDTH && py < HEIGHT) ground[py * WIDTH + px] = PAINT;
+			const [px, py] = [Math.floor(wx * scale), Math.floor(wy * scale)];
+			if (px < 0 || py < 0 || px >= WIDTH || py >= HEIGHT) continue;
+			// (on the paving only, where the lane runs round a bend wider than it is drawn)
+			const k = py * WIDTH + px;
+			if (surface[k] === PAVED_ || surface[k] === APRON_) ground[k] = PAINT;
 		}
 	}
 	const boxes = pit.boxes.map((box) => {
 		const [cos, sin] = [Math.cos(box.angle), Math.sin(box.angle)];
-		const reach = Math.ceil((BOX.long + BOX.wide) * SCALE);
-		/** The box's painted edge, to be done over each race in the colour of the car whose box it is. */
+		const reach = Math.ceil((BOX.long + BOX.wide) * scale);
+		/** The box's painted edge, a pixel wide, to be done over each race in the colour of the car whose box it is. */
+		const line = 1 / scale;
 		const edge: { x: number; y: number }[] = [];
-		const [cx, cy] = [Math.floor(box.x * SCALE), Math.floor(box.y * SCALE)];
+		const [cx, cy] = [Math.floor(box.x * scale), Math.floor(box.y * scale)];
 		for (let py = Math.max(0, cy - reach); py < Math.min(HEIGHT, cy + reach); py++) {
 			for (let px = Math.max(0, cx - reach); px < Math.min(WIDTH, cx + reach); px++) {
-				const [wx, wy] = [(px + 0.5) / SCALE - box.x, (py + 0.5) / SCALE - box.y];
+				const [wx, wy] = [(px + 0.5) / scale - box.x, (py + 0.5) / scale - box.y];
 				// along the lane from where the car stands in it, and across it: towards the track is positive
 				const along = wx * cos + wy * sin;
 				const side = wy * cos - wx * sin;
@@ -375,7 +386,7 @@ function paint(track: Track) {
 				const k = py * WIDTH + px;
 				if (surface[k] !== APRON_) continue;
 				const border =
-					BOX.long / 2 - Math.abs(along) < 0.25 || front - side < 0.25 || side - back < 0.25;
+					BOX.long / 2 - Math.abs(along) < line || front - side < line || side - back < line;
 				if (border) {
 					ground[k] = PAINT;
 					edge.push({ x: px, y: py });
@@ -389,7 +400,7 @@ function paint(track: Track) {
 	const posts = Math.max(1, Math.round(length / LAMPS_EVERY));
 	const lamps = Array.from({ length: posts }, (_, post) => {
 		const [lx, ly] = place(Math.round((post * n) / posts), -HALF_CORRIDOR - 0.3).map((at) =>
-			Math.floor(at * SCALE)
+			Math.floor(at * scale)
 		);
 		return [0, 1, 2, 3].map((corner) => ({ x: lx + (corner & 1), y: ly + (corner >> 1) }));
 	}).flat();
@@ -406,7 +417,8 @@ const [GRASS_, WALL_, VERGE_, TARMAC_, APRON_, PAVED_] = [0, 1, 2, 3, 4, 5];
  */
 export function offRoadAt(track: Track, x: number, y: number) {
 	const { surface } = paintTrack(track);
-	const [px, py] = [Math.floor(x * SCALE), Math.floor(y * SCALE)];
+	const { scale } = track;
+	const [px, py] = [Math.floor(x * scale), Math.floor(y * scale)];
 	if (px < 0 || py < 0 || px >= WIDTH || py >= HEIGHT) return true;
 	const here = surface[py * WIDTH + px];
 	return here !== TARMAC_ && here !== APRON_ && here !== PAVED_;
@@ -445,6 +457,8 @@ function edge(hull: Float32Array, x: number, y: number) {
 export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 	const context = canvas.getContext('2d')!;
 	let track = initial;
+	// how many of the frame's pixels a metre of the track is drawn as
+	let scale = track.scale;
 	let painting = paintTrack(track);
 	let idle = standingBy(track);
 	// the frame's size, and where in it the track's corner is
@@ -475,9 +489,9 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 	const small = document.createElement('canvas');
 	const large = document.createElement('canvas');
 
-	function resize(w: number, h: number, x: number, y: number, scale: number) {
+	function resize(w: number, h: number, x: number, y: number, shown: number) {
 		const before = { width, ox, oy, ground, worn };
-		[width, height, ox, oy, zoom] = [w, h, x, y, scale];
+		[width, height, ox, oy, zoom] = [w, h, x, y, shown];
 		image = new ImageData(width, height);
 		frame = new Uint32Array(image.data.buffer);
 		painter = createPainter(frame, width, height);
@@ -582,8 +596,8 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 	}
 
 	const pixel = (x: number, y: number) => {
-		const px = Math.floor(x * SCALE) + ox;
-		const py = Math.floor(y * SCALE) + oy;
+		const px = Math.floor(x * scale) + ox;
+		const py = Math.floor(y * scale) + oy;
 		return px < 0 || py < 0 || px >= width || py >= height ? -1 : py * width + px;
 	};
 
@@ -612,18 +626,18 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		const sin = Math.sin(car.angle);
 		const body = hex(car.entry.color);
 		const shade = hex(car.entry.shade);
-		const cx = Math.floor(car.x * SCALE) + ox;
-		const cy = Math.floor(car.y * SCALE) + oy;
+		const cx = Math.floor(car.x * scale) + ox;
+		const cy = Math.floor(car.y * scale) + oy;
 		const grown = 1 + LIFTED_GROWS * lifted;
 		const fall = 0.5 + LIFTED_SHADOW * lifted;
 		// as far out as a corner of it can be, and its shadow
-		const reach = Math.ceil(2.8 * SCALE * grown + fall);
+		const reach = Math.ceil(2.8 * scale * grown + fall);
 		for (let py = Math.max(0, cy - reach); py <= Math.min(height - 1, cy + reach); py++) {
 			for (let px = Math.max(0, cx - reach); px <= Math.min(width - 1, cx + reach); px++) {
 				// this pixel in the car's own metres; the shadow falls a pixel
 				// down and to the right, or further for one lifted
-				const wx = ((px - ox + (shadow ? -fall : 0.5)) / SCALE - car.x) / grown;
-				const wy = ((py - oy + (shadow ? -fall : 0.5)) / SCALE - car.y) / grown;
+				const wx = ((px - ox + (shadow ? -fall : 0.5)) / scale - car.x) / grown;
+				const wy = ((py - oy + (shadow ? -fall : 0.5)) / scale - car.y) / grown;
 				const x = wx * cos + wy * sin;
 				const y = wy * cos - wx * sin;
 				const k = py * width + px;
@@ -667,20 +681,20 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 	function haul(truck: ReplayTruck, shadow: boolean) {
 		const cos = Math.cos(truck.angle);
 		const sin = Math.sin(truck.angle);
-		const cx = Math.floor(truck.x * SCALE) + ox;
-		const cy = Math.floor(truck.y * SCALE) + oy;
+		const cx = Math.floor(truck.x * scale) + ox;
+		const cy = Math.floor(truck.y * scale) + oy;
 		// its two lamps flash turn about while it is out
 		const flash = truck.busy ? 1 + (Math.floor(performance.now() / 180) & 1) : 0;
 		// which way its front wheels point, as against the way it faces
 		const steer = [Math.cos(truck.steer), Math.sin(truck.steer)];
 		// the box round it, turned as it is, with its tyres
 		const half = TRUCK.wide + 0.22;
-		const ex = Math.ceil((Math.abs(cos) * TRUCK.long + Math.abs(sin) * half) * SCALE) + 2;
-		const ey = Math.ceil((Math.abs(sin) * TRUCK.long + Math.abs(cos) * half) * SCALE) + 2;
+		const ex = Math.ceil((Math.abs(cos) * TRUCK.long + Math.abs(sin) * half) * scale) + 2;
+		const ey = Math.ceil((Math.abs(sin) * TRUCK.long + Math.abs(cos) * half) * scale) + 2;
 		for (let py = Math.max(0, cy - ey); py <= Math.min(height - 1, cy + ey); py++) {
 			for (let px = Math.max(0, cx - ex); px <= Math.min(width - 1, cx + ex); px++) {
-				const wx = (px - ox + (shadow ? -0.5 : 0.5)) / SCALE - truck.x;
-				const wy = (py - oy + (shadow ? -0.5 : 0.5)) / SCALE - truck.y;
+				const wx = (px - ox + (shadow ? -0.5 : 0.5)) / scale - truck.x;
+				const wy = (py - oy + (shadow ? -0.5 : 0.5)) / scale - truck.y;
 				const x = wx * cos + wy * sin;
 				const y = wy * cos - wx * sin;
 				const k = py * width + px;
@@ -741,10 +755,10 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		const [cos, sin] = [Math.cos(truck.angle), Math.sin(truck.angle)];
 		const [px, py] = [truck.x + cos * TRUCK.pivot, truck.y + sin * TRUCK.pivot];
 		const [dx, dy] = [Math.cos(truck.angle + swing), Math.sin(truck.angle + swing)];
-		const fall = (1 + 2 * raise) / SCALE;
+		const fall = (1 + 2 * raise) / scale;
 		for (const shadow of [true, false]) {
 			// a pixel at a time along it
-			for (let d = 0.2; d <= reach; d += 1 / SCALE) {
+			for (let d = 0.2; d <= reach; d += 1 / scale) {
 				for (const off of [-0.14, 0.1]) {
 					const x = px + dx * d - dy * off + (shadow ? fall : 0);
 					const y = py + dy * d + dx * off + (shadow ? fall : 0);
@@ -763,8 +777,8 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 
 	/** A point in a box's own metres, along the lane and across it (towards the track is positive), as a frame pixel. */
 	const spot = (box: PitBox, along: number, side: number) => ({
-		x: Math.floor((box.x + along * box.cos - side * box.sin) * SCALE) + ox,
-		y: Math.floor((box.y + along * box.sin + side * box.cos) * SCALE) + oy
+		x: Math.floor((box.x + along * box.cos - side * box.sin) * scale) + ox,
+		y: Math.floor((box.y + along * box.sin + side * box.cos) * scale) + oy
 	});
 
 	/** Sets a frame pixel, if it is in the frame; with `alpha`, over what is there. */
@@ -914,7 +928,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 	return {
 		/**
 		 * Makes the frame `w` by `h` pixels with the track's corner at x, y, each
-		 * pixel shown as `scale` of the screen's.
+		 * pixel shown as `shown` of the screen's.
 		 */
 		resize,
 
@@ -935,6 +949,7 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 		setTrack(next: Track) {
 			if (next === track) return;
 			track = next;
+			scale = track.scale;
 			painting = paintTrack(track);
 			idle = standingBy(track);
 			resize(width, height, ox, oy, zoom);

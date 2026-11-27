@@ -3,10 +3,12 @@ import LINES from './lines.json';
 
 // The tracks: each a closed centre line through its control points,
 // resampled about every metre, and the line the drivers aim for. Distances
-// are metres. Every track fits the same 160 x 90 world so it can be watched
-// from one fixed overhead view, like a slot car layout on a table. Which one
-// a race runs on is the admin's choice (settings.ts).
+// are metres. Each track is watched whole from one fixed overhead view, like
+// a slot car layout on a table: most fit a 160 x 90 world, and a bigger one
+// is drawn smaller to fill the same view. Which one a race runs on is the
+// admin's choice (settings.ts).
 
+/** The world most tracks fit, and every track's is this shape. */
 export const WORLD_W = 160;
 export const WORLD_H = 90;
 /** Half the tarmac's width. */
@@ -29,25 +31,82 @@ export const MAX_OFFSET = HALF_ROAD - HALF_CAR - 0.35;
 // Each track is its control points, driven in order. The first point is the
 // start line, on the bottom straight; the grid forms up behind it.
 
-/** The winding circuit /race ran on first. */
+/**
+ * A road course after the Watkins Glen Grand Prix circuit, in a world a good
+ * deal bigger than the rest: run clockwise, the start line on the front
+ * straight, then the 90, up through the Esses, down the back straight, the
+ * Inner Loop, round the Outer Loop and the Boot, and through the last two
+ * corners back onto the front straight. Its pits are on the infield, on the
+ * driver's right.
+ */
 const CIRCUIT: [number, number][] = [
-	[80, 77],
-	[130, 75],
-	[148, 60],
-	[146, 38],
-	[132, 22],
-	[108, 16],
-	[90, 26],
-	[84, 42],
-	[68, 49],
-	[54, 40],
-	[52, 24],
-	[36, 13],
-	[16, 22],
-	[12, 44],
-	[14, 60],
-	[24, 71],
-	[44, 76]
+	[100, 124.1],
+	[95, 124.0],
+	[74, 123.5],
+	[59, 122.5],
+	[44, 121.3],
+	[25.1, 120.1],
+	[16.7, 117.7],
+	[10.7, 109.9],
+	[12.3, 96.7],
+	[15, 82.0],
+	[22.2, 69.5],
+	[35.6, 63.0],
+	[50.0, 60.1],
+	[61.6, 50.3],
+	[70.2, 41.0],
+	[81, 32.8],
+	[94, 31.3],
+	[128.5, 30.5],
+	[143.5, 30.0],
+	[156, 29.5],
+	[166, 30.3],
+	[176, 35],
+	[185, 39.5],
+	[195, 40],
+	[203.8, 36.7],
+	[213.2, 31.8],
+	[221.7, 29.7],
+	[229.1, 32.5],
+	[234.7, 37.6],
+	[236.5, 44.7],
+	[234.8, 51.9],
+	[230.3, 58.1],
+	[215.5, 66.0],
+	[207, 74.0],
+	[203.5, 78.8],
+	[202, 84.5],
+	[204, 89.8],
+	[209.5, 93.2],
+	[215, 94.2],
+	[229, 94.5],
+	[241, 94.3],
+	[252, 94.3],
+	[259.5, 96.6],
+	[263.6, 102.6],
+	[263.6, 110.2],
+	[259, 116.6],
+	[251, 120.2],
+	[238, 121.1],
+	[226, 121.3],
+	[214, 121.5],
+	[202.5, 121.7],
+	[190, 121.7],
+	[182.5, 121],
+	[177.2, 116.3],
+	[175.5, 108.5],
+	[181.1, 91.9],
+	[185.1, 80.2],
+	[179.2, 71.7],
+	[166.2, 72.1],
+	[157, 74.8],
+	[152, 79.5],
+	[149, 89],
+	[148.6, 103.5],
+	[146.8, 114.5],
+	[140.5, 121.6],
+	[131, 124.2],
+	[108, 124.1]
 ];
 
 /**
@@ -99,10 +158,28 @@ function triOval(turn: number, leg: number, kink: number, apex: number, top: num
 // metres past where the turns end, its point at the bottom of the world.
 const OVAL = triOval(32, 34, (10 * Math.PI) / 180, 50, 10);
 
+/**
+ * A track's layout: its name, its control points, how many times wider than
+ * the usual world its world is, and which side of a driver the infield is on,
+ * which is where the pits and everything else off the track are (service.ts):
+ * the left, unless it is run clockwise.
+ */
+type Layout = {
+	name: string;
+	control: [number, number][];
+	world?: number;
+	infield?: 'left' | 'right';
+};
+
 /** The tracks there are, by id. */
-const TRACKS = {
+const TRACKS: Record<'oval' | 'circuit', Layout> = {
 	oval: { name: 'Daytona', control: OVAL },
-	circuit: { name: 'Circuit', control: CIRCUIT }
+	circuit: {
+		name: 'Watkins Glen',
+		control: CIRCUIT,
+		world: 272 / WORLD_W,
+		infield: 'right'
+	}
 };
 
 export type TrackId = keyof typeof TRACKS;
@@ -121,7 +198,7 @@ const built = new Map<TrackId, Track>();
 export function getTrack(id: TrackId): Track {
 	let track = built.get(id);
 	if (!track) {
-		track = build(id, TRACKS[id].control);
+		track = build(id, TRACKS[id]);
 		built.set(id, track);
 	}
 	return track;
@@ -131,9 +208,9 @@ export function getTrack(id: TrackId): Track {
  * A track's centre line, sampled about every metre, with the direction of
  * travel at each sample and the normal across the track.
  */
-export const centreOf = (id: TrackId) => centre(TRACKS[id].control);
+export const centreOf = (id: TrackId) => centre(TRACKS[id].control, TRACKS[id].infield);
 
-function centre(control: [number, number][]) {
+function centre(control: [number, number][], infield: Layout['infield'] = 'left') {
 	// a Catmull-Rom spline through the control points, as a fine polyline
 	const fine: [number, number][] = [];
 	const count = control.length;
@@ -173,7 +250,8 @@ function centre(control: [number, number][]) {
 		y[i] = ay + (by - ay) * t;
 	}
 
-	// the direction of travel at each sample, and the normal across the track
+	// the direction of travel at each sample, and the normal across the track,
+	// which points away from the infield
 	const tx = new Float32Array(n);
 	const ty = new Float32Array(n);
 	for (let i = 0; i < n; i++) {
@@ -183,13 +261,14 @@ function centre(control: [number, number][]) {
 		tx[i] = (x[b] - x[a]) / d;
 		ty[i] = (y[b] - y[a]) / d;
 	}
-	const nx = ty.map((v) => -v);
-	const ny = tx.slice();
+	const away = infield === 'left' ? 1 : -1;
+	const nx = ty.map((v) => -v * away);
+	const ny = tx.map((v) => v * away);
 	return { n, step, length, x, y, tx, ty, nx, ny };
 }
 
-function build(id: TrackId, control: [number, number][]) {
-	const { n, step, length, x, y, tx, ty, nx, ny } = centre(control);
+function build(id: TrackId, { control, world = 1, infield }: Layout) {
+	const { n, step, length, x, y, tx, ty, nx, ny } = centre(control, infield);
 
 	// The racing line, as an offset along the normal (line.ts). It takes a
 	// while to work out, so it is worked out ahead of time and kept, in
@@ -208,14 +287,40 @@ function build(id: TrackId, control: [number, number][]) {
 	const bend = new Float32Array(n);
 	for (let i = 0; i < n; i++) bend[i] = Math.abs(curve(at(i - SPAN), at(i), at(i + SPAN)));
 
-	// which way the track bends at each sample: 1 to the left, -1 to the right
+	// which way the track bends at each sample, as across counts: 1 away from
+	// the infield, -1 towards it (on most tracks, to the left and the right)
 	const turn = new Int8Array(n);
 	for (let i = 0; i < n; i++) {
 		const j = (i + 1) % n;
-		turn[i] = Math.sign(tx[i] * ty[j] - ty[i] * tx[j]);
+		turn[i] = Math.sign((tx[j] - tx[i]) * nx[i] + (ty[j] - ty[i]) * ny[i]);
 	}
 
-	return { id, n, step, length, x, y, tx, ty, nx, ny, line, bend, turn };
+	/** The world the track is in, in metres, and how many of the view's pixels a metre is drawn as. */
+	const [width, height] = [WORLD_W * world, WORLD_H * world];
+	const scale = 4 / world;
+
+	/** 1 if the normal points to the driver's right, as on most tracks, -1 if to the left. */
+	const hand = infield === 'right' ? -1 : 1;
+
+	return {
+		id,
+		n,
+		step,
+		length,
+		x,
+		y,
+		tx,
+		ty,
+		nx,
+		ny,
+		line,
+		bend,
+		turn,
+		width,
+		height,
+		scale,
+		hand
+	};
 }
 
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));

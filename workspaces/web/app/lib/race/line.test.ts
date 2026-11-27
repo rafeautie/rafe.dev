@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { lapTime, leastBend, racingLine } from './line';
 import { getTrack, HALF_CAR, HALF_ROAD, MAX_OFFSET, TRACK_IDS, triangle } from './track';
 
+/** Corners the other way round with no more than this many metres between them are an S. */
+const S_BEND = 45;
+/** A corner that turns the road less than this (radians) is a kink. */
+const KINK = (40 * Math.PI) / 180;
+
 describe.each(TRACK_IDS)('the racing line on the %s', (id) => {
 	const track = getTrack(id);
-	const { n, x, y, nx, ny, step, line } = track;
+	const { n, x, y, tx, ty, nx, ny, step, line } = track;
 	const lap = lapTime(x, y, nx, ny, step);
 	const best = lap(Float64Array.from(line));
 	const wrap = (i: number) => ((i % n) + n) % n;
@@ -20,11 +25,13 @@ describe.each(TRACK_IDS)('the racing line on the %s', (id) => {
 		const bends = (i: number) => {
 			const [a, b, c] = [i - 4, i, i + 4].map(wrap);
 			const [cross, sides] = triangle(x[a], y[a], x[b], y[b], x[c], y[c]);
-			return Math.abs((2 * cross) / sides) > 1 / 40 ? Math.sign(cross) : 0;
+			// as across counts it, which is the other way round on a track with its infield on the right
+			const hand = Math.sign(ny[b] * tx[b] - nx[b] * ty[b]);
+			return Math.abs((2 * cross) / sides) > 1 / 40 ? Math.sign(cross) * hand : 0;
 		};
 		let start = 0;
 		while (bends(start)) start++;
-		for (let i = start; i < start + n; ) {
+		for (let i = start; i < start + n;) {
 			const way = bends(i);
 			if (!way) {
 				i++;
@@ -57,19 +64,32 @@ describe.each(TRACK_IDS)('the racing line on the %s', (id) => {
 
 	it('takes every corner from the outside, across to the inside and out again', () => {
 		expect(corners.length).toBeGreaterThanOrEqual(2);
-		for (const [from, to, inside] of corners) {
+		corners.forEach(([from, to, inside], k) => {
 			const at = (k: number) => line[wrap(k)] * inside;
 			// all the way in at the apex
 			let apex = -Infinity;
 			for (let k = from; k < to; k++) apex = Math.max(apex, at(k));
 			expect(apex).toBeGreaterThan(MAX_OFFSET - 0.1);
-			// and well over to the outside on the way in, and on the way out
+			// and well over to the outside on the way in, and on the way out,
+			// unless that is straight into a corner the other way, too soon after
+			// to run out wide between them: then the line goes straight across
+			// from the one's apex to the other's, which is the outside of each
 			const outside = (ks: number[]) => Math.min(...ks.map(at));
+			const [last, next] = [corners.at(k - 1)!, corners[(k + 1) % corners.length]];
+			const close = (a: number, b: number) => wrap(b - a) < S_BEND;
 			const before = Array.from({ length: 30 }, (_, d) => from - 1 - d);
 			const after = Array.from({ length: 30 }, (_, d) => to + d);
-			expect(outside(before)).toBeLessThan(-MAX_OFFSET / 2);
-			expect(outside(after)).toBeLessThan(-MAX_OFFSET / 2);
-		}
+			// (a kink, which turns the road only a little, is taken nearly straight)
+			const turned = Math.abs(
+				Math.atan2(
+					tx[wrap(from)] * ty[wrap(to)] - ty[wrap(from)] * tx[wrap(to)],
+					tx[wrap(from)] * tx[wrap(to)] + ty[wrap(from)] * ty[wrap(to)]
+				)
+			);
+			if (turned < KINK) return;
+			if (!close(last[1], from)) expect(outside(before)).toBeLessThan(-MAX_OFFSET / 2);
+			if (!close(to, next[0])) expect(outside(after)).toBeLessThan(-MAX_OFFSET / 2);
+		});
 	});
 
 	it('is slower with any corner taken a little earlier or later', () => {

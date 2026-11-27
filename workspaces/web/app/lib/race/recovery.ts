@@ -184,6 +184,12 @@ const LIFT = 7;
 const DROP = 6;
 const EXIT_GAP = 5;
 const KEEP = 3;
+/**
+ * What a wreck left lying costs a plan: more than any trip takes, as the
+ * plan's times are race times, which run on as long as a race on a long lap
+ * does, so that no wreck is ever left for being late in the race.
+ */
+const LEFT_LYING = 1e6;
 /** The plan is worked out again at least this often (s) while there is a wreck to fetch. */
 const REPLAN = 0.5;
 /**
@@ -873,7 +879,7 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 				if (had[k] >= 0 && !pick.some((trip) => trip.includes(k))) moved++;
 			}
 			const total = done.reduce((a, b) => a + b, 0);
-			return Math.max(...done) + total / 4 + 500 * (wrecks.length - taken) + KEEP * moved;
+			return Math.max(...done) + total / 4 + LEFT_LYING * (wrecks.length - taken) + KEEP * moved;
 		}
 		search(0, new Set());
 		crews.forEach((crew, i) =>

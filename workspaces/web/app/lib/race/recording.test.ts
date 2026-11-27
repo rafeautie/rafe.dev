@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createReplay, pack, record, unpack } from './recording';
 import { ROSTER } from './roster';
-import { CLASSIC, createRace, drawGrid, rank } from './sim';
-import { getTrack } from './track';
+import { LIMITS } from './settings';
+import { CLASSIC, createRace, drawGrid, rank, RULES } from './sim';
+import { getTrack, TRACK_IDS } from './track';
 
 // on the circuit, where the seeds these pick were picked
 const track = getTrack('circuit');
@@ -12,12 +13,13 @@ const track = getTrack('circuit');
  * seeds below were picked for races between them, so they race here.
  */
 const SIX = ROSTER.slice(0, 6);
-/** A race between them that loses a car early on, and a truck goes for it. */
-const WRECK = 20;
+/** A race between them that nobody goes out of, with knocks in it; and one that loses a car early on, and a truck goes for it. */
+const QUIET = 9;
+const WRECK = 4;
 
 describe('a recording', () => {
 	it('plays back as the race it was made from', () => {
-		const seed = 5;
+		const seed = QUIET;
 		const grid = drawGrid(seed, SIX);
 		const recording = record(seed, grid, track, [], CLASSIC);
 		const replay = createReplay(recording, ROSTER);
@@ -32,7 +34,8 @@ describe('a recording', () => {
 				expect(Math.abs(shown.x - car.x)).toBeLessThan(0.01);
 				expect(Math.abs(shown.y - car.y)).toBeLessThan(0.01);
 				expect(Math.abs(Math.sin(shown.angle - car.angle))).toBeLessThan(0.001);
-				expect(Math.abs(shown.progress - car.progress)).toBeLessThan(0.06);
+				// (to within the whole numbers it is written down in: fewer to the metre on a longer lap)
+				expect(Math.abs(shown.progress - car.progress)).toBeLessThan(1.2 / (recording.per ?? 20));
 				expect(Math.abs(shown.slip - Math.min(25.5, car.slip))).toBeLessThan(0.11);
 				expect(shown.retired).toBe(car.retired);
 				expect(Math.abs(shown.damage - car.damage)).toBeLessThan(0.001);
@@ -56,7 +59,7 @@ describe('a recording', () => {
 	});
 
 	it('shows the same thing after seeking backwards', () => {
-		const recording = record(5, drawGrid(5, SIX), track, [], CLASSIC);
+		const recording = record(QUIET, drawGrid(QUIET, SIX), track, [], CLASSIC);
 		const straight = createReplay(recording, ROSTER);
 		const wound = createReplay(recording, ROSTER);
 		straight.seek(30);
@@ -66,7 +69,7 @@ describe('a recording', () => {
 	});
 
 	it('gives the gap between two cars by the clock', () => {
-		const replay = createReplay(record(5, drawGrid(5, SIX), track, [], CLASSIC), ROSTER);
+		const replay = createReplay(record(QUIET, drawGrid(QUIET, SIX), track, [], CLASSIC), ROSTER);
 		// on the grid nobody has yet been where the car behind is
 		expect(replay.gap(1, 0)).toBeNull();
 		replay.seek(30);
@@ -130,8 +133,8 @@ describe('a recording', () => {
 	});
 
 	it('leaves the trucks out of a race none went out in, and shows them parked', () => {
-		// seed 5 is a clean race; seed WRECK loses a car, and a truck goes for it
-		const quiet = record(5, drawGrid(5, SIX), track, [], CLASSIC);
+		// seed QUIET is a clean race; seed WRECK loses a car, and a truck goes for it
+		const quiet = record(QUIET, drawGrid(QUIET, SIX), track, [], CLASSIC);
 		const busy = record(WRECK, drawGrid(WRECK, SIX), track, [], CLASSIC);
 		const cars = SIX.length * 10;
 		expect(quiet.trucks).toBe(0);
@@ -250,12 +253,13 @@ describe('a recording', () => {
 		expect(unpack(pack(older as never)).track).toBe('circuit');
 	});
 
-	it('survives being packed into bytes, and stays under 600 KB', () => {
+	it('survives being packed into bytes, and stays under 600 KB, or more on a longer lap', () => {
 		for (let seed = 1; seed <= 10; seed++) {
 			const recording = record(seed, drawGrid(seed, SIX), track, [], CLASSIC);
 			const bytes = pack(recording);
 			// (a caution lasts as long as the truck takes to go round for the wreck, which is most of what a long race is)
-			expect(bytes.length).toBeLessThan(600_000);
+			// (and a lap longer than most makes a race longer, and its recording with it)
+			expect(bytes.length).toBeLessThan(600_000 * Math.max(1, track.length / 400));
 			const { poses, ...header } = unpack(bytes);
 			const { poses: recorded, ...expected } = recording;
 			expect(header).toEqual(expected);
@@ -263,4 +267,18 @@ describe('a recording', () => {
 			expect(poses.every((byte, at) => byte === recorded[at])).toBe(true);
 		}
 	});
+
+	// (the room keeps it as one stored value, which can be no more than 2 MB)
+	it.each(TRACK_IDS)(
+		'of the longest race the rules allow on the %s, with the largest field, can be stored',
+		{ timeout: 120_000 },
+		(id) => {
+			const rules = { ...RULES, laps: LIMITS.laps[1] };
+			const count = LIMITS.count[1];
+			for (let seed = 1; seed <= 3; seed++) {
+				const recording = record(seed, drawGrid(seed, ROSTER, count), getTrack(id), [], rules);
+				expect(pack(recording).length).toBeLessThan(1_950_000);
+			}
+		}
+	);
 });

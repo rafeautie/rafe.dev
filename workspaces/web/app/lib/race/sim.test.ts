@@ -44,7 +44,8 @@ import {
 // laps, with no fuel or tyres to think of. The pits have their own tests
 // (pits.test.ts).
 const LAPS = CLASSIC.laps;
-const TIME_CAP = timeCap(LAPS);
+/** How long a race of them may last on a track. */
+const capOf = (track: Track) => timeCap(LAPS, track.length);
 
 /**
  * The six cars that raced every time before the field could change size. The
@@ -61,7 +62,7 @@ function run(seed: number, track: Track, flags: number[] = [], field = SIX) {
 	const race = createRace(seed, drawGrid(seed, field), track, flags, CLASSIC);
 	const events: RaceEvent[] = [];
 	// as many steps as the longest race is allowed to last
-	for (let step = 0; step < (LIGHTS + TIME_CAP + 1) / DT && !race.done; step++) {
+	for (let step = 0; step < (LIGHTS + capOf(track) + 1) / DT && !race.done; step++) {
 		race.step();
 		events.push(...race.events);
 		race.events.length = 0;
@@ -121,7 +122,7 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 				const race = run(seed, track);
 				expect(race.done).toBe(true);
 				// ended by the cars finishing, not by the clock running out, cautions and all
-				expect(race.time).toBeLessThan(LIGHTS + TIME_CAP - 10);
+				expect(race.time).toBeLessThan(LIGHTS + capOf(track) - 10);
 				const [winner] = race.order();
 				expect(winner.finishTime).toBeGreaterThan(0);
 				// every lap of it, and one more for each that was ended under caution
@@ -168,7 +169,7 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 				`seed ${seed}`
 			).toBe(true);
 			if (race.flag === 'checkered') won++;
-			else expect(race.time).toBeGreaterThan(LIGHTS + TIME_CAP);
+			else expect(race.time).toBeGreaterThan(LIGHTS + capOf(track));
 			for (const car of race.cars) {
 				expect(Number.isFinite(car.x + car.y + car.angle)).toBe(true);
 				const across = lateral(track, car.x, car.y, nearest(track, car.x, car.y));
@@ -331,14 +332,19 @@ describe.each(TRACK_IDS)('the line the pit lane is on, on the %s', (id) => {
 		return least;
 	};
 
-	it('stays inside the wall all the way round', () => {
-		for (let sample = 0; sample < n; sample++) {
+	// (only where the pits are, from the way in to the way out, which is all
+	// of it that is ever driven: elsewhere a tight bend may pinch it)
+	const { in0, out1 } = pitsFor(track);
+	const pits = Array.from({ length: out1 - in0 + 1 }, (_, k) => (in0 + k) % n);
+
+	it('stays inside the wall all the way round the pits', () => {
+		for (const sample of pits) {
 			expect(clear(place(sample, -RING))).toBeGreaterThan(RING - 0.5);
 		}
 	});
 
 	it('bends no tighter than a truck can steer', () => {
-		for (let sample = 0; sample < n; sample++) {
+		for (const sample of pits) {
 			const [a, b, c] = [-3, 0, 3].map((d) => place(sample + d, -RING));
 			const [cross, sides] = triangle(...a, ...b, ...c);
 			expect(sides / Math.abs(2 * cross || 1e-9)).toBeGreaterThan(TIGHTEST - 0.5);
@@ -352,7 +358,7 @@ describe.each(TRACK_IDS)('the line the pit lane is on, on the %s', (id) => {
  * when a caution is thrown by hand twenty seconds in.
  */
 const SEEDS: Record<TrackId, { wreck: number; clean: number }> = {
-	circuit: { wreck: 20, clean: 1 },
+	circuit: { wreck: 4, clean: 9 },
 	oval: { wreck: 4, clean: 3 }
 };
 
@@ -604,7 +610,7 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 					if (kind === 'restart') expect(flown[k - 1], `seed ${seed}`).toBe('caution');
 				});
 				// unless the race was called off at the time cap with a caution out
-				if (flown.length && race.time <= LIGHTS + TIME_CAP) {
+				if (flown.length && race.time <= LIGHTS + capOf(track)) {
 					expect(flown.at(-1), `seed ${seed}`).toBe('green');
 				}
 			}
