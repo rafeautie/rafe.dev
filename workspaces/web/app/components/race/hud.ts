@@ -1197,7 +1197,8 @@ export function createHud() {
 		if (!you) return;
 		const debt = you.debt > 0;
 		const { x, y, w } = at.panel;
-		const h = debt ? 170 : 91;
+		// owing, room for what that means, and for paying it back if it can be
+		const h = !debt ? 91 : you.balance > you.debt ? 170 : 128;
 		p.fill(0, 0, p.width, p.height, INK, 0.55);
 		p.fill(x - 1, y - 1, w + 2, h + 2, INK, 0.5);
 		p.fill(x, y, w, h, INK, 0.96);

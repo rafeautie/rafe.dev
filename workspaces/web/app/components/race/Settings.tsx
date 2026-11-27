@@ -76,7 +76,7 @@ function Open({ you, problem, send, at, over, show }: Props) {
 			<DialogClose aria-hidden tabIndex={-1} className="absolute inset-0 cursor-default" />
 			<div
 				className="absolute"
-				style={over({ ...at.panel, h: debt ? 170 : 91 })}
+				style={over({ ...at.panel, h: !debt ? 91 : back > 0 ? 170 : 128 })}
 				onClick={(event) => event.stopPropagation()}
 			/>
 			<form
