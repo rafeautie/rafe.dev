@@ -486,6 +486,8 @@ export function createRace(
 	let road: Obstacle[] = cars;
 	/** How many steps the race has run. */
 	let ticks = 0;
+	/** A second plan's speeds, to set against a car's own (plan.ts). */
+	const other = new Float32Array(FAR + 1);
 
 	/**
 	 * Whether something is to be waited behind and not passed. Under caution
@@ -1088,18 +1090,29 @@ export function createRace(
 				let on = (car.sample - car.planFrom + n) % n;
 				const looks = Math.round((Math.abs(car.speed) * BEAT) / spacing);
 				if (!car.planFar || on + looks >= car.planFar || (ticks + index) % RETHINK === 0) {
-					const here = clamp(track.line[car.sample] + car.offset, -MAX_OFFSET, MAX_OFFSET);
-					const drift = (SIDLE * spacing) / Math.max(car.speed, 8);
+					// Where it is making for: a place on the road, or beside the
+					// line. It is planned for as if the car were there already, as it
+					// soon will be, since it is slowed for in good time or not at all.
 					const from = car.sample;
-					const path = (k: number) => {
-						const over = k > 0 ? k * drift : 0;
-						if (fixed !== null)
-							return clamp(here + clamp(fixed - here, -over, over), -MAX_OFFSET, MAX_OFFSET);
-						const beside = car.offset + clamp(making - car.offset, -over, over);
-						return clamp(track.line[(from + k + n) % n] + beside, -MAX_OFFSET, MAX_OFFSET);
-					};
 					const most = car.limit * fade * fade;
+					const beside = (off: number) => (k: number) =>
+						clamp(track.line[(from + k + n) % n] + off, -MAX_OFFSET, MAX_OFFSET);
+					const there = clamp(fixed ?? 0, -MAX_OFFSET, MAX_OFFSET);
+					const path = fixed !== null ? () => there : beside(making);
 					car.planFar = speedsAlong(track, from, car.speed, path, most, car.pace, fade, car.plan);
+					// And while it is still a way from there, for where it is now as
+					// well, the slower of the two: beside the line, or making for a
+					// place on the road, at the place on it that it has got to.
+					const here = clamp(track.line[from] + car.offset, -MAX_OFFSET, MAX_OFFSET);
+					const now = clamp(car.across, -MAX_OFFSET, MAX_OFFSET);
+					const stay =
+						fixed !== null
+							? Math.abs(there - now) > 0.5 && (() => now)
+							: Math.abs(track.line[from] + making - here) > 0.5 && beside(car.offset);
+					if (stay) {
+						speedsAlong(track, from, car.speed, stay, most, car.pace, fade, other);
+						for (let k = 0; k <= car.planFar; k++) car.plan[k] = Math.min(car.plan[k], other[k]);
+					}
 					car.planFrom = from;
 					on = 0;
 				}
