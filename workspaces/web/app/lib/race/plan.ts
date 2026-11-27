@@ -119,7 +119,7 @@ const MOMENT = 0.25;
 const AROUND = 8;
 const WAYS = 8;
 /** Nearer than this, front to back, two cars are alongside each other; and nearer than this, side to side, they are on the same piece of road (m, between their middles). */
-const LEVEL = 3.4;
+const LEVEL = 4;
 const ABREAST = 2.1;
 /** And nearer than this, side to side, two cars alongside each other touch. */
 const TOUCH = 1.8;
@@ -181,7 +181,7 @@ export function think(
 		(c.x - track.x[c.sample]) * track.tx[c.sample] + (c.y - track.y[c.sample]) * track.ty[c.sample];
 	const mine = past(car);
 	const speed = Math.max(car.speed, 0);
-	const sight = 20 + 2.5 * speed;
+	const sight = 15 + speed;
 
 	// the cars around, and how far ahead each is
 	let count = 0;
