@@ -1,6 +1,7 @@
 import { ChainShape, PolygonShape, World, type Body, type Fixture } from 'planck';
 import type { Plan } from './crew';
 import { createPits, LANE as PIT, tyreGrip } from './pits';
+import { FAR, speedsAlong } from './plan';
 import { curvature, SPAN } from './line';
 import { createRecovery } from './recovery';
 import type { Entry } from './roster';
@@ -88,6 +89,12 @@ const MAX_STEER = 0.55;
 const HOLD = 3.5;
 /** Seconds a driver brakes ahead of where the speed has to be down. */
 const BEAT = 0.2;
+/** How fast a driver moves over, across the road (m/s). */
+const SIDLE = 4;
+/** A car this far to one side of the racing line (m), or making for there, is off it. */
+const OFF_LINE = 0.1;
+/** A driver off the racing line thinks through the speeds for the road ahead again every this many steps. */
+const RETHINK = 6;
 /** Grip on the verge, as a share of grip on tarmac. */
 const VERGE_GRIP = 0.6;
 /** How hard a wreck's wheels drag, bent and flat as they are, as a share of the grip it has. */
@@ -195,9 +202,19 @@ export type Car = {
 	nerve: number;
 	follow: number;
 	errorEvery: number;
-	/** The speed to be doing at each track sample to make the corners. */
+	/** The cornering the driver asks of the tyres at most, m/s²: a little less than they have. */
+	limit: number;
+	/** The speed to be doing at each track sample to make the corners, on the racing line. */
 	pace: Float32Array;
 	offset: number;
+	/**
+	 * Off the racing line, the speeds the driver has planned for the path
+	 * ahead (plan.ts): one for each track sample from `planFrom` on, `planFar`
+	 * of them, or none.
+	 */
+	plan: Float32Array;
+	planFrom: number;
+	planFar: number;
 	errorAt: number;
 	errorUntil: number;
 	/** How much too fast the driver takes the corner they misjudge, as a share of the right speed. */
@@ -372,6 +389,9 @@ export function createRace(
 		// that power, not only grip, sets how fast a car leaves each corner.
 		const grip = GRIP * lerp(0.94, 1.06, entry.grip);
 		const errorEvery = lerp(30, 14, entry.aggression);
+		// the most aggressive driver runs right at what the tyres can do,
+		// which is quickest; past it they only slide
+		const limit = grip * G * lerp(0.73, 0.79, entry.aggression);
 		const car: Car = {
 			entry,
 			x,
@@ -399,10 +419,12 @@ export function createRace(
 			nerve: lerp(0.9, 1.05, entry.aggression),
 			follow: lerp(7, 4.6, entry.aggression),
 			errorEvery,
-			// the most aggressive driver runs right at what the tyres can do,
-			// which is quickest; past it they only slide
-			pace: paceFor(track, grip * G * lerp(0.73, 0.79, entry.aggression)),
+			limit,
+			pace: paceFor(track, limit),
 			offset: 0,
+			plan: new Float32Array(FAR + 1),
+			planFrom: 0,
+			planFar: 0,
 			errorAt: LIGHTS - Math.log(1 - rand()) * errorEvery,
 			errorUntil: 0,
 			errorBy: 1,
@@ -462,6 +484,8 @@ export function createRace(
 	let formed = false;
 	/** Everything on the road this step: the cars, and the trucks that are out on the track. */
 	let road: Obstacle[] = cars;
+	/** How many steps the race has run. */
+	let ticks = 0;
 
 	/**
 	 * Whether something is to be waited behind and not passed. Under caution
@@ -635,6 +659,7 @@ export function createRace(
 	function step() {
 		if (race.done) return;
 		race.time += DT;
+		ticks++;
 		for (const car of cars) locate(car);
 		marshal();
 		// the trucks do not move until the drivers have had their turn
@@ -866,6 +891,8 @@ export function createRace(
 				gap = ahead;
 			}
 			let offset = 0;
+			/** Where across the road it is making for, where that is a place on the road and not one beside the racing line. */
+			let fixed: number | null = null;
 			let limit = Infinity;
 			// Under caution, a wreck on the road, or a truck stopped at work, is
 			// gone by slowly, and slowed for in good time, by a car on its side of
@@ -898,7 +925,8 @@ export function createRace(
 				// Just after the green each car still keeps to its line, but races,
 				// and lets the gap to the one ahead in it open with the speed, so a
 				// big field is strung out by the time the lines merge.
-				offset = LANE * (place % 2 ? -1 : 1) - track.line[aimed(car)];
+				fixed = LANE * (place % 2 ? -1 : 1);
+				offset = fixed - track.line[aimed(car)];
 				if (caution && place > 0) limit = queueing(pacer!, trailing(car), slot(place));
 				// It queues behind whatever is ahead of it in its own line, the
 				// cars still moving across into theirs included (but not a wreck
@@ -993,8 +1021,12 @@ export function createRace(
 					const room = clamp(truck.across + side * MAKE_WAY, -MAX_OFFSET, MAX_OFFSET);
 					offset = side > 0 ? Math.max(offset, room - line) : Math.min(offset, room - line);
 				}
+				if (letBy) fixed = line + offset;
 			}
-			if (!letBy && !rounding && bound && bound.across !== null) offset = bound.across - line;
+			if (!letBy && !rounding && bound && bound.across !== null) {
+				fixed = bound.across;
+				offset = bound.across - line;
+			}
 			// Leave room for a car alongside rather than turn in on it: the one
 			// on the inside keeps the inside, and the one being passed has to
 			// give up the line. Where that runs out of road, lift and let it
@@ -1007,15 +1039,18 @@ export function createRace(
 				const apart = car.across - other.across;
 				if (Math.abs(ahead) >= 4 || Math.abs(apart) >= CLEAR + 0.5) continue;
 				const room = other.across + Math.sign(apart) * CLEAR;
+				const asked = offset;
 				offset =
 					apart > 0
 						? Math.max(offset, room - track.line[car.sample])
 						: Math.min(offset, room - track.line[car.sample]);
+				if (offset !== asked) fixed = room;
 				const yields = ahead > 0 || (ahead === 0 && (!caution || cars.indexOf(other) < index));
 				if (Math.abs(room) > MAX_OFFSET + 0.3 && yields)
 					limit = Math.min(limit, Math.max(0, other.speed) - 1);
 			}
-			car.offset += clamp(offset - car.offset, -4 * DT, 4 * DT);
+			const making = offset;
+			car.offset += clamp(offset - car.offset, -SIDLE * DT, SIDLE * DT);
 
 			// where the line, or the line this car is taking, is at a sample
 			const held = (i: number): [number, number] => {
@@ -1041,7 +1076,38 @@ export function createRace(
 			// driver starts braking a beat before the braking point, since the
 			// car takes that long to slow once they do.
 			const soon = (car.sample + Math.round((Math.abs(car.speed) * BEAT) / spacing)) % n;
-			let want = Math.min(car.pace[car.sample], car.pace[soon]) * Math.sqrt(grip / car.grip) * arc;
+			const fade = Math.sqrt(grip / car.grip);
+			let want = Math.min(car.pace[car.sample], car.pace[soon]) * fade * arc;
+			// Off the racing line, or on its way off it, the pace is not the
+			// speed for the road ahead: the driver works that out for the path
+			// the car is going to take (plan.ts), which is across the road to
+			// where it is making for, no faster than it moves over, and then
+			// along there: beside the line, or at a place on the road.
+			if (Math.abs(car.offset) > OFF_LINE || Math.abs(making) > OFF_LINE) {
+				// (thought through again a few times a second, each driver in turn, and at once if the car is past the end of the last plan)
+				let on = (car.sample - car.planFrom + n) % n;
+				const looks = Math.round((Math.abs(car.speed) * BEAT) / spacing);
+				if (!car.planFar || on + looks >= car.planFar || (ticks + index) % RETHINK === 0) {
+					const here = clamp(track.line[car.sample] + car.offset, -MAX_OFFSET, MAX_OFFSET);
+					const drift = (SIDLE * spacing) / Math.max(car.speed, 8);
+					const from = car.sample;
+					const path = (k: number) => {
+						const over = k > 0 ? k * drift : 0;
+						if (fixed !== null)
+							return clamp(here + clamp(fixed - here, -over, over), -MAX_OFFSET, MAX_OFFSET);
+						const beside = car.offset + clamp(making - car.offset, -over, over);
+						return clamp(track.line[(from + k + n) % n] + beside, -MAX_OFFSET, MAX_OFFSET);
+					};
+					const most = car.limit * fade * fade;
+					car.planFar = speedsAlong(track, from, car.speed, path, most, car.pace, fade, car.plan);
+					car.planFrom = from;
+					on = 0;
+				}
+				want = Infinity;
+				for (let k = on; k <= Math.min(on + looks, car.planFar); k++) want = Math.min(want, car.plan[k]);
+			} else {
+				car.planFar = 0;
+			}
 			// A mistake: once one is due, the driver misjudges the next braking
 			// point and arrives at the corner too fast, by a few per cent most
 			// times and by a quarter now and then.
