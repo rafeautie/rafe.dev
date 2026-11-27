@@ -66,6 +66,32 @@ async function ring(room: Stub) {
 	expect(await runDurableObjectAlarm(room)).toBe(true);
 }
 
+/** Stakes the same on every car to win, so one of the bets wins whatever happens. */
+async function everyCar(punter: Awaited<ReturnType<typeof watch>>, grid: string[], stake: number) {
+	for (const car of grid) await punter.ask({ type: 'bet', market: 'win', outcome: car, stake });
+}
+
+/**
+ * Once the race is run and its winner known, sets the house's seed in the
+ * winner pool: `winner` chips on the car that won, `other` on one that did
+ * not, and none on the rest. So what the winning bet pays is known.
+ */
+const rig = (room: Stub, winner: number, other: number) =>
+	runInDurableObject(room, (_, { storage }) => {
+		const { round } = storage.kv.get<RoomState>('state')!;
+		const won = storage.kv.get<{ order: string[] }>('result')!.order[0];
+		const loser = storage.kv.get<{ order: string[] }>('result')!.order[1];
+		storage.sql.exec("UPDATE pool_seeds SET chips = 0 WHERE round = ? AND market = 'win'", round);
+		const seed =
+			"UPDATE pool_seeds SET chips = ? WHERE round = ? AND market = 'win' AND outcome = ?";
+		storage.sql.exec(seed, winner, round, won);
+		storage.sql.exec(seed, other, round, loser);
+	});
+
+/** Waits for every one of a player's bets on the race to be paid. */
+const settledFor = (punter: Awaited<ReturnType<typeof watch>>) =>
+	vi.waitFor(() => expect(punter.last('you').bets.every((bet) => bet.payout !== null)).toBe(true));
+
 describe('the race room', () => {
 	it('opens betting for the first to arrive, and tells the next the same', SLOW, async () => {
 		const room = await quick('arriving');
@@ -534,39 +560,37 @@ describe('the betting', () => {
 		const room = await quick('repaying');
 		const punter = await watch(room, 'secret-of-the-lucky');
 		await vi.waitFor(() => expect(punter.all('you')).toHaveLength(1));
+		// the same player in a second tab
+		const tab = await watch(room, 'secret-of-the-lucky');
+		await vi.waitFor(() => expect(tab.all('you')).toHaveLength(1));
 		const { id } = punter.last('you').you;
 		const { grid } = punter.last('state').state;
 		await runInDurableObject(room, (_, { storage }) => {
 			storage.sql.exec('UPDATE players SET balance = 0 WHERE id = ?', id);
 		});
 		await punter.ask({ type: 'reup', amount: 1000 });
-		// a hundred on every car to win: one of them wins
-		for (const car of grid) {
-			await punter.ask({ type: 'bet', market: 'win', outcome: car, stake: 100 });
-		}
+		// both tabs are told, so neither is left showing no chips
+		await vi.waitFor(() =>
+			expect(tab.last('you').you).toMatchObject({ balance: 1000, debt: 1000 })
+		);
+		await everyCar(punter, grid, 100);
 		expect(punter.last('you').you).toMatchObject({ balance: 400, debt: 1000 });
 		await ring(room);
-		// the winner is known once the race is run: make its pool pay 1,100 for the 600 staked
-		await runInDurableObject(room, (_, { storage }) => {
-			const winner = storage.kv.get<{ order: string[] }>('result')!.order[0];
-			storage.sql.exec("UPDATE pool_seeds SET chips = 0 WHERE market = 'win'");
-			storage.sql.exec(
-				"UPDATE pool_seeds SET chips = 500 WHERE market = 'win' AND outcome != ? AND round = 1 AND rowid = (SELECT MIN(rowid) FROM pool_seeds WHERE market = 'win' AND outcome != ?)",
-				winner,
-				winner
-			);
-		});
+		// 1,100 back on the 600 staked
+		await rig(room, 0, 500);
 		await ring(room);
-		await vi.waitFor(() =>
-			expect(punter.last('you').bets.every((bet) => bet.payout !== null)).toBe(true)
-		);
-		// 1,100 back on 600 staked is 500 won: that goes to the loan, the 600 to the balance
+		await settledFor(punter);
+		// 500 won goes to the loan, the 600 staked back to the balance
 		expect(punter.last('you').you).toMatchObject({ balance: 400 + 600, debt: 500, profit: 500 });
+		expect(punter.all('paid')).toHaveLength(0);
 
 		// what is left of the loan can be paid back by hand, all at once
 		expect(await punter.ask({ type: 'repay' })).toMatchObject({
 			you: { balance: 500, debt: 0 }
 		});
+		await vi.waitFor(() => expect(tab.last('you').you).toMatchObject({ balance: 500, debt: 0 }));
+		expect(punter.all('paid')).toHaveLength(1);
+		expect(tab.all('paid')).toHaveLength(1);
 		expect(await punter.ask({ type: 'repay' })).toEqual({
 			type: 'no',
 			reason: 'You owe the house nothing'
@@ -577,33 +601,42 @@ describe('the betting', () => {
 		expect(written).toEqual([{ amount: -500 }, { amount: -500 }]);
 	});
 
-	it('takes nothing toward a loan from a race that lost', SLOW, async () => {
+	it('clears a loan out of a race that won more than it, and keeps the rest', SLOW, async () => {
+		const room = await quick('clearing');
+		const punter = await watch(room, 'secret-of-the-very-lucky');
+		await vi.waitFor(() => expect(punter.all('you')).toHaveLength(1));
+		const { id } = punter.last('you').you;
+		const { grid } = punter.last('state').state;
+		await runInDurableObject(room, (_, { storage }) => {
+			storage.sql.exec('UPDATE players SET balance = 600, debt = 200 WHERE id = ?', id);
+		});
+		await everyCar(punter, grid, 100);
+		await ring(room);
+		await rig(room, 0, 500);
+		await ring(room);
+		await settledFor(punter);
+		// 500 won: 200 clears the loan, and 1,100 less that is left
+		expect(punter.last('you').you).toMatchObject({ balance: 900, debt: 0 });
+		await vi.waitFor(() => expect(punter.all('paid')).toHaveLength(1));
+	});
+
+	it('takes nothing toward a loan from a race that came out behind', SLOW, async () => {
 		const room = await quick('losing');
 		const punter = await watch(room, 'secret-of-the-unlucky');
 		await vi.waitFor(() => expect(punter.all('you')).toHaveLength(1));
 		const { id } = punter.last('you').you;
-		await runInDurableObject(room, (_, { storage }) => {
-			storage.sql.exec('UPDATE players SET balance = 50, debt = 300 WHERE id = ?', id);
-		});
 		const { grid } = punter.last('state').state;
-		await punter.ask({ type: 'bet', market: 'win', outcome: grid[0], stake: 10 });
-		await punter.ask({ type: 'bet', market: 'win', outcome: grid[1], stake: 10 });
-		await ring(room);
 		await runInDurableObject(room, (_, { storage }) => {
-			// neither car wins
-			const winner = storage.kv.get<{ order: string[] }>('result')!.order[0];
-			if (winner === grid[0] || winner === grid[1]) {
-				storage.sql.exec(
-					'UPDATE bets SET outcome = ? WHERE round = 1',
-					grid.find((car) => car !== winner && car !== grid[0] && car !== grid[1]) ?? grid[2]
-				);
-			}
+			storage.sql.exec('UPDATE players SET balance = 400, debt = 300 WHERE id = ?', id);
 		});
+		await everyCar(punter, grid, 50);
 		await ring(room);
-		await vi.waitFor(() =>
-			expect(punter.last('you').bets.every((bet) => bet.payout !== null)).toBe(true)
-		);
-		expect(punter.last('you').you).toMatchObject({ balance: 30, debt: 300 });
+		// one bet wins, 175 back, but the race lost 125 all told
+		await rig(room, 50, 0);
+		await ring(room);
+		await settledFor(punter);
+		expect(punter.last('you').you).toMatchObject({ balance: 100 + 175, debt: 300 });
+		expect(punter.all('paid')).toHaveLength(0);
 		// paying back with the last chips would only leave them out of chips
 		expect(await punter.ask({ type: 'repay' })).toEqual({
 			type: 'no',
@@ -639,6 +672,14 @@ describe('the betting', () => {
 		await runInDurableObject(room, (_, { storage }) => {
 			storage.sql.exec('UPDATE players SET debt = ? WHERE id = ?', DEBT_CAP, id);
 		});
+		// not while banned
+		expect(await room.adminBan(id, true)).toBeNull();
+		await vi.waitFor(() => expect(punter.last('you').banned).toBe(true));
+		expect(await punter.ask({ type: 'bankrupt' })).toEqual({
+			type: 'no',
+			reason: 'This player cannot bet'
+		});
+		expect(await room.adminBan(id, false)).toBeNull();
 		// the loan is wiped and the chips come back, but what the bets lost stays lost
 		expect(await punter.ask({ type: 'bankrupt' })).toMatchObject({
 			you: { balance: START, debt: 0, profit: -10, bankruptcies: 1 }

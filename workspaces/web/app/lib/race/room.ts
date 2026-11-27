@@ -61,8 +61,10 @@ export type FromRoom =
 	/** Where the cycle is, with the chips on every outcome as they stand. */
 	| { type: 'state'; state: RoomState; pools: Pools }
 	| { type: 'sync'; sent: number; now: number }
-	/** To one page: who it is, and its bets on this race. */
-	| { type: 'you'; you: Standing; bets: Bet[] }
+	/** To one page: who it is, and its bets on this race. A banned player cannot bet or borrow. */
+	| { type: 'you'; you: Standing; bets: Bet[]; banned: boolean }
+	/** To one player's pages: their re-up loan has just been paid off. */
+	| { type: 'paid' }
 	/** To all: somebody bet, and what is now on that outcome. */
 	| { type: 'bet'; name: string; market: Market; outcome: string; stake: number; pool: number }
 	/** To all: the players furthest ahead on their bets. */

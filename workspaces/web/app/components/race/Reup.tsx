@@ -120,7 +120,11 @@ function Open({ you, credit, start, problem, send, at, over, show }: Props) {
 							inputMode="numeric"
 							autoComplete="off"
 							value={Number.isNaN(amount) ? '' : amount}
-							onChange={(event) => to(Number(event.target.value.replace(/\D/g, '').slice(0, 7)))}
+							onChange={(event) => {
+								// emptied, it is nothing rather than 0, so what is typed next is the amount
+								const figures = event.target.value.replace(/\D/g, '').slice(0, 7);
+								to(figures === '' ? NaN : Number(figures));
+							}}
 							onKeyDown={(event) => event.key === 'Enter' && borrow()}
 							onFocus={() => setTyping(true)}
 							onBlur={() => setTyping(false)}

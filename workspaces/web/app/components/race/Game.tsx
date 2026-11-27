@@ -148,6 +148,10 @@ type Props = {
 	board: Standing[];
 	ticker: Tick[];
 	problem: string | null;
+	/** Whether you are banned, so cannot bet or borrow. */
+	banned: boolean;
+	/** The race in which your re-up loan was last paid off. */
+	paidIn: number | null;
 	running: Running | null;
 	sound: boolean;
 	setSound: (on: boolean) => void;
@@ -227,6 +231,8 @@ export function Game({
 	board,
 	ticker,
 	problem,
+	banned,
+	paidIn,
 	running,
 	sound,
 	setSound,
@@ -278,25 +284,16 @@ export function Game({
 	}, []);
 	// Out of chips: none left and no bets riding. The panel for it opens by
 	// itself as you run out (or arrive out), and closes as you have chips again.
-	const broke = you !== null && you.balance === 0 && !bets.some((bet) => bet.payout === null);
+	const broke =
+		you !== null && !banned && you.balance === 0 && !bets.some((bet) => bet.payout === null);
 	const [reupOpen, setReupOpen] = useState(false);
 	const [wasBroke, setWasBroke] = useState(false);
 	if (broke !== wasBroke) {
 		setWasBroke(broke);
 		setReupOpen(broke);
 	}
-	// the race a loan was paid off in, which the wallet marks
-	const [paidIn, setPaidIn] = useState<{ debt: number; round: number | null }>({
-		debt: 0,
-		round: null
-	});
-	if (you && you.debt !== paidIn.debt) {
-		setPaidIn({
-			debt: you.debt,
-			round: paidIn.debt > 0 && you.debt === 0 ? (room?.round ?? null) : paidIn.round
-		});
-	}
-	const paid = paidIn.round !== null && paidIn.round === room?.round;
+	// the wallet marks the race a loan was paid off in, but not one wiped by bankruptcy or the admin
+	const paid = paidIn !== null && paidIn === room?.round && you?.debt === 0;
 	// where the dialog is put, so it lies over the race like the other controls
 	const [frame, setFrame] = useState<HTMLDivElement | null>(null);
 

@@ -201,7 +201,8 @@ export class RaceRoom extends DurableObject<Env> {
 								? this.bankrupt(player)
 								: 'Not understood';
 		if (refused) this.send(socket, { type: 'no', reason: refused });
-		else this.send(socket, this.you(player));
+		// every page the player has open, so all of them show the chips as they are
+		else this.yours(player, this.you(player));
 	}
 
 	webSocketClose(socket: WebSocket, code: number, reason: string) {
@@ -486,7 +487,10 @@ export class RaceRoom extends DurableObject<Env> {
 		for (const { player, repaid } of owed) this.repaid(player, repaid);
 	}
 
-	/** Takes `amount` off a player's chips and off their loan, on the record. */
+	/**
+	 * Takes `amount` off a player's chips and off their loan, on the record,
+	 * and tells their pages if that clears it.
+	 */
 	private repaid(id: number, amount: number) {
 		this.sql.exec(
 			'UPDATE players SET balance = balance - ?1, debt = debt - ?1 WHERE id = ?2',
@@ -499,6 +503,7 @@ export class RaceRoom extends DurableObject<Env> {
 			Date.now(),
 			-amount
 		);
+		if (this.player(id).debt === 0) this.yours(id, { type: 'paid' });
 	}
 
 	/**
@@ -585,7 +590,7 @@ export class RaceRoom extends DurableObject<Env> {
 	}
 
 	private you(id: number): FromRoom {
-		const { banned: _, ...you } = this.player(id);
+		const { banned, ...you } = this.player(id);
 		const bets = this.sql
 			.exec<Bet>(
 				'SELECT market, outcome, stake, payout FROM bets WHERE round = ? AND player = ? ORDER BY id',
@@ -595,7 +600,7 @@ export class RaceRoom extends DurableObject<Env> {
 			.toArray()
 			// one on a market no longer run is handed back when the race ends; pages cannot show it
 			.filter((bet) => MARKETS.includes(bet.market));
-		return { type: 'you', you, bets };
+		return { type: 'you', you, bets, banned: Boolean(banned) };
 	}
 
 	/** The players with a page open, but for one that is closing. */
@@ -732,6 +737,7 @@ export class RaceRoom extends DurableObject<Env> {
 	 */
 	private bankrupt(id: number) {
 		const { start, debtCap } = this.state.settings;
+		if (this.player(id).banned) return 'This player cannot bet';
 		const refused = this.notBroke(id);
 		if (refused) return refused;
 		const { debt } = this.player(id);
@@ -895,10 +901,15 @@ export class RaceRoom extends DurableObject<Env> {
 
 	/** After the admin has changed a player: tells their pages where they stand, and everyone the board. */
 	private changed(id: number) {
-		for (const socket of this.ctx.getWebSockets()) {
-			if (socket.deserializeAttachment() === id) this.send(socket, this.you(id));
-		}
+		this.yours(id, this.you(id));
 		this.tell(this.board());
+	}
+
+	/** Sends something to every page a player has open. */
+	private yours(id: number, message: FromRoom) {
+		for (const socket of this.ctx.getWebSockets()) {
+			if (socket.deserializeAttachment() === id) this.send(socket, message);
+		}
 	}
 
 	/** The flag flying in the race being shown at this moment, or null when no race is. */
