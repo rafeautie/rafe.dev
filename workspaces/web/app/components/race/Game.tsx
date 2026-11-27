@@ -13,7 +13,15 @@ import {
 } from 'react';
 import { Dialog, DialogTrigger } from '~/components/ui/dialog';
 import { cn } from '~/lib/utils';
-import { MARKET_NAMES, MARKETS, outcomes, pays, type Market, type Pools } from '~/lib/race/betting';
+import {
+	credit,
+	MARKET_NAMES,
+	MARKETS,
+	outcomes,
+	pays,
+	type Market,
+	type Pools
+} from '~/lib/race/betting';
 import {
 	TRACK,
 	aim,
@@ -49,9 +57,11 @@ import {
 	netOf,
 	type Box,
 	type Menu,
+	type Reup as Drawn,
 	type Slip,
 	type View
 } from './hud';
+import { Reup } from './Reup';
 import { Settings } from './Settings';
 import {
 	FLAG_MEANS,
@@ -261,6 +271,32 @@ export function Game({
 	const showMenu = useCallback((next: Menu | null) => {
 		menu.current = next;
 	}, []);
+	// the same for the out-of-chips panel
+	const reup = useRef<Drawn | null>(null);
+	const showReup = useCallback((next: Drawn | null) => {
+		reup.current = next;
+	}, []);
+	// Out of chips: none left and no bets riding. The panel for it opens by
+	// itself as you run out (or arrive out), and closes as you have chips again.
+	const broke = you !== null && you.balance === 0 && !bets.some((bet) => bet.payout === null);
+	const [reupOpen, setReupOpen] = useState(false);
+	const [wasBroke, setWasBroke] = useState(false);
+	if (broke !== wasBroke) {
+		setWasBroke(broke);
+		setReupOpen(broke);
+	}
+	// the race a loan was paid off in, which the wallet marks
+	const [paidIn, setPaidIn] = useState<{ debt: number; round: number | null }>({
+		debt: 0,
+		round: null
+	});
+	if (you && you.debt !== paidIn.debt) {
+		setPaidIn({
+			debt: you.debt,
+			round: paidIn.debt > 0 && you.debt === 0 ? (room?.round ?? null) : paidIn.round
+		});
+	}
+	const paid = paidIn.round !== null && paidIn.round === room?.round;
 	// where the dialog is put, so it lies over the race like the other controls
 	const [frame, setFrame] = useState<HTMLDivElement | null>(null);
 
@@ -314,15 +350,25 @@ export function Game({
 	const rules = room?.settings ?? DEFAULT_SETTINGS;
 	// each car's crew, as the room has them tuned
 	const crews = useMemo(() => new Map(tuned(rules).map((car) => [car.id, car.crew])), [rules]);
-	const max = you ? you.balance + rules.debtCap : 0;
+	const max = you ? you.balance : 0;
+	const lend = you ? credit(you.debt, rules.debtCap) : 0;
 	const [first, second] = outcome?.split('>') ?? [];
 	const complete = market === 'exacta' ? second !== undefined : outcome !== null;
-	// a stake over the credit limit is left for the room to refuse, so the reason shows where it was asked
+	// a stake over the balance is left for the room to refuse, so the reason shows where it was asked
 	const valid = Number.isInteger(stake) && stake >= 1;
 	const waiting = sent !== null && bets.length === sent.count && !problem;
 	const placed = sent !== null && bets.length > sent.count && !problem;
-	const ready = complete && valid && !waiting && you !== null;
-	const action = waiting ? 'Placing…' : !complete ? 'Pick a bet' : 'Place bet';
+	// out of chips, the button is the way back to a re-up
+	const ready = broke || (complete && valid && !waiting && you !== null);
+	const action = broke
+		? lend > 0
+			? 'Re-up to bet'
+			: 'Out of chips'
+		: waiting
+			? 'Placing…'
+			: !complete
+				? 'Pick a bet'
+				: 'Place bet';
 	const note = problem
 		? { text: problem, bad: true }
 		: offline
@@ -345,6 +391,7 @@ export function Game({
 		setOffline(false);
 	};
 	function place() {
+		if (broke) return setReupOpen(true);
 		if (!ready || !outcome) return;
 		if (send({ type: 'bet', market, outcome, stake })) {
 			setSent({ count: bets.length, stake, market, outcome });
@@ -414,6 +461,9 @@ export function Game({
 					pan,
 					slip,
 					menu: menu.current,
+					reup: reupOpen ? reup.current : null,
+					broke,
+					paid,
 					cars,
 					replay,
 					backed,
@@ -555,7 +605,7 @@ export function Game({
 										render={
 											<button
 												type="button"
-												aria-label={`Your wallet and settings: ${chips(you.balance)} chips, ${you.name}${you.bankruptcies > 0 ? `, bankrupt ${you.bankruptcies} time${you.bankruptcies === 1 ? '' : 's'}` : ''}`}
+												aria-label={`Your wallet and settings: ${chips(you.balance)} chips${you.debt > 0 ? `, owing the house ${chips(you.debt)}` : ''}, ${you.name}${you.bankruptcies > 0 ? `, bankrupt ${you.bankruptcies} time${you.bankruptcies === 1 ? '' : 's'}` : ''}`}
 												className={hit}
 												style={within(at.wallet)}
 											/>
@@ -563,7 +613,6 @@ export function Game({
 									/>
 									<Settings
 										you={you}
-										rules={rules}
 										problem={problem}
 										send={send}
 										container={frame}
@@ -573,8 +622,33 @@ export function Game({
 									/>
 								</Dialog>
 							)}
+							{broke && !reupOpen && (
+								<button
+									type="button"
+									aria-label="Out of chips: re-up"
+									onClick={() => setReupOpen(true)}
+									className={hit}
+									style={within(at.reupChip)}
+								/>
+							)}
 						</div>
 					</div>
+
+					{you && (
+						<Dialog open={reupOpen && broke} onOpenChange={setReupOpen}>
+							<Reup
+								you={you}
+								credit={lend}
+								start={rules.start}
+								problem={problem}
+								send={send}
+								container={frame}
+								at={at.reup}
+								over={over}
+								show={showReup}
+							/>
+						</Dialog>
+					)}
 
 					{/* following a car: the cross over the race goes back to the whole track, like Escape */}
 					{racing && follow.mode !== 'track' && (
