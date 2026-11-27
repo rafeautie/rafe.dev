@@ -87,6 +87,32 @@ const MAX_STEER = 0.55;
  * heading for the edge of the road, but not so hard that it swings past.
  */
 const HOLD = 3.5;
+/**
+ * The mistakes a driver makes: braking late for a corner, fluffing a gear
+ * change on a straight, getting on the power too soon out of a corner, and
+ * twitching at the wheel in one.
+ */
+const SLIP = { late: 0, fluff: 1, greedy: 2, twitch: 3 };
+/** Seconds, by its own clock, between one mistake and the next: of the calmest driver and the rashest, on average. */
+const CALM = 60;
+const RASH = 30;
+/**
+ * How big a driver's mistakes are: the dial for how often one ends in the
+ * wall. At 1, about one race in two on the road course loses a car to one;
+ * at 1.5, a car a race; at 2, three cars in two races.
+ */
+const SEVERE = 1.5;
+/**
+ * How much faster a driver's clock runs, as a share of its usual speed:
+ * with a car right behind, with one right ahead, on tyres worn out, and in
+ * a car knocked about as far as it will go.
+ */
+const CHASED = 0.8;
+const CHASING = 0.4;
+const WORN = 0.6;
+const HURT = 1;
+/** A mistake that is due, but has not been made for want of the place to make it, is some other one after this long on the driver's clock (s). */
+const PATIENT = 8;
 /** Seconds a driver brakes ahead of where the speed has to be down. */
 const BEAT = 0.2;
 /** How fast a driver moves over, across the road (m/s). */
@@ -203,6 +229,9 @@ export type Car = {
 	// the driver
 	nerve: number;
 	follow: number;
+	/** How many moments ahead the driver thinks before a move, and what it gives to have a go (plan.ts). */
+	foresee: number;
+	bold: number;
 	errorEvery: number;
 	/** The cornering the driver asks of the tyres at most, m/s²: a little less than they have. */
 	limit: number;
@@ -242,10 +271,23 @@ export type Car = {
 	plan: Float32Array;
 	planFrom: number;
 	planFar: number;
+	/**
+	 * The driver's mistakes. They come round on a clock of the driver's own
+	 * (`errorClock`, in seconds, which runs faster under pressure): the next
+	 * is due when it gets to `errorAt`. The one being made lasts until
+	 * `errorUntil` (race time), is of one kind (SLIP), and is as big as
+	 * `errorBy`: for braking late, how much too fast the corner is taken, as
+	 * a share of the right speed; for getting on the power too soon, the
+	 * share of their grip the spinning back tyres are left with; for a
+	 * twitch at the wheel, how far it is turned and which way (radians).
+	 */
+	errorClock: number;
 	errorAt: number;
 	errorUntil: number;
-	/** How much too fast the driver takes the corner they misjudge, as a share of the right speed. */
+	errorKind: number;
 	errorBy: number;
+	/** The kind of mistake that is coming next. */
+	errorNext: number;
 	stuck: number;
 	reverseUntil: number;
 	/** Fuel in the tank, in laps of hard running, and how worn the tyres are: 0 new, 1 worn out. */
@@ -415,7 +457,7 @@ export function createRace(
 		// catch and pass a slower one in three laps. The engine is weak enough
 		// that power, not only grip, sets how fast a car leaves each corner.
 		const grip = GRIP * lerp(0.94, 1.06, entry.grip);
-		const errorEvery = lerp(30, 14, entry.aggression);
+		const errorEvery = lerp(CALM, RASH, entry.aggression);
 		// the most aggressive driver runs right at what the tyres can do,
 		// which is quickest; past it they only slide
 		const limit = grip * G * lerp(0.73, 0.79, entry.aggression);
@@ -445,6 +487,8 @@ export function createRace(
 			tough: lerp(0.7, 1.4, entry.reliability),
 			nerve: lerp(0.9, 1.05, entry.aggression),
 			follow: lerp(7, 4.6, entry.aggression),
+			foresee: Math.round(lerp(10, 6, entry.aggression)),
+			bold: lerp(4, 12, entry.aggression),
 			errorEvery,
 			limit,
 			pace: paceFor(track, limit),
@@ -464,9 +508,12 @@ export function createRace(
 			plan: new Float32Array(FAR + 1),
 			planFrom: 0,
 			planFar: 0,
-			errorAt: LIGHTS - Math.log(1 - rand()) * errorEvery,
+			errorClock: 0,
+			errorAt: -Math.log(1 - rand()) * errorEvery,
 			errorUntil: 0,
+			errorKind: SLIP.late,
 			errorBy: 1,
+			errorNext: SLIP.late,
 			stuck: 0,
 			reverseUntil: 0,
 			fuel: rules.tank,
@@ -921,9 +968,16 @@ export function createRace(
 			// gone round may be nearer than, but which is waited behind all the same
 			let queued: Obstacle | undefined;
 			let queue = Infinity;
+			/** How near the cars racing just ahead of it and just behind it are (m). */
+			let chasing = Infinity;
+			let chased = Infinity;
 			for (const other of road) {
 				if (other === car) continue;
 				const ahead = along(car.sample, other.sample);
+				if (!other.retired && other.lane! < PIT.in) {
+					if (ahead > 0) chasing = Math.min(chasing, ahead);
+					else if (ahead < 0) chased = Math.min(chased, -ahead);
+				}
 				const waits = followed(other);
 				const infront = ahead > 0 || (ahead === 0 && cars.indexOf(other as Car) < index);
 				if (waits && infront && ahead < queue) {
@@ -1244,15 +1298,73 @@ export function createRace(
 			} else {
 				car.planFar = 0;
 			}
-			// A mistake: once one is due, the driver misjudges the next braking
-			// point and arrives at the corner too fast, by a few per cent most
-			// times and by a quarter now and then.
-			if (race.time >= car.errorAt && car.speed > want + 0.5) {
-				car.errorUntil = race.time + 0.3 + rand() ** 2 * 0.7;
-				car.errorBy = 1.06 + rand() ** 3 * 0.22;
-				car.errorAt = race.time - Math.log(1 - rand()) * car.errorEvery;
+			// What the tyres have left after cornering is all there is to
+			// accelerate or brake with.
+			const cornering = Math.min(1, (car.speed ** 2 * track.bend[car.sample]) / (grip * G));
+			// Mistakes. A driver makes one every so often by its own clock,
+			// which runs faster the more it has on its mind: a car right behind
+			// it, or one it is right behind, tyres going off, a car knocked
+			// about. Which mistake it is depends on what it is doing when it is
+			// due. Braking for a corner, it brakes late, and arrives too fast.
+			// Cornering hard, it gets on the power too soon and too hard for the
+			// back tyres, or twitches at the wheel. On a straight, it fluffs a
+			// gear change, and coasts for a moment. Most cost a little time, and
+			// the car behind a chance; now and then one ends in the wall.
+			const prone = !caution && !car.finishTime && car.lane === PIT.racing;
+			let made = false;
+			if (prone) {
+				const second = Math.max(car.speed, 10);
+				car.errorClock +=
+					DT *
+					(1 +
+						CHASED * clamp(1 - chased / second, 0, 1) +
+						CHASING * clamp(1 - chasing / second, 0, 1) +
+						WORN * car.wear +
+						HURT * car.damage);
 			}
-			if (race.time < car.errorUntil) want *= car.errorBy;
+			if (prone && car.errorClock >= car.errorAt && race.time >= car.errorUntil) {
+				// It is the mistake that was coming (`errorKind`), once the driver is
+				// doing what that one is made doing; or, if it has not been for a
+				// while, whichever one it can make now.
+				const overdue = car.errorClock >= car.errorAt + PATIENT;
+				const braking = car.speed > want + 0.5;
+				const leaning = cornering > 0.45 && car.speed > 8;
+				let kind = car.errorNext;
+				if (overdue) kind = braking ? SLIP.late : leaning ? SLIP.twitch : SLIP.fluff;
+				const now =
+					kind === SLIP.late
+						? braking
+						: kind === SLIP.fluff
+							? !braking && !leaning
+							: leaning && !braking;
+				if (now) {
+					const size = rand() ** 2;
+					car.errorKind = kind;
+					if (kind === SLIP.late) {
+						car.errorUntil = race.time + 0.3 + rand() ** 2 * 0.7;
+						car.errorBy = 1 + SEVERE * (0.07 + size * 0.2);
+					} else if (kind === SLIP.greedy) {
+						car.errorUntil = race.time + 0.4 + rand() * 0.5;
+						car.errorBy = Math.max(0.25, 1 - SEVERE * (0.2 + size * 0.35));
+					} else if (kind === SLIP.twitch) {
+						car.errorUntil = race.time + 0.15 + rand() * 0.2;
+						car.errorBy = (rand() < 0.5 ? -1 : 1) * SEVERE * (0.1 + size * 0.2);
+					} else {
+						car.errorUntil = race.time + 0.4 + size * 0.7;
+					}
+					made = true;
+				}
+			}
+			if (made) {
+				// and the next one that is coming, and when
+				car.errorAt = car.errorClock - Math.log(1 - rand()) * car.errorEvery;
+				const which = rand();
+				car.errorNext =
+					which < 0.45 ? SLIP.late : which < 0.65 ? SLIP.fluff : which < 0.85 ? SLIP.greedy : SLIP.twitch;
+			}
+			/** The mistake being made, if one is (SLIP), else -1. */
+			const slip = race.time < car.errorUntil ? car.errorKind : -1;
+			if (slip === SLIP.late) want *= car.errorBy;
 			if (caution) {
 				// nobody stands on the brakes at the flag: the speed allowed comes
 				// down over a few seconds, so the cars behind are not caught out
@@ -1266,11 +1378,9 @@ export function createRace(
 			if (Math.abs(bearing) > 1.2) want = Math.min(want, 5);
 			if (car.finishTime) want = Math.min(want, 12);
 
-			// What the tyres have left after cornering is all there is to
-			// accelerate or brake with. Into a corner too fast, a driver still
-			// brakes a little even with nothing left, giving up some line to
-			// scrub off speed rather than run on into the wall.
-			const cornering = Math.min(1, (car.speed ** 2 * track.bend[car.sample]) / (grip * G));
+			// Into a corner too fast, a driver still brakes a little even with
+			// nothing left, giving up some line to scrub off speed rather than
+			// run on into the wall.
 			const spare = Math.sqrt(1 - cornering ** 2) * car.nerve;
 			let throttle = 0;
 			let brake = 0;
@@ -1283,6 +1393,10 @@ export function createRace(
 			} else {
 				throttle = Math.min(clamp((want - car.speed) / 2, 0, 1), pits.lift(car));
 			}
+			// (a gear change fluffed: nothing from the engine till it is found)
+			if (slip === SLIP.fluff) throttle = 0;
+			// (on the power too soon: all of it, and no thought for the tyres)
+			if (slip === SLIP.greedy && throttle > 0) throttle = 1;
 
 			// stopped against something: back away from it (but not when
 			// stopped on purpose, waiting in a queue)
@@ -1312,7 +1426,11 @@ export function createRace(
 
 			// bent bodywork at the front pulls the steering to one side
 			const bent = Math.abs(car.hull[1] - HULL[1]) - Math.abs(car.hull[15] - HULL[15]);
-			steer = clamp(steer + bent * 0.1, -MAX_STEER, MAX_STEER);
+			steer = clamp(
+				steer + bent * 0.1 + (slip === SLIP.twitch ? car.errorBy : 0),
+				-MAX_STEER,
+				MAX_STEER
+			);
 			car.steer += clamp(steer - car.steer, -3 * DT, 3 * DT);
 
 			// the engine pushes the rear axle, as hard as its power allows at
@@ -1323,11 +1441,18 @@ export function createRace(
 				car.fuel > 0 ? Math.min(11000, car.power / Math.max(Math.abs(car.speed), 8)) : 0;
 			pits.use(car, throttle, cornering, DT);
 			const push =
-				throttle < 0 ? -4000 : Math.min(throttle * engine * (1 - 0.35 * car.damage), most * spare);
+				throttle < 0
+					? -4000
+					: Math.min(
+							throttle * engine * (1 - 0.35 * car.damage),
+							most * (slip === SLIP.greedy ? 1 : spare)
+						);
 			const stop = brake * most;
+			// (back tyres that are spinning do not hold the car sideways as they did)
+			const back = slip === SLIP.greedy ? most * car.errorBy : most;
 			car.slip = Math.max(
 				tyres(body, AXLE, car.steer, 0, stop, most),
-				tyres(body, -AXLE, 0, push, stop, most)
+				tyres(body, -AXLE, 0, Math.min(push, back), stop, back)
 			);
 		} else {
 			// held on the grid until the lights go out

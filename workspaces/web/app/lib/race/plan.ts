@@ -93,6 +93,13 @@ export type Mover = {
 	limit: number;
 	follow: number;
 	/**
+	 * The driver's nerve: how many moments ahead it runs things forward
+	 * before it makes a move (the fewer, the less it sees to put it off), and
+	 * how many metres of road it gives to have a go at a car holding it up.
+	 */
+	foresee: number;
+	bold: number;
+	/**
 	 * The path the driver is taking. Beside the racing line: how far beside
 	 * it it is steering now, and how far it is making for. Or to a place
 	 * across the road (`spot`, else NaN). Or beside another car (`mate`, an
@@ -129,8 +136,8 @@ export type Thought = {
 	leadGap: number;
 };
 
-/** How many moments ahead a driver runs things forward, and how far apart they are (s). */
-const MOMENTS = 8;
+/** The most moments ahead a driver runs things forward, and how far apart they are (s). */
+const MOMENTS = 12;
 const MOMENT = 0.25;
 /** The most cars it keeps track of, and ways to go it weighs up. */
 const AROUND = 8;
@@ -160,8 +167,7 @@ const TUCK = 1.5;
  * and moving over in front of one with a claim to the road; each moment
  * alongside a car, for each metre nearer it than abreast; each metre across
  * the road from the way now taken, and each metre off the racing line. What
- * a place is worth: being past a car rather than behind it. And what a
- * driver held up behind a car on a straight gives to have a go at it.
+ * a place is worth: being past a car rather than behind it.
  */
 const HIT = 60;
 const CUT = 30;
@@ -169,7 +175,6 @@ const SQUEEZE = 8;
 const SWITCH = 2;
 const OFF = 0.2;
 const PLACE = 25;
-const BOLD = 8;
 /** And each m/s it is going too fast for a way already. */
 const RASH = 10;
 /** What being alongside a car is worth, as a share of a place: on the inside for the next bend, and on the outside. And how far ahead that bend is looked for (m). */
@@ -251,6 +256,7 @@ export function think(
 	const mine = past(car);
 	const speed = Math.max(car.speed, 0);
 	const sight = 15 + speed;
+	const moments = Math.min(MOMENTS, Math.max(2, Math.round(car.foresee)));
 
 	// the cars around, and how far ahead each is
 	let count = 0;
@@ -288,7 +294,7 @@ export function think(
 		offs[c] = other.across - pathOf(track, cars, other, other.sample, clear, most);
 		let v = Math.max(other.speed, 0);
 		let gone = 0;
-		for (let m = 0; m < MOMENTS; m++) {
+		for (let m = 0; m < moments; m++) {
 			const k = Math.round(gone / step);
 			const may =
 				other.planFar && on + k <= other.planFar
@@ -353,7 +359,7 @@ export function think(
 			lead[ahead] < car.follow + 8 + 1.5 * Math.max(0, speed - other.speed) &&
 			track.bend[other.sample] < 0.01
 		) {
-			go = BOLD;
+			go = car.bold;
 		}
 		// A driver pulls out from behind a car where the road is straight,
 		// or all but: in a bend the only quick way through is the one the car
@@ -425,7 +431,7 @@ export function think(
 		for (let c = 0; c < count; c++) {
 			theirs[c] = pathOf(track, cars, cars[who[c]], from, clear, most) + offs[c];
 		}
-		for (let m = 0; m < MOMENTS; m++) {
+		for (let m = 0; m < moments; m++) {
 			const k = Math.round(gone / step);
 			const may = paced
 				? car.pace[(from + k) % n] * car.fade
@@ -515,7 +521,7 @@ export function think(
 		// outside. Behind one is nothing, however near.
 		for (let c = 0; c < count; c++) {
 			if (struck & (1 << c)) continue;
-			const gap = theirWay[c * MOMENTS + MOMENTS - 1] - gone;
+			const gap = theirWay[c * MOMENTS + moments - 1] - gone;
 			if (gap >= NOSE) continue;
 			if (gap <= -NOSE) {
 				cost -= PLACE;
