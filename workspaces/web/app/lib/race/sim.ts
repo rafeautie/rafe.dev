@@ -1,7 +1,7 @@
 import { ChainShape, PolygonShape, World, type Body, type Fixture } from 'planck';
 import type { Plan } from './crew';
 import { createPits, LANE as PIT, tyreGrip } from './pits';
-import { FAR, speedsAlong, think, type Thought } from './plan';
+import { FAR, pathOf, speedsAlong, think, type Thought } from './plan';
 import { curvature, SPAN } from './line';
 import { createRecovery } from './recovery';
 import type { Entry } from './roster';
@@ -204,7 +204,7 @@ export type Car = {
 	nerve: number;
 	follow: number;
 	errorEvery: number;
-	/** The cornering the driver asks of the tyres at most, m/s²: a little less than they have. */
+	/** The cornering the driver asks of the tyres at most, m/sÂ²: a little less than they have. */
 	limit: number;
 	/** The speed to be doing at each track sample to make the corners, on the racing line. */
 	pace: Float32Array;
@@ -216,6 +216,9 @@ export type Car = {
 	 */
 	aim: number;
 	spot: number;
+	/** Or the car it is keeping beside (an index into the cars, else -1), and on which side of it (1 or -1). */
+	mate: number;
+	mateSide: number;
 	/** The share of its pace the car has the grip for now. */
 	fade: number;
 	/**
@@ -226,6 +229,8 @@ export type Car = {
 	 */
 	way: number;
 	waySpot: number;
+	wayMate: number;
+	wayMateSide: number;
 	leader: number;
 	leadSpeed: number;
 	leadPoint: number;
@@ -446,9 +451,13 @@ export function createRace(
 			offset: 0,
 			aim: 0,
 			spot: NaN,
+			mate: -1,
+			mateSide: 0,
 			fade: 1,
 			way: 0,
 			waySpot: NaN,
+			wayMate: -1,
+			wayMateSide: 0,
 			leader: -1,
 			leadSpeed: 0,
 			leadPoint: 0,
@@ -517,7 +526,15 @@ export function createRace(
 	/** How many steps the race has run. */
 	let ticks = 0;
 	/** What a driver has just thought (plan.ts). */
-	const thought: Thought = { aim: 0, spot: NaN, leader: -1, leadSpeed: 0, leadGap: 0 };
+	const thought: Thought = {
+		aim: 0,
+		spot: NaN,
+		mate: -1,
+		mateSide: 0,
+		leader: -1,
+		leadSpeed: 0,
+		leadGap: 0
+	};
 	/** Whether a car is racing, out on the track. */
 	const racing = (index: number) => !cars[index].retired && cars[index].lane < PIT.in;
 	/** A second plan's speeds, to set against a car's own (plan.ts). */
@@ -955,11 +972,14 @@ export function createRace(
 			const place = funnel || merged.has(car) ? -1 : lineup.indexOf(car);
 			/** Whether it is on its way round a wreck, or a truck, which comes before making for the pits. */
 			let rounding = false;
+			/** Whether it is keeping beside another car, wherever that one's path goes. */
+			let mated = false;
 			/** Whether the driver is finding its own way through the traffic (plan.ts), as it does racing. */
 			const weighing = place < 0 && !caution && !blocker?.retired;
 			if (!weighing) {
 				car.way = car.aim;
 				car.waySpot = car.spot;
+				car.wayMate = -1;
 				car.leader = -1;
 			}
 			if (place >= 0) {
@@ -995,12 +1015,20 @@ export function createRace(
 					think(track, cars, index, racing, CLEAR, MAX_OFFSET, SIDLE, thought);
 					car.way = thought.aim;
 					car.waySpot = thought.spot;
+					car.wayMate = thought.mate;
+					car.wayMateSide = thought.mateSide;
 					car.leader = thought.leader;
 					car.leadSpeed = thought.leadSpeed;
 					car.leadPoint = car.progress + thought.leadGap;
 				}
 				offset = car.way;
-				if (!Number.isNaN(car.waySpot)) {
+				if (car.wayMate >= 0 && racing(car.wayMate)) {
+					// beside a car: where that car's path is, a little way ahead, and clear of it
+					mated = true;
+					const theirs = pathOf(track, cars, cars[car.wayMate], aimed(car), CLEAR, MAX_OFFSET);
+					fixed = clamp(theirs + car.wayMateSide * CLEAR, -MAX_OFFSET, MAX_OFFSET);
+					offset = fixed - track.line[aimed(car)];
+				} else if (!Number.isNaN(car.waySpot)) {
 					fixed = car.waySpot;
 					offset = fixed - track.line[aimed(car)];
 				}
@@ -1141,6 +1169,8 @@ export function createRace(
 			const making = offset;
 			car.aim = making;
 			car.spot = fixed ?? NaN;
+			car.mate = mated ? car.wayMate : -1;
+			car.mateSide = car.wayMateSide;
 			car.offset += clamp(offset - car.offset, -SIDLE * DT, SIDLE * DT);
 
 			// where the line, or the line this car is taking, is at a sample
@@ -1187,7 +1217,11 @@ export function createRace(
 					const beside = (off: number) => (k: number) =>
 						clamp(track.line[(from + k + n) % n] + off, -MAX_OFFSET, MAX_OFFSET);
 					const there = clamp(fixed ?? 0, -MAX_OFFSET, MAX_OFFSET);
-					const path = fixed !== null ? () => there : beside(making);
+					const path = mated
+						? (k: number) => pathOf(track, cars, car, (from + k + n) % n, CLEAR, MAX_OFFSET)
+						: fixed !== null
+							? () => there
+							: beside(making);
 					car.planFar = speedsAlong(track, from, car.speed, path, most, car.pace, fade, car.plan);
 					// And while it is still a way from there, for where it is now as
 					// well, the slower of the two: beside the line, or making for a

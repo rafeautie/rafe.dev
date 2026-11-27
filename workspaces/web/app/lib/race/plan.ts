@@ -21,7 +21,7 @@ const ys = new Float64Array(FAR + 2 * SPAN + 1);
  * road that is, `k` samples on. They are written to `speeds`, one for each
  * sample from here on, as far as the plan goes, which is as far as the car
  * would take to stop and a little more: how many samples that is, is
- * returned. `limit` is the cornering the car has the grip for (m/s²), and
+ * returned. `limit` is the cornering the car has the grip for (m/sÂ²), and
  * `pace` the speed the racing line takes at each sample, which is what the
  * plan comes down to at its far end, times `fade` for a car with less grip
  * than it had new.
@@ -86,10 +86,18 @@ export type Mover = {
 	power: number;
 	limit: number;
 	follow: number;
-	/** How far beside the racing line the driver is steering now, where it is making for beside it, and the place across the road it is making for instead, if it is (else NaN). */
+	/**
+	 * The path the driver is taking. Beside the racing line: how far beside
+	 * it it is steering now, and how far it is making for. Or to a place
+	 * across the road (`spot`, else NaN). Or beside another car (`mate`, an
+	 * index into the cars, else -1), on one side of it (`mateSide`, 1 or -1),
+	 * wherever that car's own path goes.
+	 */
 	offset: number;
 	aim: number;
 	spot: number;
+	mate: number;
+	mateSide: number;
 	pace: Float32Array;
 	/** The share of its pace it has the grip for now. */
 	fade: number;
@@ -99,14 +107,17 @@ export type Mover = {
 };
 
 /**
- * What a driver decides: where to make for, beside the line (`aim`) or as a
- * place across the road (`spot`, else NaN); and the car to drop in behind
- * (-1 for none), how far down the road from here that will be (m), and how
- * fast that car will be going by then.
+ * What a driver decides. Where to make for: beside the line (`aim`), or a
+ * place across the road (`spot`, else NaN), or beside a car (`mate`, else
+ * -1, and `mateSide`). And the car to drop in behind (-1 for none), how far
+ * down the road from here that will be (m), and how fast that car will be
+ * going by then.
  */
 export type Thought = {
 	aim: number;
 	spot: number;
+	mate: number;
+	mateSide: number;
 	leader: number;
 	leadSpeed: number;
 	leadGap: number;
@@ -117,8 +128,8 @@ const MOMENTS = 12;
 const MOMENT = 0.25;
 /** The most cars it keeps track of, and ways to go it weighs up. */
 const AROUND = 8;
-const WAYS = 8;
-/** Nearer than this, front to back, two cars are alongside each other; and nearer than this, side to side, they are on the same piece of road (m, between their middles). */
+const WAYS = 6;
+/** Further ahead than this, front to back, a car is one ahead and not one alongside; and nearer than this, side to side, two cars are on the same piece of road (m, between their middles). */
 const LEVEL = 4;
 const ABREAST = 2.1;
 /** And nearer than this, side to side, two cars alongside each other touch. */
@@ -126,18 +137,33 @@ const TOUCH = 1.8;
 /** A car's length, and how far clear of the one ahead a car on its way out from behind it keeps (m). */
 const LENGTH = 4.2;
 const CLEARS = 1;
+/** Nearer than this, front to back, two cars' bodies overlap. */
+const NOSE = LENGTH + 0.2;
 /**
- * What a way to go is worth, in metres of road: what hitting a car costs,
- * and each metre across the road from the way now taken, and each metre off
- * the racing line; and what a place is worth: being past a car rather than
- * behind it, and half that for being alongside it.
+ * A car this near another, front to back, on the road beside it, has a claim
+ * to that road: the other may not move over onto it, ahead of it or not.
+ * A length and a bit: a nose up to the other's tail is enough.
+ */
+const CLAIM = 5.5;
+/** Nearer than this, side to side, a car is behind the one ahead and not on its way round it (m). */
+const TUCK = 1.5;
+/** A place starts to count from this far behind the car that has it (m): closing on it is worth something before it is caught. */
+const RAMP = 10;
+/**
+ * What a way to go is worth, in metres of road. What hitting a car costs,
+ * and moving over in front of one with a claim to the road; each moment
+ * alongside a car, for each metre nearer it than abreast; each metre across
+ * the road from the way now taken, and each metre off the racing line. What
+ * a place is worth: being past a car rather than behind it. And what a
+ * driver held up behind a car on a straight gives to have a go at it.
  */
 const HIT = 60;
-/** What each moment alongside a car costs for each metre nearer it than abreast. */
+const CUT = 30;
 const SQUEEZE = 8;
 const SWITCH = 2;
 const OFF = 0.2;
 const PLACE = 25;
+const BOLD = 8;
 /** How many seconds more, at the speed a way to go ends up at, it is credited with: a car not held up goes on gaining. */
 const AFTER = 2;
 
@@ -146,16 +172,43 @@ const lead = new Float64Array(AROUND);
 const theirWay = new Float64Array(AROUND * MOMENTS);
 const theirSide = new Float64Array(AROUND * MOMENTS);
 const theirSpeed = new Float64Array(AROUND * MOMENTS);
+/** Each way to go: what kind it is (0 beside the line, 1 a place across the road, 2 beside a car), how far or where or on which side, and which car. */
+const kinds = new Uint8Array(WAYS);
 const ways = new Float64Array(WAYS);
-const placed = new Uint8Array(WAYS);
+const mates = new Int32Array(WAYS);
 const speeds = new Float32Array(FAR + 1);
 
 const hem = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
+/** What is left of how far off its path a car is, once it has moved `over` back towards it. */
+const left = (off: number, over: number) => (off > 0 ? Math.max(0, off - over) : Math.min(0, off + over));
 
-/** How hard a car can accelerate at a speed (m/s²), with `tow` of the air ahead of it already moving (0 to 1). */
+/** How hard a car can accelerate at a speed (m/sÂ²), with `tow` of the air ahead of it already moving (0 to 1). */
 function pull(car: Mover, v: number, tow: number) {
 	const engine = Math.min(11000, car.power / Math.max(v, 8)) * (1 - 0.35 * car.damage);
 	return (engine - (30 + 2.2 * (1 - 0.9 * tow) * v) * v) / 1000;
+}
+
+/**
+ * Where across the road a car's path is at a track sample: beside the car
+ * it is keeping beside, if it is, `clear` from that one's own path; or at
+ * the place it is making for; or beside the racing line. No further from
+ * the middle of the road than `most`.
+ */
+export function pathOf(
+	track: Track,
+	cars: Mover[],
+	car: Mover,
+	at: number,
+	clear: number,
+	most: number,
+	deep = 0
+): number {
+	if (car.mate >= 0 && deep < 2) {
+		const beside = pathOf(track, cars, cars[car.mate], at, clear, most, deep + 1);
+		return hem(beside + car.mateSide * clear, -most, most);
+	}
+	if (!Number.isNaN(car.spot)) return hem(car.spot, -most, most);
+	return hem(track.line[at] + car.aim, -most, most);
 }
 
 /**
@@ -197,7 +250,7 @@ export function think(
 		who[count] = i;
 		lead[count] = gap;
 		if (gap >= LEVEL && (ahead < 0 || gap < lead[ahead])) ahead = count;
-		if (Math.abs(gap) < LEVEL && (beside < 0 || Math.abs(gap) < Math.abs(lead[beside])))
+		if (Math.abs(gap) < CLAIM && (beside < 0 || Math.abs(gap) < Math.abs(lead[beside])))
 			beside = count;
 		if (gap > 0 && Math.abs(other.across - car.across) < 2.5) tow = Math.max(tow, 1 - gap / 80);
 		count++;
@@ -205,16 +258,18 @@ export function think(
 	out.leader = -1;
 	out.leadSpeed = 0;
 	out.leadGap = 0;
+	out.aim = 0;
 	out.spot = NaN;
-	if (!count) {
-		out.aim = 0;
-		return;
-	}
+	out.mate = -1;
+	out.mateSide = 0;
+	if (!count) return;
 
-	// where each of them will be, taking the path it is on
+	// where each of them will be, taking the path it is on: as far off it
+	// as it is now, less what it has had time to move over
 	for (let c = 0; c < count; c++) {
 		const other = cars[who[c]];
 		const on = (other.sample - other.planFrom + n) % n;
+		const off = other.across - pathOf(track, cars, other, other.sample, clear, most);
 		let v = Math.max(other.speed, 0);
 		let gone = 0;
 		for (let m = 0; m < MOMENTS; m++) {
@@ -228,125 +283,157 @@ export function think(
 					? Math.max(may, v - 0.9 * other.limit * MOMENT)
 					: Math.min(may, v + pull(other, v, 0) * MOMENT);
 			gone += v * MOMENT;
-			const over = sidle * (m + 1) * MOMENT;
 			const at = (other.sample + Math.round(gone / step)) % n;
 			theirWay[c * MOMENTS + m] = lead[c] + gone;
 			theirSpeed[c * MOMENTS + m] = v;
-			theirSide[c * MOMENTS + m] = Number.isNaN(other.spot)
-				? hem(line[at] + other.offset + hem(other.aim - other.offset, -over, over), -most, most)
-				: other.across + hem(other.spot - other.across, -over, over);
+			theirSide[c * MOMENTS + m] =
+				pathOf(track, cars, other, at, clear, most) + left(off, sidle * (m + 1) * MOMENT);
 		}
 	}
 
-	// The ways it could go. Beside the racing line: on it, or as far off it
-	// as it is making for. Or to a place across the road: the one it is
-	// making for, the one it is at, either side of the car ahead, and its
-	// own side of one alongside.
+	// The ways it could go: as it is going; on the racing line; staying
+	// where it is on the road; down either side of the car ahead; and its
+	// own side of one alongside. Beside a car is beside it wherever that
+	// car's path goes, which is not a place on the road for long.
 	const here = line[car.sample];
-	const making = Number.isNaN(car.spot) ? here + car.aim : car.spot;
+	/** Where across the road a way to go is, at a track sample. */
+	const lane = (kind: number, way: number, mate: number, at: number) =>
+		kind === 0
+			? hem(line[at] + way, -most, most)
+			: kind === 1
+				? way
+				: hem(pathOf(track, cars, cars[mate], at, clear, most) + way * clear, -most, most);
 	let options = 0;
-	const offer = (way: number, place: number) => {
-		if (place && Math.abs(way) > most) return;
+	const offer = (kind: number, way: number, mate: number) => {
 		for (let w = 0; w < options; w++) {
-			if (placed[w] === place && Math.abs(ways[w] - way) < 0.4) return;
+			if (kinds[w] === kind && mates[w] === mate && Math.abs(ways[w] - way) < 0.4) return;
 		}
 		if (options === WAYS) return;
+		// (beside a car is no way to go where the road runs out beside it)
+		if (kind === 2) {
+			const theirs = pathOf(track, cars, cars[mate], cars[mate].sample, clear, most);
+			if (Math.abs(theirs + way * clear) > most + 0.4) return;
+		}
+		kinds[options] = kind;
 		ways[options] = way;
-		placed[options++] = place;
+		mates[options++] = mate;
 	};
-	if (Number.isNaN(car.spot)) offer(car.aim, 0);
-	else offer(car.spot, 1);
-	offer(0, 0);
-	offer(hem(car.across, -most, most), 1);
+	const around = (index: number) => {
+		for (let c = 0; c < count; c++) if (who[c] === index) return true;
+		return false;
+	};
+	if (car.mate >= 0 && around(car.mate)) offer(2, car.mateSide, car.mate);
+	else if (!Number.isNaN(car.spot)) offer(1, hem(car.spot, -most, most), -1);
+	else offer(0, car.aim, -1);
+	const mine0 = options;
+	offer(0, 0, -1);
+	offer(1, hem(car.across, -most, most), -1);
+	/** Which of the ways are ways round the car ahead, and what having a go at it is worth, held up behind it on a straight. */
+	const plain = options;
+	let go = 0;
 	if (ahead >= 0) {
 		const other = cars[who[ahead]];
-		offer(other.across + clear, 1);
-		offer(other.across - clear, 1);
-		// (and as far beside the line as that is, where the line is on its way somewhere)
-		const beyond = other.across - line[other.sample];
-		offer(beyond + clear, 0);
-		offer(beyond - clear, 0);
+		if (
+			Math.abs(car.across - other.across) < 1.5 &&
+			lead[ahead] < car.follow + 8 + 1.5 * Math.max(0, speed - other.speed) &&
+			track.bend[other.sample] < 0.01
+		) {
+			go = BOLD;
+		}
+		offer(2, 1, who[ahead]);
+		offer(2, -1, who[ahead]);
 	}
+	const round = options;
 	if (beside >= 0) {
 		const other = cars[who[beside]];
-		offer(other.across + (car.across >= other.across ? clear : -clear), 1);
+		offer(2, car.across >= other.across ? 1 : -1, who[beside]);
 	}
 
 	let best = Infinity;
 	const on = (car.sample - car.planFrom + n) % n;
+	const making = pathOf(track, cars, car, car.sample, clear, most);
 	for (let w = 0; w < options; w++) {
+		const kind = kinds[w];
 		const way = ways[w];
-		const place = placed[w] === 1;
+		const mate = mates[w];
 		// the speeds that way can be taken at: the pace, on the line; those
 		// already planned, the way it is going; or worked out
-		const kind =
-			!place && Math.abs(way) < 0.05
-				? 0
-				: car.planFar && Math.abs(way - (place ? car.spot : car.aim)) < 0.05
-					? 1
-					: 2;
+		const from = car.sample;
+		const paced = kind === 0 && Math.abs(way) < 0.05;
+		const planned = !paced && w < mine0 && car.planFar > 0;
 		let far = 0;
-		if (kind === 2) {
-			const from = car.sample;
+		if (!paced && !planned) {
 			far = speedsAlong(
 				track,
 				from,
 				speed,
-				place ? () => way : (k) => hem(line[(from + k + n) % n] + way, -most, most),
+				(k) => lane(kind, way, mate, (from + k + n) % n),
 				car.limit * car.fade * car.fade,
 				car.pace,
 				car.fade,
 				speeds
 			);
 		}
-		const across = place ? way : here + way;
+		const across = lane(kind, way, mate, from);
+		const off = car.across - across;
 		let v = speed;
 		let gone = 0;
 		let cost = SWITCH * Math.abs(across - making) + OFF * Math.abs(across - here);
+		if (w >= plain && w < round) cost -= go;
 		let leader = -1;
 		let leadSpeed = 0;
 		let leadGap = 0;
-		/** The cars it has been alongside with room between them, and those it has hit. */
+		/** The cars it has been alongside with room between them, those it has hit, and those it has cut in on. */
 		let level = 0;
 		let struck = 0;
+		let cut = 0;
 		let side = car.across;
 		for (let m = 0; m < MOMENTS; m++) {
 			const k = Math.round(gone / step);
-			const may =
-				kind === 2 && k <= far
-					? speeds[k]
-					: kind === 1 && on + k <= car.planFar
+			const may = paced
+				? car.pace[(from + k) % n] * car.fade
+				: planned
+					? on + k <= car.planFar
 						? car.plan[on + k]
-						: car.pace[(car.sample + k) % n] * car.fade;
+						: car.pace[(from + k) % n] * car.fade
+					: k <= far
+						? speeds[k]
+						: car.pace[(from + k) % n] * car.fade;
 			v =
 				v > may
 					? Math.max(may, v - 0.9 * car.limit * MOMENT)
 					: Math.min(may, v + pull(car, v, tow) * MOMENT);
 			gone += v * MOMENT;
-			const over = sidle * (m + 1) * MOMENT;
 			const was = side;
-			side = place
-				? car.across + hem(way - car.across, -over, over)
-				: hem(
-						line[(car.sample + Math.round(gone / step)) % n] +
-							car.offset +
-							hem(way - car.offset, -over, over),
-						-most,
-						most
-					);
+			side =
+				lane(kind, way, mate, (from + Math.round(gone / step)) % n) +
+				left(off, sidle * (m + 1) * MOMENT);
 			for (let c = 0; c < count; c++) {
 				const j = c * MOMENTS + m;
 				const bit = 1 << c;
 				const gap = theirWay[j] - gone;
 				const apart = side - theirSide[j];
 				if (Math.abs(apart) >= ABREAST) {
-					if (Math.abs(gap) < LEVEL) level |= bit;
+					if (Math.abs(gap) < CLAIM) level |= bit;
 					continue;
 				}
-				if (gap >= LEVEL) {
-					// one ahead on this piece of road: no nearer it than it is
-					// followed, or on its way out from behind it, than clears it
-					const keep = Math.abs(apart) < 1.5 ? car.follow : Math.min(car.follow, LENGTH + CLEARS);
+				// On the same piece of road. If the two of them were alongside
+				// with room between them, or near enough alongside, the one that
+				// has moved over on the other is the one that has to give the room
+				// back; if that is the other one, it will.
+				if (level & bit) {
+					const theirs = theirSide[j] - (m ? theirSide[j - 1] : cars[who[c]].across);
+					const closer = apart > 0 ? was - side : side - was;
+					const closing = apart > 0 ? theirs : -theirs;
+					if (closer <= closing + 0.02) continue;
+				}
+				if (gap >= NOSE) {
+					// One ahead on it: no nearer it than it is followed, or on its
+					// way out from behind it, than clears it. (Most of the way out
+					// from behind it, it goes for the gap.)
+					if (Math.abs(apart) >= TUCK) continue;
+					const keep =
+						Math.abs(apart) < 1.5 ? car.follow : Math.min(car.follow, LENGTH + CLEARS);
 					if (gap < keep) {
 						gone = theirWay[j] - keep;
 						v = Math.min(v, theirSpeed[j]);
@@ -356,19 +443,10 @@ export function think(
 							leadGap = Math.max(0, gone);
 						}
 					}
-				} else if (gap > -LEVEL) {
-					// One alongside on it. If they were alongside with room, the one
-					// that has moved over on the other is the one that has to give
-					// it back; if that is the other one, it will.
-					if (level & bit) {
-						const theirs = theirSide[j] - (m ? theirSide[j - 1] : cars[who[c]].across);
-						const closer = apart > 0 ? was - side : side - was;
-						const closing = apart > 0 ? theirs : -theirs;
-						if (closer <= closing + 0.02) continue;
-					}
-					// Too near it costs something every moment, the nearer the more,
-					// so that of two ways the one that opens the gap is the better;
-					// and near enough to touch is a hit.
+				} else if (gap > -NOSE) {
+					// One alongside on it. Too near it costs something every moment,
+					// the nearer the more, so that of two ways the one that opens
+					// the gap is the better; and near enough to touch is a hit.
 					cost += SQUEEZE * (ABREAST - Math.abs(apart));
 					if (Math.abs(apart) >= TOUCH || struck & bit) continue;
 					struck |= bit;
@@ -378,6 +456,10 @@ export function think(
 						leader = who[c];
 						leadSpeed = theirSpeed[j] - 1;
 					}
+				} else if (level & bit && !(cut & bit)) {
+					// one it has moved over in front of, that had its nose alongside
+					cut |= bit;
+					cost += CUT;
 				}
 			}
 		}
@@ -386,12 +468,14 @@ export function think(
 		for (let c = 0; c < count; c++) {
 			if (struck & (1 << c)) continue;
 			const gap = theirWay[c * MOMENTS + MOMENTS - 1] - gone;
-			cost -= PLACE * hem((LEVEL - gap) / (2 * LEVEL), 0, 1);
+			cost -= PLACE * hem((RAMP - gap) / (RAMP + LEVEL), 0, 1);
 		}
 		if (cost < best) {
 			best = cost;
-			out.aim = place ? 0 : way;
-			out.spot = place ? way : NaN;
+			out.aim = kind === 0 ? way : 0;
+			out.spot = kind === 1 ? way : NaN;
+			out.mate = kind === 2 ? mate : -1;
+			out.mateSide = kind === 2 ? way : 0;
 			out.leader = leader;
 			out.leadSpeed = leadSpeed;
 			out.leadGap = leadGap;
