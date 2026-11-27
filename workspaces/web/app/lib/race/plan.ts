@@ -24,7 +24,9 @@ const ys = new Float64Array(FAR + 2 * SPAN + 1);
  * returned. `limit` is the cornering the car has the grip for (m/s²), and
  * `pace` the speed the racing line takes at each sample, which is what the
  * plan comes down to at its far end, times `fade` for a car with less grip
- * than it had new.
+ * than it had new. `every` is how many samples apart the path is looked at:
+ * 1 for the speeds a car is driven to, or more (a number SPAN is a multiple
+ * of) for a rougher answer sooner.
  */
 export function speedsAlong(
 	track: Track,
@@ -34,12 +36,15 @@ export function speedsAlong(
 	limit: number,
 	pace: Float32Array,
 	fade: number,
-	speeds: Float32Array
+	speeds: Float32Array,
+	every = 1
 ) {
 	const { n, step, x, y, nx, ny } = track;
 	const reach = Math.min((speed * speed) / (1.5 * limit) + 30, FAR * step);
-	const far = Math.min(FAR, Math.max(SPAN, Math.ceil(reach / step)));
-	for (let k = -SPAN, i = (from - SPAN + n) % n; k <= far + SPAN; k++, i = i + 1 === n ? 0 : i + 1) {
+	// (a whole number of strides)
+	const far = Math.min(FAR, Math.max(SPAN, Math.ceil(reach / step / every) * every));
+	for (let k = -SPAN; k <= far + SPAN; k += every) {
+		const i = (((from + k) % n) + n) % n;
 		const a = across(k);
 		xs[k + SPAN] = x[i] + nx[i] * a;
 		ys[k + SPAN] = y[i] + ny[i] * a;
@@ -47,14 +52,15 @@ export function speedsAlong(
 	// backwards from the far end, as the pace is worked out (paceFor in sim.ts)
 	let v = pace[(from + far) % n] * fade;
 	speeds[far] = v;
-	for (let k = far - 1; k >= 0; k--) {
+	const stride = step * every;
+	for (let k = far - every; k >= 0; k -= every) {
 		const j = k + SPAN;
 		const bend = Math.abs(
 			curvature(xs[j - SPAN], ys[j - SPAN], xs[j], ys[j], xs[j + SPAN], ys[j + SPAN])
 		);
 		const braking = 0.9 * Math.sqrt(Math.max(0, limit * limit - (v * v * bend) ** 2));
-		v = Math.min(60, Math.sqrt(limit / Math.max(bend, 1e-4)), Math.sqrt(v * v + 2 * braking * step));
-		speeds[k] = v;
+		v = Math.min(60, Math.sqrt(limit / Math.max(bend, 1e-4)), Math.sqrt(v * v + 2 * braking * stride));
+		for (let fill = 0; fill < every; fill++) speeds[k + fill] = v;
 	}
 	return far;
 }
@@ -350,6 +356,8 @@ export function think(
 	}
 
 	let best = Infinity;
+	// (weighing up a way to go, the road is looked at every couple of metres)
+	const rough = step < 1.5 ? 2 : 1;
 	const on = (car.sample - car.planFrom + n) % n;
 	const making = pathOf(track, cars, car, car.sample, clear, most);
 	for (let w = 0; w < options; w++) {
@@ -371,7 +379,8 @@ export function think(
 				car.limit * car.fade * car.fade,
 				car.pace,
 				car.fade,
-				speeds
+				speeds,
+				rough
 			);
 		}
 		const across = lane(kind, way, mate, from);
