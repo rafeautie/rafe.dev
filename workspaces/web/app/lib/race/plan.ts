@@ -129,10 +129,8 @@ export type Thought = {
 	leadGap: number;
 };
 
-const env = (name: string, value: number) =>
-	Number((globalThis as any).process?.env?.[name] ?? value);
 /** How many moments ahead a driver runs things forward, and how far apart they are (s). */
-const MOMENTS = env('MOMENTS', 12);
+const MOMENTS = 8;
 const MOMENT = 0.25;
 /** The most cars it keeps track of, and ways to go it weighs up. */
 const AROUND = 8;
@@ -154,11 +152,9 @@ const NEAR = 9;
  * to that road: the other may not move over onto it, ahead of it or not.
  * A length and a bit: a nose up to the other's tail is enough.
  */
-const CLAIM = env('CLAIM', 5.5);
+const CLAIM = 5.5;
 /** Nearer than this, side to side, a car is behind the one ahead and not on its way round it (m). */
 const TUCK = 1.5;
-/** A place starts to count from this far behind the car that has it (m): closing on it is worth something before it is caught. */
-const RAMP = 10;
 /**
  * What a way to go is worth, in metres of road. What hitting a car costs,
  * and moving over in front of one with a claim to the road; each moment
@@ -168,20 +164,20 @@ const RAMP = 10;
  * driver held up behind a car on a straight gives to have a go at it.
  */
 const HIT = 60;
-/** And each m/s it is going too fast for a way already. */
-const RASH = env('RASH', 10);
-const STRAIGHTS = env('STRAIGHTS', 0.01);
-/** What being alongside a car is worth, as a share of a place: on the inside for the next bend, and on the outside. And how far ahead that bend is looked for (m). */
-const INSIDE = env('INSIDE', 0.6);
-const OUTSIDE = env('OUTSIDE', 0.15);
-const AHEAD = 150;
-const STAYREL = env('STAYREL', 2);
 const CUT = 30;
 const SQUEEZE = 8;
 const SWITCH = 2;
 const OFF = 0.2;
 const PLACE = 25;
 const BOLD = 8;
+/** And each m/s it is going too fast for a way already. */
+const RASH = 10;
+/** What being alongside a car is worth, as a share of a place: on the inside for the next bend, and on the outside. And how far ahead that bend is looked for (m). */
+const INSIDE = 0.6;
+const OUTSIDE = 0.15;
+const AHEAD = 150;
+/** A driver pulls out from behind a car only where the racing line bends less than this, there (1/m). */
+const STRAIGHTS = 0.01;
 /** How many seconds more, at the speed a way to go ends up at, it is credited with: a car not held up goes on gaining. */
 const AFTER = 2;
 
@@ -308,8 +304,9 @@ export function think(
 		}
 	}
 
-	// The ways it could go: as it is going; on the racing line; as far
-	// beside it as it is now; down either side of the car ahead; and its own
+	// The ways it could go: as it is going; on the racing line; staying
+	// where it is on the road, or as far beside the line as it is, whichever
+	// is the quicker there; down either side of the car ahead; and its own
 	// side of one alongside. Beside a car is beside it wherever that
 	// car's path goes, which is not a place on the road for long.
 	const here = line[car.sample];
@@ -344,8 +341,8 @@ export function think(
 	else offer(0, car.aim, -1);
 	const mine0 = options;
 	offer(0, 0, -1);
-	if (STAYREL !== 1) offer(1, hem(car.across, -most, most), -1);
-	if (STAYREL) offer(0, hem(car.across, -most, most) - here, -1);
+	offer(1, hem(car.across, -most, most), -1);
+	offer(0, hem(car.across, -most, most) - here, -1);
 	/** Which of the ways are ways round the car ahead, and what having a go at it is worth, held up behind it on a straight. */
 	const plain = options;
 	let go = 0;
@@ -363,7 +360,7 @@ export function think(
 		// ahead is on, and a car that leaves it there only drops back from the
 		// one it is after. (One that is out already may stay out: that is the
 		// way it is going.)
-		if (!STRAIGHTS || track.bend[other.sample] < STRAIGHTS) {
+		if (track.bend[other.sample] < STRAIGHTS) {
 			offer(2, 1, who[ahead]);
 			offer(2, -1, who[ahead]);
 		}
@@ -539,7 +536,6 @@ export function think(
 			const inside = (side - theirs[c]) * bends;
 			cost -= PLACE * (inside > 0 ? INSIDE : inside < 0 ? OUTSIDE : (INSIDE + OUTSIDE) / 2);
 		}
-		(globalThis as any).__think?.(me, kind, way, mate, cost, gone, v, leader, struck, cut, level, paced, planned, across);
 		if (cost < best) {
 			best = cost;
 			out.aim = kind === 0 ? way : 0;
