@@ -1009,7 +1009,7 @@ export function createRace(
 				// driver who lifts as soon as it sees it will be held up never
 				// gets alongside anybody.
 				if (car.leader >= 0 && racing(car.leader)) {
-					const room = Math.max(0, car.leadPoint - car.progress);
+					const room = Math.max(0, car.leadPoint - car.progress - 1);
 					limit = Math.max(3, Math.sqrt(car.leadSpeed ** 2 + grip * G * room));
 				}
 				// and the one it is tucked in behind now, it keeps its distance from
@@ -1129,6 +1129,10 @@ export function createRace(
 				if (Math.abs(room) > MAX_OFFSET + 0.3 && yields)
 					limit = Math.min(limit, Math.max(0, other.speed) - 1);
 			}
+			// (no further beside the line than there is road for)
+			const lineAhead = track.line[aimed(car)];
+			offset = clamp(offset, -MAX_OFFSET - lineAhead, MAX_OFFSET - lineAhead);
+			car.offset = clamp(car.offset, -MAX_OFFSET - lineAhead, MAX_OFFSET - lineAhead);
 			const making = offset;
 			car.aim = making;
 			car.spot = fixed ?? NaN;

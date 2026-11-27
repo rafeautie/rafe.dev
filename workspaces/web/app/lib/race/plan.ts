@@ -112,6 +112,7 @@ export type Thought = {
 	leadGap: number;
 };
 
+const env = (name: string, value: number) => Number((globalThis as any).process?.env?.[name] ?? value);
 /** How many moments ahead a driver runs things forward, and how far apart they are (s). */
 const MOMENTS = 12;
 const MOMENT = 0.25;
@@ -119,20 +120,23 @@ const MOMENT = 0.25;
 const AROUND = 8;
 const WAYS = 8;
 /** Nearer than this, front to back, two cars are alongside each other; and nearer than this, side to side, they are on the same piece of road (m, between their middles). */
-const LEVEL = 3.4;
+const LEVEL = env('LEVEL', 3.4);
 const ABREAST = 2.1;
+/** A car's length, and how far clear of the one ahead a car on its way out from behind it keeps (m). */
+const LENGTH = 4.2;
+const CLEARS = env('CLEARS', 1);
 /**
  * What a way to go is worth, in metres of road: what hitting a car costs,
  * and each metre across the road from the way now taken, and each metre off
  * the racing line; and what a place is worth: being past a car rather than
  * behind it, and half that for being alongside it.
  */
-const HIT = 60;
-const SWITCH = 0.6;
-const OFF = 0.2;
-const PLACE = Number((globalThis as any).process?.env?.PLACE ?? 25);
+const HIT = env('HIT', 60);
+const SWITCH = env('SWITCH', 1.5);
+const OFF = env('OFF', 0.2);
+const PLACE = env('PLACE', 25);
 /** How many seconds more, at the speed a way to go ends up at, it is credited with: a car not held up goes on gaining. */
-const AFTER = 2;
+const AFTER = env('AFTER', 2);
 
 const who = new Int32Array(AROUND);
 const lead = new Float64Array(AROUND);
@@ -231,10 +235,10 @@ export function think(
 		}
 	}
 
-	// The ways it could go. Beside the racing line: on it, as far off it as
-	// it is making for, or as far off it as it is. Or to a place across the
-	// road: the one it is making for, and either side of the car ahead, and
-	// its own side of one alongside.
+	// The ways it could go. Beside the racing line: on it, or as far off it
+	// as it is making for. Or to a place across the road: the one it is
+	// making for, the one it is at, either side of the car ahead, and its
+	// own side of one alongside.
 	const here = line[car.sample];
 	const making = Number.isNaN(car.spot) ? here + car.aim : car.spot;
 	let options = 0;
@@ -250,7 +254,7 @@ export function think(
 	if (Number.isNaN(car.spot)) offer(car.aim, 0);
 	else offer(car.spot, 1);
 	offer(0, 0);
-	offer(car.offset, 0);
+	offer(hem(car.across, -most, most), 1);
 	if (ahead >= 0) {
 		const other = cars[who[ahead]];
 		offer(other.across + clear, 1);
@@ -339,7 +343,7 @@ export function think(
 				if (gap >= LEVEL) {
 					// one ahead on this piece of road: no nearer it than it is
 					// followed, or on its way out from behind it, than clears it
-					const keep = Math.abs(apart) < 1.5 ? car.follow : LEVEL + 0.8;
+					const keep = Math.abs(apart) < 1.5 ? car.follow : Math.min(car.follow, LENGTH + CLEARS);
 					if (gap < keep) {
 						gone = theirWay[j] - keep;
 						v = Math.min(v, theirSpeed[j]);
