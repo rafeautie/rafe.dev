@@ -113,7 +113,11 @@ const BUMPER = TRUCK.long - TRUCK.axle;
 /** How hard the truck brakes, and pulls away, light and loaded, m/s². */
 const BRAKE = 5;
 const PULL = 8;
-const HAUL = 6;
+const HAUL = 8;
+/** The fastest it goes on the track, light and loaded (m/s), and the share of its cornering it keeps with cars on: all of it, strapped down as they are. */
+const TOP_LIGHT = 32;
+const TOP_LOADED = 26;
+const LADEN = 1;
 /** How fast it squares itself up in the yard, m/s at its ends: the last of a turn of the wheel, at a crawl. */
 const SQUARE = 0.4;
 /** How far along the lane it takes to turn into the yard off it, no tighter than a truck steers. */
@@ -144,13 +148,18 @@ const TOWED = 0x0004;
 /**
  * Backing up: how fast it goes (m/s), how hard it pulls away and stops
  * (m/s²), how far behind its back axles it looks for which way to steer
- * them, and the furthest it backs up the track for a wreck (m).
+ * them, and the furthest it backs up the track for a wreck (m): far enough
+ * to get from where it comes out of the pits to one lying anywhere beside
+ * them, which is a lap away going forwards. And how far onto the verge its
+ * front tyres may swing as it backs round a bend (m): a wreck against the
+ * outside wall of one is not to be got beside without.
  */
-const BACK_PACE = 3.5;
-const BACK_PULL = 1.5;
+const BACK_PACE = 7;
+const BACK_PULL = 3;
 const BACK_BRAKE = 2.5;
 const BACK_LOOK = 4.5;
-const MAX_BACK = 60;
+const MAX_BACK = 240;
+const BACK_VERGE = 1.2;
 /** How long it waits for something behind it to get out of its way before it gives up backing and goes on round instead. */
 const BACK_PATIENCE = 6;
 /** From the front axle back to the truck's tail, and a little more: how far past a wreck it is before it can get across in front of it backing up. */
@@ -338,7 +347,7 @@ function createRoads(track: Track) {
 				if (Math.abs(a) > HALF_ROAD) continue;
 				const i = ((Math.round(s) % n) + n) % n;
 				const front = a + outside[i] * swing * track.bend[i];
-				if (Math.abs(front) > Math.abs(a) && Math.abs(front) + TRUCK_HALF > ROADSIDE) return false;
+				if (Math.abs(front) > Math.abs(a) && Math.abs(front) + TRUCK_HALF > ROADSIDE + BACK_VERGE) return false;
 			}
 		}
 		return true;
@@ -1179,14 +1188,14 @@ function createTruck(
 		for (let k = 0; k + 1 < count; k++) {
 			// in the pits no faster than the cars go there; on the track, as fast as it can with what it has on
 			const pits = next.across[k] <= -RING + 0.5;
-			caps[k] = pits ? LANE_PACE : loaded ? 18 : 28;
+			caps[k] = pits ? LANE_PACE : loaded ? TOP_LOADED : TOP_LIGHT;
 			// No faster round a bend than the truck can hold, less with cars
 			// on. It is taken gently where it is tight and the truck has to
 			// swing right round, and more briskly where it is only a curve.
 			const [a, b] = [Math.max(0, k - 3), Math.min(count - 1, k + 3)];
 			const [cross, sides] = triangle(x[a], y[a], x[k], y[k], x[b], y[b]);
 			const bend = sides ? Math.abs(2 * cross) / sides : 0;
-			const hold = clamp(7 + (1 / Math.max(bend, 1e-3) - 10) * 0.4, 7, 14) * (loaded ? 0.8 : 1);
+			const hold = clamp(7 + (1 / Math.max(bend, 1e-3) - 10) * 0.4, 7, 14) * (loaded ? LADEN : 1);
 			if (bend > 1e-3) caps[k] = Math.min(caps[k], Math.sqrt(hold / bend));
 			// Nor faster into a bend, or out of one, than the wheel can be
 			// turned to take it: the more it has to be turned for each metre,

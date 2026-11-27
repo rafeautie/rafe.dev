@@ -570,6 +570,8 @@ export function createRace(
 	let formed = false;
 	/** Everything on the road this step: the cars, and the trucks that are out on the track. */
 	let road: Obstacle[] = cars;
+	/** How fast the leader brings the field round to the line, once it has lined up: quicker on a long lap, by up to half as much again. */
+	const runIn = RUN_IN * clamp(length / USUAL_LAP, 1, 1.5);
 	/** How many steps the race has run. */
 	let ticks = 0;
 	/** What a driver has just thought (plan.ts). */
@@ -1369,7 +1371,16 @@ export function createRace(
 				// nobody stands on the brakes at the flag: the speed allowed comes
 				// down over a few seconds, so the cars behind are not caught out
 				const easing = 32 - 6 * (race.time - caution.since);
-				const held = car !== pacer ? (caution.going ? FORM : CATCH) : formed ? RUN_IN : PACE;
+				// (on a long lap the run to the line, once the lines have formed, is
+				// quicker in proportion, and so are the cars keeping up with it)
+				const held =
+					car !== pacer
+						? caution.going
+							? FORM + (formed ? runIn - RUN_IN : 0)
+							: CATCH
+						: formed
+							? runIn
+							: PACE;
 				want = Math.min(want, Math.max(held, easing));
 			}
 			const corner = want;
