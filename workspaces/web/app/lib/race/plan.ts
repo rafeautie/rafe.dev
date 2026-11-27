@@ -1,4 +1,4 @@
-import { curvature, SPAN } from './line';
+import { SPAN } from './line';
 import type { Track } from './track';
 
 // What a driver plans, a few seconds of road ahead: the path the car is going
@@ -8,6 +8,9 @@ import type { Track } from './track';
 // the outside of another, or kept to the inside by one alongside, is on a
 // different arc through the bend, tighter or wider, and has to slow for the
 // one it is on, early enough to be down to it by the time it gets there.
+
+/** How many samples apart the road can be looked at for a rougher answer sooner: every couple of metres. */
+export const roughly = (track: Track) => (track.step < 1.5 ? 2 : 1);
 
 /** The furthest ahead a plan looks, in track samples. */
 export const FAR = 200;
@@ -55,9 +58,16 @@ export function speedsAlong(
 	const stride = step * every;
 	for (let k = far - every; k >= 0; k -= every) {
 		const j = k + SPAN;
-		const bend = Math.abs(
-			curvature(xs[j - SPAN], ys[j - SPAN], xs[j], ys[j], xs[j + SPAN], ys[j + SPAN])
-		);
+		// how sharply the circle through the three points bends (as `curvature`
+		// in line.ts has it, worked out the quick way: this is done a great deal)
+		const ax = xs[j] - xs[j - SPAN];
+		const ay = ys[j] - ys[j - SPAN];
+		const bx = xs[j + SPAN] - xs[j];
+		const by = ys[j + SPAN] - ys[j];
+		const cx = ax + bx;
+		const cy = ay + by;
+		const sides = Math.sqrt((ax * ax + ay * ay) * (bx * bx + by * by) * (cx * cx + cy * cy));
+		const bend = Math.abs(2 * (ax * cy - ay * cx)) / (sides || 1e-9);
 		const braking = 0.9 * Math.sqrt(Math.max(0, limit * limit - (v * v * bend) ** 2));
 		v = Math.min(60, Math.sqrt(limit / Math.max(bend, 1e-4)), Math.sqrt(v * v + 2 * braking * stride));
 		for (let fill = 0; fill < every; fill++) speeds[k + fill] = v;
@@ -379,7 +389,7 @@ export function think(
 
 	let best = Infinity;
 	// (weighing up a way to go, the road is looked at every couple of metres)
-	const rough = step < 1.5 ? 2 : 1;
+	const rough = roughly(track);
 	const on = (car.sample - car.planFrom + n) % n;
 	const making = pathOf(track, cars, car, car.sample, clear, most);
 	for (let w = 0; w < options; w++) {

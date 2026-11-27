@@ -1,7 +1,7 @@
 import { ChainShape, PolygonShape, World, type Body, type Fixture } from 'planck';
 import type { Plan } from './crew';
 import { createPits, LANE as PIT, tyreGrip } from './pits';
-import { FAR, pathOf, speedsAlong, think, type Thought } from './plan';
+import { FAR, pathOf, roughly, speedsAlong, think, type Thought } from './plan';
 import { curvature, SPAN } from './line';
 import { createRecovery } from './recovery';
 import type { Entry } from './roster';
@@ -572,6 +572,8 @@ export function createRace(
 	let road: Obstacle[] = cars;
 	/** How fast the leader brings the field round to the line, once it has lined up: quicker on a long lap, by up to half as much again. */
 	const runIn = RUN_IN * clamp(length / USUAL_LAP, 1, 1.5);
+	/** How many samples apart a driver looks at the road ahead to plan its speed: every couple of metres. */
+	const rough = roughly(track);
 	/** How many steps the race has run. */
 	let ticks = 0;
 	/** What a driver has just thought (plan.ts). */
@@ -1278,7 +1280,7 @@ export function createRace(
 						: fixed !== null
 							? () => there
 							: beside(making);
-					car.planFar = speedsAlong(track, from, car.speed, path, most, car.pace, fade, car.plan);
+					car.planFar = speedsAlong(track, from, car.speed, path, most, car.pace, fade, car.plan, rough);
 					// And while it is still a way from there, for where it is now as
 					// well, the slower of the two: beside the line, or making for a
 					// place on the road, at the place on it that it has got to.
@@ -1289,7 +1291,7 @@ export function createRace(
 							? Math.abs(there - now) > 0.5 && (() => now)
 							: Math.abs(track.line[from] + making - here) > 0.5 && beside(car.offset);
 					if (stay) {
-						speedsAlong(track, from, car.speed, stay, most, car.pace, fade, other);
+						speedsAlong(track, from, car.speed, stay, most, car.pace, fade, other, rough);
 						for (let k = 0; k <= car.planFar; k++) car.plan[k] = Math.min(car.plan[k], other[k]);
 					}
 					car.planFrom = from;
