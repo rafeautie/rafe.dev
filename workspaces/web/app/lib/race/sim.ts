@@ -145,6 +145,9 @@ const WRECK = 1.5;
 const PACE = 12;
 const CATCH = 17;
 const RUN_IN = 16;
+/** On a long lap, where the run to the line is quicker, the leader is down to this speed (m/s) this far short of the line (m), for the lines to close up. */
+const CLOSE_UP = 13;
+const EASE = 50;
 /** How far apart the queue runs, middle to middle. */
 const QUEUE = 8;
 /** Under caution, how fast (m/s) a car goes by a wreck, or a truck at work, and from how far either side of it (m). */
@@ -1194,7 +1197,10 @@ export function createRace(
 				}
 				if (letBy) fixed = line + offset;
 			}
+			/** Whether it is on its way into the pits, on the line and at the speed the pits give it for that (pits.ts). */
+			let pitting = false;
 			if (!letBy && !rounding && bound && bound.across !== null) {
+				pitting = true;
 				fixed = bound.across;
 				offset = bound.across - line;
 			}
@@ -1262,7 +1268,7 @@ export function createRace(
 			// the car is going to take (plan.ts), which is across the road to
 			// where it is making for, no faster than it moves over, and then
 			// along there: beside the line, or at a place on the road.
-			if (Math.abs(car.offset) > OFF_LINE || Math.abs(making) > OFF_LINE) {
+			if ((Math.abs(car.offset) > OFF_LINE || Math.abs(making) > OFF_LINE) && !pitting) {
 				// (thought through again a few times a second, each driver in turn, and at once if the car is past the end of the last plan)
 				let on = (car.sample - car.planFrom + n) % n;
 				const looks = Math.round((Math.abs(car.speed) * BEAT) / spacing);
@@ -1373,15 +1379,23 @@ export function createRace(
 				// nobody stands on the brakes at the flag: the speed allowed comes
 				// down over a few seconds, so the cars behind are not caught out
 				const easing = 32 - 6 * (race.time - caution.since);
-				// (on a long lap the run to the line, once the lines have formed, is
-				// quicker in proportion, and so are the cars keeping up with it)
+				// (On a long lap the run to the line, once the lines have formed, is
+				// quicker in proportion, and so are the cars keeping up with it.
+				// But a long lap is one with corners in it that string the lines
+				// out, so the leader eases right down for the last of it, and the
+				// rest close up on it before the green.)
+				const toLine = ((n - pacer!.sample) % n) * spacing;
+				const run =
+					runIn > RUN_IN
+						? lerp(CLOSE_UP, runIn, clamp((toLine - EASE) / (2 * EASE), 0, 1))
+						: RUN_IN;
 				const held =
 					car !== pacer
 						? caution.going
-							? FORM + (formed ? runIn - RUN_IN : 0)
+							? FORM + (formed ? Math.max(0, run - RUN_IN) : 0)
 							: CATCH
 						: formed
-							? runIn
+							? run
 							: PACE;
 				want = Math.min(want, Math.max(held, easing));
 			}
