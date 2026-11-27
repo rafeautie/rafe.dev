@@ -1260,6 +1260,7 @@ export function createRace(
 				const held = car !== pacer ? (caution.going ? FORM : CATCH) : formed ? RUN_IN : PACE;
 				want = Math.min(want, Math.max(held, easing));
 			}
+			(globalThis as any).__dbg?.(car, want, limit);
 			const corner = want;
 			want = Math.min(want, limit);
 			// facing the wrong way: turn round slowly

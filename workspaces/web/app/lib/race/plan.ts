@@ -129,12 +129,14 @@ export type Thought = {
 	leadGap: number;
 };
 
+const env = (name: string, value: number) =>
+	Number((globalThis as any).process?.env?.[name] ?? value);
 /** How many moments ahead a driver runs things forward, and how far apart they are (s). */
-const MOMENTS = 12;
+const MOMENTS = env('MOMENTS', 12);
 const MOMENT = 0.25;
 /** The most cars it keeps track of, and ways to go it weighs up. */
 const AROUND = 8;
-const WAYS = 6;
+const WAYS = 7;
 /** Further ahead than this, front to back, a car is one ahead and not one alongside; and nearer than this, side to side, two cars are on the same piece of road (m, between their middles). */
 const LEVEL = 4;
 const ABREAST = 2.1;
@@ -145,12 +147,14 @@ const LENGTH = 4.2;
 const CLEARS = 1;
 /** Nearer than this, front to back, two cars' bodies overlap. */
 const NOSE = LENGTH + 0.2;
+/** Further apart than this, front to back, two cars have nothing to do with each other yet. */
+const NEAR = 9;
 /**
  * A car this near another, front to back, on the road beside it, has a claim
  * to that road: the other may not move over onto it, ahead of it or not.
  * A length and a bit: a nose up to the other's tail is enough.
  */
-const CLAIM = 5.5;
+const CLAIM = env('CLAIM', 5.5);
 /** Nearer than this, side to side, a car is behind the one ahead and not on its way round it (m). */
 const TUCK = 1.5;
 /** A place starts to count from this far behind the car that has it (m): closing on it is worth something before it is caught. */
@@ -164,6 +168,14 @@ const RAMP = 10;
  * driver held up behind a car on a straight gives to have a go at it.
  */
 const HIT = 60;
+/** And each m/s it is going too fast for a way already. */
+const RASH = env('RASH', 10);
+const STRAIGHTS = env('STRAIGHTS', 0.01);
+/** What being alongside a car is worth, as a share of a place: on the inside for the next bend, and on the outside. And how far ahead that bend is looked for (m). */
+const INSIDE = env('INSIDE', 0.6);
+const OUTSIDE = env('OUTSIDE', 0.15);
+const AHEAD = 150;
+const STAYREL = env('STAYREL', 2);
 const CUT = 30;
 const SQUEEZE = 8;
 const SWITCH = 2;
@@ -176,7 +188,9 @@ const AFTER = 2;
 const who = new Int32Array(AROUND);
 const lead = new Float64Array(AROUND);
 const theirWay = new Float64Array(AROUND * MOMENTS);
-const theirSide = new Float64Array(AROUND * MOMENTS);
+/** How far off its path each of them is now, and where across the road its path was at the place this car had got to a moment before. */
+const offs = new Float64Array(AROUND);
+const theirs = new Float64Array(AROUND);
 const theirSpeed = new Float64Array(AROUND * MOMENTS);
 /** Each way to go: what kind it is (0 beside the line, 1 a place across the road, 2 beside a car), how far or where or on which side, and which car. */
 const kinds = new Uint8Array(WAYS);
@@ -270,12 +284,12 @@ export function think(
 	out.mateSide = 0;
 	if (!count) return;
 
-	// where each of them will be, taking the path it is on: as far off it
-	// as it is now, less what it has had time to move over
+	// how far down the road each of them will be, and how fast, taking the
+	// path it is on; and how far off that path it is now
 	for (let c = 0; c < count; c++) {
 		const other = cars[who[c]];
 		const on = (other.sample - other.planFrom + n) % n;
-		const off = other.across - pathOf(track, cars, other, other.sample, clear, most);
+		offs[c] = other.across - pathOf(track, cars, other, other.sample, clear, most);
 		let v = Math.max(other.speed, 0);
 		let gone = 0;
 		for (let m = 0; m < MOMENTS; m++) {
@@ -289,17 +303,14 @@ export function think(
 					? Math.max(may, v - 0.9 * other.limit * MOMENT)
 					: Math.min(may, v + pull(other, v, 0) * MOMENT);
 			gone += v * MOMENT;
-			const at = (other.sample + Math.round(gone / step)) % n;
 			theirWay[c * MOMENTS + m] = lead[c] + gone;
 			theirSpeed[c * MOMENTS + m] = v;
-			theirSide[c * MOMENTS + m] =
-				pathOf(track, cars, other, at, clear, most) + left(off, sidle * (m + 1) * MOMENT);
 		}
 	}
 
-	// The ways it could go: as it is going; on the racing line; staying
-	// where it is on the road; down either side of the car ahead; and its
-	// own side of one alongside. Beside a car is beside it wherever that
+	// The ways it could go: as it is going; on the racing line; as far
+	// beside it as it is now; down either side of the car ahead; and its own
+	// side of one alongside. Beside a car is beside it wherever that
 	// car's path goes, which is not a place on the road for long.
 	const here = line[car.sample];
 	/** Where across the road a way to go is, at a track sample. */
@@ -333,7 +344,8 @@ export function think(
 	else offer(0, car.aim, -1);
 	const mine0 = options;
 	offer(0, 0, -1);
-	offer(1, hem(car.across, -most, most), -1);
+	if (STAYREL !== 1) offer(1, hem(car.across, -most, most), -1);
+	if (STAYREL) offer(0, hem(car.across, -most, most) - here, -1);
 	/** Which of the ways are ways round the car ahead, and what having a go at it is worth, held up behind it on a straight. */
 	const plain = options;
 	let go = 0;
@@ -346,8 +358,15 @@ export function think(
 		) {
 			go = BOLD;
 		}
-		offer(2, 1, who[ahead]);
-		offer(2, -1, who[ahead]);
+		// A driver pulls out from behind a car where the road is straight,
+		// or all but: in a bend the only quick way through is the one the car
+		// ahead is on, and a car that leaves it there only drops back from the
+		// one it is after. (One that is out already may stay out: that is the
+		// way it is going.)
+		if (!STRAIGHTS || track.bend[other.sample] < STRAIGHTS) {
+			offer(2, 1, who[ahead]);
+			offer(2, -1, who[ahead]);
+		}
 	}
 	const round = options;
 	if (beside >= 0) {
@@ -389,6 +408,13 @@ export function think(
 		let gone = 0;
 		let cost = SWITCH * Math.abs(across - making) + OFF * Math.abs(across - here);
 		if (w >= plain && w < round) cost -= go;
+		// (a way it is going too fast for already is one it would run wide on)
+		const first = paced
+			? car.pace[from] * car.fade
+			: planned
+				? car.plan[Math.min(on, car.planFar)]
+				: speeds[0];
+		if (speed > first + 1.5) cost += RASH * (speed - first - 1.5);
 		let leader = -1;
 		let leadSpeed = 0;
 		let leadGap = 0;
@@ -397,6 +423,11 @@ export function think(
 		let struck = 0;
 		let cut = 0;
 		let side = car.across;
+		/** Which way the road next bends from where this way ends up (as `turn` is counted), or 0 if it does not for a while, or 2 until that is looked for. */
+		let bends = 2;
+		for (let c = 0; c < count; c++) {
+			theirs[c] = pathOf(track, cars, cars[who[c]], from, clear, most) + offs[c];
+		}
 		for (let m = 0; m < MOMENTS; m++) {
 			const k = Math.round(gone / step);
 			const may = paced
@@ -417,11 +448,20 @@ export function think(
 			side =
 				lane(kind, way, mate, (from + Math.round(gone / step)) % n) +
 				left(off, sidle * (m + 1) * MOMENT);
+			const at = (from + Math.round(gone / step)) % n;
+			const over = sidle * (m + 1) * MOMENT;
 			for (let c = 0; c < count; c++) {
 				const j = c * MOMENTS + m;
 				const bit = 1 << c;
 				const gap = theirWay[j] - gone;
-				const apart = side - theirSide[j];
+				// Where across the road the other one's path is, here: two cars a
+				// few metres apart down a road the racing line is swinging across
+				// are not side by side for being at different places across it.
+				const before = theirs[c];
+				const beside = pathOf(track, cars, cars[who[c]], at, clear, most) + left(offs[c], over);
+				theirs[c] = beside;
+				if (gap > NEAR || gap < -NEAR) continue;
+				const apart = side - beside;
 				if (Math.abs(apart) >= ABREAST) {
 					if (Math.abs(gap) < CLAIM) level |= bit;
 					continue;
@@ -431,9 +471,8 @@ export function think(
 				// has moved over on the other is the one that has to give the room
 				// back; if that is the other one, it will.
 				if (level & bit) {
-					const theirs = theirSide[j] - (m ? theirSide[j - 1] : cars[who[c]].across);
 					const closer = apart > 0 ? was - side : side - was;
-					const closing = apart > 0 ? theirs : -theirs;
+					const closing = apart > 0 ? beside - before : before - beside;
 					if (closer <= closing + 0.02) continue;
 				}
 				if (gap >= NOSE) {
@@ -473,12 +512,34 @@ export function think(
 			}
 		}
 		cost -= gone + v * AFTER;
-		// the places it ends up with: past a car, or alongside it, or behind
+		// The places it ends up with. Past a car is a place gained. Alongside
+		// one is most of the way to it on the inside for the next bend, since
+		// that is the car that comes out of it ahead, and not much on the
+		// outside. Behind one is nothing, however near.
 		for (let c = 0; c < count; c++) {
 			if (struck & (1 << c)) continue;
 			const gap = theirWay[c * MOMENTS + MOMENTS - 1] - gone;
-			cost -= PLACE * hem((RAMP - gap) / (RAMP + LEVEL), 0, 1);
+			if (gap >= NOSE) continue;
+			if (gap <= -NOSE) {
+				cost -= PLACE;
+				continue;
+			}
+			if (bends === 2) {
+				// which way the road next bends, from where it has got to
+				bends = 0;
+				const end = (from + Math.round(gone / step)) % n;
+				for (let k = 0; k < AHEAD; k += 4) {
+					const i = (end + Math.round(k / step)) % n;
+					if (track.bend[i] > 0.02) {
+						bends = track.turn[i];
+						break;
+					}
+				}
+			}
+			const inside = (side - theirs[c]) * bends;
+			cost -= PLACE * (inside > 0 ? INSIDE : inside < 0 ? OUTSIDE : (INSIDE + OUTSIDE) / 2);
 		}
+		(globalThis as any).__think?.(me, kind, way, mate, cost, gone, v, leader, struck, cut, level, paced, planned, across);
 		if (cost < best) {
 			best = cost;
 			out.aim = kind === 0 ? way : 0;
