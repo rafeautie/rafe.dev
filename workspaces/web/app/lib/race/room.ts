@@ -45,9 +45,12 @@ export type Bet = { market: Market; outcome: string; stake: number; payout: numb
 export type Standing = {
 	id: number;
 	name: string;
+	/** Chips to bet with; never below zero. */
 	balance: number;
 	profit: number;
 	bankruptcies: number;
+	/** What re-ups have borrowed from the house and not paid back yet. */
+	debt: number;
 };
 
 /**
@@ -72,5 +75,9 @@ export type ToRoom =
 	| { type: 'sync'; sent: number }
 	| { type: 'name'; name: string }
 	| { type: 'bet'; market: Market; outcome: string; stake: number }
-	/** Wipe a debt and start again on the opening stake. */
+	/** Borrow from the house when out of chips, up to the re-up limit. */
+	| { type: 'reup'; amount: number }
+	/** Pay back as much of the loan as the balance covers. */
+	| { type: 'repay' }
+	/** Out of chips and out of credit: wipe the loan and start again on the opening stake. */
 	| { type: 'bankrupt' };
