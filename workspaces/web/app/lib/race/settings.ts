@@ -35,7 +35,10 @@ export type Settings = {
 	seed: number;
 	/** Chips a new player starts with, and a bankrupt one is put back to. */
 	start: number;
-	/** How far below zero a balance may go. */
+	/**
+	 * The re-up limit: the most a player out of chips may owe the house. Kept
+	 * under its old name, from when it was how far below zero a balance went.
+	 */
 	debtCap: number;
 	bettingSeconds: number;
 	resultsSeconds: number;
@@ -93,7 +96,7 @@ const NAMES: Record<keyof typeof LIMITS, string> = {
 	pitMph: 'Pit lane speed limit',
 	seed: 'Pool seed',
 	start: 'Starting chips',
-	debtCap: 'Debt cap',
+	debtCap: 'Re-up limit',
 	bettingSeconds: 'Betting seconds',
 	resultsSeconds: 'Results seconds',
 	trials: 'Practice runs'

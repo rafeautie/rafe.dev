@@ -37,6 +37,11 @@ export const Books = memo(function Books({ history }: { history: History }) {
 					value={NUMBER.format(totals.bankruptcies + totals.resets)}
 					hint={`${NUMBER.format(totals.bankruptcies)} bankrupt, ${NUMBER.format(totals.resets)} reset`}
 				/>
+				<StatCard
+					label="loans out"
+					value={NUMBER.format(totals.loans)}
+					hint="lent by re-ups, not yet paid back"
+				/>
 			</div>
 			<Panel title="net by race" description={`the last ${history.races.length}, oldest first`}>
 				<NetChart races={history.races} />
