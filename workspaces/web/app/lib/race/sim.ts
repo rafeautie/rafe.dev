@@ -1,7 +1,7 @@
 import { ChainShape, PolygonShape, World, type Body, type Fixture } from 'planck';
 import type { Plan } from './crew';
 import { createPits, LANE as PIT, tyreGrip } from './pits';
-import { FAR, speedsAlong } from './plan';
+import { FAR, speedsAlong, think, type Thought } from './plan';
 import { curvature, SPAN } from './line';
 import { createRecovery } from './recovery';
 import type { Entry } from './roster';
@@ -95,6 +95,8 @@ const SIDLE = 4;
 const OFF_LINE = 0.1;
 /** A driver off the racing line thinks through the speeds for the road ahead again every this many steps. */
 const RETHINK = 6;
+/** And one in traffic, which way to go through it, every this many. */
+const PONDER = 12;
 /** Grip on the verge, as a share of grip on tarmac. */
 const VERGE_GRIP = 0.6;
 /** How hard a wreck's wheels drag, bent and flat as they are, as a share of the grip it has. */
@@ -207,6 +209,26 @@ export type Car = {
 	/** The speed to be doing at each track sample to make the corners, on the racing line. */
 	pace: Float32Array;
 	offset: number;
+	/**
+	 * Where the driver is making for: how far beside the racing line, and the
+	 * place across the road instead where it is one (else NaN). It is what the
+	 * other drivers plan around (plan.ts).
+	 */
+	aim: number;
+	spot: number;
+	/** The share of its pace the car has the grip for now. */
+	fade: number;
+	/**
+	 * What the driver last thought to do in traffic (plan.ts): where to make
+	 * for, beside the line or as a place across the road (else NaN), and the
+	 * car to drop in behind (-1 for none), where that will be (as `progress`
+	 * is counted) and the speed that car will be doing by then.
+	 */
+	way: number;
+	waySpot: number;
+	leader: number;
+	leadSpeed: number;
+	leadPoint: number;
 	/**
 	 * Off the racing line, the speeds the driver has planned for the path
 	 * ahead (plan.ts): one for each track sample from `planFrom` on, `planFar`
@@ -422,6 +444,14 @@ export function createRace(
 			limit,
 			pace: paceFor(track, limit),
 			offset: 0,
+			aim: 0,
+			spot: NaN,
+			fade: 1,
+			way: 0,
+			waySpot: NaN,
+			leader: -1,
+			leadSpeed: 0,
+			leadPoint: 0,
 			plan: new Float32Array(FAR + 1),
 			planFrom: 0,
 			planFar: 0,
@@ -486,6 +516,10 @@ export function createRace(
 	let road: Obstacle[] = cars;
 	/** How many steps the race has run. */
 	let ticks = 0;
+	/** What a driver has just thought (plan.ts). */
+	const thought: Thought = { aim: 0, spot: NaN, leader: -1, leadSpeed: 0, leadGap: 0 };
+	/** Whether a car is racing, out on the track. */
+	const racing = (index: number) => !cars[index].retired && cars[index].lane < PIT.in;
 	/** A second plan's speeds, to set against a car's own (plan.ts). */
 	const other = new Float32Array(FAR + 1);
 
@@ -844,6 +878,7 @@ export function createRace(
 
 		const offRoad = Math.abs(car.across) > HALF_ROAD;
 		const grip = car.grip * (offRoad ? VERGE_GRIP : 1) * (1 - 0.2 * car.damage) * tyreGrip(car);
+		car.fade = Math.sqrt(grip / car.grip);
 
 		if (car.retired) {
 			// Nobody is driving a wreck, but it is still on its wheels: they
@@ -920,6 +955,13 @@ export function createRace(
 			const place = funnel || merged.has(car) ? -1 : lineup.indexOf(car);
 			/** Whether it is on its way round a wreck, or a truck, which comes before making for the pits. */
 			let rounding = false;
+			/** Whether the driver is finding its own way through the traffic (plan.ts), as it does racing. */
+			const weighing = place < 0 && !caution && !blocker?.retired;
+			if (!weighing) {
+				car.way = car.aim;
+				car.waySpot = car.spot;
+				car.leader = -1;
+			}
 			if (place >= 0) {
 				// Going green, two by two: the leader on one side of the road and
 				// the one beside them on the other, each in its place. Anything in
@@ -942,6 +984,42 @@ export function createRace(
 						limit,
 						caution ? queueing(other, ahead) : opening(other, ahead, car.speed)
 					);
+				}
+			} else if (weighing) {
+				// Racing, a driver with cars around thinks a few times a second
+				// which way to go, each in turn: on the line, round the car ahead
+				// on one side or the other, or where it is. It runs each forward
+				// against where the others are going, and takes the one that gets
+				// it furthest without running into anybody.
+				if ((ticks + index) % PONDER === 0) {
+					think(track, cars, index, racing, CLEAR, MAX_OFFSET, SIDLE, thought);
+					car.way = thought.aim;
+					car.waySpot = thought.spot;
+					car.leader = thought.leader;
+					car.leadSpeed = thought.leadSpeed;
+					car.leadPoint = car.progress + thought.leadGap;
+				}
+				offset = car.way;
+				if (!Number.isNaN(car.waySpot)) {
+					fixed = car.waySpot;
+					offset = fixed - track.line[aimed(car)];
+				}
+				// The car it means to drop in behind, it slows for as late as it
+				// can and still be down to that car's speed where it drops in: a
+				// driver who lifts as soon as it sees it will be held up never
+				// gets alongside anybody.
+				if (car.leader >= 0 && racing(car.leader)) {
+					const room = Math.max(0, car.leadPoint - car.progress);
+					limit = Math.max(3, Math.sqrt(car.leadSpeed ** 2 + grip * G * room));
+				}
+				// and the one it is tucked in behind now, it keeps its distance from
+				for (const other of cars) {
+					if (other === car || other.retired || other.lane >= PIT.in) continue;
+					const ahead = along(car.sample, other.sample);
+					if (ahead <= 0 || ahead >= reach) continue;
+					const tucked = track.bend[other.sample] < STRAIGHT ? 0.7 : 1.5;
+					if (Math.abs(car.across - other.across) < tucked)
+						limit = Math.min(limit, Math.max(3, approach(other, ahead, car.follow, grip * G)));
 				}
 			} else if (blocker && !followed(blocker)) {
 				// Go round it on whichever side is nearer the line already held, of
@@ -1052,6 +1130,8 @@ export function createRace(
 					limit = Math.min(limit, Math.max(0, other.speed) - 1);
 			}
 			const making = offset;
+			car.aim = making;
+			car.spot = fixed ?? NaN;
 			car.offset += clamp(offset - car.offset, -SIDLE * DT, SIDLE * DT);
 
 			// where the line, or the line this car is taking, is at a sample
