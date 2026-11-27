@@ -146,8 +146,8 @@ const PACE = 12;
 const CATCH = 17;
 const RUN_IN = 16;
 /** On a long lap, where the run to the line is quicker, the leader is down to this speed (m/s) this far short of the line (m), for the lines to close up. */
-const CLOSE_UP = 13;
-const EASE = 50;
+const CLOSE_UP = 12;
+const EASE = 80;
 /** How far apart the queue runs, middle to middle. */
 const QUEUE = 8;
 /** Under caution, how fast (m/s) a car goes by a wreck, or a truck at work, and from how far either side of it (m). */
