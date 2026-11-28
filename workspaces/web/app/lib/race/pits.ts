@@ -763,8 +763,9 @@ export function createPits(
 		if (clearOfTrucks(car, crew) < Infinity) return false;
 		return lorries.every((lorry) => {
 			const gap = aheadOf(car, lorry);
-			// one stopped further back is waiting for this very car to go
-			return gap <= -22 || gap >= KEEP_TRUCK || (gap < -TRUCK.long * 2 && lorry.speed < 0.5);
+			// one stopped behind is waiting for this very car to go (one alongside is
+			// across its way, and kept clear of above)
+			return gap <= -22 || gap >= KEEP_TRUCK || (gap < 0 && lorry.speed < 0.5);
 		});
 	}
 

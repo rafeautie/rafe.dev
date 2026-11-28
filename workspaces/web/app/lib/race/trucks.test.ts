@@ -1,5 +1,5 @@
 import { World } from 'planck';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { LANE } from './pits';
 import { drawConditions, inCondition, ROSTER } from './roster';
 import { TRUCK } from './service';
@@ -188,6 +188,10 @@ function races(id: TrackId, count: number, seeds: number[]): Tally {
 	listen = null;
 	return tally;
 }
+
+afterAll(() => {
+	World.prototype.step = step;
+});
 
 const SEEDS = Array.from({ length: 14 }, (_, i) => 1000 + i * 7919);
 

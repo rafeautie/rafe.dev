@@ -145,6 +145,8 @@ const NUDGE = 1;
 /** A car lets a truck out of the pits by stopping this far (m) short of where it comes out, braking no harder than this (m/s²). */
 export const LET_OUT = 14;
 export const LET_OUT_BRAKE = 5;
+/** How much short (m) of stopping distance a car may be and still be counted on, and count itself, to let a truck out. */
+export const LET_OUT_SLACK = 3;
 /** How long after it has pulled out the cars let it on: until it is this far (m) on from where it came out, or this long. */
 const LET_ON = 30;
 const LET_ON_FOR = 8;
@@ -278,6 +280,8 @@ export type Marker = {
 	truck: true;
 	/** Whether it is pulling up at a wreck, or backing up to one: then it may cross the road at any moment, and is not passed on the move. */
 	pullingUp: boolean;
+	/** Whether this is its front end: a car this near behind that is alongside the truck, not behind it. */
+	front: boolean;
 };
 
 /** A place on the way, as the track counts its samples (on past the line without starting again), and how far across. */
@@ -1057,7 +1061,8 @@ function createTruck(
 		towed: false,
 		wide: 0,
 		truck: true,
-		pullingUp: false
+		pullingUp: false,
+		front: true
 	};
 	/** The back of the truck, as the drivers see it. */
 	const tail: Marker = {
@@ -1068,7 +1073,8 @@ function createTruck(
 		towed: false,
 		wide: 0,
 		truck: true,
-		pullingUp: false
+		pullingUp: false,
+		front: false
 	};
 
 	/** The wrecks the dispatcher has given it to fetch, in the order it is to, not yet set out for. */
@@ -1517,7 +1523,8 @@ function createTruck(
 				// one just gone by is out of the way, and one far enough back to
 				// stop short of it without a fright, is asked to (letOut)
 				(ahead(gate, car.sample) >= 12 &&
-					ahead(car.sample, gate) * spacing >= LET_OUT - 4 + car.speed ** 2 / (2 * LET_OUT_BRAKE))
+					ahead(car.sample, gate) * spacing >=
+						LET_OUT - LET_OUT_SLACK + car.speed ** 2 / (2 * LET_OUT_BRAKE))
 		);
 	}
 
@@ -1908,7 +1915,11 @@ function createTruck(
 		// turning into a car beside it, it may still go on with its wheels
 		// straight, drawing away from it, where the car would wait for it for good
 		// (only as it edges away: at speed it would run wide)
-		straighten = pace < 2 && truck.steer !== 0 && sweeps(way, 0);
+		// (the wheels only come straight at the rate they turn: checked as they will be after this step)
+		const easing =
+			Math.sign(truck.steer) * Math.max(0, Math.abs(truck.steer) - TRUCK.steering / 60);
+		straighten =
+			pace < 2 && truck.steer !== 0 && sweeps(way, Math.tan(easing) / WHEELBASE) && sweeps(way, 0);
 		return straighten;
 	}
 
@@ -2345,9 +2356,14 @@ function createTruck(
 			// just out, the cars let it on until it is under way
 			if (stage !== 'held') {
 				const on = ((ahead(gate, truck.sample) + n / 2) % n) - n / 2;
+				// (held at where it comes out until its back is past there, then behind its back)
+				const back = mod(truck.sample - TRUCK.axle - TRUCK.long - 1);
+				const backPast = ((ahead(gate, back) + n / 2) % n) - n / 2 > 0;
 				truck.letOut =
 					stage === 'approach' && now - pulledOut < LET_ON_FOR && on < LET_ON
-						? mod(truck.sample - TRUCK.axle - TRUCK.long - 1)
+						? backPast
+							? back
+							: gate
 						: -1;
 			}
 			carry(dt);
