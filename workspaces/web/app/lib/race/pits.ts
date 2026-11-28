@@ -360,10 +360,11 @@ const FULL = 1.2;
 /**
  * A crew puts in this much more than it reckons the car needs to finish, and
  * under caution this many laps' worth on top, since the caution may go on
- * for longer than the lap it is on.
+ * for longer than the lap it is on, and the run round to the green is not
+ * all at a crawl.
  */
 const MARGIN = 1.1;
-const SPARE = 0.3;
+const SPARE = 0.4;
 /** A driver saving fuel lifts to this much throttle, which stretches a tank by about this much. */
 const LIFT = 0.7;
 const STRETCH = 0.92;

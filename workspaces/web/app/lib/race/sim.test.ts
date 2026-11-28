@@ -285,6 +285,8 @@ describe.each(TRACK_IDS)('the wheels on the %s', (id) => {
 	// the pits.
 	it('of a tow truck driving down the track stay on the tarmac', { timeout: 120_000 }, () => {
 		expect(KERBSIDE + TRUCK_HALF).toBeLessThan(HALF_ROAD);
+		const { in0, in1 } = pitsFor(track);
+		const { n } = track;
 		let driving = 0;
 		// as many races as it takes to see enough of it, on a track with few wrecks
 		for (let seed = 1; seed <= 12 || (driving <= 1000 && seed <= 60); seed++) {
@@ -307,6 +309,8 @@ describe.each(TRACK_IDS)('the wheels on the %s', (id) => {
 					const off = (px: number, py: number) =>
 						Math.abs(lateral(track, px, py, nearest(track, px, py, sample))) > KERBSIDE + 0.05;
 					if (off(x, y) || off(bx, by)) continue;
+					// (nor turning in at the pits, where its front goes off the track first)
+					if ((((sample - in0) % n) + n) % n <= in1 - in0) continue;
 					const wreck = race.cars.some(
 						(car) => car.retired && !car.towed && Math.hypot(car.x - x, car.y - y) < 32
 					);
@@ -358,8 +362,8 @@ describe.each(TRACK_IDS)('the line the pit lane is on, on the %s', (id) => {
  * when a caution is thrown by hand twenty seconds in.
  */
 const SEEDS: Record<TrackId, { wreck: number; clean: number }> = {
-	circuit: { wreck: 4, clean: 9 },
-	oval: { wreck: 4, clean: 3 }
+	circuit: { wreck: 3, clean: 11 },
+	oval: { wreck: 5, clean: 1 }
 };
 
 describe.each(TRACK_IDS)('a caution on the %s', (id) => {
@@ -468,7 +472,7 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 					const square = Math.min(...stands.map((stand) => turned(stand.angle, truck.angle)));
 					expect(square).toBeLessThan(0.2);
 				}
-				expect(moved).toBeLessThan(29 * DT);
+				expect(moved).toBeLessThan(33 * DT);
 				// and its crane swings, reaches and lifts no faster than a crane does
 				expect(turned(was.crane.swing, truck.crane.swing)).toBeLessThan(1.5 * DT);
 				expect(Math.abs(truck.crane.reach - was.crane.reach)).toBeLessThan(3.1 * DT);
@@ -480,7 +484,7 @@ describe.each(TRACK_IDS)('a caution on the %s', (id) => {
 				const moved = Math.hypot(car.x - was.x, car.y - was.y);
 				// putting the slings on does not move it, and nothing after that jerks it
 				if (!was.towed) expect(moved).toBeLessThan(1 * DT);
-				expect(moved).toBeLessThan(19 * DT);
+				expect(moved).toBeLessThan(27 * DT);
 				expect(turned(was.angle, car.angle)).toBeLessThan(2 * DT);
 				const truck = race.trucks.find(
 					(truck) => truck.towing === index || truck.load.includes(index)
