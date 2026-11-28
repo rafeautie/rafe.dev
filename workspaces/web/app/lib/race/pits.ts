@@ -2,7 +2,7 @@ import { fuelled, planStop, type Plan } from './crew';
 import { ROSTER } from './roster';
 import { HALF_LANE, RING, TRUCK, curve, serviceFor, type Route } from './service';
 import type { Car, Flag, Rules } from './sim';
-import { HALF_CORRIDOR, MAX_OFFSET, clamp, type Track, type TrackId } from './track';
+import { HALF_CAR, HALF_CORRIDOR, MAX_OFFSET, NOSE, clamp, type Track, type TrackId } from './track';
 
 // The pits. Beside the start line a lane runs along the infield side of the
 // wall, with a way in from the track at one end and a way out at the other.
@@ -427,6 +427,8 @@ const behind = (speed: number, space: number, keep: number) =>
 /** A car on the track no further than this from the inside, just past where the way out joins it, is in the way of one coming out. */
 const JOINED = 2.5;
 const LEVEL = 3;
+/** Along a truck's sides, the points of its outline a car in the pits keeps clear of, as shares of its half-length. */
+const OUTLINE_FORE = [-1, -0.6, -0.2, 0.2, 0.6, 1];
 /** On its way out, a car stops this far short of joining the track with a tow truck across where it joins. */
 const SHORT = 8;
 /** A car looks for a gap on the track from this far before the end of the lane. Held there this long, it goes whoever is coming. */
@@ -474,6 +476,7 @@ type Meeting = {
 	trucks: {
 		x: number;
 		y: number;
+		angle: number;
 		sample: number;
 		across: number;
 		busy: boolean;
@@ -951,6 +954,9 @@ export function createPits(
 					target = Math.min(target, behind(lorry.speed, space, KEEP_TRUCK));
 				}
 			}
+			// Nor into any part of a truck that is across its way: a car in the
+			// pits is on rails, and nothing else would stop it going through one.
+			target = Math.min(target, clearOfTrucks(car, crew));
 			// On the way out, it does not join the track into the side of a tow
 			// truck that is out there across where it joins: it stops short until
 			// the truck has gone on.
@@ -1001,6 +1007,34 @@ export function createPits(
 			const back = front - 2 * TRUCK.long;
 			return front > -4 - truck.speed && back < 6;
 		});
+	}
+
+	/**
+	 * How fast a car in the pits may go and still stop short of any part of a
+	 * tow truck that is across the way it is on: the truck's outline, all
+	 * round, as it is now. (One going the same way is followed at its speed.)
+	 */
+	function clearOfTrucks(car: Car, crew: Crew) {
+		let most = Infinity;
+		for (const truck of race.trucks) {
+			// (one standing in the yard is off to the side of the lane)
+			if (!truck.busy || Math.hypot(truck.x - car.x, truck.y - car.y) > 32) continue;
+			const [cos, sin] = [Math.cos(truck.angle), Math.sin(truck.angle)];
+			const heading = Math.atan2(car.body.getLinearVelocity().y, car.body.getLinearVelocity().x);
+			const together = Math.cos(truck.angle - heading) > 0.7 ? Math.max(0, truck.speed) : 0;
+			for (const fore of OUTLINE_FORE) {
+				for (const side of [-1, 1]) {
+					const [f, w] = [fore * (TRUCK.long + 0.3), side * (TRUCK.wide + 0.3)];
+					const [px, py] = [truck.x + cos * f - sin * w, truck.y + sin * f + cos * w];
+					const { space, side: off } = onTheWay(crew, px, py);
+					// (what is beside it already is pulled away from, not waited for)
+					if (off > HALF_CAR + 0.25 || space < 1) continue;
+					// its nose is this far short of that part of the truck
+					most = Math.min(most, space < NOSE + 0.6 ? 0 : behind(together, space, NOSE + 1));
+				}
+			}
+		}
+		return most;
 	}
 
 	/** A truck that is in the lane, or crossing it, as the cars there see it. */

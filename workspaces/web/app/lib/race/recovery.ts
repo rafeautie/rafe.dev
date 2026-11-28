@@ -108,6 +108,8 @@ const READY = 12;
 /** In the pits, the truck stops for a car this near the road just ahead of it, and for the other truck this near (m). */
 const SHY = 2.6;
 const SHY_TRUCK = 0.3;
+/** How near (m) any part of a car may be to where the truck is about to be. */
+const CLOSE = 0.35;
 /** How far ahead of the axle it is steered by the truck's front bumper is. */
 const BUMPER = TRUCK.long - TRUCK.axle;
 /** How hard the truck brakes, and pulls away, light and loaded, m/s². */
@@ -1109,6 +1111,9 @@ function createTruck(
 		body.setAngularVelocity(0);
 	}
 
+	/** Whether, this step, its wheels are to be straightened rather than turned into a car beside it (swept). */
+	let straighten = false;
+
 	/** Where the truck is standing, while it stands: a car that knocks it, it is back there the next step. */
 	let standing: Pose | null = null;
 
@@ -1336,6 +1341,7 @@ function createTruck(
 	 * the further they are turned. Backwards, for less than nothing.
 	 */
 	function roll(travel: number, wheel: number, dt: number) {
+		if (straighten) wheel = 0;
 		const [steer] = toward(truck.steer, clamp(wheel, -TRUCK.lock, TRUCK.lock), TRUCK.steering * dt);
 		truck.steer = steer;
 		const { x, y } = body.getPosition();
@@ -1857,8 +1863,64 @@ function createTruck(
 						return onTruck(other, back.x - cos * far, back.y - sin * far, SHY_TRUCK + 0.5);
 					})
 			);
-		waited = stuck ? waited + dt : 0;
-		return stuck ? 0 : Infinity;
+		const hemmed = stuck || !swept(-1);
+		waited = hemmed ? waited + dt : 0;
+		return hemmed ? 0 : Infinity;
+	}
+
+	/**
+	 * Whether the truck can go on a little way forwards (`way` 1) or backwards
+	 * (-1), turning as its wheels are turned, as far as it would take to stop
+	 * and a little more, without any of it running into a car on its wheels:
+	 * one in the pits as much as one on the track. Nothing else stops a car in
+	 * the pits, which is on rails, from being driven over.
+	 */
+	function swept(way: 1 | -1) {
+		straighten = false;
+		if (sweeps(way, Math.tan(truck.steer) / WHEELBASE)) return true;
+		// turning into a car beside it, it may still go on with its wheels
+		// straight, drawing away from it, where the car would wait for it for good
+		straighten = truck.steer !== 0 && sweeps(way, 0);
+		return straighten;
+	}
+
+	/** Whether the truck can go on that way, bending so much (1/m), clear of the cars. */
+	function sweeps(way: 1 | -1, bend: number) {
+		const pose = on(0);
+		const rear = on(TRUCK.rear);
+		const reach = (way > 0 ? BUMPER : TRUCK.long + TRUCK.rear) + 1;
+		const stopping = pace ** 2 / (2 * (way > 0 ? BRAKE : BACK_BRAKE));
+		const near = cars.filter(
+			(car) =>
+				!car.retired &&
+				!car.towed &&
+				Math.hypot(car.x - pose.x, car.y - pose.y) < TRUCK.long + reach + stopping + 4
+		);
+		if (!near.length) return true;
+		for (let far = 0.4; far <= 0.6 + stopping; far += 0.8) {
+			// rolled about its back axles that far
+			const turned = way * far * bend;
+			const angle = pose.angle + turned;
+			const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
+			const [rx, ry] = [
+				rear.x + way * far * Math.cos(pose.angle + turned / 2),
+				rear.y + way * far * Math.sin(pose.angle + turned / 2)
+			];
+			const at = { x: rx - cos * TRUCK.rear, y: ry - sin * TRUCK.rear, angle };
+			for (const car of near) {
+				const [c, s] = [Math.cos(car.angle), Math.sin(car.angle)];
+				for (let k = 0; k < 16; k += 2) {
+					const [hx, hy] = [car.hull[k], car.hull[k + 1]];
+					const [px, py] = [car.x + hx * c - hy * s, car.y + hx * s + hy * c];
+					// (only what is ahead of it, the way it is going, can be run into)
+					const fore = ((px - pose.x) * Math.cos(pose.angle) + (py - pose.y) * Math.sin(pose.angle)) * way;
+					// (and what it is up against already, it draws away from, not waits for)
+					if (fore > 0.5 && onTruck(at, px, py, CLOSE) && !onTruck(pose, px, py, CLOSE))
+						return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -1867,6 +1929,7 @@ function createTruck(
 	 * through. It waits for it.
 	 */
 	function pitTraffic() {
+		if (!swept(1)) return 0;
 		const { x, y, angle } = on(TRUCK.axle);
 		// as far ahead as it would take to stop, and a little more
 		const stopping = pace ** 2 / (3 * BRAKE);
