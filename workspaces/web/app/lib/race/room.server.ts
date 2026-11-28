@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
 	cleanName,
+	credit,
 	MARKETS,
 	MAX_BETS,
 	outcomes,
@@ -130,6 +131,18 @@ export class RaceRoom extends DurableObject<Env> {
 				kind TEXT NOT NULL, amount INTEGER NOT NULL
 			);
 		`);
+		// Balances used to go below zero, up to a cap. Now they stop at zero and
+		// a player out of chips borrows from the house, so what a player kept
+		// from before as a negative balance becomes a loan of the same size.
+		const owing = this.sql
+			.exec("SELECT 1 FROM pragma_table_info('players') WHERE name = 'debt'")
+			.toArray();
+		if (!owing.length) {
+			this.ctx.storage.transactionSync(() => {
+				this.sql.exec('ALTER TABLE players ADD COLUMN debt INTEGER NOT NULL DEFAULT 0');
+				this.sql.exec('UPDATE players SET debt = -balance, balance = 0 WHERE balance < 0');
+			});
+		}
 	}
 
 	/**
@@ -180,11 +193,16 @@ export class RaceRoom extends DurableObject<Env> {
 				? this.rename(player, message.name)
 				: message.type === 'bet'
 					? this.bet(player, message.market, message.outcome, message.stake)
-					: message.type === 'bankrupt'
-						? this.bankrupt(player)
-						: 'Not understood';
+					: message.type === 'reup'
+						? this.reup(player, message.amount)
+						: message.type === 'repay'
+							? this.repay(player)
+							: message.type === 'bankrupt'
+								? this.bankrupt(player)
+								: 'Not understood';
 		if (refused) this.send(socket, { type: 'no', reason: refused });
-		else this.send(socket, this.you(player));
+		// every page the player has open, so all of them show the chips as they are
+		else this.yours(player, this.you(player));
 	}
 
 	webSocketClose(socket: WebSocket, code: number, reason: string) {
@@ -439,6 +457,7 @@ export class RaceRoom extends DurableObject<Env> {
 				this.sql.exec('UPDATE bets SET payout = ? WHERE id = ?', payout, bet.id);
 				this.sql.exec('UPDATE players SET balance = balance + ? WHERE id = ?', payout, bet.player);
 			}
+			this.repayFromWinnings(state.round);
 		});
 		await this.move({
 			...state,
@@ -447,6 +466,44 @@ export class RaceRoom extends DurableObject<Env> {
 			result
 		});
 		this.settled();
+	}
+
+	/**
+	 * What a race won a player who owes the house goes to the loan first, up
+	 * to what they owe. Only the winnings: the stakes come back to the balance,
+	 * so paying back never leaves a player with nothing to bet.
+	 */
+	private repayFromWinnings(round: number) {
+		const owed = this.sql
+			.exec<{ player: number; repaid: number }>(
+				`SELECT players.id AS player, MIN(players.debt, won.net) AS repaid
+				 FROM players JOIN (
+					SELECT player, SUM(payout - stake) AS net FROM bets WHERE round = ? GROUP BY player
+				 ) AS won ON won.player = players.id
+				 WHERE players.debt > 0 AND won.net > 0`,
+				round
+			)
+			.toArray();
+		for (const { player, repaid } of owed) this.repaid(player, repaid);
+	}
+
+	/**
+	 * Takes `amount` off a player's chips and off their loan, on the record,
+	 * and tells their pages if that clears it.
+	 */
+	private repaid(id: number, amount: number) {
+		this.sql.exec(
+			'UPDATE players SET balance = balance - ?1, debt = debt - ?1 WHERE id = ?2',
+			amount,
+			id
+		);
+		this.sql.exec(
+			"INSERT INTO adjustments (player, at, kind, amount) VALUES (?, ?, 'repay', ?)",
+			id,
+			Date.now(),
+			-amount
+		);
+		if (this.player(id).debt === 0) this.yours(id, { type: 'paid' });
 	}
 
 	/**
@@ -526,14 +583,14 @@ export class RaceRoom extends DurableObject<Env> {
 	private player(id: number) {
 		return this.sql
 			.exec<PlayerRow>(
-				`SELECT id, name, balance, ${PROFIT}, bankruptcies, banned FROM players WHERE id = ?`,
+				`SELECT id, name, balance, ${PROFIT}, bankruptcies, debt, banned FROM players WHERE id = ?`,
 				id
 			)
 			.one();
 	}
 
 	private you(id: number): FromRoom {
-		const { banned: _, ...you } = this.player(id);
+		const { banned, ...you } = this.player(id);
 		const bets = this.sql
 			.exec<Bet>(
 				'SELECT market, outcome, stake, payout FROM bets WHERE round = ? AND player = ? ORDER BY id',
@@ -543,7 +600,7 @@ export class RaceRoom extends DurableObject<Env> {
 			.toArray()
 			// one on a market no longer run is handed back when the race ends; pages cannot show it
 			.filter((bet) => MARKETS.includes(bet.market));
-		return { type: 'you', you, bets };
+		return { type: 'you', you, bets, banned: Boolean(banned) };
 	}
 
 	/** The players with a page open, but for one that is closing. */
@@ -562,9 +619,9 @@ export class RaceRoom extends DurableObject<Env> {
 		const board = ids.length
 			? this.sql
 					.exec<Standing>(
-						`SELECT id, name, balance, ${PROFIT}, bankruptcies FROM players
+						`SELECT id, name, balance, ${PROFIT}, bankruptcies, debt FROM players
 						 WHERE banned = 0 AND id IN (SELECT value FROM json_each(?))
-						 ORDER BY profit DESC, balance DESC LIMIT 20`,
+						 ORDER BY profit DESC, balance - debt DESC LIMIT 20`,
 						JSON.stringify(ids)
 					)
 					.toArray()
@@ -594,8 +651,9 @@ export class RaceRoom extends DurableObject<Env> {
 		if (!Number.isInteger(stake) || (stake as number) < 1) return 'Stake a whole number of chips';
 		const player = this.player(id);
 		if (player.banned) return 'This player cannot bet';
-		const { debtCap } = state.settings;
-		if (player.balance - (stake as number) < -debtCap) return `Your credit runs out at ${-debtCap}`;
+		if ((stake as number) > player.balance) {
+			return player.balance > 0 ? `You have ${player.balance} chips` : 'You are out of chips';
+		}
 		const placed = this.sql
 			.exec<{
 				n: number;
@@ -624,18 +682,69 @@ export class RaceRoom extends DurableObject<Env> {
 		this.tell(this.board());
 	}
 
-	/** Wipes a debt and starts the player again on the opening stake, on the record. */
-	private bankrupt(id: number) {
-		const { start } = this.state.settings;
-		const { balance } = this.player(id);
-		if (balance >= 0) return 'Only a player in debt can go bankrupt';
+	/** Why a player is not out of chips, or nothing if they are: no chips, and no bets riding. */
+	private notBroke(id: number) {
+		if (this.player(id).balance > 0) return 'You still have chips';
 		const waiting = this.sql
 			.exec('SELECT 1 FROM bets WHERE player = ? AND payout IS NULL LIMIT 1', id)
 			.toArray();
 		if (waiting.length) return 'Wait for your bets on this race to be settled';
+	}
+
+	/** Lends a player out of chips `amount` more, as far as the re-up limit, on the record. */
+	private reup(id: number, amount: unknown) {
+		const player = this.player(id);
+		if (player.banned) return 'This player cannot bet';
+		const refused = this.notBroke(id);
+		if (refused) return refused;
+		const left = credit(player.debt, this.state.settings.debtCap);
+		if (left < 1) return 'The house will not lend you any more';
+		if (!Number.isInteger(amount) || (amount as number) < 1)
+			return 'Borrow a whole number of chips';
+		if ((amount as number) > left) return `The house will lend you ${left} at most`;
 		this.ctx.storage.transactionSync(() => {
 			this.sql.exec(
-				'UPDATE players SET balance = ?, bankruptcies = bankruptcies + 1 WHERE id = ?',
+				'UPDATE players SET balance = balance + ?1, debt = debt + ?1 WHERE id = ?2',
+				amount,
+				id
+			);
+			this.sql.exec(
+				"INSERT INTO adjustments (player, at, kind, amount) VALUES (?, ?, 'loan', ?)",
+				id,
+				Date.now(),
+				amount
+			);
+		});
+		this.tell(this.board());
+	}
+
+	/**
+	 * Pays back the whole of a player's loan from their chips. Only with chips
+	 * to spare: paying with the last of them would leave the player out of
+	 * chips, to borrow again.
+	 */
+	private repay(id: number) {
+		const { balance, debt } = this.player(id);
+		if (debt === 0) return 'You owe the house nothing';
+		if (balance <= debt) return 'Pay it back once you have more than you owe';
+		this.ctx.storage.transactionSync(() => this.repaid(id, debt));
+		this.tell(this.board());
+	}
+
+	/**
+	 * Out of chips and out of credit: wipes the loan and starts the player
+	 * again on the opening stake, on the record and counted on the board.
+	 */
+	private bankrupt(id: number) {
+		const { start, debtCap } = this.state.settings;
+		if (this.player(id).banned) return 'This player cannot bet';
+		const refused = this.notBroke(id);
+		if (refused) return refused;
+		const { debt } = this.player(id);
+		if (credit(debt, debtCap) > 0) return 'Re-up instead: the house will still lend to you';
+		this.ctx.storage.transactionSync(() => {
+			this.sql.exec(
+				'UPDATE players SET balance = ?, debt = 0, bankruptcies = bankruptcies + 1 WHERE id = ?',
 				start,
 				id
 			);
@@ -643,7 +752,7 @@ export class RaceRoom extends DurableObject<Env> {
 				"INSERT INTO adjustments (player, at, kind, amount) VALUES (?, ?, 'bankruptcy', ?)",
 				id,
 				Date.now(),
-				start - balance
+				start + debt
 			);
 		});
 		this.tell(this.board());
@@ -674,19 +783,22 @@ export class RaceRoom extends DurableObject<Env> {
 		return null;
 	}
 
-	/** Puts a player back on the starting chips, on the record with the chips it moved. */
+	/**
+	 * Puts a player back on the starting chips, owing nothing, on the record
+	 * with the chips it moved.
+	 */
 	adminReset(id: number) {
 		const missing = this.missing(id);
 		if (missing) return missing;
 		const { start } = this.state.settings;
 		this.ctx.storage.transactionSync(() => {
-			const { balance } = this.player(id);
-			this.sql.exec('UPDATE players SET balance = ? WHERE id = ?', start, id);
+			const { balance, debt } = this.player(id);
+			this.sql.exec('UPDATE players SET balance = ?, debt = 0 WHERE id = ?', start, id);
 			this.sql.exec(
 				"INSERT INTO adjustments (player, at, kind, amount) VALUES (?, ?, 'admin_reset', ?)",
 				id,
 				Date.now(),
-				start - balance
+				start - balance + debt
 			);
 		});
 		this.changed(id);
@@ -789,10 +901,15 @@ export class RaceRoom extends DurableObject<Env> {
 
 	/** After the admin has changed a player: tells their pages where they stand, and everyone the board. */
 	private changed(id: number) {
-		for (const socket of this.ctx.getWebSockets()) {
-			if (socket.deserializeAttachment() === id) this.send(socket, this.you(id));
-		}
+		this.yours(id, this.you(id));
 		this.tell(this.board());
+	}
+
+	/** Sends something to every page a player has open. */
+	private yours(id: number, message: FromRoom) {
+		for (const socket of this.ctx.getWebSockets()) {
+			if (socket.deserializeAttachment() === id) this.send(socket, message);
+		}
 	}
 
 	/** The flag flying in the race being shown at this moment, or null when no race is. */
@@ -869,7 +986,7 @@ export class RaceRoom extends DurableObject<Env> {
 	private playerRows(where: string, value: string) {
 		return this.sql
 			.exec<PlayerRow & { seen: number; bets: number }>(
-				`SELECT id, name, balance, ${PROFIT}, bankruptcies, banned, seen, COALESCE(placed.n, 0) AS bets
+				`SELECT id, name, balance, ${PROFIT}, bankruptcies, debt, banned, seen, COALESCE(placed.n, 0) AS bets
 				 FROM players LEFT JOIN (SELECT player, COUNT(*) AS n FROM bets GROUP BY player) AS placed
 				 ON placed.player = players.id
 				 WHERE ${where} LIMIT 100`,
@@ -919,9 +1036,11 @@ export class RaceRoom extends DurableObject<Env> {
 			)
 			.one();
 		const adjusted = this.sql
-			.exec<{ bankruptcies: number; resets: number }>(
+			.exec<{ bankruptcies: number; resets: number; loans: number }>(
 				`SELECT COALESCE(SUM(CASE WHEN kind = 'bankruptcy' THEN amount END), 0) AS bankruptcies,
-					COALESCE(SUM(CASE WHEN kind = 'admin_reset' THEN amount END), 0) AS resets
+					COALESCE(SUM(CASE WHEN kind = 'admin_reset' THEN amount END), 0) AS resets,
+					-- what re-ups have lent and players still owe
+					(SELECT COALESCE(SUM(debt), 0) FROM players) AS loans
 				 FROM adjustments`
 			)
 			.one();

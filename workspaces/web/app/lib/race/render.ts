@@ -378,9 +378,11 @@ function paint(track: Track) {
 		for (let py = Math.max(0, cy - reach); py < Math.min(HEIGHT, cy + reach); py++) {
 			for (let px = Math.max(0, cx - reach); px < Math.min(WIDTH, cx + reach); px++) {
 				const [wx, wy] = [(px + 0.5) / scale - box.x, (py + 0.5) / scale - box.y];
-				// along the lane from where the car stands in it, and across it: towards the track is positive
+				// along the lane from where the car stands in it, and across it: towards the track is
+				// positive, which is to a driver's right where the infield is on the left, and to the
+				// left where it is on the right
 				const along = wx * cos + wy * sin;
-				const side = wy * cos - wx * sin;
+				const side = (wy * cos - wx * sin) * track.hand;
 				const [front, back] = [BOX.front, BOX.front - BOX.wide];
 				if (Math.abs(along) > BOX.long / 2 || side > front || side < back) continue;
 				const k = py * WIDTH + px;
@@ -393,7 +395,7 @@ function paint(track: Track) {
 				}
 			}
 		}
-		return { ...box, cos, sin, edge };
+		return { ...box, cos, sin, hand: track.hand, edge };
 	});
 
 	// the caution lamps on the infield wall, two pixels square
@@ -777,8 +779,8 @@ export function createRenderer(canvas: HTMLCanvasElement, initial: Track) {
 
 	/** A point in a box's own metres, along the lane and across it (towards the track is positive), as a frame pixel. */
 	const spot = (box: PitBox, along: number, side: number) => ({
-		x: Math.floor((box.x + along * box.cos - side * box.sin) * scale) + ox,
-		y: Math.floor((box.y + along * box.sin + side * box.cos) * scale) + oy
+		x: Math.floor((box.x + along * box.cos - side * box.hand * box.sin) * scale) + ox,
+		y: Math.floor((box.y + along * box.sin + side * box.hand * box.cos) * scale) + oy
 	});
 
 	/** Sets a frame pixel, if it is in the frame; with `alpha`, over what is there. */

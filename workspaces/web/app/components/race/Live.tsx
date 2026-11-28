@@ -45,6 +45,9 @@ export default function Live() {
 	const [board, setBoard] = useState<Standing[]>([]);
 	const [ticker, setTicker] = useState<Tick[]>([]);
 	const [problem, setProblem] = useState<string | null>(null);
+	const [banned, setBanned] = useState(false);
+	// the race in which your re-up loan was last paid off, as the room said so
+	const [paidIn, setPaidIn] = useState<number | null>(null);
 	// the running order, a few times a second rather than every frame
 	const [running, setRunning] = useState<Running | null>(null);
 	const socket = useRef<WebSocket | null>(null);
@@ -133,7 +136,12 @@ export default function Live() {
 				if (message.type === 'you') {
 					setYou(message.you);
 					setBets(message.bets);
+					setBanned(message.banned);
 					setProblem(null);
+					return;
+				}
+				if (message.type === 'paid') {
+					setPaidIn(state?.round ?? null);
 					return;
 				}
 				if (message.type === 'bet') {
@@ -262,6 +270,8 @@ export default function Live() {
 			board={board}
 			ticker={ticker}
 			problem={problem}
+			banned={banned}
+			paidIn={paidIn}
 			running={running}
 			sound={sound}
 			setSound={setSound}
