@@ -616,7 +616,10 @@ export function createRace(
 		// a car in the pits is not on the road at all
 		!(other.lane! >= PIT.in) &&
 		(!other.retired ||
-			(Math.abs(other.across) < HALF_CORRIDOR && (Math.abs(other.speed) > 1 || other.towed)));
+			(Math.abs(other.across) < HALF_CORRIDOR &&
+				// (a truck stopped at work, wreck on its crane or not, is gone by
+				// where there is room, and stopped short of where there is not)
+				(Math.abs(other.speed) > 1 || (other.towed && !other.truck))));
 
 	/** How far from the middle of something a car going by it keeps: more for a wreck, which may be lying across the road, and more again for a truck at work on one. */
 	const clearOf = (other: Obstacle) => CLEAR + (other.retired ? WRECK + (other.wide ?? 0) : 0);
