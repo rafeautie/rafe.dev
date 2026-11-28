@@ -751,10 +751,12 @@ export function createPits(
 			const gap = aheadOf(car, other, cars.indexOf(other) < cars.indexOf(car));
 			if (gap > -room && gap < 7) return false;
 		}
+		// nor with a truck across the way it pulls out along, or beside it
+		if (clearOfTrucks(car, crew) < Infinity) return false;
 		return lorries.every((lorry) => {
 			const gap = aheadOf(car, lorry);
-			// one stopped behind is waiting for this very car to go
-			return gap <= -22 || gap >= KEEP_TRUCK || (gap < 0 && lorry.speed < 0.5);
+			// one stopped further back is waiting for this very car to go
+			return gap <= -22 || gap >= KEEP_TRUCK || (gap < -TRUCK.long * 2 && lorry.speed < 0.5);
 		});
 	}
 
@@ -1027,8 +1029,7 @@ export function createPits(
 					const [f, w] = [fore * (TRUCK.long + 0.3), side * (TRUCK.wide + 0.3)];
 					const [px, py] = [truck.x + cos * f - sin * w, truck.y + sin * f + cos * w];
 					const { space, side: off } = onTheWay(crew, px, py);
-					// (what is beside it already is pulled away from, not waited for)
-					if (off > HALF_CAR + 0.25 || space < 1) continue;
+					if (off > HALF_CAR + 0.25 || space < -1) continue;
 					// its nose is this far short of that part of the truck
 					most = Math.min(most, space < NOSE + 0.6 ? 0 : behind(together, space, NOSE + 1));
 				}

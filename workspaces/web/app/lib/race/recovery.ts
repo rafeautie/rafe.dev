@@ -109,7 +109,8 @@ const READY = 12;
 const SHY = 2.6;
 const SHY_TRUCK = 0.3;
 /** How near (m) any part of a car may be to where the truck is about to be. */
-const CLOSE = 0.35;
+const CLOSE = 0.4;
+const BY = 0.12;
 /** How far ahead of the axle it is steered by the truck's front bumper is. */
 const BUMPER = TRUCK.long - TRUCK.axle;
 /** How hard the truck brakes, and pulls away, light and loaded, m/s². */
@@ -1447,7 +1448,8 @@ function createTruck(
 		const left = length - gone;
 		const cap = Math.min(limit, BACK_PACE, Math.sqrt(2 * BACK_BRAKE * left) + 0.3);
 		pace += clamp(cap - pace, -1.5 * BACK_BRAKE * dt, BACK_PULL * dt);
-		if (pace > 0 && bumped(true)) pace = 0;
+		// (and with something just behind it, it stops: it is only backing at walking pace or so)
+		if ((pace > 0 && bumped(true)) || limit === 0) pace = 0;
 		const rear = on(TRUCK.rear);
 		const [tx, ty] = wayAt(gone + BACK_LOOK);
 		const going = rear.angle + Math.PI;
@@ -1901,8 +1903,19 @@ function createTruck(
 		if (sweeps(way, Math.tan(truck.steer) / WHEELBASE)) return true;
 		// turning into a car beside it, it may still go on with its wheels
 		// straight, drawing away from it, where the car would wait for it for good
-		straighten = truck.steer !== 0 && sweeps(way, 0);
+		// (only as it edges away: at speed it would run wide)
+		straighten = pace < 2 && truck.steer !== 0 && sweeps(way, 0);
 		return straighten;
+	}
+
+	/** Whether a place is on the truck standing so, or near enough it ahead or behind (CLOSE), or alongside (BY). */
+	function within(at: Pose, px: number, py: number) {
+		const [cos, sin] = [Math.cos(at.angle), Math.sin(at.angle)];
+		const [dx, dy] = [px - at.x, py - at.y];
+		return (
+			Math.abs(dx * cos + dy * sin) < TRUCK.long + CLOSE &&
+			Math.abs(dy * cos - dx * sin) < TRUCK.wide + BY
+		);
 	}
 
 	/** Whether the truck can go on that way, bending so much (1/m), clear of the cars. */
@@ -1918,7 +1931,22 @@ function createTruck(
 				Math.hypot(car.x - pose.x, car.y - pose.y) < TRUCK.long + reach + stopping + 4
 		);
 		if (!near.length) return true;
-		for (let far = 0.4; far <= 0.6 + stopping; far += 0.8) {
+		// One up against its side already, and not out in front of it, it draws
+		// away from: each would otherwise wait for the other for good.
+		const [cos0, sin0] = [Math.cos(pose.angle), Math.sin(pose.angle)];
+		const abreast = new Set(
+			near.filter((car) => {
+				const fore = ((car.x - pose.x) * cos0 + (car.y - pose.y) * sin0) * way;
+				if (fore > TRUCK.long) return false;
+				const [c, s] = [Math.cos(car.angle), Math.sin(car.angle)];
+				for (let k = 0; k < 16; k += 2) {
+					const [hx, hy] = [car.hull[k], car.hull[k + 1]];
+					if (within(pose, car.x + hx * c - hy * s, car.y + hx * s + hy * c)) return true;
+				}
+				return false;
+			})
+		);
+		for (let far = 0.4; far <= 1.6 + stopping; far += 0.8) {
 			// rolled about its back axles that far
 			const turned = way * far * bend;
 			const angle = pose.angle + turned;
@@ -1928,16 +1956,21 @@ function createTruck(
 				rear.y + way * far * Math.sin(pose.angle + turned / 2)
 			];
 			const at = { x: rx - cos * TRUCK.rear, y: ry - sin * TRUCK.rear, angle };
+			// (a car moving, as one in the pits does along its way out of its
+			// box and down the lane, is looked for where it will be by then too)
+			const soon = far / Math.max(pace, 1);
 			for (const car of near) {
+				if (abreast.has(car)) continue;
 				const [c, s] = [Math.cos(car.angle), Math.sin(car.angle)];
-				for (let k = 0; k < 16; k += 2) {
-					const [hx, hy] = [car.hull[k], car.hull[k + 1]];
-					const [px, py] = [car.x + hx * c - hy * s, car.y + hx * s + hy * c];
+				const v = car.body.getLinearVelocity();
+				for (let k = 0; k < 32; k += 2) {
+					const [hx, hy] = [car.hull[k % 16], car.hull[(k % 16) + 1]];
+					const later = k >= 16 ? soon : 0;
+					const [px, py] = [car.x + hx * c - hy * s + v.x * later, car.y + hx * s + hy * c + v.y * later];
 					// (only what is ahead of it, the way it is going, can be run into)
 					const fore = ((px - pose.x) * Math.cos(pose.angle) + (py - pose.y) * Math.sin(pose.angle)) * way;
 					// (and what it is up against already, it draws away from, not waits for)
-					if (fore > 0.5 && onTruck(at, px, py, CLOSE) && !onTruck(pose, px, py, CLOSE))
-						return false;
+					if (fore > 0.5 && within(at, px, py) && !within(pose, px, py)) return false;
 				}
 			}
 		}
@@ -1951,6 +1984,18 @@ function createTruck(
 	 */
 	function pitTraffic() {
 		if (!swept(1)) return 0;
+		// Pulling out of its spot in the yard, it waits for a car coming down
+		// the lane behind it to go by, rather than swing out across its way.
+		const at = on(0);
+		if (vacating && Math.hypot(at.x - home.x, at.y - home.y) < 2 * TRUCK.long) {
+			const [cos, sin] = [Math.cos(at.angle), Math.sin(at.angle)];
+			for (const car of cars) {
+				if (car.retired || car.lane < LANE.in || car.speed < 0.5) continue;
+				const [dx, dy] = [car.x - at.x, car.y - at.y];
+				const fore = dx * cos + dy * sin;
+				if (fore > -32 && fore < TRUCK.long + 1 && Math.abs(dy * cos - dx * sin) < 7) return 0;
+			}
+		}
 		const { x, y, angle } = on(TRUCK.axle);
 		// as far ahead as it would take to stop, and a little more
 		const stopping = pace ** 2 / (3 * BRAKE);
