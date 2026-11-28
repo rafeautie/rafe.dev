@@ -210,6 +210,8 @@ const KEEP = 3;
  * does, so that no wreck is ever left for being late in the race.
  */
 const LEFT_LYING = 1e6;
+/** What sending one more truck out of the yard costs, in seconds: more than any trip, so a truck with room takes a wreck before another is sent for it. */
+const SEND = 1e4;
 /** The plan is worked out again at least this often (s) while there is a wreck to fetch. */
 const REPLAN = 0.5;
 /**
@@ -735,6 +737,8 @@ type Offer = {
 	/** When what it has on now is off the track, if it is given nothing more; 0 for nothing. */
 	alone: number;
 	after: number;
+	/** Whether it is in the yard, standing or moving up it: sending it out is one more truck out. */
+	idle: boolean;
 };
 
 /**
@@ -786,7 +790,8 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 	 * Shares the waiting wrecks out between the trucks: of every way of doing
 	 * it, each truck taking no more than it has room for and in the best order
 	 * for it, the one that has the track clear soonest, and the trucks done
-	 * soonest besides. A truck that would come by another at work on the
+	 * soonest besides; but first, as few trucks sent out of the yard as it
+	 * takes to carry the wrecks. A truck that would come by another at work on the
 	 * track waits for it. Each wreck taken off the truck that had it costs a
 	 * little, so the plan does not change for nothing.
 	 */
@@ -906,7 +911,15 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 				if (had[k] >= 0 && !pick.some((trip) => trip.includes(k))) moved++;
 			}
 			const total = done.reduce((a, b) => a + b, 0);
-			return Math.max(...done) + total / 4 + LEFT_LYING * (wrecks.length - taken) + KEEP * moved;
+			// and no more trucks sent out than it takes to carry the wrecks
+			const sent = pick.filter((trip, i) => trip.length && offers[i].idle).length;
+			return (
+				Math.max(...done) +
+				total / 4 +
+				LEFT_LYING * (wrecks.length - taken) +
+				SEND * sent +
+				KEEP * moved
+			);
 		}
 		search(0, new Set());
 		crews.forEach((crew, i) =>
@@ -2205,7 +2218,8 @@ function createTruck(
 				backing: backs,
 				onTrack: false,
 				alone,
-				after: -1
+				after: -1,
+				idle: false
 			});
 			const goingOn = (t: number, s: number, a: number): Offer => ({
 				t,
@@ -2215,10 +2229,12 @@ function createTruck(
 				backing: backs,
 				onTrack: true,
 				alone: t + roads.haul(s, a),
-				after: -1
+				after: -1,
+				idle: false
 			});
 			if (stage === 'parked') {
 				const offer = fromPits(outFrom(truck.sample, Math.max(time + SCRAMBLE, ready)));
+				offer.idle = true;
 				const front = blocker();
 				if (front >= 0) {
 					if (yard.trucks[front].doing === 'parked') offer.after = front;
@@ -2226,7 +2242,9 @@ function createTruck(
 				}
 				return offer;
 			}
-			if (stage === 'home' || stage === 'park') return fromPits(outFrom(truck.sample, time));
+			// (one only moving up the yard is not out on a job: sending it is one more truck out)
+			if (stage === 'home' || stage === 'park')
+				return { ...fromPits(outFrom(truck.sample, time)), idle: shuffling };
 			if (stage === 'out' || stage === 'held') {
 				// on its way out for a wreck already: on from that one
 				const t = stage === 'out' ? outFrom(truck.sample, time) : time + 2;

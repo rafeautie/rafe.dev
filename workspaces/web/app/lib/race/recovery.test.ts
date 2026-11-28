@@ -235,6 +235,23 @@ describe.each(TRACK_IDS)('the tow trucks on the %s', (id) => {
 		expect(seen.time).toBeLessThan(120);
 	});
 
+	it('send one truck, not both, for two wrecks, however far apart: one has room for both', () => {
+		for (const lying of [
+			[
+				[40, 1.5],
+				[70, -1]
+			],
+			[
+				[40, 1.5],
+				[300, -1]
+			]
+		] as [number, number][][]) {
+			const { seen, done } = fetch(id, lying);
+			expect(done()).toBe(true);
+			expect(seen.trips.reduce((a, b) => a + b)).toBe(1);
+		}
+	});
+
 	it('back up to a wreck lying just behind the one it has lifted, rather than go round for it', () => {
 		// The second is called once the truck is at the first, and it lies a
 		// little way back up the road. Both lie on a straight: round a tight
