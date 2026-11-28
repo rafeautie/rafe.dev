@@ -2352,6 +2352,7 @@ function createTruck(
 			truck.y = y;
 			truck.angle = body.getAngle();
 			// (a truck standing in the yard is nothing to the drivers)
+			if (stage !== 'held' && stage !== 'approach') truck.letOut = -1;
 			if (stage === 'parked') return;
 			const lifting = stage === 'lift' ? (wreck ?? carried?.car) : null;
 			nose.sample = truck.sample;
