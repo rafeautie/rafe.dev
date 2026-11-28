@@ -3,7 +3,7 @@ import type { Plan } from './crew';
 import { createPits, LANE as PIT, tyreGrip } from './pits';
 import { FAR, pathOf, roughly, speedsAlong, think, type Thought } from './plan';
 import { curvature, SPAN } from './line';
-import { createRecovery } from './recovery';
+import { createRecovery, LET_OUT, LET_OUT_BRAKE } from './recovery';
 import type { Entry } from './roster';
 import { serviceFor } from './service';
 import {
@@ -186,6 +186,8 @@ const SPLIT = 20;
 const SETTLE_MAX = 25;
 /** Under caution, a car moves over for the tow truck when it is this near behind (m), and leaves this much room between their middles. */
 const GIVE_WAY = 60;
+/** How far short (m) of a tow truck in its way a car's nose stops. */
+const TRUCK_SHORT = 1.5;
 const MAKE_WAY = 3.6;
 /** A knock slower than this (m/s) leaves no mark. */
 const SHRUG = 2.5;
@@ -366,6 +368,8 @@ type Obstacle = Pick<Car, 'sample' | 'across' | 'speed' | 'retired' | 'towed'> &
 	lane?: number;
 	/** How much further it reaches to either side than a wreck does: a truck beside the wreck it is lifting, as the two of them are gone round. */
 	wide?: number;
+	/** Whether it is a tow truck: never crept into, as a wreck is to push it aside. */
+	truck?: boolean;
 };
 
 export type Race = ReturnType<typeof createRace>;
@@ -1168,13 +1172,37 @@ export function createRace(
 				// Nor does one tucked in behind a wreck stop as a queue would:
 				// creeping on is how it gets round, as a stopped car cannot steer.
 				const tucked = track.bend[blocker.sample] < STRAIGHT ? 0.7 : 1.5;
-				if (gap > 0 && Math.abs(apart) < (blocker.retired ? room : tucked))
+				if (gap > 0 && Math.abs(apart) < (blocker.retired ? room : tucked)) {
 					limit = Math.max(3, approach(blocker, gap, car.follow, grip * G));
+					// A truck, though, is stopped short of: crept up to only while
+					// there is room by it to steer out into, and never right up to it.
+					if (blocker.truck) {
+						const by = passing(blocker, side, room) >= room - 0.3;
+						const short = gap - NOSE - TRUCK_SHORT;
+						limit = Math.min(
+							limit,
+							Math.max(by && short > 0 ? 2 : 0, approach(blocker, gap, NOSE + TRUCK_SHORT + 2, grip * G))
+						);
+					}
+				}
 			}
 			// and in the queue behind whatever is being followed, if anything is
 			// (seen from further off when it is a wreck or a truck, which may be standing still)
 			const sight = caution && queued?.retired ? SIGHT : reach;
 			if (place < 0 && queued && queue < sight) limit = Math.min(limit, queueing(queued, queue));
+			// A tow truck coming out of the pits is let out, and on, by a car that
+			// can stop short of it without a fright: it waits behind where the
+			// truck comes out, or behind the truck as it pulls on. (One too near to
+			// stop goes on by, and the truck waits for it.)
+			if (car.lane < PIT.in) {
+				for (const truck of recovery.trucks) {
+					if (truck.letOut < 0) continue;
+					const short = along(car.sample, truck.letOut) - LET_OUT;
+					if (along(car.sample, truck.letOut) <= 0 || short > 150) continue;
+					if (short < car.speed ** 2 / (2 * LET_OUT_BRAKE) - 3 && truck.doing === 'held') continue;
+					limit = Math.min(limit, Math.sqrt(2 * LET_OUT_BRAKE * Math.max(0, short)));
+				}
+			}
 			// called in: to the inside, and slowing for the way into the pits
 			const bound = pits.call(car);
 			if (bound) limit = Math.min(limit, bound.limit);

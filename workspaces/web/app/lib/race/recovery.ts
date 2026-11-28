@@ -141,6 +141,12 @@ const FORBEARANCE = 6;
 const NUDGE = 1;
 /** Held at the end of the lane, the truck waits for a car this many seconds from where it comes out. */
 const CLEAR_FOR = 4;
+/** A car lets a truck out of the pits by stopping this far (m) short of where it comes out, braking no harder than this (m/s²). */
+export const LET_OUT = 14;
+export const LET_OUT_BRAKE = 5;
+/** How long after it has pulled out the cars let it on: until it is this far (m) on from where it came out, or this long. */
+const LET_ON = 30;
+const LET_ON_FOR = 8;
 /** After this long held at the end of the lane, the truck goes whoever is coming. */
 const PATIENCE = 8;
 /** What the truck weighs (kg): nine of the cars. */
@@ -267,6 +273,8 @@ export type Marker = {
 	towed: boolean;
 	/** How much further it reaches to either side than a wreck does. */
 	wide: number;
+	/** A truck, which is never pushed: a car stops short of it. */
+	truck: true;
 };
 
 /** A place on the way, as the track counts its samples (on past the line without starting again), and how far across. */
@@ -1000,6 +1008,12 @@ function createTruck(
 		steer: 0,
 		/** Out on a job, lights going, rather than standing in the yard. */
 		busy: false,
+		/**
+		 * Where on the track the cars coming up to it are asked to stop short of,
+		 * to let it out of the pits: where it comes out while it waits to, and
+		 * its back as it pulls on. -1 when it is not coming out.
+		 */
+		letOut: -1,
 		/** The car on the crane, as an index into the race's cars, or -1. */
 		towing: -1,
 		/** The cars on the bed, by their places on it (TRUCK.bed), as indices into the race's cars: -1 where there is room. */
@@ -1038,7 +1052,8 @@ function createTruck(
 		speed: 0,
 		retired: true,
 		towed: false,
-		wide: 0
+		wide: 0,
+		truck: true
 	};
 	/** The back of the truck, as the drivers see it. */
 	const tail: Marker = {
@@ -1047,7 +1062,8 @@ function createTruck(
 		speed: 0,
 		retired: true,
 		towed: false,
-		wide: 0
+		wide: 0,
+		truck: true
 	};
 
 	/** The wrecks the dispatcher has given it to fetch, in the order it is to, not yet set out for. */
@@ -1110,6 +1126,9 @@ function createTruck(
 		body.setLinearVelocity({ x: 0, y: 0 });
 		body.setAngularVelocity(0);
 	}
+
+	/** When it last pulled out of the pits onto the track. */
+	let pulledOut = -Infinity;
 
 	/** Whether, this step, its wheels are to be straightened rather than turned into a car beside it (swept). */
 	let straighten = false;
@@ -1489,8 +1508,10 @@ function createTruck(
 				car.retired ||
 				// a car in the pits is not coming
 				car.lane >= LANE.in ||
-				(ahead(car.sample, gate) >= Math.max(20, car.speed * CLEAR_FOR) &&
-					ahead(gate, car.sample) >= 12)
+				// one just gone by is out of the way, and one far enough back to
+				// stop short of it without a fright, is asked to (letOut)
+				(ahead(gate, car.sample) >= 12 &&
+					ahead(car.sample, gate) * spacing >= LET_OUT - 4 + car.speed ** 2 / (2 * LET_OUT_BRAKE))
 		);
 	}
 
@@ -2217,7 +2238,12 @@ function createTruck(
 				timer += dt;
 				const rolling = wreck!.body.getLinearVelocity();
 				const still = Math.hypot(rolling.x, rolling.y) < 0.5;
-				if (still && timer > 0.3 && !passing() && (open() || timer > PATIENCE)) approach();
+				const going = still && !passing();
+				truck.letOut = going ? gate : -1;
+				if (going && timer > 0.3 && (open() || timer > PATIENCE)) {
+					approach();
+					pulledOut = now;
+				}
 			} else if (stage === 'approach') {
 				// one knocked on since the truck set out for it is set out for again
 				if (moved()) approach(REJOIN);
@@ -2263,6 +2289,14 @@ function createTruck(
 			// moving up the yard is not being out on a job
 			if (stage !== 'home' && stage !== 'park') shuffling = false;
 			truck.busy = stage !== 'parked' && !shuffling;
+			// just out, the cars let it on until it is under way
+			if (stage !== 'held') {
+				const on = ((ahead(gate, truck.sample) + n / 2) % n) - n / 2;
+				truck.letOut =
+					stage === 'approach' && now - pulledOut < LET_ON_FOR && on < LET_ON
+						? mod(truck.sample - TRUCK.axle - TRUCK.long - 1)
+						: -1;
+			}
 			carry(dt);
 		},
 
