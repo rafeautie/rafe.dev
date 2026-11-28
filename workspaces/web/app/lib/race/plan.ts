@@ -69,7 +69,11 @@ export function speedsAlong(
 		const sides = Math.sqrt((ax * ax + ay * ay) * (bx * bx + by * by) * (cx * cx + cy * cy));
 		const bend = Math.abs(2 * (ax * cy - ay * cx)) / (sides || 1e-9);
 		const braking = 0.9 * Math.sqrt(Math.max(0, limit * limit - (v * v * bend) ** 2));
-		v = Math.min(60, Math.sqrt(limit / Math.max(bend, 1e-4)), Math.sqrt(v * v + 2 * braking * stride));
+		v = Math.min(
+			60,
+			Math.sqrt(limit / Math.max(bend, 1e-4)),
+			Math.sqrt(v * v + 2 * braking * stride)
+		);
 		for (let fill = 0; fill < every; fill++) speeds[k + fill] = v;
 	}
 	return far;
@@ -211,7 +215,8 @@ const speeds = new Float32Array(FAR + 1);
 
 const hem = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 /** What is left of how far off its path a car is, once it has moved `over` back towards it. */
-const left = (off: number, over: number) => (off > 0 ? Math.max(0, off - over) : Math.min(0, off + over));
+const left = (off: number, over: number) =>
+	off > 0 ? Math.max(0, off - over) : Math.min(0, off + over);
 
 /** How hard a car can accelerate at a speed (m/s²), with `tow` of the air ahead of it already moving (0 to 1). */
 function pull(car: Mover, v: number, tow: number) {
@@ -276,8 +281,7 @@ export function think(
 	for (let i = 0; i < cars.length && count < AROUND; i++) {
 		if (i === me || !live(i)) continue;
 		const other = cars[i];
-		const gap =
-			(((other.sample - car.sample + n * 1.5) % n) - n / 2) * step + past(other) - mine;
+		const gap = (((other.sample - car.sample + n * 1.5) % n) - n / 2) * step + past(other) - mine;
 		if (gap < -15 || gap > sight) continue;
 		who[count] = i;
 		lead[count] = gap;
@@ -493,8 +497,7 @@ export function think(
 					// way out from behind it, than clears it. (Most of the way out
 					// from behind it, it goes for the gap.)
 					if (Math.abs(apart) >= TUCK) continue;
-					const keep =
-						Math.abs(apart) < 1.5 ? car.follow : Math.min(car.follow, LENGTH + CLEARS);
+					const keep = Math.abs(apart) < 1.5 ? car.follow : Math.min(car.follow, LENGTH + CLEARS);
 					if (gap < keep) {
 						gone = theirWay[j] - keep;
 						v = Math.min(v, theirSpeed[j]);

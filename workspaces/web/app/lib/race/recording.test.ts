@@ -253,20 +253,24 @@ describe('a recording', () => {
 		expect(unpack(pack(older as never)).track).toBe('circuit');
 	});
 
-	it('survives being packed into bytes, and stays under 650 KB, or more on a longer lap', { timeout: 30_000 }, () => {
-		for (let seed = 1; seed <= 10; seed++) {
-			const recording = record(seed, drawGrid(seed, SIX), track, [], CLASSIC);
-			const bytes = pack(recording);
-			// (a caution lasts as long as the truck takes to go round for the wreck, which is most of what a long race is)
-			// (and a lap longer than most makes a race longer, and its recording with it)
-			expect(bytes.length).toBeLessThan(650_000 * Math.max(1, track.length / 400));
-			const { poses, ...header } = unpack(bytes);
-			const { poses: recorded, ...expected } = recording;
-			expect(header).toEqual(expected);
-			expect(poses.length).toBe(recorded.length);
-			expect(poses.every((byte, at) => byte === recorded[at])).toBe(true);
+	it(
+		'survives being packed into bytes, and stays under 650 KB, or more on a longer lap',
+		{ timeout: 30_000 },
+		() => {
+			for (let seed = 1; seed <= 10; seed++) {
+				const recording = record(seed, drawGrid(seed, SIX), track, [], CLASSIC);
+				const bytes = pack(recording);
+				// (a caution lasts as long as the truck takes to go round for the wreck, which is most of what a long race is)
+				// (and a lap longer than most makes a race longer, and its recording with it)
+				expect(bytes.length).toBeLessThan(650_000 * Math.max(1, track.length / 400));
+				const { poses, ...header } = unpack(bytes);
+				const { poses: recorded, ...expected } = recording;
+				expect(header).toEqual(expected);
+				expect(poses.length).toBe(recorded.length);
+				expect(poses.every((byte, at) => byte === recorded[at])).toBe(true);
+			}
 		}
-	});
+	);
 
 	// (the room keeps it as one stored value, which can be no more than 2 MB)
 	it.each(TRACK_IDS)(

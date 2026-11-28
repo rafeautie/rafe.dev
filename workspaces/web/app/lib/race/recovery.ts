@@ -347,7 +347,8 @@ function createRoads(track: Track) {
 				if (Math.abs(a) > HALF_ROAD) continue;
 				const i = ((Math.round(s) % n) + n) % n;
 				const front = a + outside[i] * swing * track.bend[i];
-				if (Math.abs(front) > Math.abs(a) && Math.abs(front) + TRUCK_HALF > ROADSIDE + BACK_VERGE) return false;
+				if (Math.abs(front) > Math.abs(a) && Math.abs(front) + TRUCK_HALF > ROADSIDE + BACK_VERGE)
+					return false;
 			}
 		}
 		return true;

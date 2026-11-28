@@ -1291,7 +1291,17 @@ export function createRace(
 						: fixed !== null
 							? () => there
 							: beside(making);
-					car.planFar = speedsAlong(track, from, car.speed, path, most, car.pace, fade, car.plan, rough);
+					car.planFar = speedsAlong(
+						track,
+						from,
+						car.speed,
+						path,
+						most,
+						car.pace,
+						fade,
+						car.plan,
+						rough
+					);
 					// And while it is still a way from there, for where it is now as
 					// well, the slower of the two: beside the line, or making for a
 					// place on the road, at the place on it that it has got to.
@@ -1309,7 +1319,8 @@ export function createRace(
 					on = 0;
 				}
 				want = Infinity;
-				for (let k = on; k <= Math.min(on + looks, car.planFar); k++) want = Math.min(want, car.plan[k]);
+				for (let k = on; k <= Math.min(on + looks, car.planFar); k++)
+					want = Math.min(want, car.plan[k]);
 			} else {
 				car.planFar = 0;
 			}
@@ -1375,7 +1386,13 @@ export function createRace(
 				car.errorAt = car.errorClock - Math.log(1 - rand()) * car.errorEvery;
 				const which = rand();
 				car.errorNext =
-					which < 0.45 ? SLIP.late : which < 0.65 ? SLIP.fluff : which < 0.85 ? SLIP.greedy : SLIP.twitch;
+					which < 0.45
+						? SLIP.late
+						: which < 0.65
+							? SLIP.fluff
+							: which < 0.85
+								? SLIP.greedy
+								: SLIP.twitch;
 			}
 			/** The mistake being made, if one is (SLIP), else -1. */
 			const slip = race.time < car.errorUntil ? car.errorKind : -1;
