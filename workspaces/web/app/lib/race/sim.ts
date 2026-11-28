@@ -150,7 +150,7 @@ const WRECK = 1.5;
 const PACE = 12;
 const CATCH = 17;
 const RUN_IN = 16;
-/** On a long lap, where the run to the line is quicker, the leader is down to this speed (m/s) this far short of the line (m), for the lines to close up. */
+/** On a long lap the leader is down to this speed (m/s) this far short of the line (m), for the lines to close up. */
 const CLOSE_UP = 12;
 const EASE = 80;
 /** How far apart the queue runs, middle to middle. */
@@ -578,8 +578,8 @@ export function createRace(
 	let formed = false;
 	/** Everything on the road this step: the cars, and the trucks that are out on the track. */
 	let road: Obstacle[] = cars;
-	/** How fast the leader brings the field round to the line, once it has lined up: quicker on a long lap, by up to half as much again. */
-	const runIn = RUN_IN * clamp(length / USUAL_LAP, 1, 1.5);
+	/** Whether the lap is a good deal longer than most: a road course, with corners that string a field out. */
+	const winding = length > 1.25 * USUAL_LAP;
 	/** How many samples apart a driver looks at the road ahead to plan its speed: every couple of metres. */
 	const rough = roughly(track);
 	/** How many steps the race has run. */
@@ -1401,24 +1401,14 @@ export function createRace(
 				// nobody stands on the brakes at the flag: the speed allowed comes
 				// down over a few seconds, so the cars behind are not caught out
 				const easing = 32 - 6 * (race.time - caution.since);
-				// (On a long lap the run to the line, once the lines have formed, is
-				// quicker in proportion, and so are the cars keeping up with it.
-				// But a long lap is one with corners in it that string the lines
-				// out, so the leader eases right down for the last of it, and the
-				// rest close up on it before the green.)
+				// (A long lap is one with corners in it that string the lines out,
+				// so on one the leader eases right down for the last of it, and
+				// the rest close up on it before the green.)
 				const toLine = ((n - pacer!.sample) % n) * spacing;
-				const run =
-					runIn > RUN_IN
-						? lerp(CLOSE_UP, runIn, clamp((toLine - EASE) / (2 * EASE), 0, 1))
-						: RUN_IN;
-				const held =
-					car !== pacer
-						? caution.going
-							? FORM + (formed ? Math.max(0, run - RUN_IN) : 0)
-							: CATCH
-						: formed
-							? run
-							: PACE;
+				const run = winding
+					? lerp(CLOSE_UP, RUN_IN, clamp((toLine - EASE) / (2 * EASE), 0, 1))
+					: RUN_IN;
+				const held = car !== pacer ? (caution.going ? FORM : CATCH) : formed ? run : PACE;
 				want = Math.min(want, Math.max(held, easing));
 			}
 			const corner = want;

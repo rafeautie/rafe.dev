@@ -14,8 +14,8 @@ const track = getTrack('circuit');
  */
 const SIX = ROSTER.slice(0, 6);
 /** A race between them that nobody goes out of, with knocks in it; and one that loses a car early on, and a truck goes for it. */
-const QUIET = 5;
-const WRECK = 3;
+const QUIET = 11;
+const WRECK = 18;
 
 describe('a recording', () => {
 	it('plays back as the race it was made from', () => {
