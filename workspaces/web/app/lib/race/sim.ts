@@ -1184,7 +1184,10 @@ export function createRace(
 						const short = gap - NOSE - TRUCK_SHORT;
 						limit = Math.min(
 							limit,
-							Math.max(by && short > 0 ? 2 : 0, approach(blocker, gap, NOSE + TRUCK_SHORT + 2, grip * G))
+							Math.max(
+								by && short > 0 ? 2 : 0,
+								approach(blocker, gap, NOSE + TRUCK_SHORT + 2, grip * G)
+							)
 						);
 					}
 				}

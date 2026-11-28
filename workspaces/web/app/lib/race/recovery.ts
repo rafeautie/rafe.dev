@@ -140,8 +140,6 @@ const STAND_OFF = 40;
 /** On the track, it waits this long behind a car that is all but stopped in its way before it edges on by, at this speed (m/s), pushing it aside if it must. */
 const FORBEARANCE = 6;
 const NUDGE = 1;
-/** Held at the end of the lane, the truck waits for a car this many seconds from where it comes out. */
-const CLEAR_FOR = 4;
 /** A car lets a truck out of the pits by stopping this far (m) short of where it comes out, braking no harder than this (m/s²). */
 export const LET_OUT = 14;
 export const LET_OUT_BRAKE = 5;
@@ -1966,9 +1964,13 @@ function createTruck(
 				for (let k = 0; k < 32; k += 2) {
 					const [hx, hy] = [car.hull[k % 16], car.hull[(k % 16) + 1]];
 					const later = k >= 16 ? soon : 0;
-					const [px, py] = [car.x + hx * c - hy * s + v.x * later, car.y + hx * s + hy * c + v.y * later];
+					const [px, py] = [
+						car.x + hx * c - hy * s + v.x * later,
+						car.y + hx * s + hy * c + v.y * later
+					];
 					// (only what is ahead of it, the way it is going, can be run into)
-					const fore = ((px - pose.x) * Math.cos(pose.angle) + (py - pose.y) * Math.sin(pose.angle)) * way;
+					const fore =
+						((px - pose.x) * Math.cos(pose.angle) + (py - pose.y) * Math.sin(pose.angle)) * way;
 					// (and what it is up against already, it draws away from, not waits for)
 					if (fore > 0.5 && within(at, px, py) && !within(pose, px, py)) return false;
 				}

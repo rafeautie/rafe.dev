@@ -51,7 +51,16 @@ function races(id: TrackId, count: number, seeds: number[]): Tally {
 	const track = getTrack(id);
 	const { n, step: spacing } = track;
 	const along = (from: number, to: number) => (((to - from + n * 1.5) % n) - n / 2) * spacing;
-	const tally: Tally = { wrecks: 0, deep: 0, pastBlocked: 0, touches: 0, stuck: 0, onTrack: 0, held: [], close: 0 };
+	const tally: Tally = {
+		wrecks: 0,
+		deep: 0,
+		pastBlocked: 0,
+		touches: 0,
+		stuck: 0,
+		onTrack: 0,
+		held: [],
+		close: 0
+	};
 	for (const s of seeds) {
 		const conditions = drawConditions(random(s + 1), count);
 		const grid = drawGrid(s, ROSTER, count).map((entry, k) => inCondition(entry, conditions[k]));
@@ -113,7 +122,10 @@ function races(id: TrackId, count: number, seeds: number[]): Tally {
 					edge = Math.max(edge, hi);
 				}
 				room = Math.max(room, HALF_ROAD - edge);
-				const working = onRoad && Math.abs(truck.speed) < 0.3 && ['lift', 'approach', 'reverse'].includes(truck.doing);
+				const working =
+					onRoad &&
+					Math.abs(truck.speed) < 0.3 &&
+					['lift', 'approach', 'reverse'].includes(truck.doing);
 				const fits = room >= 2 * HALF_CAR + 0.5;
 				if (truck.doing === 'held' && was[t] !== 'held') since[t] = race.time;
 				if (was[t] === 'held' && truck.doing !== 'held') {
@@ -133,7 +145,10 @@ function races(id: TrackId, count: number, seeds: number[]): Tally {
 							const [hx, hy] = [car.hull[k], car.hull[k + 1]];
 							const [px, py] = [dx + hx * cc - hy * cs, dy + hx * cs + hy * cc];
 							const [lx, ly] = [px * cos + py * sin, py * cos - px * sin];
-							depth = Math.max(depth, Math.min(TRUCK.long - Math.abs(lx), TRUCK.wide - Math.abs(ly)));
+							depth = Math.max(
+								depth,
+								Math.min(TRUCK.long - Math.abs(lx), TRUCK.wide - Math.abs(ly))
+							);
 						}
 						if (depth > 0.6 && !inside.has(key)) tally.deep++;
 						if (depth > 0.6) inside.add(key);
@@ -154,9 +169,13 @@ function races(id: TrackId, count: number, seeds: number[]): Tally {
 							along(car.sample, o.sample) > 0 &&
 							along(car.sample, o.sample) < ahead
 					);
-					if (working && fits && ahead > 0 && ahead < 30 && !between && car.speed < 2) tally.stuck += DT;
+					if (working && fits && ahead > 0 && ahead < 30 && !between && car.speed < 2)
+						tally.stuck += DT;
 					if (race.time - out[t] < 8 && ahead > 0 && ahead < 25) {
-						const gap = Math.max(Math.abs(fore) - TRUCK.long - NOSE, Math.abs(side) - TRUCK.wide - HALF_CAR);
+						const gap = Math.max(
+							Math.abs(fore) - TRUCK.long - NOSE,
+							Math.abs(side) - TRUCK.wide - HALF_CAR
+						);
 						if (gap < 2 && car.speed > Math.abs(truck.speed) + 2 && !inside.has(`close${key}`)) {
 							tally.close++;
 							inside.add(`close${key}`);

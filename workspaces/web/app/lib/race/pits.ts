@@ -2,7 +2,15 @@ import { fuelled, planStop, type Plan } from './crew';
 import { ROSTER } from './roster';
 import { HALF_LANE, RING, TRUCK, curve, serviceFor, type Route } from './service';
 import type { Car, Flag, Rules } from './sim';
-import { HALF_CAR, HALF_CORRIDOR, MAX_OFFSET, NOSE, clamp, type Track, type TrackId } from './track';
+import {
+	HALF_CAR,
+	HALF_CORRIDOR,
+	MAX_OFFSET,
+	NOSE,
+	clamp,
+	type Track,
+	type TrackId
+} from './track';
 
 // The pits. Beside the start line a lane runs along the infield side of the
 // wall, with a way in from the track at one end and a way out at the other.
