@@ -5,9 +5,10 @@ import { FAR, pathOf, roughly, speedsAlong, think, type Thought } from './plan';
 import { curvature, SPAN } from './line';
 import { createRecovery, LET_OUT, LET_OUT_BRAKE } from './recovery';
 import type { Entry } from './roster';
-import { serviceFor } from './service';
+import { serviceFor, TRUCK_HALF } from './service';
 import {
 	clamp,
+	HALF_CAR,
 	HALF_CORRIDOR,
 	HALF_ROAD,
 	lateral,
@@ -186,6 +187,8 @@ const SPLIT = 20;
 const SETTLE_MAX = 25;
 /** Under caution, a car moves over for the tow truck when it is this near behind (m), and leaves this much room between their middles. */
 const GIVE_WAY = 60;
+/** How far apart (m) the middles of a car and a tow truck going by it side by side are kept. */
+const BESIDE_TRUCK = TRUCK_HALF + HALF_CAR + 0.3;
 /** How far short (m) of a tow truck in its way a car's nose stops. */
 const TRUCK_SHORT = 1.5;
 const MAKE_WAY = 3.6;
@@ -370,6 +373,8 @@ type Obstacle = Pick<Car, 'sample' | 'across' | 'speed' | 'retired' | 'towed'> &
 	wide?: number;
 	/** Whether it is a tow truck: never crept into, as a wreck is to push it aside. */
 	truck?: boolean;
+	/** A tow truck pulling up at a wreck, which is followed, not passed, until it has stopped. */
+	pullingUp?: boolean;
 };
 
 export type Race = ReturnType<typeof createRace>;
@@ -605,11 +610,10 @@ export function createRace(
 
 	/**
 	 * Whether something is to be waited behind and not passed. Under caution
-	 * that is a car still running, wherever across the road it is. It is also
-	 * a truck on the move, and a wreck that is, until they have stopped or are
-	 * off the track; and a truck with a wreck on board or on its crane, and
-	 * that wreck, stopped or not. A truck that has stopped beside a wreck it
-	 * has yet to lift is gone round, as the wreck is.
+	 * that is a car still running, wherever across the road it is, and a
+	 * wreck still sliding. A tow truck is only while it pulls up at a wreck,
+	 * crossing the road to it: otherwise, on the move or at work, it is gone
+	 * by wherever there is room, and stopped short of where there is not.
 	 */
 	const followed = (other: Obstacle) =>
 		caution !== null &&
@@ -617,9 +621,12 @@ export function createRace(
 		!(other.lane! >= PIT.in) &&
 		(!other.retired ||
 			(Math.abs(other.across) < HALF_CORRIDOR &&
-				// (a truck stopped at work, wreck on its crane or not, is gone by
-				// where there is room, and stopped short of where there is not)
-				(Math.abs(other.speed) > 1 || (other.towed && !other.truck))));
+				// (a tow truck, moving or stopped at work, wreck on board or not,
+				// is gone by where there is room, and stopped short of where there
+				// is not)
+				// (nor is a wreck it carries, which goes where the truck goes)
+				Math.abs(other.speed) > 1 &&
+				(other.truck ? !!other.pullingUp : !other.towed)));
 
 	/** How far from the middle of something a car going by it keeps: more for a wreck, which may be lying across the road, and more again for a truck at work on one. */
 	const clearOf = (other: Obstacle) => CLEAR + (other.retired ? WRECK + (other.wide ?? 0) : 0);
@@ -1029,6 +1036,8 @@ export function createRace(
 			if (caution) {
 				for (const other of road) {
 					if (!other.retired || other.lane! >= PIT.in) continue;
+					// (a truck on the move is passed as a slow car is, not crept by)
+					if (other.truck && !other.pullingUp && Math.abs(other.speed) > 1) continue;
 					const apart = Math.abs(other.across - car.across);
 					const room = clearOf(other);
 					if (apart >= room + CLEAR) continue;
@@ -1264,6 +1273,23 @@ export function createRace(
 				const yields = ahead > 0 || (ahead === 0 && (!caution || cars.indexOf(other) < index));
 				if (Math.abs(room) > MAX_OFFSET + 0.3 && yields)
 					limit = Math.min(limit, Math.max(0, other.speed) - 1);
+			}
+			// And alongside a tow truck, going by it, keep clear of its side all
+			// the way past: where the road runs out for that, drop back behind it.
+			for (const end of recovery.onTrack) {
+				const ahead = along(car.sample, end.sample);
+				const apart = car.across - end.across;
+				const need = BESIDE_TRUCK + end.wide;
+				if (Math.abs(ahead) >= 5 || Math.abs(apart) >= need + 0.5) continue;
+				const room = end.across + (apart === 0 ? 1 : Math.sign(apart)) * need;
+				const asked = offset;
+				offset =
+					apart >= 0
+						? Math.max(offset, room - track.line[car.sample])
+						: Math.min(offset, room - track.line[car.sample]);
+				if (offset !== asked) fixed = room;
+				if (Math.abs(room) > MAX_OFFSET + 0.3 && ahead > -1)
+					limit = Math.min(limit, Math.max(0, end.speed - 1));
 			}
 			// (no further beside the line than there is road for)
 			const lineAhead = track.line[aimed(car)];

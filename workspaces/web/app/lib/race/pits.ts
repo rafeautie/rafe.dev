@@ -971,7 +971,7 @@ export function createPits(
 			// truck that is out there across where it joins: it stops short until
 			// the truck has gone on.
 			const left = rail.length - crew.s;
-			if (car.lane === LANE.out && truckAtJoin(left))
+			if (car.lane === LANE.out && truckAtJoin(car, left))
 				target = Math.min(target, behind(0, left, SHORT));
 		}
 		crew.v = Math.max(0, crew.v + clamp(target - crew.v, -brake * dt, pull * dt));
@@ -1008,10 +1008,12 @@ export function createPits(
 	 * `left` metres from now: on the inside, with some of it within a few
 	 * metres of where the way out joins, or about to be.
 	 */
-	function truckAtJoin(left: number) {
+	function truckAtJoin(car: Car, left: number) {
 		if (left > SHORT + 30) return false;
 		return race.trucks.some((truck) => {
 			if (!truck.busy || truck.across < -HALF_CORRIDOR + 0.5 || truck.across > 1) return false;
+			// (one whose front is behind this car already is waiting for it to go on)
+			if (along(car.sample, truck.sample) + TRUCK.long - TRUCK.axle < -NOSE) return false;
 			// how far past the join its front bumper is, and its back
 			const front = along(lane.merge, truck.sample) + TRUCK.long - TRUCK.axle;
 			const back = front - 2 * TRUCK.long;

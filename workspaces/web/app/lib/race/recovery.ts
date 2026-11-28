@@ -110,6 +110,8 @@ const SHY = 2.6;
 const SHY_TRUCK = 0.3;
 /** How near (m) any part of a car may be to where the truck is about to be. */
 const CLOSE = 0.4;
+/** On its way to a wreck, within this far (m) of it a truck is pulling up there, and crosses the road to it. */
+const PULLING_UP = 60;
 const BY = 0.12;
 /** How far ahead of the axle it is steered by the truck's front bumper is. */
 const BUMPER = TRUCK.long - TRUCK.axle;
@@ -274,6 +276,8 @@ export type Marker = {
 	wide: number;
 	/** A truck, which is never pushed: a car stops short of it. */
 	truck: true;
+	/** Whether it is pulling up at a wreck, or backing up to one: then it may cross the road at any moment, and is not passed on the move. */
+	pullingUp: boolean;
 };
 
 /** A place on the way, as the track counts its samples (on past the line without starting again), and how far across. */
@@ -1052,7 +1056,8 @@ function createTruck(
 		retired: true,
 		towed: false,
 		wide: 0,
-		truck: true
+		truck: true,
+		pullingUp: false
 	};
 	/** The back of the truck, as the drivers see it. */
 	const tail: Marker = {
@@ -1062,7 +1067,8 @@ function createTruck(
 		retired: true,
 		towed: false,
 		wide: 0,
-		truck: true
+		truck: true,
+		pullingUp: false
 	};
 
 	/** The wrecks the dispatcher has given it to fetch, in the order it is to, not yet set out for. */
@@ -2371,6 +2377,8 @@ function createTruck(
 			tail.across = lifting ? nose.across : lateral(track, back.x, back.y, tail.sample);
 			tail.speed = nose.speed;
 			tail.towed = nose.towed;
+			nose.pullingUp = tail.pullingUp =
+				stage === 'approach' && (backing || (!segments.length && way!.length - gone < PULLING_UP));
 		}
 	};
 }
