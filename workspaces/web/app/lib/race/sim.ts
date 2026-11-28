@@ -93,15 +93,20 @@ const HOLD = 3.5;
  * twitching at the wheel in one.
  */
 const SLIP = { late: 0, fluff: 1, greedy: 2, twitch: 3 };
-/** Seconds, by its own clock, between one mistake and the next: of the calmest driver and the rashest, on average. */
-const CALM = 60;
-const RASH = 30;
+/**
+ * Seconds, by its own clock, between one mistake and the next: of the
+ * calmest driver and the rashest, on average. They are far apart, so that
+ * what a rash driver gains in pace it gives a good part of back in mistakes,
+ * and a slow car driven steadily still wins now and then.
+ */
+const CALM = 80;
+const RASH = 14;
 /**
  * How big a driver's mistakes are: the dial for how often one ends in the
- * wall. At 1, about one race in two on the road course loses a car to one;
- * at 1.5, a car a race; at 2, three cars in two races.
+ * wall. At 1.25, a field of eight on the road course loses about a car a
+ * race; at 1.5, three cars in two races.
  */
-const SEVERE = 1.5;
+const SEVERE = 1.25;
 /**
  * How much faster a driver's clock runs, as a share of its usual speed:
  * with a car right behind, with one right ahead, on tyres worn out, and in

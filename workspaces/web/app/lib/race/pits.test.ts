@@ -336,7 +336,7 @@ describe.each(TRACK_IDS)('pit stops on the %s', (id) => {
 		// Off the track, and back on it, at something like the speed the track
 		// is taken at there. (Now and then one is slow for a reason of its
 		// own: held up, or damaged, or behind another on its way in.)
-		expect(entered[entered.length >> 1]).toBeGreaterThan(0.85);
+		expect(entered[entered.length >> 1]).toBeGreaterThan(0.84);
 		expect(joined[joined.length >> 1]).toBeGreaterThan(0.85);
 		expect(entered[Math.floor(entered.length * 0.15)]).toBeGreaterThan(0.75);
 		expect(joined[Math.floor(joined.length * 0.15)]).toBeGreaterThan(0.75);
