@@ -3,11 +3,12 @@ import type { Plan } from './crew';
 import { createPits, LANE as PIT, tyreGrip } from './pits';
 import { FAR, pathOf, roughly, speedsAlong, think, type Thought } from './plan';
 import { curvature, SPAN } from './line';
-import { createRecovery } from './recovery';
+import { createRecovery, LET_OUT, LET_OUT_BRAKE, LET_OUT_SLACK } from './recovery';
 import type { Entry } from './roster';
-import { serviceFor } from './service';
+import { serviceFor, TRUCK, TRUCK_HALF } from './service';
 import {
 	clamp,
+	HALF_CAR,
 	HALF_CORRIDOR,
 	HALF_ROAD,
 	lateral,
@@ -186,6 +187,12 @@ const SPLIT = 20;
 const SETTLE_MAX = 25;
 /** Under caution, a car moves over for the tow truck when it is this near behind (m), and leaves this much room between their middles. */
 const GIVE_WAY = 60;
+/** How far apart (m) the middles of a car and a tow truck going by it side by side are kept. */
+const BESIDE_TRUCK = TRUCK_HALF + HALF_CAR + 0.3;
+/** From a tow truck's front axle, where its front end is marked, to its back bumper, and a car's length past that (m). */
+const TRUCK_LONG = TRUCK.axle + TRUCK.long + NOSE;
+/** How far short (m) of a tow truck in its way a car's nose stops. */
+const TRUCK_SHORT = 1.5;
 const MAKE_WAY = 3.6;
 /** A knock slower than this (m/s) leaves no mark. */
 const SHRUG = 2.5;
@@ -366,6 +373,12 @@ type Obstacle = Pick<Car, 'sample' | 'across' | 'speed' | 'retired' | 'towed'> &
 	lane?: number;
 	/** How much further it reaches to either side than a wreck does: a truck beside the wreck it is lifting, as the two of them are gone round. */
 	wide?: number;
+	/** Whether it is a tow truck: never crept into, as a wreck is to push it aside. */
+	truck?: boolean;
+	/** A tow truck pulling up at a wreck, which is followed, not passed, until it has stopped. */
+	pullingUp?: boolean;
+	/** Of a tow truck, whether this is its front end. */
+	front?: boolean;
 };
 
 export type Race = ReturnType<typeof createRace>;
@@ -601,18 +614,23 @@ export function createRace(
 
 	/**
 	 * Whether something is to be waited behind and not passed. Under caution
-	 * that is a car still running, wherever across the road it is. It is also
-	 * a truck on the move, and a wreck that is, until they have stopped or are
-	 * off the track; and a truck with a wreck on board or on its crane, and
-	 * that wreck, stopped or not. A truck that has stopped beside a wreck it
-	 * has yet to lift is gone round, as the wreck is.
+	 * that is a car still running, wherever across the road it is, and a
+	 * wreck still sliding. A tow truck is only while it pulls up at a wreck,
+	 * crossing the road to it: otherwise, on the move or at work, it is gone
+	 * by wherever there is room, and stopped short of where there is not.
 	 */
 	const followed = (other: Obstacle) =>
 		caution !== null &&
 		// a car in the pits is not on the road at all
 		!(other.lane! >= PIT.in) &&
 		(!other.retired ||
-			(Math.abs(other.across) < HALF_CORRIDOR && (Math.abs(other.speed) > 1 || other.towed)));
+			(Math.abs(other.across) < HALF_CORRIDOR &&
+				// (a tow truck, moving or stopped at work, wreck on board or not,
+				// is gone by where there is room, and stopped short of where there
+				// is not)
+				// (nor is a wreck it carries, which goes where the truck goes)
+				Math.abs(other.speed) > 1 &&
+				(other.truck ? !!other.pullingUp : !other.towed)));
 
 	/** How far from the middle of something a car going by it keeps: more for a wreck, which may be lying across the road, and more again for a truck at work on one. */
 	const clearOf = (other: Obstacle) => CLEAR + (other.retired ? WRECK + (other.wide ?? 0) : 0);
@@ -1022,6 +1040,8 @@ export function createRace(
 			if (caution) {
 				for (const other of road) {
 					if (!other.retired || other.lane! >= PIT.in) continue;
+					// (a truck on the move is passed as a slow car is, not crept by)
+					if (other.truck && !other.pullingUp && Math.abs(other.speed) > 1) continue;
 					const apart = Math.abs(other.across - car.across);
 					const room = clearOf(other);
 					if (apart >= room + CLEAR) continue;
@@ -1168,13 +1188,47 @@ export function createRace(
 				// Nor does one tucked in behind a wreck stop as a queue would:
 				// creeping on is how it gets round, as a stopped car cannot steer.
 				const tucked = track.bend[blocker.sample] < STRAIGHT ? 0.7 : 1.5;
-				if (gap > 0 && Math.abs(apart) < (blocker.retired ? room : tucked))
+				if (gap > 0 && Math.abs(apart) < (blocker.retired ? room : tucked)) {
 					limit = Math.max(3, approach(blocker, gap, car.follow, grip * G));
+					// A truck, though, is stopped short of: crept up to only while
+					// there is room by it to steer out into, and never right up to it.
+					// (one only that near its front end is alongside it, and keeps
+					// clear of its side, below, rather than stopping there)
+					const abreast = blocker.front && gap < TRUCK_LONG;
+					if (blocker.truck && !abreast) {
+						const by = passing(blocker, side, room) >= room - 0.3;
+						const short = gap - NOSE - TRUCK_SHORT;
+						limit = Math.min(
+							limit,
+							Math.max(
+								by && short > 0 ? 2 : 0,
+								approach(blocker, gap, NOSE + TRUCK_SHORT + 2, grip * G)
+							)
+						);
+					}
+				}
 			}
 			// and in the queue behind whatever is being followed, if anything is
 			// (seen from further off when it is a wreck or a truck, which may be standing still)
 			const sight = caution && queued?.retired ? SIGHT : reach;
 			if (place < 0 && queued && queue < sight) limit = Math.min(limit, queueing(queued, queue));
+			// A tow truck coming out of the pits is let out, and on, by a car that
+			// can stop short of it without a fright: it waits behind where the
+			// truck comes out, or behind the truck as it pulls on. (One too near to
+			// stop goes on by, and the truck waits for it.)
+			if (car.lane < PIT.in) {
+				for (const truck of recovery.trucks) {
+					if (truck.letOut < 0) continue;
+					const short = along(car.sample, truck.letOut) - LET_OUT;
+					if (along(car.sample, truck.letOut) <= 0 || short > 150) continue;
+					if (
+						short < car.speed ** 2 / (2 * LET_OUT_BRAKE) - LET_OUT_SLACK &&
+						truck.doing === 'held'
+					)
+						continue;
+					limit = Math.min(limit, Math.sqrt(2 * LET_OUT_BRAKE * Math.max(0, short)));
+				}
+			}
 			// called in: to the inside, and slowing for the way into the pits
 			const bound = pits.call(car);
 			if (bound) limit = Math.min(limit, bound.limit);
@@ -1230,6 +1284,23 @@ export function createRace(
 				const yields = ahead > 0 || (ahead === 0 && (!caution || cars.indexOf(other) < index));
 				if (Math.abs(room) > MAX_OFFSET + 0.3 && yields)
 					limit = Math.min(limit, Math.max(0, other.speed) - 1);
+			}
+			// And alongside a tow truck, going by it, keep clear of its side all
+			// the way past: where the road runs out for that, drop back behind it.
+			for (const end of recovery.onTrack) {
+				const ahead = along(car.sample, end.sample);
+				const apart = car.across - end.across;
+				const need = BESIDE_TRUCK + end.wide;
+				if (Math.abs(ahead) >= 5 || Math.abs(apart) >= need + 0.5) continue;
+				const room = end.across + (apart === 0 ? 1 : Math.sign(apart)) * need;
+				const asked = offset;
+				offset =
+					apart >= 0
+						? Math.max(offset, room - track.line[car.sample])
+						: Math.min(offset, room - track.line[car.sample]);
+				if (offset !== asked) fixed = room;
+				if (Math.abs(room) > MAX_OFFSET + 0.3 && ahead > -1)
+					limit = Math.min(limit, Math.max(0, end.speed - 1));
 			}
 			// (no further beside the line than there is road for)
 			const lineAhead = track.line[aimed(car)];

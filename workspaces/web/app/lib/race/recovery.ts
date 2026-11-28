@@ -108,6 +108,11 @@ const READY = 12;
 /** In the pits, the truck stops for a car this near the road just ahead of it, and for the other truck this near (m). */
 const SHY = 2.6;
 const SHY_TRUCK = 0.3;
+/** How near (m) any part of a car may be to where the truck is about to be. */
+const CLOSE = 0.4;
+/** On its way to a wreck, within this far (m) of it a truck is pulling up there, and crosses the road to it. */
+const PULLING_UP = 60;
+const BY = 0.12;
 /** How far ahead of the axle it is steered by the truck's front bumper is. */
 const BUMPER = TRUCK.long - TRUCK.axle;
 /** How hard the truck brakes, and pulls away, light and loaded, m/s². */
@@ -137,8 +142,14 @@ const STAND_OFF = 40;
 /** On the track, it waits this long behind a car that is all but stopped in its way before it edges on by, at this speed (m/s), pushing it aside if it must. */
 const FORBEARANCE = 6;
 const NUDGE = 1;
-/** Held at the end of the lane, the truck waits for a car this many seconds from where it comes out. */
-const CLEAR_FOR = 4;
+/** A car lets a truck out of the pits by stopping this far (m) short of where it comes out, braking no harder than this (m/s²). */
+export const LET_OUT = 14;
+export const LET_OUT_BRAKE = 5;
+/** How much short (m) of stopping distance a car may be and still be counted on, and count itself, to let a truck out. */
+export const LET_OUT_SLACK = 3;
+/** How long after it has pulled out the cars let it on: until it is this far (m) on from where it came out, or this long. */
+const LET_ON = 30;
+const LET_ON_FOR = 8;
 /** After this long held at the end of the lane, the truck goes whoever is coming. */
 const PATIENCE = 8;
 /** What the truck weighs (kg): nine of the cars. */
@@ -199,6 +210,8 @@ const KEEP = 3;
  * does, so that no wreck is ever left for being late in the race.
  */
 const LEFT_LYING = 1e6;
+/** What sending one more truck out of the yard costs, in seconds: more than any trip, so a truck with room takes a wreck before another is sent for it. */
+const SEND = 1e4;
 /** The plan is worked out again at least this often (s) while there is a wreck to fetch. */
 const REPLAN = 0.5;
 /**
@@ -265,6 +278,12 @@ export type Marker = {
 	towed: boolean;
 	/** How much further it reaches to either side than a wreck does. */
 	wide: number;
+	/** A truck, which is never pushed: a car stops short of it. */
+	truck: true;
+	/** Whether it is pulling up at a wreck, or backing up to one: then it may cross the road at any moment, and is not passed on the move. */
+	pullingUp: boolean;
+	/** Whether this is its front end: a car this near behind that is alongside the truck, not behind it. */
+	front: boolean;
 };
 
 /** A place on the way, as the track counts its samples (on past the line without starting again), and how far across. */
@@ -718,6 +737,8 @@ type Offer = {
 	/** When what it has on now is off the track, if it is given nothing more; 0 for nothing. */
 	alone: number;
 	after: number;
+	/** Whether it is in the yard, standing or moving up it: sending it out is one more truck out. */
+	idle: boolean;
 };
 
 /**
@@ -769,7 +790,8 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 	 * Shares the waiting wrecks out between the trucks: of every way of doing
 	 * it, each truck taking no more than it has room for and in the best order
 	 * for it, the one that has the track clear soonest, and the trucks done
-	 * soonest besides. A truck that would come by another at work on the
+	 * soonest besides; but first, as few trucks sent out of the yard as it
+	 * takes to carry the wrecks. A truck that would come by another at work on the
 	 * track waits for it. Each wreck taken off the truck that had it costs a
 	 * little, so the plan does not change for nothing.
 	 */
@@ -889,7 +911,15 @@ export function createRecovery(world: World, cars: Car[], track: Track) {
 				if (had[k] >= 0 && !pick.some((trip) => trip.includes(k))) moved++;
 			}
 			const total = done.reduce((a, b) => a + b, 0);
-			return Math.max(...done) + total / 4 + LEFT_LYING * (wrecks.length - taken) + KEEP * moved;
+			// and no more trucks sent out than it takes to carry the wrecks
+			const sent = pick.filter((trip, i) => trip.length && offers[i].idle).length;
+			return (
+				Math.max(...done) +
+				total / 4 +
+				LEFT_LYING * (wrecks.length - taken) +
+				SEND * sent +
+				KEEP * moved
+			);
 		}
 		search(0, new Set());
 		crews.forEach((crew, i) =>
@@ -998,6 +1028,12 @@ function createTruck(
 		steer: 0,
 		/** Out on a job, lights going, rather than standing in the yard. */
 		busy: false,
+		/**
+		 * Where on the track the cars coming up to it are asked to stop short of,
+		 * to let it out of the pits: where it comes out while it waits to, and
+		 * its back as it pulls on. -1 when it is not coming out.
+		 */
+		letOut: -1,
 		/** The car on the crane, as an index into the race's cars, or -1. */
 		towing: -1,
 		/** The cars on the bed, by their places on it (TRUCK.bed), as indices into the race's cars: -1 where there is room. */
@@ -1036,7 +1072,10 @@ function createTruck(
 		speed: 0,
 		retired: true,
 		towed: false,
-		wide: 0
+		wide: 0,
+		truck: true,
+		pullingUp: false,
+		front: true
 	};
 	/** The back of the truck, as the drivers see it. */
 	const tail: Marker = {
@@ -1045,7 +1084,10 @@ function createTruck(
 		speed: 0,
 		retired: true,
 		towed: false,
-		wide: 0
+		wide: 0,
+		truck: true,
+		pullingUp: false,
+		front: false
 	};
 
 	/** The wrecks the dispatcher has given it to fetch, in the order it is to, not yet set out for. */
@@ -1108,6 +1150,12 @@ function createTruck(
 		body.setLinearVelocity({ x: 0, y: 0 });
 		body.setAngularVelocity(0);
 	}
+
+	/** When it last pulled out of the pits onto the track. */
+	let pulledOut = -Infinity;
+
+	/** Whether, this step, its wheels are to be straightened rather than turned into a car beside it (swept). */
+	let straighten = false;
 
 	/** Where the truck is standing, while it stands: a car that knocks it, it is back there the next step. */
 	let standing: Pose | null = null;
@@ -1336,6 +1384,7 @@ function createTruck(
 	 * the further they are turned. Backwards, for less than nothing.
 	 */
 	function roll(travel: number, wheel: number, dt: number) {
+		if (straighten) wheel = 0;
 		const [steer] = toward(truck.steer, clamp(wheel, -TRUCK.lock, TRUCK.lock), TRUCK.steering * dt);
 		truck.steer = steer;
 		const { x, y } = body.getPosition();
@@ -1422,7 +1471,8 @@ function createTruck(
 		const left = length - gone;
 		const cap = Math.min(limit, BACK_PACE, Math.sqrt(2 * BACK_BRAKE * left) + 0.3);
 		pace += clamp(cap - pace, -1.5 * BACK_BRAKE * dt, BACK_PULL * dt);
-		if (pace > 0 && bumped(true)) pace = 0;
+		// (and with something just behind it, it stops: it is only backing at walking pace or so)
+		if ((pace > 0 && bumped(true)) || limit === 0) pace = 0;
 		const rear = on(TRUCK.rear);
 		const [tx, ty] = wayAt(gone + BACK_LOOK);
 		const going = rear.angle + Math.PI;
@@ -1483,8 +1533,11 @@ function createTruck(
 				car.retired ||
 				// a car in the pits is not coming
 				car.lane >= LANE.in ||
-				(ahead(car.sample, gate) >= Math.max(20, car.speed * CLEAR_FOR) &&
-					ahead(gate, car.sample) >= 12)
+				// one just gone by is out of the way, and one far enough back to
+				// stop short of it without a fright, is asked to (letOut)
+				(ahead(gate, car.sample) >= 12 &&
+					ahead(car.sample, gate) * spacing >=
+						LET_OUT - LET_OUT_SLACK + car.speed ** 2 / (2 * LET_OUT_BRAKE))
 		);
 	}
 
@@ -1857,8 +1910,103 @@ function createTruck(
 						return onTruck(other, back.x - cos * far, back.y - sin * far, SHY_TRUCK + 0.5);
 					})
 			);
-		waited = stuck ? waited + dt : 0;
-		return stuck ? 0 : Infinity;
+		const hemmed = stuck || !swept(-1);
+		waited = hemmed ? waited + dt : 0;
+		return hemmed ? 0 : Infinity;
+	}
+
+	/**
+	 * Whether the truck can go on a little way forwards (`way` 1) or backwards
+	 * (-1), turning as its wheels are turned, as far as it would take to stop
+	 * and a little more, without any of it running into a car on its wheels:
+	 * one in the pits as much as one on the track. Nothing else stops a car in
+	 * the pits, which is on rails, from being driven over.
+	 */
+	function swept(way: 1 | -1) {
+		straighten = false;
+		if (sweeps(way, Math.tan(truck.steer) / WHEELBASE)) return true;
+		// turning into a car beside it, it may still go on with its wheels
+		// straight, drawing away from it, where the car would wait for it for good
+		// (only as it edges away: at speed it would run wide)
+		// (the wheels only come straight at the rate they turn: checked as they will be after this step)
+		const easing =
+			Math.sign(truck.steer) * Math.max(0, Math.abs(truck.steer) - TRUCK.steering / 60);
+		straighten =
+			pace < 2 && truck.steer !== 0 && sweeps(way, Math.tan(easing) / WHEELBASE) && sweeps(way, 0);
+		return straighten;
+	}
+
+	/** Whether a place is on the truck standing so, or near enough it ahead or behind (CLOSE), or alongside (BY). */
+	function within(at: Pose, px: number, py: number) {
+		const [cos, sin] = [Math.cos(at.angle), Math.sin(at.angle)];
+		const [dx, dy] = [px - at.x, py - at.y];
+		return (
+			Math.abs(dx * cos + dy * sin) < TRUCK.long + CLOSE &&
+			Math.abs(dy * cos - dx * sin) < TRUCK.wide + BY
+		);
+	}
+
+	/** Whether the truck can go on that way, bending so much (1/m), clear of the cars. */
+	function sweeps(way: 1 | -1, bend: number) {
+		const pose = on(0);
+		const rear = on(TRUCK.rear);
+		const reach = (way > 0 ? BUMPER : TRUCK.long + TRUCK.rear) + 1;
+		const stopping = pace ** 2 / (2 * (way > 0 ? BRAKE : BACK_BRAKE));
+		const near = cars.filter(
+			(car) =>
+				!car.retired &&
+				!car.towed &&
+				Math.hypot(car.x - pose.x, car.y - pose.y) < TRUCK.long + reach + stopping + 4
+		);
+		if (!near.length) return true;
+		// One up against its side already, and not out in front of it, it draws
+		// away from: each would otherwise wait for the other for good.
+		const [cos0, sin0] = [Math.cos(pose.angle), Math.sin(pose.angle)];
+		const abreast = new Set(
+			near.filter((car) => {
+				const fore = ((car.x - pose.x) * cos0 + (car.y - pose.y) * sin0) * way;
+				if (fore > TRUCK.long) return false;
+				const [c, s] = [Math.cos(car.angle), Math.sin(car.angle)];
+				for (let k = 0; k < 16; k += 2) {
+					const [hx, hy] = [car.hull[k], car.hull[k + 1]];
+					if (within(pose, car.x + hx * c - hy * s, car.y + hx * s + hy * c)) return true;
+				}
+				return false;
+			})
+		);
+		for (let far = 0.4; far <= 1.6 + stopping; far += 0.8) {
+			// rolled about its back axles that far
+			const turned = way * far * bend;
+			const angle = pose.angle + turned;
+			const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
+			const [rx, ry] = [
+				rear.x + way * far * Math.cos(pose.angle + turned / 2),
+				rear.y + way * far * Math.sin(pose.angle + turned / 2)
+			];
+			const at = { x: rx - cos * TRUCK.rear, y: ry - sin * TRUCK.rear, angle };
+			// (a car moving, as one in the pits does along its way out of its
+			// box and down the lane, is looked for where it will be by then too)
+			const soon = far / Math.max(pace, 1);
+			for (const car of near) {
+				if (abreast.has(car)) continue;
+				const [c, s] = [Math.cos(car.angle), Math.sin(car.angle)];
+				const v = car.body.getLinearVelocity();
+				for (let k = 0; k < 32; k += 2) {
+					const [hx, hy] = [car.hull[k % 16], car.hull[(k % 16) + 1]];
+					const later = k >= 16 ? soon : 0;
+					const [px, py] = [
+						car.x + hx * c - hy * s + v.x * later,
+						car.y + hx * s + hy * c + v.y * later
+					];
+					// (only what is ahead of it, the way it is going, can be run into)
+					const fore =
+						((px - pose.x) * Math.cos(pose.angle) + (py - pose.y) * Math.sin(pose.angle)) * way;
+					// (and what it is up against already, it draws away from, not waits for)
+					if (fore > 0.5 && within(at, px, py) && !within(pose, px, py)) return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -1867,6 +2015,19 @@ function createTruck(
 	 * through. It waits for it.
 	 */
 	function pitTraffic() {
+		if (!swept(1)) return 0;
+		// Pulling out of its spot in the yard, it waits for a car coming down
+		// the lane behind it to go by, rather than swing out across its way.
+		const at = on(0);
+		if (vacating && Math.hypot(at.x - home.x, at.y - home.y) < 2 * TRUCK.long) {
+			const [cos, sin] = [Math.cos(at.angle), Math.sin(at.angle)];
+			for (const car of cars) {
+				if (car.retired || car.lane < LANE.in || car.speed < 0.5) continue;
+				const [dx, dy] = [car.x - at.x, car.y - at.y];
+				const fore = dx * cos + dy * sin;
+				if (fore > -32 && fore < TRUCK.long + 1 && Math.abs(dy * cos - dx * sin) < 7) return 0;
+			}
+		}
 		const { x, y, angle } = on(TRUCK.axle);
 		// as far ahead as it would take to stop, and a little more
 		const stopping = pace ** 2 / (3 * BRAKE);
@@ -2057,7 +2218,8 @@ function createTruck(
 				backing: backs,
 				onTrack: false,
 				alone,
-				after: -1
+				after: -1,
+				idle: false
 			});
 			const goingOn = (t: number, s: number, a: number): Offer => ({
 				t,
@@ -2067,10 +2229,12 @@ function createTruck(
 				backing: backs,
 				onTrack: true,
 				alone: t + roads.haul(s, a),
-				after: -1
+				after: -1,
+				idle: false
 			});
 			if (stage === 'parked') {
 				const offer = fromPits(outFrom(truck.sample, Math.max(time + SCRAMBLE, ready)));
+				offer.idle = true;
 				const front = blocker();
 				if (front >= 0) {
 					if (yard.trucks[front].doing === 'parked') offer.after = front;
@@ -2078,7 +2242,9 @@ function createTruck(
 				}
 				return offer;
 			}
-			if (stage === 'home' || stage === 'park') return fromPits(outFrom(truck.sample, time));
+			// (one only moving up the yard is not out on a job: sending it is one more truck out)
+			if (stage === 'home' || stage === 'park')
+				return { ...fromPits(outFrom(truck.sample, time)), idle: shuffling };
 			if (stage === 'out' || stage === 'held') {
 				// on its way out for a wreck already: on from that one
 				const t = stage === 'out' ? outFrom(truck.sample, time) : time + 2;
@@ -2154,7 +2320,12 @@ function createTruck(
 				timer += dt;
 				const rolling = wreck!.body.getLinearVelocity();
 				const still = Math.hypot(rolling.x, rolling.y) < 0.5;
-				if (still && timer > 0.3 && !passing() && (open() || timer > PATIENCE)) approach();
+				const going = still && !passing();
+				truck.letOut = going ? gate : -1;
+				if (going && timer > 0.3 && (open() || timer > PATIENCE)) {
+					approach();
+					pulledOut = now;
+				}
 			} else if (stage === 'approach') {
 				// one knocked on since the truck set out for it is set out for again
 				if (moved()) approach(REJOIN);
@@ -2200,6 +2371,19 @@ function createTruck(
 			// moving up the yard is not being out on a job
 			if (stage !== 'home' && stage !== 'park') shuffling = false;
 			truck.busy = stage !== 'parked' && !shuffling;
+			// just out, the cars let it on until it is under way
+			if (stage !== 'held') {
+				const on = ((ahead(gate, truck.sample) + n / 2) % n) - n / 2;
+				// (held at where it comes out until its back is past there, then behind its back)
+				const back = mod(truck.sample - TRUCK.axle - TRUCK.long - 1);
+				const backPast = ((ahead(gate, back) + n / 2) % n) - n / 2 > 0;
+				truck.letOut =
+					stage === 'approach' && now - pulledOut < LET_ON_FOR && on < LET_ON
+						? backPast
+							? back
+							: gate
+						: -1;
+			}
 			carry(dt);
 		},
 
@@ -2210,6 +2394,7 @@ function createTruck(
 			truck.y = y;
 			truck.angle = body.getAngle();
 			// (a truck standing in the yard is nothing to the drivers)
+			if (stage !== 'held' && stage !== 'approach') truck.letOut = -1;
 			if (stage === 'parked') return;
 			const lifting = stage === 'lift' ? (wreck ?? carried?.car) : null;
 			nose.sample = truck.sample;
@@ -2226,6 +2411,8 @@ function createTruck(
 			tail.across = lifting ? nose.across : lateral(track, back.x, back.y, tail.sample);
 			tail.speed = nose.speed;
 			tail.towed = nose.towed;
+			nose.pullingUp = tail.pullingUp =
+				stage === 'approach' && (backing || (!segments.length && way!.length - gone < PULLING_UP));
 		}
 	};
 }
