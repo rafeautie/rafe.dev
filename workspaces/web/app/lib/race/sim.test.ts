@@ -114,7 +114,7 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 	});
 
 	it(
-		'reaches a result every time over 100 seeds, and every car wins some',
+		'reaches a result every time over 100 seeds, and no car has it all its own way',
 		{ timeout: 120_000 },
 		() => {
 			const wins = new Map<string, number>();
@@ -137,7 +137,13 @@ describe.each(TRACK_IDS)('a race on the %s', (id) => {
 				}
 				wins.set(winner.entry.id, (wins.get(winner.entry.id) ?? 0) + 1);
 			}
-			for (const entry of SIX) expect(wins.get(entry.id) ?? 0).toBeGreaterThan(0);
+			// No car wins half of them, and all but the slowest win some. (The
+			// slowest is there to pick up the pieces when the quick ones fall
+			// out. With a car a race doing that, where it was three, it wins a
+			// race or two in a hundred, or none, as the seeds fall.)
+			const won = SIX.map((entry) => wins.get(entry.id) ?? 0);
+			expect(Math.max(...won)).toBeLessThan(50);
+			expect(won.filter((count) => count > 0).length).toBeGreaterThanOrEqual(SIX.length - 1);
 		}
 	);
 
@@ -362,8 +368,8 @@ describe.each(TRACK_IDS)('the line the pit lane is on, on the %s', (id) => {
  * when a caution is thrown by hand twenty seconds in.
  */
 const SEEDS: Record<TrackId, { wreck: number; clean: number }> = {
-	circuit: { wreck: 2, clean: 8 },
-	oval: { wreck: 1, clean: 2 }
+	circuit: { wreck: 3, clean: 5 },
+	oval: { wreck: 17, clean: 2 }
 };
 
 describe.each(TRACK_IDS)('a caution on the %s', (id) => {

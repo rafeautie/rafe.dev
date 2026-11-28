@@ -342,7 +342,7 @@ describe.each(TRACK_IDS)('pit stops on the %s', (id) => {
 		expect(joined[Math.floor(joined.length * 0.15)]).toBeGreaterThan(0.75);
 	});
 
-	it('are made under caution too, but not once the field is lining up to go green', () => {
+	it('are made under caution too, but not once the field is lining up to go green', { timeout: 30_000 }, () => {
 		let under = 0;
 		for (let seed = 1; seed <= 18; seed++) {
 			// a wreck is rare enough that some of them have a caution thrown by

@@ -211,8 +211,9 @@ describe.each(TRACK_IDS)('pit stops on the %s, as recorded', (id) => {
 		expect(pit).toBeDefined();
 		if (pit?.kind !== 'pit') return;
 		// a moment before it stops it is on its way in, and the stop it is coming for is known
+		// (up to the last frame before it stops, which may show it stopped already)
 		let seen = false;
-		for (let t = pit.time - 3; t < pit.time; t += 0.1) {
+		for (let t = pit.time - 3; t < pit.time - 0.05; t += 0.1) {
 			replay.seek(t);
 			const car = replay.cars[pit.car];
 			if (car.lane === LANE.in) {

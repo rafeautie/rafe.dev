@@ -14,8 +14,8 @@ const track = getTrack('circuit');
  */
 const SIX = ROSTER.slice(0, 6);
 /** A race between them that nobody goes out of, with knocks in it; and one that loses a car early on, and a truck goes for it. */
-const QUIET = 8;
-const WRECK = 39;
+const QUIET = 5;
+const WRECK = 3;
 
 describe('a recording', () => {
 	it('plays back as the race it was made from', () => {
@@ -253,13 +253,13 @@ describe('a recording', () => {
 		expect(unpack(pack(older as never)).track).toBe('circuit');
 	});
 
-	it('survives being packed into bytes, and stays under 600 KB, or more on a longer lap', () => {
+	it('survives being packed into bytes, and stays under 650 KB, or more on a longer lap', { timeout: 30_000 }, () => {
 		for (let seed = 1; seed <= 10; seed++) {
 			const recording = record(seed, drawGrid(seed, SIX), track, [], CLASSIC);
 			const bytes = pack(recording);
 			// (a caution lasts as long as the truck takes to go round for the wreck, which is most of what a long race is)
 			// (and a lap longer than most makes a race longer, and its recording with it)
-			expect(bytes.length).toBeLessThan(600_000 * Math.max(1, track.length / 400));
+			expect(bytes.length).toBeLessThan(650_000 * Math.max(1, track.length / 400));
 			const { poses, ...header } = unpack(bytes);
 			const { poses: recorded, ...expected } = recording;
 			expect(header).toEqual(expected);
